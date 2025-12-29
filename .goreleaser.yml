@@ -5,7 +5,9 @@ before:
     - go mod tidy
 
 builds:
-  - env:
+  - id: "fkteams" # 内部标识符
+    binary: "fkteams" # 决定了生成的文件名是 fkteams (Windows 下自动加 .exe)
+    env:
       - CGO_ENABLED=0
     main: .
     goos:
@@ -26,6 +28,7 @@ archives:
   - formats: ["zip"]
     name_template: >-
       {{ .ProjectName }}_
+      {{- .Version }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
