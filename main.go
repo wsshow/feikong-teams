@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fkteams/agents/coder"
 	"fkteams/agents/leader"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
@@ -28,10 +29,11 @@ func main() {
 
 	storytellerAgent := storyteller.NewAgent()
 	searcherAgent := searcher.NewAgent()
+	coderAgent := coder.NewAgent()
 	leaderAgent := leader.NewAgent()
 
 	ctx := context.Background()
-	a, err := adk.SetSubAgents(ctx, leaderAgent, []adk.Agent{searcherAgent, storytellerAgent})
+	a, err := adk.SetSubAgents(ctx, leaderAgent, []adk.Agent{searcherAgent, storytellerAgent, coderAgent})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,10 +61,10 @@ func main() {
 			}
 
 			if event.Output.MessageOutput.Role == schema.Tool {
-				fmt.Printf("\n\ntool name: %s \ntool tool_calls: %+v\ntool content: %s\n\n",
+				fmt.Printf("\n\ntool name: %s \ntool tool_calls: %+v\n\n",
 					event.Output.MessageOutput.ToolName,
 					event.Output.MessageOutput.Message,
-					event.Output.MessageOutput.Message.Content)
+				)
 				continue
 			}
 
