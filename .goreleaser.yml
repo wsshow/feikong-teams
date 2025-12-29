@@ -6,6 +6,13 @@ builds:
   - env:
       - CGO_ENABLED=0
     main: .
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
     ldflags:
       - -s -w
       - -X 'fkteams/version.version={{.Version}}'
@@ -14,7 +21,7 @@ builds:
       - -trimpath
 
 archives:
-  - format: zip
+  - formats: ["zip"]
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
