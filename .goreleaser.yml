@@ -34,8 +34,6 @@ archives:
 
 release:
   github:
-    owner: wsshow
-    name: fkteams
 
 checksum:
   name_template: "checksums.txt"
