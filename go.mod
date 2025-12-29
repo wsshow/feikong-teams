@@ -8,6 +8,7 @@ require (
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20251223041451-fede3afb5715
 	github.com/joho/godotenv v1.5.1
 	github.com/pterm/pterm v0.12.82
+	github.com/spf13/afero v1.15.0
 )
 
 require (

@@ -5,12 +5,80 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/spf13/afero"
 )
+
+// securedFs 是受限制的文件系统，只允许访问指定目录
+var securedFs afero.Fs
+
+// allowedBaseDir 是允许访问的基础目录
+var allowedBaseDir string
+
+// InitSecuredFileSystem 初始化安全的文件系统
+// baseDir 是允许操作的基础目录（通常是二进制文件同级的 code 目录）
+func InitSecuredFileSystem(baseDir string) error {
+	// 转换为绝对路径
+	absPath, err := filepath.Abs(baseDir)
+	if err != nil {
+		return fmt.Errorf("无法获取绝对路径: %w", err)
+	}
+
+	// 检查目录是否存在，如果不存在则创建
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(absPath, 0755); err != nil {
+			return fmt.Errorf("无法创建目录 %s: %w", absPath, err)
+		}
+	}
+
+	allowedBaseDir = absPath
+
+	// 使用 BasePathFs 限制文件系统访问范围
+	// 所有相对路径操作都会被限制在这个目录下
+	securedFs = afero.NewBasePathFs(afero.NewOsFs(), absPath)
+
+	return nil
+}
+
+// validatePath 验证并规范化路径
+// 确保路径在允许的目录范围内，并返回相对路径
+func validatePath(userPath string) (string, error) {
+	if userPath == "" {
+		return "", fmt.Errorf("路径不能为空")
+	}
+
+	// 清理路径
+	cleanPath := filepath.Clean(userPath)
+
+	// 转换为绝对路径以检查路径穿越
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("无法解析路径: %w", err)
+	}
+
+	// 检查路径是否在允许的目录内
+	if !strings.HasPrefix(absPath, allowedBaseDir) {
+		return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", absPath, allowedBaseDir)
+	}
+
+	// 计算相对于 base 目录的路径
+	relPath, err := filepath.Rel(allowedBaseDir, absPath)
+	if err != nil {
+		return "", fmt.Errorf("无法计算相对路径: %w", err)
+	}
+
+	// 再次检查相对路径是否试图穿越
+	if strings.HasPrefix(relPath, "..") {
+		return "", fmt.Errorf("访问被拒绝: 路径试图穿越允许的目录")
+	}
+
+	return relPath, nil
+}
 
 // FileReadRequest 读取文件请求
 type FileReadRequest struct {
@@ -33,17 +101,17 @@ func FileRead(ctx context.Context, req *FileReadRequest) (*FileReadResponse, err
 		}, nil
 	}
 
-	file, err := os.Open(req.Filepath)
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
 	if err != nil {
 		return &FileReadResponse{
-			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
+			ErrorMessage: err.Error(),
 		}, nil
 	}
-	defer file.Close()
 
 	// 如果没有指定行范围，读取全部内容
 	if req.StartLine == 0 && req.EndLine == 0 {
-		content, err := os.ReadFile(req.Filepath)
+		content, err := afero.ReadFile(securedFs, relPath)
 		if err != nil {
 			return &FileReadResponse{
 				ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
@@ -55,6 +123,14 @@ func FileRead(ctx context.Context, req *FileReadRequest) (*FileReadResponse, err
 	}
 
 	// 部分读取
+	file, err := securedFs.Open(relPath)
+	if err != nil {
+		return &FileReadResponse{
+			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
+		}, nil
+	}
+	defer file.Close()
+
 	scanner := bufio.NewScanner(file)
 	var lines []string
 	currentLine := 1
@@ -102,7 +178,15 @@ func FileWrite(ctx context.Context, req *FileWriteRequest) (*FileWriteResponse, 
 		}, nil
 	}
 
-	err := os.WriteFile(req.Filepath, []byte(req.Content), 0644)
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
+	if err != nil {
+		return &FileWriteResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	err = afero.WriteFile(securedFs, relPath, []byte(req.Content), 0644)
 	if err != nil {
 		return &FileWriteResponse{
 			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
@@ -134,7 +218,15 @@ func FileAppend(ctx context.Context, req *FileAppendRequest) (*FileAppendRespons
 		}, nil
 	}
 
-	file, err := os.OpenFile(req.Filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
+	if err != nil {
+		return &FileAppendResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	file, err := securedFs.OpenFile(relPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return &FileAppendResponse{
 			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
@@ -182,8 +274,16 @@ func FileModify(ctx context.Context, req *FileModifyRequest) (*FileModifyRespons
 		}, nil
 	}
 
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
+	if err != nil {
+		return &FileModifyResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
 	// 读取原文件
-	file, err := os.Open(req.Filepath)
+	file, err := securedFs.Open(relPath)
 	if err != nil {
 		return &FileModifyResponse{
 			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
@@ -222,7 +322,7 @@ func FileModify(ctx context.Context, req *FileModifyRequest) (*FileModifyRespons
 
 	// 写回文件
 	finalContent := strings.Join(result, "\n")
-	err = os.WriteFile(req.Filepath, []byte(finalContent), 0644)
+	err = afero.WriteFile(securedFs, relPath, []byte(finalContent), 0644)
 	if err != nil {
 		return &FileModifyResponse{
 			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
@@ -261,8 +361,16 @@ func FileInsert(ctx context.Context, req *FileInsertRequest) (*FileInsertRespons
 		}, nil
 	}
 
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
+	if err != nil {
+		return &FileInsertResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
 	// 读取原文件
-	file, err := os.Open(req.Filepath)
+	file, err := securedFs.Open(relPath)
 	if err != nil {
 		return &FileInsertResponse{
 			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
@@ -302,7 +410,7 @@ func FileInsert(ctx context.Context, req *FileInsertRequest) (*FileInsertRespons
 
 	// 写回文件
 	finalContent := strings.Join(result, "\n")
-	err = os.WriteFile(req.Filepath, []byte(finalContent), 0644)
+	err = afero.WriteFile(securedFs, relPath, []byte(finalContent), 0644)
 	if err != nil {
 		return &FileInsertResponse{
 			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
@@ -337,7 +445,15 @@ func FileList(ctx context.Context, req *FileListRequest) (*FileListResponse, err
 		}, nil
 	}
 
-	entries, err := os.ReadDir(req.Dirpath)
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Dirpath)
+	if err != nil {
+		return &FileListResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	entries, err := afero.ReadDir(securedFs, relPath)
 	if err != nil {
 		return &FileListResponse{
 			ErrorMessage: fmt.Sprintf("无法读取目录: %v", err),
@@ -351,9 +467,7 @@ func FileList(ctx context.Context, req *FileListRequest) (*FileListResponse, err
 		if entry.IsDir() {
 			result = append(result, fmt.Sprintf("[DIR]  %s", entry.Name()))
 		} else {
-			info, _ := entry.Info()
-			size := info.Size()
-			result = append(result, fmt.Sprintf("[FILE] %s (%d bytes)", entry.Name(), size))
+			result = append(result, fmt.Sprintf("[FILE] %s (%d bytes)", entry.Name(), entry.Size()))
 		}
 	}
 
@@ -363,7 +477,12 @@ func FileList(ctx context.Context, req *FileListRequest) (*FileListResponse, err
 }
 
 // GetFileTools 获取所有文件操作工具
+// 注意: 调用此函数前必须先调用 InitSecuredFileSystem 初始化文件系统
 func GetFileTools() ([]tool.BaseTool, error) {
+	if securedFs == nil {
+		return nil, fmt.Errorf("文件系统未初始化，请先调用 InitSecuredFileSystem")
+	}
+
 	var tools []tool.BaseTool
 
 	// 文件读取工具
@@ -408,5 +527,191 @@ func GetFileTools() ([]tool.BaseTool, error) {
 	}
 	tools = append(tools, fileListTool)
 
+	// 创建空文件工具
+	fileCreateTool, err := utils.InferTool("file_create", "创建一个新的空文件。如果文件已存在则会清空其内容", FileCreate)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, fileCreateTool)
+
+	// 删除文件工具
+	fileDeleteTool, err := utils.InferTool("file_delete", "删除指定的文件。注意：删除操作不可恢复", FileDelete)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, fileDeleteTool)
+
+	// 创建目录工具
+	dirCreateTool, err := utils.InferTool("dir_create", "创建一个新的目录（文件夹）。支持递归创建多级目录", DirCreate)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, dirCreateTool)
+
+	// 删除目录工具
+	dirDeleteTool, err := utils.InferTool("dir_delete", "删除指定的目录（文件夹）。注意：删除操作不可恢复，目录必须为空才能删除", DirDelete)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, dirDeleteTool)
+
 	return tools, nil
+}
+
+// FileCreateRequest 创建文件请求
+type FileCreateRequest struct {
+	Filepath string `json:"filepath" jsonschema:"description=要创建的文件路径,required"`
+}
+
+// FileCreateResponse 创建文件响应
+type FileCreateResponse struct {
+	Message      string `json:"message" jsonschema:"description=操作结果消息"`
+	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FileCreate 创建一个新的空文件
+func FileCreate(ctx context.Context, req *FileCreateRequest) (*FileCreateResponse, error) {
+	if req.Filepath == "" {
+		return &FileCreateResponse{
+			ErrorMessage: "filepath 参数是必需的",
+		}, nil
+	}
+
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
+	if err != nil {
+		return &FileCreateResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// 创建文件（如果已存在则清空）
+	file, err := securedFs.Create(relPath)
+	if err != nil {
+		return &FileCreateResponse{
+			ErrorMessage: fmt.Sprintf("创建文件失败: %v", err),
+		}, nil
+	}
+	defer file.Close()
+
+	return &FileCreateResponse{
+		Message: fmt.Sprintf("成功创建空文件 %s", req.Filepath),
+	}, nil
+}
+
+// FileDeleteRequest 删除文件请求
+type FileDeleteRequest struct {
+	Filepath string `json:"filepath" jsonschema:"description=要删除的文件路径,required"`
+}
+
+// FileDeleteResponse 删除文件响应
+type FileDeleteResponse struct {
+	Message      string `json:"message" jsonschema:"description=操作结果消息"`
+	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FileDelete 删除指定的文件
+func FileDelete(ctx context.Context, req *FileDeleteRequest) (*FileDeleteResponse, error) {
+	if req.Filepath == "" {
+		return &FileDeleteResponse{
+			ErrorMessage: "filepath 参数是必需的",
+		}, nil
+	}
+
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Filepath)
+	if err != nil {
+		return &FileDeleteResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	err = securedFs.Remove(relPath)
+	if err != nil {
+		return &FileDeleteResponse{
+			ErrorMessage: fmt.Sprintf("删除文件失败: %v", err),
+		}, nil
+	}
+
+	return &FileDeleteResponse{
+		Message: fmt.Sprintf("成功删除文件 %s", req.Filepath),
+	}, nil
+}
+
+// DirCreateRequest 创建目录请求
+type DirCreateRequest struct {
+	Dirpath string `json:"dirpath" jsonschema:"description=要创建的目录路径,required"`
+}
+
+// DirCreateResponse 创建目录响应
+type DirCreateResponse struct {
+	Message      string `json:"message" jsonschema:"description=操作结果消息"`
+	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// DirCreate 创建一个新的目录（支持递归创建）
+func DirCreate(ctx context.Context, req *DirCreateRequest) (*DirCreateResponse, error) {
+	if req.Dirpath == "" {
+		return &DirCreateResponse{
+			ErrorMessage: "dirpath 参数是必需的",
+		}, nil
+	}
+
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Dirpath)
+	if err != nil {
+		return &DirCreateResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	err = securedFs.MkdirAll(relPath, 0755)
+	if err != nil {
+		return &DirCreateResponse{
+			ErrorMessage: fmt.Sprintf("创建目录失败: %v", err),
+		}, nil
+	}
+
+	return &DirCreateResponse{
+		Message: fmt.Sprintf("成功创建目录 %s", req.Dirpath),
+	}, nil
+}
+
+// DirDeleteRequest 删除目录请求
+type DirDeleteRequest struct {
+	Dirpath string `json:"dirpath" jsonschema:"description=要删除的目录路径,required"`
+}
+
+// DirDeleteResponse 删除目录响应
+type DirDeleteResponse struct {
+	Message      string `json:"message" jsonschema:"description=操作结果消息"`
+	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// DirDelete 删除指定的目录（仅限空目录）
+func DirDelete(ctx context.Context, req *DirDeleteRequest) (*DirDeleteResponse, error) {
+	if req.Dirpath == "" {
+		return &DirDeleteResponse{
+			ErrorMessage: "dirpath 参数是必需的",
+		}, nil
+	}
+
+	// 验证并规范化路径
+	relPath, err := validatePath(req.Dirpath)
+	if err != nil {
+		return &DirDeleteResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	err = securedFs.Remove(relPath)
+	if err != nil {
+		return &DirDeleteResponse{
+			ErrorMessage: fmt.Sprintf("删除目录失败: %v", err),
+		}, nil
+	}
+
+	return &DirDeleteResponse{
+		Message: fmt.Sprintf("成功删除目录 %s", req.Dirpath),
+	}, nil
 }

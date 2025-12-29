@@ -73,6 +73,8 @@ func main() {
 				continue
 			}
 
+			log.Printf("event:%+v\n", event)
+
 			for {
 				msg, err := event.Output.MessageOutput.MessageStream.Recv()
 				if err != nil {
