@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/leader"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
+	"fkteams/common"
 	"fmt"
 	"io"
 	"log"
@@ -51,6 +53,9 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
+	toolTrigger := common.NewOnceWithReset()
+	var spinnerLiveText *pterm.SpinnerPrinter
+
 	go func() {
 		for {
 			input, _ := pterm.DefaultInteractiveTextInput.Show("请输入您的问题")
@@ -65,16 +70,15 @@ func main() {
 				if !ok {
 					break
 				}
+
 				if event.Err != nil {
 					log.Println("error:", event.Err)
 					continue
 				}
 
 				if event.Output.MessageOutput.Role == schema.Tool {
-					fmt.Printf("\n\ntool name: %s \ntool tool_calls: %+v\n\n",
-						event.Output.MessageOutput.ToolName,
-						event.Output.MessageOutput.Message,
-					)
+					spinnerLiveText.Success(fmt.Sprintf("[%s]工具调用完成: %s ", event.AgentName, event.Output.MessageOutput.ToolName))
+					fmt.Println()
 					continue
 				}
 
@@ -83,16 +87,33 @@ func main() {
 					continue
 				}
 
+				toolTrigger.Reset()
+
 				for {
-					msg, err := event.Output.MessageOutput.MessageStream.Recv()
+					chunk, err := event.Output.MessageOutput.MessageStream.Recv()
 					if err != nil {
 						if err == io.EOF {
 							break
 						}
 						log.Fatal(err)
 					}
-					fmt.Print(msg.Content)
+
+					if len(chunk.ToolCalls) > 0 {
+						for _, tc := range chunk.ToolCalls {
+							toolTrigger.Do(func() {
+								fmt.Println()
+								spinnerLiveText, _ = pterm.DefaultSpinner.Start("正在准备工具调用参数...")
+							})
+							spinnerLiveText.UpdateText(fmt.Sprintf("正在准备工具调用参数...%s", hex.EncodeToString([]byte(tc.Function.Arguments))))
+						}
+					}
+
+					if chunk.Content != "" {
+						fmt.Print(chunk.Content)
+					}
+
 				}
+				fmt.Println()
 			}
 		}
 	}()
