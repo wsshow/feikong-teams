@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/leader"
 	"fkteams/agents/searcher"
@@ -9,6 +10,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -30,10 +34,11 @@ func main() {
 	storytellerAgent := storyteller.NewAgent()
 	searcherAgent := searcher.NewAgent()
 	coderAgent := coder.NewAgent()
+	cmderAgent := cmder.NewAgent()
 	leaderAgent := leader.NewAgent()
 
-	ctx := context.Background()
-	a, err := adk.SetSubAgents(ctx, leaderAgent, []adk.Agent{searcherAgent, storytellerAgent, coderAgent})
+	ctx, done := context.WithCancel(context.Background())
+	a, err := adk.SetSubAgents(ctx, leaderAgent, []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,48 +48,57 @@ func main() {
 		EnableStreaming: true,
 	})
 
-	for {
-		input, _ := pterm.DefaultInteractiveTextInput.Show("请输入您的问题")
-		if input == "q" || input == "quit" || input == "" {
-			pterm.Println("谢谢使用，再见！")
-			break
-		}
-		iter := runner.Query(ctx, input)
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	go func() {
 		for {
-			event, ok := iter.Next()
-			if !ok {
-				break
+			input, _ := pterm.DefaultInteractiveTextInput.Show("请输入您的问题")
+			if input == "q" || input == "quit" || input == "" {
+				pterm.Info.Println("谢谢使用，再见！")
+				signals <- syscall.SIGTERM
+				return
 			}
-			if event.Err != nil {
-				log.Println("error:", event.Err)
-				continue
-			}
-
-			if event.Output.MessageOutput.Role == schema.Tool {
-				fmt.Printf("\n\ntool name: %s \ntool tool_calls: %+v\n\n",
-					event.Output.MessageOutput.ToolName,
-					event.Output.MessageOutput.Message,
-				)
-				continue
-			}
-
-			if event.Output.MessageOutput.MessageStream == nil {
-				fmt.Printf("\n%s\n\n", event.Output.MessageOutput.Message)
-				continue
-			}
-
-			log.Printf("event:%+v\n", event)
-
+			iter := runner.Query(ctx, input)
 			for {
-				msg, err := event.Output.MessageOutput.MessageStream.Recv()
-				if err != nil {
-					if err == io.EOF {
-						break
-					}
-					log.Fatal(err)
+				event, ok := iter.Next()
+				if !ok {
+					break
 				}
-				fmt.Print(msg.Content)
+				if event.Err != nil {
+					log.Println("error:", event.Err)
+					continue
+				}
+
+				if event.Output.MessageOutput.Role == schema.Tool {
+					fmt.Printf("\n\ntool name: %s \ntool tool_calls: %+v\n\n",
+						event.Output.MessageOutput.ToolName,
+						event.Output.MessageOutput.Message,
+					)
+					continue
+				}
+
+				if event.Output.MessageOutput.MessageStream == nil {
+					fmt.Printf("\n%s\n\n", event.Output.MessageOutput.Message)
+					continue
+				}
+
+				for {
+					msg, err := event.Output.MessageOutput.MessageStream.Recv()
+					if err != nil {
+						if err == io.EOF {
+							break
+						}
+						log.Fatal(err)
+					}
+					fmt.Print(msg.Content)
+				}
 			}
 		}
-	}
+	}()
+
+	sig := <-signals
+	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
+	done()
+	pterm.Success.Println("成功退出")
 }
