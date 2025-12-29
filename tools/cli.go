@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -35,16 +34,16 @@ type CommandDangerousLevel struct {
 
 // 危险命令黑名单
 var dangerousCommands = map[string]CommandDangerousLevel{
-	"rm -rf /":     {Level: SecurityLevelDangerous, Description: "删除根目录", Reasons: []string{"会导致系统完全崩溃"}},
-	"rm -rf /*":    {Level: SecurityLevelDangerous, Description: "删除根目录下所有内容", Reasons: []string{"会导致系统完全崩溃"}},
-	"mkfs":         {Level: SecurityLevelDangerous, Description: "格式化文件系统", Reasons: []string{"会清除磁盘上的所有数据"}},
+	"rm -rf /":        {Level: SecurityLevelDangerous, Description: "删除根目录", Reasons: []string{"会导致系统完全崩溃"}},
+	"rm -rf /*":       {Level: SecurityLevelDangerous, Description: "删除根目录下所有内容", Reasons: []string{"会导致系统完全崩溃"}},
+	"mkfs":            {Level: SecurityLevelDangerous, Description: "格式化文件系统", Reasons: []string{"会清除磁盘上的所有数据"}},
 	"dd if=/dev/zero": {Level: SecurityLevelDangerous, Description: "使用 dd 命令覆盖设备", Reasons: []string{"可能永久性擦除数据"}},
-	":(){ :|:& };:": {Level: SecurityLevelDangerous, Description: "fork 炸弹", Reasons: []string{"会耗尽系统资源"}},
-	"chmod -R 777 /": {Level: SecurityLevelDangerous, Description: "递归修改根目录权限", Reasons: []string{"严重的安全风险"}},
-	"chown -R":      {Level: SecurityLevelDangerous, Description: "递归修改所有者", Reasons: []string{"可能破坏系统权限"}},
-	"mv /":          {Level: SecurityLevelDangerous, Description: "移动根目录", Reasons: []string{"会破坏系统结构"}},
-	"kill -9 -1":    {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
-	"killall9":     {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
+	":(){ :|:& };:":   {Level: SecurityLevelDangerous, Description: "fork 炸弹", Reasons: []string{"会耗尽系统资源"}},
+	"chmod -R 777 /":  {Level: SecurityLevelDangerous, Description: "递归修改根目录权限", Reasons: []string{"严重的安全风险"}},
+	"chown -R":        {Level: SecurityLevelDangerous, Description: "递归修改所有者", Reasons: []string{"可能破坏系统权限"}},
+	"mv /":            {Level: SecurityLevelDangerous, Description: "移动根目录", Reasons: []string{"会破坏系统结构"}},
+	"kill -9 -1":      {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
+	"killall9":        {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
 }
 
 // 需要特别审查的命令模式
@@ -72,12 +71,12 @@ var commandHistory []CommandExecutionRecord
 
 // CommandExecutionRecord 命令执行记录
 type CommandExecutionRecord struct {
-	Command      string
-	ExecutedAt   time.Time
-	ExitCode     int
-	Duration     time.Duration
+	Command       string
+	ExecutedAt    time.Time
+	ExitCode      int
+	Duration      time.Duration
 	SecurityLevel CommandSecurityLevel
-	Approved     bool
+	Approved      bool
 }
 
 // ExecuteCommandRequest 执行命令请求
@@ -180,9 +179,7 @@ func ExecuteCommand(ctx context.Context, req *ExecuteCommandRequest) (*ExecuteCo
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
 
 	// 设置进程组，便于控制子进程
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setupCmdProcessGroup(cmd)
 
 	// 执行命令
 	startTime := time.Now()
@@ -289,12 +286,12 @@ type GetSystemInfoRequest struct {
 
 // GetSystemInfoResponse 获取系统信息响应
 type GetSystemInfoResponse struct {
-	OS          string            `json:"os" jsonschema:"description=操作系统类型"`
-	Arch        string            `json:"arch" jsonschema:"description=系统架构"`
-	Shell       string            `json:"shell" jsonschema:"description=默认 shell"`
-	WorkingDir  string            `json:"working_dir" jsonschema:"description=当前工作目录"`
-	Environment map[string]string `json:"environment,omitempty" jsonschema:"description=环境变量（仅当 info_type 为 env 或 all 时返回）"`
-	ErrorMessage string           `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+	OS           string            `json:"os" jsonschema:"description=操作系统类型"`
+	Arch         string            `json:"arch" jsonschema:"description=系统架构"`
+	Shell        string            `json:"shell" jsonschema:"description=默认 shell"`
+	WorkingDir   string            `json:"working_dir" jsonschema:"description=当前工作目录"`
+	Environment  map[string]string `json:"environment,omitempty" jsonschema:"description=环境变量（仅当 info_type 为 env 或 all 时返回）"`
+	ErrorMessage string            `json:"error_message,omitempty" jsonschema:"description=错误信息"`
 }
 
 // GetSystemInfo 获取系统信息
