@@ -110,6 +110,7 @@ func (up Updater) Apply(rel *Release,
 	// 设置进度回调
 	downloader.OnProgress(func(loaded, total int64, rate string) {
 		progress := float64(loaded) / float64(total) * 100
+		fmt.Printf("新版本[%s], 开始下载...", rel.TagName)
 		fmt.Printf("\r进度: %.2f%% | 速度: %s | %d/%d 字节",
 			progress, rate, loaded, total)
 	})
@@ -119,8 +120,6 @@ func (up Updater) Apply(rel *Release,
 		fmt.Printf("下载失败: %v\n", err)
 		return err
 	}
-
-	fmt.Println("\n下载完成!")
 
 	// verifyChecksum validates file hash.
 	fmt.Println("Computing checksum with", algo)
