@@ -3,7 +3,7 @@ package cmder
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/tools"
+	"fkteams/tools/command"
 	"log"
 	"runtime"
 	"time"
@@ -16,7 +16,7 @@ func NewAgent() adk.Agent {
 	ctx := context.Background()
 
 	// 创建 CLI 操作工具
-	cliTools, err := tools.GetCLITools()
+	cliTools, err := command.GetCLITools()
 	if err != nil {
 		log.Fatal("创建 CLI 工具失败:", err)
 	}
