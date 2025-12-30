@@ -48,6 +48,7 @@ func main() {
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent:           a,
 		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
 	})
 
 	signals := make(chan os.Signal, 1)
@@ -64,7 +65,7 @@ func main() {
 				signals <- syscall.SIGTERM
 				return
 			}
-			iter := runner.Query(ctx, input)
+			iter := runner.Query(ctx, input, adk.WithCheckPointID("fkteams"))
 			for {
 				event, ok := iter.Next()
 				if !ok {
