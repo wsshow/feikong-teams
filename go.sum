@@ -188,8 +188,8 @@ github.com/twitchyliquid64/golang-asm v0.15.1 h1:SU5vSMR7hnwNxj24w34ZyCi/FmDZTkS
 github.com/twitchyliquid64/golang-asm v0.15.1/go.mod h1:a1lVb/DtPvCB8fslRZhAngC2+aY1QWCk3Cedj/Gdt08=
 github.com/wk8/go-ordered-map/v2 v2.1.8 h1:5h/BUHu93oj4gIdvHHHGsScSTMijfx5PeYkE/fJgbpc=
 github.com/wk8/go-ordered-map/v2 v2.1.8/go.mod h1:5nJHM5DyteebpVlHnWMV0rPz6Zp7+xBAnxjb1X5vnTw=
-github.com/wsshow/dl v1.0.2 h1:RcRB4Tlh8KsAHYST3sIzFE3TpRL7KxK9CBE4d3kKG5o=
-github.com/wsshow/dl v1.0.2/go.mod h1:7t8tK6t5Q/AdDthLjtJ97x4UTbGrAn3R4/wZ+KqYthk=
+github.com/wsshow/dl v1.0.3 h1:KWdCGY8J2/qsVYTEcpuSA5mAvOHvH7kg8nYOcqqWIoI=
+github.com/wsshow/dl v1.0.3/go.mod h1:7t8tK6t5Q/AdDthLjtJ97x4UTbGrAn3R4/wZ+KqYthk=
 github.com/wsshow/selfupdate v1.0.0 h1:lh22XOzoYrAmoq+o4Y5IrVpJs9pNorSVA8fApyEzK6o=
 github.com/wsshow/selfupdate v1.0.0/go.mod h1:KbzJQqAACEBNaj9OiGvxmTnZyjjCR77ts/XvlsYla2w=
 github.com/x-cray/logrus-prefixed-formatter v0.5.2 h1:00txxvfBM9muc0jiLIEAkAcIMJzfthRT6usrui8uGmg=
