@@ -3,7 +3,7 @@ module fkteams
 go 1.25.3
 
 require (
-	github.com/cloudwego/eino v0.7.12
+	github.com/cloudwego/eino v0.7.15
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20251223041451-fede3afb5715
 	github.com/joho/godotenv v1.5.1
