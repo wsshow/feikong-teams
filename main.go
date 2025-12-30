@@ -9,6 +9,8 @@ import (
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/common"
+	"fkteams/update"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -28,6 +30,18 @@ func init() {
 }
 
 func main() {
+
+	var checkUpdates bool
+	flag.BoolVar(&checkUpdates, "update", false, "检查更新并退出")
+	flag.Parse()
+
+	if checkUpdates {
+		err := update.SelfUpdate("wsshow", "feikong-teams")
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	err := godotenv.Load()
 	if err != nil {
