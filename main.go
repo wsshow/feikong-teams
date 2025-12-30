@@ -62,6 +62,8 @@ func main() {
 	var spinnerLiveText *pterm.SpinnerPrinter
 
 	go func() {
+		var msgs []adk.Message
+		var inputMessages []adk.Message
 		for {
 			input, _ := pterm.DefaultInteractiveTextInput.Show("请输入您的问题")
 			if input == "q" || input == "quit" || input == "" {
@@ -69,7 +71,21 @@ func main() {
 				signals <- syscall.SIGTERM
 				return
 			}
-			iter := runner.Query(ctx, input, adk.WithCheckPointID("fkteams"))
+
+			// 准备历史信息
+			inputMessages = []adk.Message{}
+			if len(msgs) > 0 {
+				historyMessage := ""
+				for _, msg := range msgs {
+					historyMessage += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
+				}
+				inputMessages = append(inputMessages, schema.UserMessage(historyMessage))
+			}
+			// 添加当前输入
+			inputMessages = append(inputMessages, schema.UserMessage(input))
+
+			iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
+			msgs = []adk.Message{}
 			for {
 				event, ok := iter.Next()
 				if !ok {
@@ -83,12 +99,19 @@ func main() {
 
 				if event.Output.MessageOutput.Role == schema.Tool {
 					spinnerLiveText.Success(fmt.Sprintf("[%s]工具调用完成: %s ", event.AgentName, event.Output.MessageOutput.ToolName))
+					fmt.Printf("工具返回结果: %s\n", event.Output.MessageOutput.Message.Content)
 					fmt.Println()
 					continue
 				}
 
 				if event.Output.MessageOutput.MessageStream == nil {
-					fmt.Printf("\n%s\n\n", event.Output.MessageOutput.Message)
+					if event.Output.MessageOutput.Message != nil && len(event.Output.MessageOutput.Message.ToolCalls) > 0 {
+						for _, toolcall := range event.Output.MessageOutput.Message.ToolCalls {
+							if toolcall.Function.Name == "transfer_to_agent" {
+								fmt.Printf("\n[%s] ==> [%s]\n\n", event.AgentName, toolcall.Function.Arguments)
+							}
+						}
+					}
 					continue
 				}
 
@@ -117,8 +140,19 @@ func main() {
 						fmt.Print(chunk.Content)
 					}
 
+					msgs = append(msgs, chunk)
+
 				}
 				fmt.Println()
+				// 记录历史信息
+				if len(msgs) > 0 {
+					concatMessages, err := schema.ConcatMessages(msgs)
+					if err != nil {
+						pterm.Error.Printfln("failed to concat messages: %v", err)
+						continue
+					}
+					msgs = []adk.Message{concatMessages}
+				}
 			}
 		}
 	}()
