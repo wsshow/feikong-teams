@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 	"github.com/cloudwego/eino/schema"
 	"github.com/joho/godotenv"
 	"github.com/pterm/pterm"
@@ -40,13 +41,16 @@ func main() {
 	leaderAgent := leader.NewAgent()
 
 	ctx, done := context.WithCancel(context.Background())
-	a, err := adk.SetSubAgents(ctx, leaderAgent, []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent})
+	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
+		Supervisor: leaderAgent,
+		SubAgents:  []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           a,
+		Agent:           supervisorAgent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
 	})
