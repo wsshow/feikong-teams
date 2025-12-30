@@ -10,7 +10,7 @@ import (
 	"fkteams/agents/storyteller"
 	"fkteams/common"
 	"fkteams/update"
-	"flag"
+	"fkteams/version"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +23,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/joho/godotenv"
 	"github.com/pterm/pterm"
+	"github.com/spf13/pflag"
 )
 
 func init() {
@@ -32,8 +33,16 @@ func init() {
 func main() {
 
 	var checkUpdates bool
-	flag.BoolVar(&checkUpdates, "update", false, "检查更新并退出")
-	flag.Parse()
+	var checkVersion bool
+	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
+	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
+	pflag.Parse()
+
+	if checkVersion {
+		info := version.Get()
+		fmt.Printf("fkteams: %s\n", info)
+		return
+	}
 
 	if checkUpdates {
 		err := update.SelfUpdate("wsshow", "feikong-teams")
