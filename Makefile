@@ -1,6 +1,6 @@
 Name = fkteams
 
-Version = 0.0.7
+Version = 0.0.1
 
 BuildTime = $(shell date +'%Y-%m-%d %H:%M:%S')
 
