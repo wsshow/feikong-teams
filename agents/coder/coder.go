@@ -3,7 +3,7 @@ package coder
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/tools"
+	toolFile "fkteams/tools/file"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,14 +30,14 @@ func NewAgent() adk.Agent {
 	codeDir := filepath.Join(execDir, "code")
 
 	// 初始化安全的文件系统
-	if err := tools.InitSecuredFileSystem(codeDir); err != nil {
+	if err := toolFile.InitSecuredFileSystem(codeDir); err != nil {
 		log.Fatal("初始化文件系统失败:", err)
 	}
 
 	log.Printf("文件工具已限制在目录: %s", codeDir)
 
 	// 创建文件操作工具
-	fileTools, err := tools.GetFileTools()
+	fileTools, err := toolFile.GetFileTools()
 	if err != nil {
 		log.Fatal(err)
 	}
