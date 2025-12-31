@@ -34,7 +34,7 @@ func NewAgent() adk.Agent {
 		log.Fatal("初始化文件系统失败:", err)
 	}
 
-	log.Printf("文件工具已限制在目录: %s", codeDir)
+	log.Printf("文件工具已限制在目录: %s", "./code")
 
 	// 创建文件操作工具
 	fileTools, err := toolFile.GetFileTools()
