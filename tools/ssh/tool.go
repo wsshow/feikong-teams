@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -21,14 +22,20 @@ func InitSSHClient(host, username, password string) error {
 		return fmt.Errorf("host, username 和 password 都是必需的")
 	}
 	globalSSHConn = &RemoteShellTool{
-		Client: NewClient(host, username, password),
+		Client: NewClient(username, password, host),
 	}
-	globalSSHConn.Client = nil
+	if err := globalSSHConn.Client.Connect(); err != nil {
+		log.Printf("%+v", globalSSHConn.Client)
+		return fmt.Errorf("SSH 连接失败: %v", err)
+	}
 	return nil
 }
 
 // CloseSSHClient 清除 SSH 连接信息
 func CloseSSHClient() {
+	if globalSSHConn != nil && globalSSHConn.Client != nil {
+		globalSSHConn.Client.Close()
+	}
 	globalSSHConn = nil
 }
 
@@ -79,12 +86,6 @@ func SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SSHExecuteRespons
 
 	// 3. 创建 SSH 连接
 	client := globalSSHConn.Client
-	if err := client.Connect(); err != nil {
-		return &SSHExecuteResponse{
-			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
-		}, nil
-	}
-	defer client.Close()
 
 	// 4. 执行命令并计时
 	startTime := time.Now()
@@ -154,12 +155,6 @@ func SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest) (*SSHFileUplo
 
 	// 创建 SSH 连接
 	client := globalSSHConn.Client
-	if err := client.Connect(); err != nil {
-		return &SSHFileUploadResponse{
-			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
-		}, nil
-	}
-	defer client.Close()
 
 	n, err := client.CopyLocalFileToRemote(req.LocalPath, req.RemotePath)
 	if err != nil {
@@ -203,12 +198,6 @@ func SSHFileDownload(ctx context.Context, req *SSHFileDownloadRequest) (*SSHFile
 
 	// 创建 SSH 连接
 	client := globalSSHConn.Client
-	if err := client.Connect(); err != nil {
-		return &SSHFileDownloadResponse{
-			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
-		}, nil
-	}
-	defer client.Close()
 
 	n, err := client.CopyRemoteFileToLocal(req.RemotePath, req.LocalPath)
 	if err != nil {
@@ -250,12 +239,6 @@ func SSHListDir(ctx context.Context, req *SSHListDirRequest) (*SSHListDirRespons
 
 	// 创建 SSH 连接
 	client := globalSSHConn.Client
-	if err := client.Connect(); err != nil {
-		return &SSHListDirResponse{
-			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
-		}, nil
-	}
-	defer client.Close()
 
 	fileNames, err := client.ReadRemoteDir(req.RemotePath)
 	if err != nil {
