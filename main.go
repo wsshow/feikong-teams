@@ -8,6 +8,7 @@ import (
 	"fkteams/agents/leader"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
+	"fkteams/agents/visitor"
 	"fkteams/common"
 	"fkteams/update"
 	"fkteams/version"
@@ -63,10 +64,16 @@ func main() {
 	cmderAgent := cmder.NewAgent()
 	leaderAgent := leader.NewAgent()
 
+	subAgents := []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent}
+	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
+		visitorAgent := visitor.NewAgent()
+		subAgents = append(subAgents, visitorAgent)
+	}
+
 	ctx, done := context.WithCancel(context.Background())
 	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
 		Supervisor: leaderAgent,
-		SubAgents:  []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent},
+		SubAgents:  subAgents,
 	})
 	if err != nil {
 		log.Fatal(err)
