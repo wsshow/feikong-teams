@@ -9,25 +9,21 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 )
 
-// SSHConnectionInfo SSH 连接信息
-type SSHConnectionInfo struct {
-	Host     string
-	Username string
-	Password string
+type RemoteShellTool struct {
+	Client *SshClient
 }
 
-var globalSSHConn *SSHConnectionInfo
+var globalSSHConn *RemoteShellTool
 
 // InitSSHClient 初始化 SSH 连接信息
 func InitSSHClient(host, username, password string) error {
 	if host == "" || username == "" || password == "" {
 		return fmt.Errorf("host, username 和 password 都是必需的")
 	}
-	globalSSHConn = &SSHConnectionInfo{
-		Host:     host,
-		Username: username,
-		Password: password,
+	globalSSHConn = &RemoteShellTool{
+		Client: NewClient(host, username, password),
 	}
+	globalSSHConn.Client = nil
 	return nil
 }
 
@@ -82,7 +78,7 @@ func SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SSHExecuteRespons
 	}
 
 	// 3. 创建 SSH 连接
-	client := NewClient(globalSSHConn.Username, globalSSHConn.Password, globalSSHConn.Host)
+	client := globalSSHConn.Client
 	if err := client.Connect(); err != nil {
 		return &SSHExecuteResponse{
 			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
@@ -157,7 +153,7 @@ func SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest) (*SSHFileUplo
 	}
 
 	// 创建 SSH 连接
-	client := NewClient(globalSSHConn.Username, globalSSHConn.Password, globalSSHConn.Host)
+	client := globalSSHConn.Client
 	if err := client.Connect(); err != nil {
 		return &SSHFileUploadResponse{
 			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
@@ -206,7 +202,7 @@ func SSHFileDownload(ctx context.Context, req *SSHFileDownloadRequest) (*SSHFile
 	}
 
 	// 创建 SSH 连接
-	client := NewClient(globalSSHConn.Username, globalSSHConn.Password, globalSSHConn.Host)
+	client := globalSSHConn.Client
 	if err := client.Connect(); err != nil {
 		return &SSHFileDownloadResponse{
 			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
@@ -253,7 +249,7 @@ func SSHListDir(ctx context.Context, req *SSHListDirRequest) (*SSHListDirRespons
 	}
 
 	// 创建 SSH 连接
-	client := NewClient(globalSSHConn.Username, globalSSHConn.Password, globalSSHConn.Host)
+	client := globalSSHConn.Client
 	if err := client.Connect(); err != nil {
 		return &SSHListDirResponse{
 			ErrorMessage: fmt.Sprintf("SSH 连接失败: %v", err),
