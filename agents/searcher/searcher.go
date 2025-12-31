@@ -3,7 +3,7 @@ package searcher
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/tools"
+	toolSearch "fkteams/tools/search"
 	"log"
 	"time"
 
@@ -14,7 +14,7 @@ import (
 
 func NewAgent() adk.Agent {
 	ctx := context.Background()
-	duckTool, err := tools.NewDuckDuckGoTool(ctx)
+	duckTool, err := toolSearch.NewDuckDuckGoTool(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
