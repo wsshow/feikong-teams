@@ -1,4 +1,4 @@
-package print
+package common
 
 import (
 	"fmt"
@@ -10,8 +10,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// Event 打印智能体事件信息
-func Event(event *adk.AgentEvent) {
+// PrintEvent 打印智能体事件信息
+func PrintEvent(event *adk.AgentEvent) {
 	fmt.Printf("name: %s\npath: %s", event.AgentName, event.RunPath)
 	if event.Output != nil && event.Output.MessageOutput != nil {
 		if m := event.Output.MessageOutput.Message; m != nil {

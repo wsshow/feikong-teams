@@ -85,7 +85,7 @@ func main() {
 	var spinnerLiveText *pterm.SpinnerPrinter
 
 	go func() {
-		var msgs []adk.Message
+		var msgs, chunks []adk.Message
 		var inputMessages []adk.Message
 		for {
 			input, _ := pterm.DefaultInteractiveTextInput.Show("请输入您的问题")
@@ -139,6 +139,7 @@ func main() {
 				}
 
 				toolTrigger.Reset()
+				chunks = []adk.Message{}
 
 				for {
 					chunk, err := event.Output.MessageOutput.MessageStream.Recv()
@@ -163,18 +164,18 @@ func main() {
 						fmt.Print(chunk.Content)
 					}
 
-					msgs = append(msgs, chunk)
+					chunks = append(chunks, chunk)
 
 				}
 				fmt.Println()
 				// 记录历史信息
-				if len(msgs) > 0 {
-					concatMessages, err := schema.ConcatMessages(msgs)
+				if len(chunks) > 0 {
+					concatMessages, err := common.ConcatMessages(chunks)
 					if err != nil {
 						pterm.Error.Printfln("failed to concat messages: %v", err)
 						continue
 					}
-					msgs = []adk.Message{concatMessages}
+					msgs = append(msgs, concatMessages)
 				}
 			}
 		}
