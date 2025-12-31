@@ -66,3 +66,7 @@ func NewAgent() adk.Agent {
 	}
 	return a
 }
+
+func CloseSSHClient() {
+	toolSSH.CloseSSHClient()
+}
