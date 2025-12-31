@@ -67,6 +67,7 @@ func main() {
 	subAgents := []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent}
 	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 		visitorAgent := visitor.NewAgent()
+		defer visitor.CloseSSHClient()
 		subAgents = append(subAgents, visitorAgent)
 	}
 
