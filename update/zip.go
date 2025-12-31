@@ -10,10 +10,6 @@ import (
 )
 
 // UnzipCallback 定义进度回调函数
-// processed: 已处理的文件数
-// total: 总文件数
-// fileName: 当前正在处理的文件名
-// isDir: 是否是目录
 type UnzipCallback func(processed int, total int, fileName string, isDir bool)
 
 // Unzip 带进度回调的解压函数
@@ -26,7 +22,8 @@ func Unzip(source, destination string, callback UnzipCallback) error {
 	defer reader.Close()
 
 	// 2. 确保目标目录存在
-	if err := os.MkdirAll(destination, 0755); err != nil {
+	destDir := filepath.Clean(destination)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
 
@@ -39,44 +36,65 @@ func Unzip(source, destination string, callback UnzipCallback) error {
 			callback(i+1, totalFiles, f.Name, f.FileInfo().IsDir())
 		}
 
-		fpath := filepath.Join(destination, f.Name)
-
-		// 安全检查 (Zip Slip)
-		if !strings.HasPrefix(fpath, filepath.Clean(destination)+string(os.PathSeparator)) {
-			return fmt.Errorf("%s: 非法的解压路径", fpath)
-		}
-
-		// 如果是目录
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
-			continue
-		}
-
-		// 创建文件所在的父目录
-		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-			return err
-		}
-
-		// 打开并创建文件
-		rc, err := f.Open()
+		// 将单个文件的处理逻辑抽取出来，便于使用 defer 管理资源
+		err := extractFile(f, destDir)
 		if err != nil {
-			return err
-		}
-
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			rc.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
-			return err
+			return fmt.Errorf("解压文件 %s 失败: %w", f.Name, err)
 		}
 	}
 	return nil
+}
+
+// extractFile 处理单个文件的解压逻辑
+func extractFile(f *zip.File, destDir string) error {
+	// 拼接路径
+	fpath := filepath.Join(destDir, f.Name)
+
+	// --- 安全检查 (Zip Slip) ---
+	// 必须校验 fpath 是否真的在 destDir 目录下
+	if !strings.HasPrefix(fpath, destDir+string(os.PathSeparator)) {
+		return fmt.Errorf("非法路径 (Zip Slip): %s", fpath)
+	}
+
+	// 如果是目录，直接创建
+	if f.FileInfo().IsDir() {
+		return os.MkdirAll(fpath, os.ModePerm)
+	}
+
+	// 确保父目录存在 (防止 Zip 中文件顺序乱序，即文件在目录之前出现)
+	if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+		return err
+	}
+
+	// --- 打开源文件 ---
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	// --- 修正文件权限 ---
+	// 如果 zip 来自不同系统，Mode 可能会有问题。
+	// 这里通过位运算确保当前用户至少有读写权限 (0600)，防止解压出无法操作的死文件
+	mode := f.Mode()
+	if mode&0200 == 0 { // 如果没有写权限
+		mode |= 0200 // 强制加上写权限
+	}
+
+	// --- 处理软链接 ---
+	if f.Mode()&os.ModeSymlink != 0 {
+		return nil // 跳过软链接处理
+	}
+
+	// --- 创建目标文件 ---
+	outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	// --- 写入数据 ---
+	// 为了防止大文件解压占用过多内存，io.Copy 是正确的选择
+	_, err = io.Copy(outFile, rc)
+	return err
 }

@@ -21,22 +21,21 @@ type Release struct {
 	Assets  []Asset `json:"assets"`
 }
 
-// Asset contains downloadable resource files.
+// Asset represents a downloadable asset in a release.
 type Asset struct {
 	Name               string `json:"name"`
 	ContentType        string `json:"content_type"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// IsCompressedFile checks if the file is in compressed format.
+// IsCompressedFile checks if the asset is a compressed file.
 func (a Asset) IsCompressedFile() bool {
 	return a.ContentType == "application/zip" || a.ContentType == "application/x-gzip"
 }
 
-// Updater handles version update checks and operations.
 type Updater struct{}
 
-// NewUpdater creates an update handler instance.
+// NewUpdater creates a new Updater instance.
 func NewUpdater() *Updater {
 	return new(Updater)
 }
@@ -108,11 +107,29 @@ func (up Updater) Apply(rel *Release,
 	downloader := dl.NewDownloader(url, dl.WithFileName(dstFilename))
 
 	// 设置进度回调
+	var lastProgress float64
 	downloader.OnProgress(func(loaded, total int64, rate string) {
 		progress := float64(loaded) / float64(total) * 100
-		fmt.Printf("新版本[%s], 开始下载...", rel.TagName)
-		fmt.Printf("\r进度: %.2f%% | 速度: %s | %d/%d 字节",
-			progress, rate, loaded, total)
+		// 只在进度变化超过0.5%时更新显示
+		if progress-lastProgress >= 0.5 || progress >= 100 {
+			lastProgress = progress
+
+			// 生成进度条
+			barWidth := 40
+			filledWidth := int(progress / 100 * float64(barWidth))
+			bar := ""
+			for i := range barWidth {
+				if i < filledWidth {
+					bar += "█"
+				} else {
+					bar += "░"
+				}
+			}
+
+			// 显示进度
+			fmt.Printf("\r[%s] %.2f%% | %s/%s | %s    ",
+				bar, progress, formatFileSize(float64(loaded)), formatFileSize(float64(total)), rate)
+		}
 	})
 
 	// 开始下载
@@ -121,24 +138,24 @@ func (up Updater) Apply(rel *Release,
 		return err
 	}
 
-	// verifyChecksum validates file hash.
-	fmt.Println("Computing checksum with", algo)
+	// 校验文件完整性
+	fmt.Printf("\n基于 %s 校验文件完整性...\n", algo)
 	if err = VerifyFile(algo, expectedChecksum, srcFilename); err != nil {
 		return err
 	}
-	fmt.Println("Checksums matched")
+	fmt.Printf("文件完整性校验通过\n")
 
-	// extractFile handles archive decompression.
+	// 解压缩文件（如果需要）
 	if rel.Assets[idx].IsCompressedFile() {
 		if dstFilename, err = up.unarchive(srcFilename, tmpDir); err != nil {
 			return err
 		}
 	}
 
-	// updateBinary replaces old executable.
+	// 应用更新
 	dstFile, err := os.Open(dstFilename)
 	if err != nil {
-		return nil
+		return err
 	}
 	defer dstFile.Close()
 	return selfupdate.Apply(dstFile, selfupdate.Options{})
@@ -146,13 +163,15 @@ func (up Updater) Apply(rel *Release,
 
 // unarchive extracts compressed files to target directory and returns first extracted file.
 func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) {
-	if err = Unzip(srcFile, dstDir, nil); err != nil {
+	if err = Unzip(srcFile, dstDir, func(processed, total int, fileName string, isDir bool) {
+		fmt.Printf("解压中... %d/%d 文件: %s\n", processed, total, fileName)
+	}); err != nil {
 		return "", err
 	}
 	// locateTargetFile finds the main executable after extraction.
 	fis, _ := os.ReadDir(dstDir)
 	for _, fi := range fis {
-		if strings.HasSuffix(srcFile, fi.Name()) {
+		if strings.HasSuffix(fi.Name(), ".md") || strings.HasSuffix(fi.Name(), ".zip") {
 			continue
 		}
 		return filepath.Join(dstDir, fi.Name()), nil
@@ -163,4 +182,24 @@ func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) 
 // IsHttpSuccess determines if the HTTP status code indicates successful response.
 func IsHttpSuccess(statusCode int) bool {
 	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
+}
+
+// formatFileSize converts file size in bytes to human-readable string.
+func formatFileSize(fileSize float64) string {
+	const (
+		KB = 1024.0
+		MB = KB * 1024.0
+		GB = MB * 1024.0
+	)
+
+	switch {
+	case fileSize >= GB:
+		return fmt.Sprintf("%.2f GB", fileSize/GB)
+	case fileSize >= MB:
+		return fmt.Sprintf("%.2f MB", fileSize/MB)
+	case fileSize >= KB:
+		return fmt.Sprintf("%.2f KB", fileSize/KB)
+	default:
+		return fmt.Sprintf("%.2f B", fileSize)
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/pterm/pterm"
 )
 
 func SelfUpdate(owner string, repo string) (err error) {
@@ -21,16 +22,17 @@ func SelfUpdate(owner string, repo string) (err error) {
 		return err
 	}
 	if !yes {
-		fmt.Printf("You are up to date! fkteams v%s is the latest version.\n", info.Version)
+		pterm.Info.Printfln("当前已是最新版本: %s", info.Version)
 		return nil
 	}
-	fmt.Printf("A new version of fkteams(%s) is available\n", latest.TagName)
+
+	pterm.Info.Printfln("发现新版本: %s，正在下载更新...", latest.TagName)
 
 	// 应用更新
 	if err = up.Apply(latest, findAsset, findChecksum); err != nil {
 		return err
 	}
-	fmt.Println("Update completed")
+	pterm.Success.Printfln("版本升级成功，当前版本: %s", latest.TagName)
 	return nil
 }
 
