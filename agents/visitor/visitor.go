@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents/common"
 	toolSSH "fkteams/tools/ssh"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -30,7 +31,7 @@ func NewAgent() adk.Agent {
 		log.Fatalf("初始化 SSH 客户端失败: %v", err)
 	}
 
-	log.Printf("SSH 访问者智能体已初始化，连接到: %s (用户: %s)", host, username)
+	fmt.Printf("[tips] SSH 访问者智能体已初始化，连接到: %s (用户: %s)\n", host, username)
 
 	// 创建 SSH 工具
 	sshTools, err := toolSSH.GetSSHTools()

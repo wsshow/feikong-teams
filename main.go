@@ -17,8 +17,10 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/c-bata/go-prompt"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 	"github.com/cloudwego/eino/schema"
@@ -29,6 +31,17 @@ import (
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+}
+
+func completer(d prompt.Document) []prompt.Suggest {
+	if d.GetWordBeforeCursor() == "" {
+		return []prompt.Suggest{}
+	}
+	s := []prompt.Suggest{
+		{Text: "quit", Description: "退出"},
+		{Text: "help", Description: "帮助信息"},
+	}
+	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
 func main() {
@@ -70,6 +83,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
+	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 
 	storytellerAgent := storyteller.NewAgent()
 	searcherAgent := searcher.NewAgent()
@@ -109,21 +123,33 @@ func main() {
 		var msgs, chunks []adk.Message
 		var inputMessages []adk.Message
 		for {
-			input, _ := pterm.DefaultInteractiveTextInput.Show("请输入您的问题")
+			input := prompt.Input("请输入您的问题: ",
+				completer,
+				prompt.OptionTitle("FeiKong Teams"),
+				prompt.OptionPrefixTextColor(prompt.Cyan),
+				prompt.OptionSuggestionTextColor(prompt.White),
+				prompt.OptionSuggestionBGColor(prompt.Black),
+				prompt.OptionDescriptionTextColor(prompt.White),
+				prompt.OptionDescriptionBGColor(prompt.Black),
+			)
 			if input == "q" || input == "quit" || input == "" {
 				pterm.Info.Println("谢谢使用，再见！")
 				signals <- syscall.SIGTERM
 				return
 			}
+			if input == "help" {
+				pterm.Println("帮助信息: 输入您的问题以获取回答，输入 'quit' 或 'q' 退出程序。")
+				continue
+			}
 
 			// 准备历史信息
 			inputMessages = []adk.Message{}
 			if len(msgs) > 0 {
-				historyMessage := ""
+				var historyMessage strings.Builder
 				for _, msg := range msgs {
-					historyMessage += fmt.Sprintf("%s: %s\n", msg.Role, msg.Content)
+					fmt.Fprintf(&historyMessage, "%s: %s\n", msg.Role, msg.Content)
 				}
-				inputMessages = append(inputMessages, schema.UserMessage(historyMessage))
+				inputMessages = append(inputMessages, schema.UserMessage(historyMessage.String()))
 			}
 			// 添加当前输入
 			inputMessages = append(inputMessages, schema.UserMessage(input))

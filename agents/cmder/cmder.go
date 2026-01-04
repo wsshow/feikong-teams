@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/tools/command"
+	"fmt"
 	"log"
 	"runtime"
 	"time"
@@ -21,7 +22,7 @@ func NewAgent() adk.Agent {
 		log.Fatal("创建 CLI 工具失败:", err)
 	}
 
-	log.Printf("命令行智能体已初始化，运行在 %s/%s 平台", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("[tips] 命令行智能体已初始化，运行在 %s/%s 平台\n", runtime.GOOS, runtime.GOARCH)
 
 	// 格式化系统消息
 	systemMessages, err := CmderPromptTemplate.Format(ctx, map[string]any{
