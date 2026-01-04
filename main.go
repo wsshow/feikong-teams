@@ -33,10 +33,14 @@ func init() {
 
 func main() {
 
-	var checkUpdates bool
-	var checkVersion bool
+	var (
+		checkUpdates bool
+		checkVersion bool
+		generateEnv  bool
+	)
 	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
 	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
+	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
 	pflag.Parse()
 
 	if checkVersion {
@@ -50,6 +54,15 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		return
+	}
+
+	if generateEnv {
+		err := common.GenerateExampleEnv(".env.example")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("成功生成示例.env文件: .env.example")
 		return
 	}
 
