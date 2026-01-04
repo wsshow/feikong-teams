@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/leader"
@@ -177,8 +178,30 @@ func main() {
 
 				if event.Output.MessageOutput.Role == schema.Tool {
 					spinnerLiveText.Success(fmt.Sprintf("[%s]工具调用完成: %s ", event.AgentName, event.Output.MessageOutput.ToolName))
+
+					if event.Output.MessageOutput.ToolName == "ssh_execute" {
+						type SSHExecuteResponse struct {
+							Output        string `json:"output" jsonschema:"description=命令输出内容（包含 stdout 和 stderr）"`
+							ExecutionTime string `json:"execution_time" jsonschema:"description=执行时长"`
+							ErrorMessage  string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+						}
+						var resp SSHExecuteResponse
+						err = json.Unmarshal([]byte(event.Output.MessageOutput.Message.Content), &resp)
+						if err != nil {
+							fmt.Printf("解析工具返回结果失败: %v\n", err)
+							continue
+						}
+						if resp.ErrorMessage != "" {
+							pterm.Error.Printfln("命令执行错误: %s", resp.ErrorMessage)
+						} else {
+							fmt.Printf("命令输出:\n%s\n", resp.Output)
+							fmt.Printf("执行耗时: %s\n", resp.ExecutionTime)
+						}
+						continue
+					}
+
 					fmt.Printf("工具返回结果: %s\n", event.Output.MessageOutput.Message.Content)
-					fmt.Println()
+
 					continue
 				}
 
@@ -211,7 +234,11 @@ func main() {
 								fmt.Println()
 								spinnerLiveText, _ = pterm.DefaultSpinner.Start("正在准备工具调用参数...")
 							})
-							spinnerLiveText.UpdateText(fmt.Sprintf("正在准备工具调用参数...%20.20s", hex.EncodeToString([]byte(tc.Function.Arguments))))
+							if strings.HasPrefix(tc.Function.Name, "file_") {
+								spinnerLiveText.UpdateText(fmt.Sprintf("正在准备工具调用参数...%20.20s", hex.EncodeToString([]byte(tc.Function.Arguments))))
+								continue
+							}
+							fmt.Printf("[%s] %s\n\n", tc.Function.Name, tc.Function.Arguments)
 						}
 					}
 
