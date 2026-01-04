@@ -119,6 +119,12 @@ func main() {
 	toolTrigger := common.NewOnceWithReset()
 	var spinnerLiveText *pterm.SpinnerPrinter
 
+	inputHistoryPath := "./history/fkteams_history"
+	inputHistory, err := common.LoadHistory(inputHistoryPath, 100)
+	if err != nil {
+		log.Fatalf("加载输入历史失败: %v", err)
+	}
+
 	go func() {
 		var msgs, chunks []adk.Message
 		var inputMessages []adk.Message
@@ -131,6 +137,7 @@ func main() {
 				prompt.OptionSuggestionBGColor(prompt.Black),
 				prompt.OptionDescriptionTextColor(prompt.White),
 				prompt.OptionDescriptionBGColor(prompt.Black),
+				prompt.OptionHistory(inputHistory),
 			)
 			if input == "q" || input == "quit" || input == "" {
 				pterm.Info.Println("谢谢使用，再见！")
@@ -141,6 +148,7 @@ func main() {
 				pterm.Println("帮助信息: 输入您的问题以获取回答，输入 'quit' 或 'q' 退出程序。")
 				continue
 			}
+			inputHistory = append(inputHistory, input)
 
 			// 准备历史信息
 			inputMessages = []adk.Message{}
@@ -203,7 +211,7 @@ func main() {
 								fmt.Println()
 								spinnerLiveText, _ = pterm.DefaultSpinner.Start("正在准备工具调用参数...")
 							})
-							spinnerLiveText.UpdateText(fmt.Sprintf("正在准备工具调用参数...%s", hex.EncodeToString([]byte(tc.Function.Arguments))))
+							spinnerLiveText.UpdateText(fmt.Sprintf("正在准备工具调用参数...%20.20s", hex.EncodeToString([]byte(tc.Function.Arguments))))
 						}
 					}
 
@@ -230,6 +238,12 @@ func main() {
 
 	sig := <-signals
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
+
 	done()
+	err = common.SaveHistory(inputHistoryPath, inputHistory)
+	if err != nil {
+		log.Fatalf("保存输入历史失败: %v", err)
+	}
+
 	pterm.Success.Println("成功退出")
 }

@@ -1,6 +1,8 @@
 package common
 
-import "os"
+import (
+	"os"
+)
 
 func GenerateExampleEnv(filePath string) error {
 	exampleContent := `# 这是一个示例的环境变量配置文件
