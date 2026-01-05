@@ -19,6 +19,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/atotto/clipboard"
 	"github.com/c-bata/go-prompt"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
@@ -131,6 +132,13 @@ func main() {
 
 	go func() {
 		var inputMessages []adk.Message
+		pasteKeyBind := prompt.KeyBind{
+			Key: prompt.ControlV,
+			Fn: func(buf *prompt.Buffer) {
+				text, _ := clipboard.ReadAll()
+				buf.InsertText(fmt.Sprintf("%s\n", text), false, true)
+			},
+		}
 		for {
 			input := prompt.Input("请输入您的问题: ",
 				completer,
@@ -141,6 +149,7 @@ func main() {
 				prompt.OptionDescriptionTextColor(prompt.White),
 				prompt.OptionDescriptionBGColor(prompt.Black),
 				prompt.OptionHistory(inputHistory),
+				prompt.OptionAddKeyBind(pasteKeyBind),
 			)
 			if input == "q" || input == "quit" || input == "" {
 				pterm.Info.Println("谢谢使用，再见！")
