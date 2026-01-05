@@ -71,7 +71,7 @@ make build
 启动后，在命令行输入你的问题或任务：
 
 ```
-请输入您的问题: 帮我创建一个 Python 的 Hello World 程序
+请输入您的问题: 帮我写几篇相互关联的小小说，然后创建一个网站来展示这些小说。
 ```
 
 输入 `q`、`quit` 或直接回车退出程序。
@@ -81,6 +81,7 @@ make build
 - **文件操作限制**：小码智能体的文件操作被限制在可执行文件同级的 `code/` 目录下，防止误操作系统文件
 - **命令执行权限**：小令智能体会根据当前操作系统类型（Windows/Linux/macOS）执行相应的命令
 - **SSH 连接管理**：小访智能体通过 SSH 连接远程服务器，确保连接信息安全存储和使用
+- **日志记录**：所有智能体的操作和输出都会被记录，可以主动输出成 markdown 文件，便于审计和调试
 - **工具调用可视化**：所有工具调用都会在终端显示，提供透明度
 - **环境变量保护**：请确保 `.env` 文件不被泄露，避免敏感信息外泄
 
@@ -99,5 +100,6 @@ make build
 
 ## 致谢
 
-- [Cloudwego Eino](https://github.com/cloudwego/eino) - 强大的 AI 编程框架
+- [go-prompt](https://github.com/c-bata/go-prompt) - 交互式命令行提示库
 - [Pterm](https://github.com/pterm/pterm) - 美观的终端 UI 库
+- [Cloudwego Eino](https://github.com/cloudwego/eino) - 强大的 AI 编程框架
