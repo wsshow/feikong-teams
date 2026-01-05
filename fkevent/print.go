@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var PrintEvent = printEvent()
@@ -43,6 +44,8 @@ func printEvent() func(Event) {
 					formatted = formatFileOpResult(event.Content)
 				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)
+				case "todo_add", "todo_list", "todo_update", "todo_delete":
+					formatted = formatTodoResult(event.Content, lastToolName)
 				}
 
 				if formatted != "" {
@@ -375,4 +378,163 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+// formatTodoResult 格式化待办事项操作结果
+func formatTodoResult(content string, toolName string) string {
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return ""
+	}
+
+	var output strings.Builder
+
+	// 检查操作是否成功
+	success, _ := result["success"].(bool)
+	errorMsg, _ := result["error_message"].(string)
+
+	if !success || errorMsg != "" {
+		output.WriteString(fmt.Sprintf("  \033[31m✗ 操作失败: %s\033[0m\n", errorMsg))
+		return output.String()
+	}
+
+	output.WriteString("  \033[32m✓ 操作成功\033[0m\n")
+
+	// 显示消息
+	if msg, ok := result["message"].(string); ok && msg != "" {
+		output.WriteString(fmt.Sprintf("  %s\n", msg))
+	}
+
+	// 根据不同工具类型显示不同内容
+	switch toolName {
+	case "todo_add", "todo_update":
+		// 显示单个待办事项
+		if todoData, ok := result["todo"].(map[string]interface{}); ok {
+			output.WriteString("\n")
+			output.WriteString(formatSingleTodo(todoData))
+		}
+
+	case "todo_list":
+		// 显示待办事项列表
+		if todosData, ok := result["todos"].([]interface{}); ok {
+			totalCount, _ := result["total_count"].(float64)
+			output.WriteString(fmt.Sprintf("\n  \033[1m共 %d 个待办事项:\033[0m\n\n", int(totalCount)))
+
+			if len(todosData) == 0 {
+				output.WriteString("  \033[90m（暂无待办事项）\033[0m\n")
+			} else {
+				for i, todoItem := range todosData {
+					if todoMap, ok := todoItem.(map[string]interface{}); ok {
+						output.WriteString(formatSingleTodo(todoMap))
+						// 在每个待办事项之间添加分隔线
+						if i < len(todosData)-1 {
+							output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
+						}
+					}
+				}
+			}
+		}
+
+	case "todo_delete":
+		// 删除操作不需要额外显示
+	}
+
+	return output.String()
+}
+
+// formatSingleTodo 格式化单个待办事项
+func formatSingleTodo(todo map[string]interface{}) string {
+	var output strings.Builder
+
+	// 获取字段
+	id, _ := todo["id"].(string)
+	title, _ := todo["title"].(string)
+	description, _ := todo["description"].(string)
+	status, _ := todo["status"].(string)
+	priority, _ := todo["priority"].(string)
+
+	// 状态图标和颜色
+	statusIcon := "○"
+	statusColor := "\033[90m" // 灰色
+	statusText := status
+
+	switch status {
+	case "pending":
+		statusIcon = "○"
+		statusColor = "\033[90m" // 灰色
+		statusText = "待处理"
+	case "in_progress":
+		statusIcon = "◐"
+		statusColor = "\033[36m" // 青色
+		statusText = "进行中"
+	case "completed":
+		statusIcon = "●"
+		statusColor = "\033[32m" // 绿色
+		statusText = "已完成"
+	case "cancelled":
+		statusIcon = "✕"
+		statusColor = "\033[31m" // 红色
+		statusText = "已取消"
+	}
+
+	// 优先级颜色
+	priorityColor := "\033[0m" // 默认
+	priorityText := priority
+
+	switch priority {
+	case "low":
+		priorityColor = "\033[90m" // 灰色
+		priorityText = "低"
+	case "medium":
+		priorityColor = "\033[33m" // 黄色
+		priorityText = "中"
+	case "high":
+		priorityColor = "\033[35m" // 紫色
+		priorityText = "高"
+	case "urgent":
+		priorityColor = "\033[31m" // 红色
+		priorityText = "紧急"
+	}
+
+	// 显示标题行（状态 + 标题 + 优先级）
+	output.WriteString(fmt.Sprintf("  %s%s\033[0m \033[1m%s\033[0m", statusColor, statusIcon, title))
+	if priority != "" {
+		output.WriteString(fmt.Sprintf(" %s[%s]\033[0m", priorityColor, priorityText))
+	}
+	output.WriteString("\n")
+
+	// 显示状态
+	output.WriteString(fmt.Sprintf("  │ 状态: %s%s\033[0m\n", statusColor, statusText))
+
+	// 显示 ID（灰色小字）
+	if id != "" {
+		output.WriteString(fmt.Sprintf("  │ \033[90mID: %s\033[0m\n", truncateString(id, 30)))
+	}
+
+	// 显示描述
+	if description != "" {
+		output.WriteString(fmt.Sprintf("  │ 描述: %s\n", description))
+	}
+
+	// 显示时间信息
+	if createdAt, ok := todo["created_at"].(string); ok && createdAt != "" {
+		output.WriteString(fmt.Sprintf("  │ \033[90m创建时间: %s\033[0m\n", formatTime(createdAt)))
+	}
+	if completedAt, ok := todo["completed_at"].(string); ok && completedAt != "" {
+		output.WriteString(fmt.Sprintf("  │ \033[90m完成时间: %s\033[0m\n", formatTime(completedAt)))
+	}
+
+	output.WriteString("\n")
+
+	return output.String()
+}
+
+// formatTime 格式化时间显示
+func formatTime(timeStr string) string {
+	// 尝试解析 ISO 8601 格式
+	t, err := time.Parse(time.RFC3339, timeStr)
+	if err != nil {
+		return timeStr
+	}
+	return t.Format("2006-01-02 15:04:05")
 }
