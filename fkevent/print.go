@@ -58,8 +58,18 @@ func printEvent() func(Event) {
 			// 工具结果流式输出块
 			fmt.Printf("%s", event.Content)
 
+		case "tool_calls_preparing":
+			// 工具调用准备中（参数收集阶段）
+			for _, tool := range event.ToolCalls {
+				if tool.Function.Name != "" {
+					fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, tool.Function.Name)
+					// 记录工具名称
+					lastToolName = tool.Function.Name
+				}
+			}
+
 		case "tool_calls":
-			// 工具调用信息
+			// 工具调用信息（参数已准备完成）
 			fmt.Printf("\n\033[1;35m[%s] 调用工具:\033[0m\n", event.AgentName)
 			for i, tool := range event.ToolCalls {
 				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, tool.Function.Name)

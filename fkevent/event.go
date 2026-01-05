@@ -85,6 +85,8 @@ func handleRegularMessage(event *adk.AgentEvent, msg *schema.Message) error {
 
 func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
 	toolCallsMap := make(map[int][]*schema.Message)
+	toolCallStarted := make(map[int]bool) // 记录哪些工具调用已经发送了开始提示
+
 	for {
 		chunk, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -118,6 +120,25 @@ func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *sc
 		if len(chunk.ToolCalls) > 0 {
 			for _, tc := range chunk.ToolCalls {
 				if tc.Index != nil {
+					// 如果这是该工具调用的第一个 chunk，立即显示准备提示
+					if !toolCallStarted[*tc.Index] && tc.Function.Name != "" {
+						toolCallStarted[*tc.Index] = true
+						if err := handleEvent(Event{
+							Type:      "tool_calls_preparing",
+							AgentName: event.AgentName,
+							RunPath:   formatRunPath(event.RunPath),
+							ToolCalls: []schema.ToolCall{
+								{
+									Function: schema.FunctionCall{
+										Name: tc.Function.Name,
+									},
+								},
+							},
+						}); err != nil {
+							return err
+						}
+					}
+
 					toolCallsMap[*tc.Index] = append(toolCallsMap[*tc.Index], &schema.Message{
 						Role: chunk.Role,
 						ToolCalls: []schema.ToolCall{
