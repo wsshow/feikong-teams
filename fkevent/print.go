@@ -39,7 +39,7 @@ func printEvent() func(Event) {
 					formatted = formatSearchResults(event.Content)
 				case "execute_command", "command_execute":
 					formatted = formatCommandResult(event.Content)
-				case "read_file", "write_file", "list_directory", "create_file", "delete_file":
+				case "file_read", "file_write", "file_append", "file_modify", "file_insert", "file_list", "file_create", "file_delete", "dir_create", "dir_delete":
 					formatted = formatFileOpResult(event.Content)
 				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)
@@ -222,6 +222,8 @@ func formatFileOpResult(content string) string {
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return ""
 	}
+
+	result.Success = result.ErrorMessage == ""
 
 	var output strings.Builder
 
