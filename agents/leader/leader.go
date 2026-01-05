@@ -52,10 +52,11 @@ func NewAgent() adk.Agent {
 	instruction := systemMessages[0].Content
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "统御",
-		Description: "团队管理者，善于规划和分配任务。",
-		Instruction: instruction,
-		Model:       common.NewChatModel(),
+		Name:          "统御",
+		Description:   "团队管理者，善于规划和分配任务。",
+		Instruction:   instruction,
+		Model:         common.NewChatModel(),
+		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: todoTools,

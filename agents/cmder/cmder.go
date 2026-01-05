@@ -37,10 +37,11 @@ func NewAgent() adk.Agent {
 
 	// 创建智能体
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "小令",
-		Description: "命令行专家，擅长通过命令行操作完成任务，能够根据操作系统环境执行合适的命令。",
-		Instruction: instruction,
-		Model:       common.NewChatModel(),
+		Name:          "小令",
+		Description:   "命令行专家，擅长通过命令行操作完成任务，能够根据操作系统环境执行合适的命令。",
+		Instruction:   instruction,
+		Model:         common.NewChatModel(),
+		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: cliTools,

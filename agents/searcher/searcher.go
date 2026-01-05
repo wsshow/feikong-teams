@@ -26,10 +26,11 @@ func NewAgent() adk.Agent {
 	}
 	instruction := systemMessages[0].Content
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "小搜",
-		Description: "搜索专家，擅长通过DuckDuckGo提供准确的信息搜索服务。",
-		Instruction: instruction,
-		Model:       common.NewChatModel(),
+		Name:          "小搜",
+		Description:   "搜索专家，擅长通过DuckDuckGo提供准确的信息搜索服务。",
+		Instruction:   instruction,
+		Model:         common.NewChatModel(),
+		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: []tool.BaseTool{duckTool},

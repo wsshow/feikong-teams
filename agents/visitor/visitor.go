@@ -52,10 +52,11 @@ func NewAgent() adk.Agent {
 
 	// 创建智能体
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "小访",
-		Description: "远程访问专家，擅长通过 SSH 连接远程服务器，执行命令、传输文件和管理远程系统。",
-		Instruction: instruction,
-		Model:       common.NewChatModel(),
+		Name:          "小访",
+		Description:   "远程访问专家，擅长通过 SSH 连接远程服务器，执行命令、传输文件和管理远程系统。",
+		Instruction:   instruction,
+		Model:         common.NewChatModel(),
+		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: sshTools,

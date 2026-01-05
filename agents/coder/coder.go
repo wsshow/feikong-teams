@@ -54,10 +54,11 @@ func NewAgent() adk.Agent {
 
 	// 创建智能体
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "小码",
-		Description: "代码专家，擅长读写和处理代码文件，能够帮助用户完成各种编程任务。",
-		Instruction: instruction,
-		Model:       common.NewChatModel(),
+		Name:          "小码",
+		Description:   "代码专家，擅长读写和处理代码文件，能够帮助用户完成各种编程任务。",
+		Instruction:   instruction,
+		Model:         common.NewChatModel(),
+		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: fileTools,

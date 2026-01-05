@@ -20,10 +20,11 @@ func NewAgent() adk.Agent {
 	instruction := systemMessages[0].Content
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "小天",
-		Description: "讲故事专家，擅长编写引人入胜的故事。",
-		Instruction: instruction,
-		Model:       common.NewChatModel(),
+		Name:          "小天",
+		Description:   "讲故事专家，擅长编写引人入胜的故事。",
+		Instruction:   instruction,
+		Model:         common.NewChatModel(),
+		MaxIterations: common.MaxIterations,
 	})
 	if err != nil {
 		log.Fatal(err)
