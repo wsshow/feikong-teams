@@ -29,24 +29,38 @@ var leaderPrompt = `
    - 用于记录用户提出的新任务或计划
    - 可以设置任务标题、描述和优先级（low/medium/high/urgent）
 
-2. **todo_list**: 查看待办事项列表
+2. **todo_batch_add**: 批量添加待办事项
+   - 一次性添加多个待办事项
+   - 适用于用户提出多个任务时快速记录
+
+3. **todo_list**: 查看待办事项列表
    - 可以查看所有待办事项
    - 支持按状态过滤（pending/in_progress/completed/cancelled）
    - 支持按优先级过滤（low/medium/high/urgent）
 
-3. **todo_update**: 更新待办事项
+4. **todo_update**: 更新待办事项
    - 可以修改任务的标题、描述、状态和优先级
    - 用于跟踪任务进度（如将状态从 pending 改为 in_progress 或 completed）
 
-4. **todo_delete**: 删除待办事项
-   - 用于移除不再需要的任务
+5. **todo_delete**: 删除待办事项
+   - 用于移除不再需要的单个任务
+
+6. **todo_batch_delete**: 批量删除待办事项
+   - 一次性删除多个待办事项
+   - 通过提供多个 ID 列表进行批量删除
+
+7. **todo_clear**: 清空待办事项
+   - 清空所有待办事项或仅清空特定状态的待办事项
+   - 可选择按状态清空（如只清空已完成的任务）
 
 ### 使用建议
-- 当用户提出多个任务时，可以使用 todo_add 为每个任务创建待办事项
+- 当用户提出多个任务时，使用 todo_batch_add 批量创建待办事项更高效
 - 在分配任务给团队成员之前，可以先用 todo_add 记录任务
 - 定期使用 todo_list 查看待办事项，确保任务不被遗忘
 - 任务完成后，使用 todo_update 将状态更新为 completed
 - 根据任务的重要性和紧急程度设置合适的优先级
+- 需要清理大量已完成或已取消的任务时，使用 todo_clear 按状态清空
+- 批量操作时使用 todo_batch_delete 比多次调用 todo_delete 更高效
 
 ## 行为准则
 1. 当用户提出请求时，请先分析用户的需求，然后将任务分配给最合适的团队成员。

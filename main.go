@@ -41,6 +41,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "load_chat_history", Description: "加载聊天历史"},
 		{Text: "save_chat_history", Description: "保存聊天历史"},
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
+		{Text: "clear_todo", Description: "清空待办事项"},
 		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
 	}
@@ -177,6 +178,15 @@ func main() {
 				} else {
 					pterm.Success.Printfln("成功保存聊天历史到 Markdown 文件: %s", filePath)
 				}
+				continue
+			}
+			if input == "clear_todo" {
+				err := leader.ClearTodoTool()
+				if err != nil {
+					pterm.Error.Printfln("清空待办事项失败: %v", err)
+					continue
+				}
+				pterm.Success.Println("成功清空待办事项")
 				continue
 			}
 			inputHistory = append(inputHistory, input)

@@ -44,7 +44,7 @@ func printEvent() func(Event) {
 					formatted = formatFileOpResult(event.Content)
 				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)
-				case "todo_add", "todo_list", "todo_update", "todo_delete":
+				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
 					formatted = formatTodoResult(event.Content, lastToolName)
 				}
 
@@ -414,6 +414,23 @@ func formatTodoResult(content string, toolName string) string {
 			output.WriteString(formatSingleTodo(todoData))
 		}
 
+	case "todo_batch_add":
+		// 显示批量添加的待办事项
+		if todosData, ok := result["added_todos"].([]interface{}); ok {
+			addedCount, _ := result["added_count"].(float64)
+			output.WriteString(fmt.Sprintf("\n  \033[1m已添加 %d 个待办事项:\033[0m\n\n", int(addedCount)))
+
+			for i, todoItem := range todosData {
+				if todoMap, ok := todoItem.(map[string]interface{}); ok {
+					output.WriteString(formatSingleTodo(todoMap))
+					// 在每个待办事项之间添加分隔线
+					if i < len(todosData)-1 {
+						output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
+					}
+				}
+			}
+		}
+
 	case "todo_list":
 		// 显示待办事项列表
 		if todosData, ok := result["todos"].([]interface{}); ok {
@@ -437,6 +454,29 @@ func formatTodoResult(content string, toolName string) string {
 
 	case "todo_delete":
 		// 删除操作不需要额外显示
+
+	case "todo_batch_delete":
+		// 显示批量删除的结果
+		if deletedCount, ok := result["deleted_count"].(float64); ok {
+			output.WriteString(fmt.Sprintf("\n  已删除 %d 个待办事项\n", int(deletedCount)))
+		}
+		// 如果有未找到的 ID，显示出来
+		if notFoundIDs, ok := result["not_found_ids"].([]interface{}); ok && len(notFoundIDs) > 0 {
+			output.WriteString(fmt.Sprintf("  \033[33m注意: %d 个 ID 未找到\033[0m\n", len(notFoundIDs)))
+			if len(notFoundIDs) <= 5 {
+				for _, id := range notFoundIDs {
+					if idStr, ok := id.(string); ok {
+						output.WriteString(fmt.Sprintf("    - %s\n", idStr))
+					}
+				}
+			}
+		}
+
+	case "todo_clear":
+		// 显示清空的结果
+		if clearedCount, ok := result["cleared_count"].(float64); ok {
+			output.WriteString(fmt.Sprintf("\n  已清空 %d 个待办事项\n", int(clearedCount)))
+		}
 	}
 
 	return output.String()

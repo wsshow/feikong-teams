@@ -68,3 +68,7 @@ func NewAgent() adk.Agent {
 	}
 	return a
 }
+
+func ClearTodoTool() error {
+	return todo.ClearTodoTool()
+}
