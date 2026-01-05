@@ -38,6 +38,10 @@ func completer(d prompt.Document) []prompt.Suggest {
 	}
 	s := []prompt.Suggest{
 		{Text: "quit", Description: "退出"},
+		{Text: "load_chat_history", Description: "加载聊天历史"},
+		{Text: "save_chat_history", Description: "保存聊天历史"},
+		{Text: "clear_chat_history", Description: "清空聊天历史"},
+		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
 	}
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
@@ -115,14 +119,13 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	inputHistoryPath := "./history/fkteams_history"
+	inputHistoryPath := "./history/input_history/fkteams_input_history"
 	inputHistory, err := common.LoadHistory(inputHistoryPath, 100)
 	if err != nil {
 		log.Fatalf("加载输入历史失败: %v", err)
 	}
 
 	go func() {
-		var msgs []adk.Message
 		var inputMessages []adk.Message
 		for {
 			input := prompt.Input("请输入您的问题: ",
@@ -144,19 +147,56 @@ func main() {
 				pterm.Println("帮助信息: 输入您的问题以获取回答，输入 'quit' 或 'q' 退出程序。")
 				continue
 			}
-			inputHistory = append(inputHistory, input)
-			inputMessages = []adk.Message{}
-			if len(msgs) > 0 {
-				var historyMessage strings.Builder
-				for _, msg := range msgs {
-					fmt.Fprintf(&historyMessage, "%s: %s\n", msg.Role, msg.Content)
+			if input == "load_chat_history" {
+				err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile()
+				if err != nil {
+					pterm.Error.Printfln("加载聊天历史失败: %v", err)
+				} else {
+					pterm.Success.Println("成功加载聊天历史")
 				}
-				inputMessages = append(inputMessages, schema.UserMessage(historyMessage.String()))
+				continue
 			}
+			if input == "save_chat_history" {
+				err := fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
+				if err != nil {
+					pterm.Error.Printfln("保存聊天历史失败: %v", err)
+				} else {
+					pterm.Success.Println("成功保存聊天历史")
+				}
+				continue
+			}
+			if input == "clear_chat_history" {
+				fkevent.GlobalHistoryRecorder.Clear()
+				pterm.Success.Println("成功清空当前聊天历史")
+				continue
+			}
+			if input == "save_chat_history_to_markdown" {
+				filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
+				if err != nil {
+					pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
+				} else {
+					pterm.Success.Printfln("成功保存聊天历史到 Markdown 文件: %s", filePath)
+				}
+				continue
+			}
+			inputHistory = append(inputHistory, input)
+
+			// 构建消息列表（包含历史对话）
+			inputMessages = []adk.Message{}
+			agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
+			if len(agentMessages) > 0 {
+				var historyMessage strings.Builder
+				for _, agentMessage := range agentMessages {
+					fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.Content)
+				}
+				inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
+			}
+			// 添加当前用户输入
 			inputMessages = append(inputMessages, schema.UserMessage(input))
+			// 记录用户输入到历史
+			fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
 			iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
-			msgs = []adk.Message{}
 			for {
 				event, ok := iter.Next()
 				if !ok {
@@ -176,6 +216,7 @@ func main() {
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
 
 	done()
+
 	err = common.SaveHistory(inputHistoryPath, inputHistory)
 	if err != nil {
 		log.Fatalf("保存输入历史失败: %v", err)

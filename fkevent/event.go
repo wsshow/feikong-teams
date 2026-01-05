@@ -202,6 +202,6 @@ func handleAction(event *adk.AgentEvent) error {
 }
 
 func handleEvent(event Event) error {
-	PrintEvent(event)
+	RecordEventWithHistory(event)
 	return nil
 }
