@@ -98,6 +98,10 @@ make build
 # 例如：os-archs=darwin:arm64 linux:amd64 windows:amd64
 ```
 
+## 许可证
+
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+
 ## 致谢
 
 - [go-prompt](https://github.com/c-bata/go-prompt) - 交互式命令行提示库
