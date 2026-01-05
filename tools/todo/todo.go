@@ -59,6 +59,15 @@ func InitTodoTool(baseDir string) error {
 	return nil
 }
 
+// ClearTodoTool 清空待办列表
+func ClearTodoTool() error {
+	emptyList := TodoList{Todos: []Todo{}}
+	if err := saveTodoList(&emptyList); err != nil {
+		return fmt.Errorf("无法清空待办列表文件: %w", err)
+	}
+	return nil
+}
+
 // loadTodoList 加载待办列表
 func loadTodoList() (*TodoList, error) {
 	data, err := os.ReadFile(todoFilePath)
@@ -383,6 +392,238 @@ func TodoDelete(ctx context.Context, req *TodoDeleteRequest) (*TodoDeleteRespons
 	}, nil
 }
 
+// TodoBatchAddRequest 批量添加待办事项请求
+type TodoBatchAddRequest struct {
+	Todos []struct {
+		Title       string `json:"title" jsonschema:"description=待办事项标题,required"`
+		Description string `json:"description,omitempty" jsonschema:"description=待办事项详细描述"`
+		Priority    string `json:"priority,omitempty" jsonschema:"description=优先级: low(低), medium(中), high(高), urgent(紧急)"`
+	} `json:"todos" jsonschema:"description=待办事项列表,required"`
+}
+
+// TodoBatchAddResponse 批量添加待办事项响应
+type TodoBatchAddResponse struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	AddedTodos   []Todo `json:"added_todos,omitempty"`
+	AddedCount   int    `json:"added_count"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// TodoBatchAdd 批量添加待办事项
+func TodoBatchAdd(ctx context.Context, req *TodoBatchAddRequest) (*TodoBatchAddResponse, error) {
+	if len(req.Todos) == 0 {
+		return &TodoBatchAddResponse{
+			Success:      false,
+			ErrorMessage: "待办事项列表不能为空",
+		}, nil
+	}
+
+	// 验证所有待办事项
+	for i, todoReq := range req.Todos {
+		if todoReq.Title == "" {
+			return &TodoBatchAddResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("第 %d 个待办事项标题不能为空", i+1),
+			}, nil
+		}
+		if todoReq.Priority != "" && todoReq.Priority != "low" && todoReq.Priority != "medium" && todoReq.Priority != "high" && todoReq.Priority != "urgent" {
+			return &TodoBatchAddResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("第 %d 个待办事项优先级必须是 low, medium, high 或 urgent 之一", i+1),
+			}, nil
+		}
+	}
+
+	list, err := loadTodoList()
+	if err != nil {
+		return &TodoBatchAddResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("加载待办列表失败: %v", err),
+		}, nil
+	}
+
+	now := time.Now()
+	var addedTodos []Todo
+
+	for _, todoReq := range req.Todos {
+		todo := Todo{
+			ID:          generateID(),
+			Title:       todoReq.Title,
+			Description: todoReq.Description,
+			Status:      "pending",
+			Priority:    todoReq.Priority,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		list.Todos = append(list.Todos, todo)
+		addedTodos = append(addedTodos, todo)
+
+		// 添加微小延迟以确保 ID 唯一
+		time.Sleep(time.Microsecond)
+	}
+
+	if err := saveTodoList(list); err != nil {
+		return &TodoBatchAddResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
+		}, nil
+	}
+
+	return &TodoBatchAddResponse{
+		Success:    true,
+		Message:    fmt.Sprintf("成功添加 %d 个待办事项", len(addedTodos)),
+		AddedTodos: addedTodos,
+		AddedCount: len(addedTodos),
+	}, nil
+}
+
+// TodoBatchDeleteRequest 批量删除待办事项请求
+type TodoBatchDeleteRequest struct {
+	IDs []string `json:"ids" jsonschema:"description=待办事项ID列表,required"`
+}
+
+// TodoBatchDeleteResponse 批量删除待办事项响应
+type TodoBatchDeleteResponse struct {
+	Success      bool     `json:"success"`
+	Message      string   `json:"message"`
+	DeletedCount int      `json:"deleted_count"`
+	NotFoundIDs  []string `json:"not_found_ids,omitempty"`
+	ErrorMessage string   `json:"error_message,omitempty"`
+}
+
+// TodoBatchDelete 批量删除待办事项
+func TodoBatchDelete(ctx context.Context, req *TodoBatchDeleteRequest) (*TodoBatchDeleteResponse, error) {
+	if len(req.IDs) == 0 {
+		return &TodoBatchDeleteResponse{
+			Success:      false,
+			ErrorMessage: "ID 列表不能为空",
+		}, nil
+	}
+
+	list, err := loadTodoList()
+	if err != nil {
+		return &TodoBatchDeleteResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("加载待办列表失败: %v", err),
+		}, nil
+	}
+
+	// 创建 ID 集合用于快速查找
+	idSet := make(map[string]bool)
+	for _, id := range req.IDs {
+		idSet[id] = true
+	}
+
+	// 过滤掉要删除的待办事项
+	var newTodos []Todo
+	var notFoundIDs []string
+	deletedCount := 0
+
+	for _, todo := range list.Todos {
+		if idSet[todo.ID] {
+			deletedCount++
+			delete(idSet, todo.ID)
+		} else {
+			newTodos = append(newTodos, todo)
+		}
+	}
+
+	// 记录未找到的 ID
+	for id := range idSet {
+		notFoundIDs = append(notFoundIDs, id)
+	}
+
+	list.Todos = newTodos
+
+	if err := saveTodoList(list); err != nil {
+		return &TodoBatchDeleteResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
+		}, nil
+	}
+
+	message := fmt.Sprintf("成功删除 %d 个待办事项", deletedCount)
+	if len(notFoundIDs) > 0 {
+		message += fmt.Sprintf("，%d 个 ID 未找到", len(notFoundIDs))
+	}
+
+	return &TodoBatchDeleteResponse{
+		Success:      true,
+		Message:      message,
+		DeletedCount: deletedCount,
+		NotFoundIDs:  notFoundIDs,
+	}, nil
+}
+
+// TodoClearRequest 清空待办事项请求
+type TodoClearRequest struct {
+	Status string `json:"status,omitempty" jsonschema:"description=仅清空指定状态的待办事项: pending, in_progress, completed, cancelled。不指定则清空所有"`
+}
+
+// TodoClearResponse 清空待办事项响应
+type TodoClearResponse struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	ClearedCount int    `json:"cleared_count"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// TodoClear 清空待办事项
+func TodoClear(ctx context.Context, req *TodoClearRequest) (*TodoClearResponse, error) {
+	// 验证状态
+	if req.Status != "" && req.Status != "pending" && req.Status != "in_progress" && req.Status != "completed" && req.Status != "cancelled" {
+		return &TodoClearResponse{
+			Success:      false,
+			ErrorMessage: "状态必须是 pending, in_progress, completed 或 cancelled 之一",
+		}, nil
+	}
+
+	list, err := loadTodoList()
+	if err != nil {
+		return &TodoClearResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("加载待办列表失败: %v", err),
+		}, nil
+	}
+
+	originalCount := len(list.Todos)
+
+	// 如果指定了状态，只清空该状态的待办事项
+	if req.Status != "" {
+		var remainingTodos []Todo
+		for _, todo := range list.Todos {
+			if todo.Status != req.Status {
+				remainingTodos = append(remainingTodos, todo)
+			}
+		}
+		list.Todos = remainingTodos
+	} else {
+		// 清空所有待办事项
+		list.Todos = []Todo{}
+	}
+
+	clearedCount := originalCount - len(list.Todos)
+
+	if err := saveTodoList(list); err != nil {
+		return &TodoClearResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
+		}, nil
+	}
+
+	message := fmt.Sprintf("成功清空 %d 个待办事项", clearedCount)
+	if req.Status != "" {
+		message = fmt.Sprintf("成功清空 %d 个状态为 %s 的待办事项", clearedCount, req.Status)
+	}
+
+	return &TodoClearResponse{
+		Success:      true,
+		Message:      message,
+		ClearedCount: clearedCount,
+	}, nil
+}
+
 // GetTools 获取 Todo 工具集合
 func GetTools() ([]tool.BaseTool, error) {
 	var tools []tool.BaseTool
@@ -414,6 +655,27 @@ func GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools = append(tools, todoDeleteTool)
+
+	// 批量添加待办事项工具
+	todoBatchAddTool, err := utils.InferTool("todo_batch_add", "批量添加多个待办事项。适用于一次性添加多个任务。", TodoBatchAdd)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, todoBatchAddTool)
+
+	// 批量删除待办事项工具
+	todoBatchDeleteTool, err := utils.InferTool("todo_batch_delete", "批量删除多个待办事项。通过提供多个 ID 一次性删除多个任务。", TodoBatchDelete)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, todoBatchDeleteTool)
+
+	// 清空待办事项工具
+	todoClearTool, err := utils.InferTool("todo_clear", "清空待办事项列表。可以选择清空所有待办事项，或仅清空特定状态的待办事项。", TodoClear)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, todoClearTool)
 
 	return tools, nil
 }
