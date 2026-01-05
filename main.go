@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/leader"
@@ -11,10 +9,10 @@ import (
 	"fkteams/agents/storyteller"
 	"fkteams/agents/visitor"
 	"fkteams/common"
+	"fkteams/fkevent"
 	"fkteams/update"
 	"fkteams/version"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -117,9 +115,6 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	toolTrigger := common.NewOnceWithReset()
-	var spinnerLiveText *pterm.SpinnerPrinter
-
 	inputHistoryPath := "./history/fkteams_history"
 	inputHistory, err := common.LoadHistory(inputHistoryPath, 100)
 	if err != nil {
@@ -127,7 +122,7 @@ func main() {
 	}
 
 	go func() {
-		var msgs, chunks []adk.Message
+		var msgs []adk.Message
 		var inputMessages []adk.Message
 		for {
 			input := prompt.Input("请输入您的问题: ",
@@ -150,8 +145,6 @@ func main() {
 				continue
 			}
 			inputHistory = append(inputHistory, input)
-
-			// 准备历史信息
 			inputMessages = []adk.Message{}
 			if len(msgs) > 0 {
 				var historyMessage strings.Builder
@@ -160,7 +153,6 @@ func main() {
 				}
 				inputMessages = append(inputMessages, schema.UserMessage(historyMessage.String()))
 			}
-			// 添加当前输入
 			inputMessages = append(inputMessages, schema.UserMessage(input))
 
 			iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
@@ -171,95 +163,12 @@ func main() {
 					break
 				}
 
-				if event.Err != nil {
-					log.Println("error:", event.Err)
-					continue
-				}
-
-				if event.Output.MessageOutput.Role == schema.Tool {
-					spinnerLiveText.Success(fmt.Sprintf("[%s]工具调用完成: %s ", event.AgentName, event.Output.MessageOutput.ToolName))
-
-					if event.Output.MessageOutput.ToolName == "ssh_execute" {
-						type SSHExecuteResponse struct {
-							Output        string `json:"output" jsonschema:"description=命令输出内容（包含 stdout 和 stderr）"`
-							ExecutionTime string `json:"execution_time" jsonschema:"description=执行时长"`
-							ErrorMessage  string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-						}
-						var resp SSHExecuteResponse
-						err = json.Unmarshal([]byte(event.Output.MessageOutput.Message.Content), &resp)
-						if err != nil {
-							fmt.Printf("解析工具返回结果失败: %v\n", err)
-							continue
-						}
-						if resp.ErrorMessage != "" {
-							pterm.Error.Printfln("命令执行错误: %s", resp.ErrorMessage)
-						} else {
-							fmt.Printf("命令输出:\n%s\n", resp.Output)
-							fmt.Printf("执行耗时: %s\n", resp.ExecutionTime)
-						}
-						continue
-					}
-
-					fmt.Printf("工具返回结果: %s\n", event.Output.MessageOutput.Message.Content)
-
-					continue
-				}
-
-				if event.Output.MessageOutput.MessageStream == nil {
-					if event.Output.MessageOutput.Message != nil && len(event.Output.MessageOutput.Message.ToolCalls) > 0 {
-						for _, toolcall := range event.Output.MessageOutput.Message.ToolCalls {
-							if toolcall.Function.Name == "transfer_to_agent" {
-								fmt.Printf("\n[%s] ==> [%s]\n\n", event.AgentName, toolcall.Function.Arguments)
-							}
-						}
-					}
-					continue
-				}
-
-				toolTrigger.Reset()
-				chunks = []adk.Message{}
-
-				for {
-					chunk, err := event.Output.MessageOutput.MessageStream.Recv()
-					if err != nil {
-						if err == io.EOF {
-							break
-						}
-						log.Fatal(err)
-					}
-
-					if len(chunk.ToolCalls) > 0 {
-						for _, tc := range chunk.ToolCalls {
-							toolTrigger.Do(func() {
-								fmt.Println()
-								spinnerLiveText, _ = pterm.DefaultSpinner.Start("正在准备工具调用参数...")
-							})
-							if strings.HasPrefix(tc.Function.Name, "file_") {
-								spinnerLiveText.UpdateText(fmt.Sprintf("正在准备工具调用参数...%20.20s", hex.EncodeToString([]byte(tc.Function.Arguments))))
-								continue
-							}
-							fmt.Printf("[%s] %s\n\n", tc.Function.Name, tc.Function.Arguments)
-						}
-					}
-
-					if chunk.Content != "" {
-						fmt.Print(chunk.Content)
-					}
-
-					chunks = append(chunks, chunk)
-
-				}
-				fmt.Println()
-				// 记录历史信息
-				if len(chunks) > 0 {
-					concatMessages, err := common.ConcatMessages(chunks)
-					if err != nil {
-						pterm.Error.Printfln("failed to concat messages: %v", err)
-						continue
-					}
-					msgs = append(msgs, concatMessages)
+				if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
+					log.Printf("Error processing event: %v", err)
+					break
 				}
 			}
+			fmt.Println()
 		}
 	}()
 
