@@ -45,6 +45,9 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
 	}
+	if d.TextBeforeCursor() == "/" {
+		return s
+	}
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
