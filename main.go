@@ -348,7 +348,9 @@ func loopAgentMode(ctx context.Context) *adk.Runner {
 	}
 
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent: loopAgent,
+		Agent:           loopAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
 	})
 
 	return runner
