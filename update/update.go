@@ -171,7 +171,9 @@ func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) 
 	// locateTargetFile finds the main executable after extraction.
 	fis, _ := os.ReadDir(dstDir)
 	for _, fi := range fis {
-		if strings.HasSuffix(fi.Name(), ".md") || strings.HasSuffix(fi.Name(), ".zip") {
+		if strings.HasSuffix(fi.Name(), ".md") ||
+			strings.HasSuffix(fi.Name(), ".zip") ||
+			strings.HasSuffix(fi.Name(), "LICENSE") {
 			continue
 		}
 		return filepath.Join(dstDir, fi.Name()), nil
