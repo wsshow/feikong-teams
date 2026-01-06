@@ -33,6 +33,35 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 }
 
+var (
+	fullBuffer   []string // 存储已输入的所有行
+	isContinuing bool     // 是否处于续行状态
+)
+
+func handleInput(in string) (finalCmd string) {
+	cleanIn := strings.TrimSpace(in)
+	// 如果以 \ 结尾，表示要续行
+	if before, ok := strings.CutSuffix(cleanIn, "\\"); ok {
+		fullBuffer = append(fullBuffer, before)
+		isContinuing = true
+		return
+	}
+	// 否则，合并所有行并执行
+	fullBuffer = append(fullBuffer, cleanIn)
+	finalCmd = strings.Join(fullBuffer, "\n")
+	// 执行完毕，重置状态
+	fullBuffer = []string{}
+	isContinuing = false
+	return finalCmd
+}
+
+func changeLivePrefix() (string, bool) {
+	if isContinuing {
+		return "请继续输入：", true
+	}
+	return "请输入任务：", true
+}
+
 func completer(d prompt.Document) []prompt.Suggest {
 	if d.GetWordBeforeCursor() == "" {
 		return []prompt.Suggest{}
@@ -139,18 +168,28 @@ func main() {
 				buf.InsertText(fmt.Sprintf("%s\n", text), false, true)
 			},
 		}
+
+		p := prompt.New(nil,
+			completer,
+			prompt.OptionTitle("FeiKong Teams"),
+			prompt.OptionPrefixTextColor(prompt.Cyan),
+			prompt.OptionSuggestionTextColor(prompt.White),
+			prompt.OptionSuggestionBGColor(prompt.Black),
+			prompt.OptionDescriptionTextColor(prompt.White),
+			prompt.OptionDescriptionBGColor(prompt.Black),
+			prompt.OptionHistory(inputHistory),
+			prompt.OptionAddKeyBind(pasteKeyBind),
+			prompt.OptionLivePrefix(changeLivePrefix),
+		)
+
 		for {
-			input := prompt.Input("请输入您的问题: ",
-				completer,
-				prompt.OptionTitle("FeiKong Teams"),
-				prompt.OptionPrefixTextColor(prompt.Cyan),
-				prompt.OptionSuggestionTextColor(prompt.White),
-				prompt.OptionSuggestionBGColor(prompt.Black),
-				prompt.OptionDescriptionTextColor(prompt.White),
-				prompt.OptionDescriptionBGColor(prompt.Black),
-				prompt.OptionHistory(inputHistory),
-				prompt.OptionAddKeyBind(pasteKeyBind),
-			)
+			in := p.Input()
+
+			input := handleInput(in)
+			if isContinuing {
+				continue
+			}
+
 			if input == "q" || input == "quit" || input == "" {
 				pterm.Info.Println("谢谢使用，再见！")
 				signals <- syscall.SIGTERM
