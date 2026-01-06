@@ -87,10 +87,12 @@ func main() {
 		checkUpdates bool
 		checkVersion bool
 		generateEnv  bool
+		workMode     string
 	)
 	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
 	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
 	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
+	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group")
 	pflag.Parse()
 
 	if checkVersion {
@@ -116,47 +118,19 @@ func main() {
 		return
 	}
 
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
-
-	leaderAgent := leader.NewAgent()
-	storytellerAgent := storyteller.NewAgent()
-	searcherAgent := searcher.NewAgent()
-	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
-
-	if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
-		coderAgent := coder.NewAgent()
-		subAgents = append(subAgents, coderAgent)
-	}
-
-	if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
-		cmderAgent := cmder.NewAgent()
-		subAgents = append(subAgents, cmderAgent)
-	}
-
-	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
-		visitorAgent := visitor.NewAgent()
-		defer visitor.CloseSSHClient()
-		subAgents = append(subAgents, visitorAgent)
-	}
-
+	var runner *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
-	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
-		Supervisor: leaderAgent,
-		SubAgents:  subAgents,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           supervisorAgent,
-		EnableStreaming: true,
-		CheckPointStore: common.NewInMemoryStore(),
-	})
+	switch workMode {
+	case "team":
+		runner = supervisorMode(ctx)
+	case "group":
+		pterm.Error.Println("当前仅支持 team 模式，group 模式正在开发中，敬请期待！")
+		return
+	default:
+		pterm.Error.Println("暂不支持该模式：", workMode)
+		return
+	}
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -292,4 +266,49 @@ func main() {
 	}
 
 	pterm.Success.Println("成功退出")
+}
+
+func supervisorMode(ctx context.Context) *adk.Runner {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
+
+	leaderAgent := leader.NewAgent()
+	storytellerAgent := storyteller.NewAgent()
+	searcherAgent := searcher.NewAgent()
+	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
+
+	if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
+		coderAgent := coder.NewAgent()
+		subAgents = append(subAgents, coderAgent)
+	}
+
+	if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
+		cmderAgent := cmder.NewAgent()
+		subAgents = append(subAgents, cmderAgent)
+	}
+
+	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
+		visitorAgent := visitor.NewAgent()
+		defer visitor.CloseSSHClient()
+		subAgents = append(subAgents, visitorAgent)
+	}
+
+	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
+		Supervisor: leaderAgent,
+		SubAgents:  subAgents,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           supervisorAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
 }
