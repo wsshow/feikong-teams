@@ -36,8 +36,9 @@ func init() {
 }
 
 var (
-	fullBuffer   []string // 存储已输入的所有行
-	isContinuing bool     // 是否处于续行状态
+	fullBuffer      []string // 存储已输入的所有行
+	isContinuing    bool     // 是否处于续行状态
+	currentWorkMode string   // 当前工作模式
 )
 
 func handleInput(in string) (finalCmd string) {
@@ -58,10 +59,19 @@ func handleInput(in string) (finalCmd string) {
 }
 
 func changeLivePrefix() (string, bool) {
+	prefix := ""
+	switch currentWorkMode {
+	case "team":
+		prefix = "团队模式> "
+	case "group":
+		prefix = "多智能体讨论模式> "
+	default:
+		prefix = "未知模式> "
+	}
 	if isContinuing {
 		return "请继续输入: ", true
 	}
-	return "请输入任务: ", true
+	return prefix, true
 }
 
 func completer(d prompt.Document) []prompt.Suggest {
@@ -74,7 +84,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "save_chat_history", Description: "保存聊天历史"},
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
 		{Text: "clear_todo", Description: "清空待办事项"},
-		{Text: "switch_to_work_mode", Description: "切换到指定工作模式"},
+		{Text: "switch_work_mode", Description: "切换工作模式(团队模式/多智能体讨论模式)"},
 		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
 	}
@@ -135,7 +145,7 @@ func main() {
 	var runner *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
 
-	currentWorkMode := workMode
+	currentWorkMode = workMode
 
 	switch workMode {
 	case "team":
