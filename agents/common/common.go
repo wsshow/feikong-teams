@@ -24,3 +24,17 @@ func NewChatModel() model.ToolCallingChatModel {
 	}
 	return cm
 }
+
+func NewChatModelWithConfig(modelName, baseURL, apiKey string) model.ToolCallingChatModel {
+	maxTokens := 8192
+	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+		APIKey:    apiKey,
+		BaseURL:   baseURL,
+		Model:     modelName,
+		MaxTokens: &maxTokens,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return cm
+}

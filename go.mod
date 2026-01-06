@@ -10,6 +10,7 @@ require (
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20251223041451-fede3afb5715
 	github.com/joho/godotenv v1.5.1
+	github.com/pelletier/go-toml/v2 v2.0.9
 	github.com/pkg/sftp v1.13.10
 	github.com/pterm/pterm v0.12.82
 	github.com/spf13/afero v1.15.0
@@ -54,7 +55,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
-	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

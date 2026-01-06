@@ -4,11 +4,13 @@ import (
 	"context"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
+	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/agents/visitor"
 	"fkteams/common"
+	"fkteams/config"
 	"fkteams/fkevent"
 	"fkteams/update"
 	"fkteams/version"
@@ -84,14 +86,16 @@ func completer(d prompt.Document) []prompt.Suggest {
 func main() {
 
 	var (
-		checkUpdates bool
-		checkVersion bool
-		generateEnv  bool
-		workMode     string
+		checkUpdates   bool
+		checkVersion   bool
+		generateEnv    bool
+		generateConfig bool
+		workMode       string
 	)
 	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
 	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
 	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
+	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
 	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group")
 	pflag.Parse()
 
@@ -118,6 +122,15 @@ func main() {
 		return
 	}
 
+	if generateConfig {
+		err := config.GenerateExample()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("成功生成示例配置文件: config/config.toml")
+		return
+	}
+
 	var runner *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
 
@@ -125,8 +138,7 @@ func main() {
 	case "team":
 		runner = supervisorMode(ctx)
 	case "group":
-		pterm.Error.Println("当前仅支持 team 模式，group 模式正在开发中，敬请期待！")
-		return
+		runner = loopAgentMode(ctx)
 	default:
 		pterm.Error.Println("暂不支持该模式：", workMode)
 		return
@@ -308,6 +320,35 @@ func supervisorMode(ctx context.Context) *adk.Runner {
 		Agent:           supervisorAgent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
+
+func loopAgentMode(ctx context.Context) *adk.Runner {
+	teamConfig, err := config.Get()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var subAgents []adk.Agent
+	for _, member := range teamConfig.Roundtable.Members {
+		agent := discussant.NewAgent(member)
+		subAgents = append(subAgents, agent)
+	}
+
+	loopAgent, err := adk.NewLoopAgent(ctx, &adk.LoopAgentConfig{
+		Name:          "Roundtable",
+		Description:   "多智能体共同讨论并解决问题",
+		SubAgents:     subAgents,
+		MaxIterations: teamConfig.Roundtable.MaxIterations,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent: loopAgent,
 	})
 
 	return runner
