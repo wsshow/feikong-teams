@@ -57,9 +57,9 @@ func handleInput(in string) (finalCmd string) {
 
 func changeLivePrefix() (string, bool) {
 	if isContinuing {
-		return "请继续输入：", true
+		return "请继续输入: ", true
 	}
-	return "请输入任务：", true
+	return "请输入任务: ", true
 }
 
 func completer(d prompt.Document) []prompt.Suggest {
