@@ -74,6 +74,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "save_chat_history", Description: "保存聊天历史"},
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
 		{Text: "clear_todo", Description: "清空待办事项"},
+		{Text: "switch_to_work_mode", Description: "切换到指定工作模式"},
 		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
 	}
@@ -133,6 +134,8 @@ func main() {
 
 	var runner *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
+
+	currentWorkMode := workMode
 
 	switch workMode {
 	case "team":
@@ -234,6 +237,22 @@ func main() {
 				pterm.Success.Println("成功清空待办事项")
 				continue
 			}
+			if input == "switch_work_mode" {
+				switch currentWorkMode {
+				case "team":
+					runner = loopAgentMode(ctx)
+					currentWorkMode = "group"
+				case "group":
+					runner = supervisorMode(ctx)
+					currentWorkMode = "team"
+				default:
+					pterm.Error.Println("未知的当前工作模式: ", currentWorkMode)
+					continue
+				}
+				pterm.Success.Printfln("成功切换到工作模式: %s", currentWorkMode)
+				continue
+			}
+
 			inputHistory = append(inputHistory, input)
 
 			// 构建消息列表（包含历史对话）
@@ -330,12 +349,20 @@ func loopAgentMode(ctx context.Context) *adk.Runner {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Printf("欢迎来到非空小队 - 多智能体讨论模式: %s\n", version.Get())
 
 	var subAgents []adk.Agent
 	for _, member := range teamConfig.Roundtable.Members {
 		agent := discussant.NewAgent(member)
 		subAgents = append(subAgents, agent)
 	}
+
+	fmt.Printf("本次讨论的成员有: ")
+	var names []string
+	for _, subAgent := range subAgents {
+		names = append(names, subAgent.Name(ctx))
+	}
+	fmt.Println(strings.Join(names, ", "))
 
 	loopAgent, err := adk.NewLoopAgent(ctx, &adk.LoopAgentConfig{
 		Name:          "Roundtable",
