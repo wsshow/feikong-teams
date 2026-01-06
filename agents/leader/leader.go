@@ -4,7 +4,6 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/tools/todo"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -34,8 +33,6 @@ func NewAgent() adk.Agent {
 	if err := todo.InitTodoTool(todoDir); err != nil {
 		log.Fatal("初始化 Todo 工具失败:", err)
 	}
-
-	fmt.Printf("[tips] Todo 工具已初始化，存储路径: %s\n", todoDir)
 
 	// 创建 Todo 工具
 	todoTools, err := todo.GetTools()
