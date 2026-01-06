@@ -122,13 +122,21 @@ func main() {
 	}
 	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 
+	leaderAgent := leader.NewAgent()
 	storytellerAgent := storyteller.NewAgent()
 	searcherAgent := searcher.NewAgent()
-	coderAgent := coder.NewAgent()
-	cmderAgent := cmder.NewAgent()
-	leaderAgent := leader.NewAgent()
+	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
 
-	subAgents := []adk.Agent{searcherAgent, storytellerAgent, coderAgent, cmderAgent}
+	if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
+		coderAgent := coder.NewAgent()
+		subAgents = append(subAgents, coderAgent)
+	}
+
+	if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
+		cmderAgent := cmder.NewAgent()
+		subAgents = append(subAgents, cmderAgent)
+	}
+
 	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 		visitorAgent := visitor.NewAgent()
 		defer visitor.CloseSSHClient()
