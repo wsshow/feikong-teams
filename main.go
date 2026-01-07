@@ -128,13 +128,28 @@ func handleDirect(ctx context.Context, runner *adk.Runner, signals chan os.Signa
 		}
 	}
 	fmt.Printf("\n\n")
+	// 保存聊天历史
 	pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
 	err = fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
 	if err != nil {
 		pterm.Error.Printfln("[非交互模式] 保存聊天历史失败: %v", err)
 	} else {
-		pterm.Success.Println("[非交互模式] 成功保存聊天历史")
+		pterm.Success.Println("[非交互模式] 成功保存聊天历史到默认文件")
 	}
+	// 保存为 HTML 文件
+	filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
+	if err != nil {
+		pterm.Error.Printfln("[非交互模式] 保存聊天历史到 Markdown 失败: %v", err)
+		signals <- syscall.SIGTERM
+		return
+	}
+	htmlFilePath, err := report.ConvertMarkdownFileToNiceHTMLFile(filePath)
+	if err != nil {
+		pterm.Error.Printfln("[非交互模式] 转换聊天历史到网页失败: %v", err)
+		signals <- syscall.SIGTERM
+		return
+	}
+	pterm.Success.Printfln("[非交互模式] 成功保存聊天历史到网页文件: %s", htmlFilePath)
 	signals <- syscall.SIGTERM
 }
 
