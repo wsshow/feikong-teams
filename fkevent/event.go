@@ -24,6 +24,8 @@ func formatRunPath(runPath []adk.RunStep) string {
 	return fmt.Sprintf("%v", runPath)
 }
 
+var Callback func(event Event) error
+
 func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 	if event.Err != nil {
 		return handleEvent(Event{
@@ -223,6 +225,9 @@ func handleAction(event *adk.AgentEvent) error {
 }
 
 func handleEvent(event Event) error {
+	if Callback != nil {
+		return Callback(event)
+	}
 	RecordEventWithHistory(event)
 	return nil
 }
