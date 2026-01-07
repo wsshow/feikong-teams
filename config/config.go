@@ -8,6 +8,11 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+type Server struct {
+	Port     int    `toml:"port"`
+	LogLevel string `toml:"log_level"`
+}
+
 type TeamMember struct {
 	Index     int    `toml:"index"`
 	Name      string `toml:"name"`
@@ -23,6 +28,7 @@ type Roundtable struct {
 }
 
 type Config struct {
+	Server     Server     `toml:"server"`
 	Roundtable Roundtable `toml:"roundtable"`
 }
 

@@ -13,6 +13,7 @@ import (
 	"fkteams/config"
 	"fkteams/fkevent"
 	"fkteams/report"
+	"fkteams/server"
 	"fkteams/update"
 	"fkteams/version"
 	"fmt"
@@ -305,6 +306,7 @@ func main() {
 		checkVersion   bool
 		generateEnv    bool
 		generateConfig bool
+		web            bool
 		workMode       string
 		query          string
 	)
@@ -312,6 +314,7 @@ func main() {
 	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
 	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
 	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
+	pflag.BoolVarP(&web, "web", "w", false, "启动Web服务器")
 	pflag.StringVarP(&query, "query", "q", "", "直接查询模式，执行完查询后退出")
 	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group")
 	pflag.Parse()
@@ -345,6 +348,11 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println("成功生成示例配置文件: config/config.toml")
+		return
+	}
+
+	if web {
+		server.Run()
 		return
 	}
 
