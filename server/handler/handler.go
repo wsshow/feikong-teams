@@ -58,6 +58,7 @@ func RoundtableHandler() gin.HandlerFunc {
 		ctx := context.Background()
 		runner := loopAgentMode(ctx)
 		fkevent.Callback = func(event fkevent.Event) error {
+			fkevent.GlobalHistoryRecorder.RecordEvent(event)
 			fmt.Println(event)
 			return nil
 		}
@@ -115,6 +116,7 @@ func SupervisorHandler() gin.HandlerFunc {
 		ctx := context.Background()
 		runner := supervisorMode(ctx)
 		fkevent.Callback = func(event fkevent.Event) error {
+			fkevent.GlobalHistoryRecorder.RecordEvent(event)
 			fmt.Println(event)
 			return nil
 		}
