@@ -270,7 +270,7 @@ func main() {
 					pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
 					continue
 				}
-				htmlFilePath, err := report.ConvertMarkdownFileToHTMLFile(filePath)
+				htmlFilePath, err := report.ConvertMarkdownFileToNiceHTMLFile(filePath)
 				if err != nil {
 					pterm.Error.Printfln("转换聊天历史到 HTML 失败: %v", err)
 					continue
