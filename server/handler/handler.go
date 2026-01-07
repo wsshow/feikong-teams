@@ -80,6 +80,7 @@ func RoundtableHandler() gin.HandlerFunc {
 		} else {
 			log.Printf("成功保存聊天历史到文件: %s", historyFilePath)
 		}
+		c.JSON(http.StatusOK, resp.Success("任务完成"))
 	}
 }
 
@@ -138,6 +139,7 @@ func SupervisorHandler() gin.HandlerFunc {
 		} else {
 			log.Printf("成功保存聊天历史到文件: %s", historyFilePath)
 		}
+		c.JSON(http.StatusOK, resp.Success("任务完成"))
 	}
 }
 
