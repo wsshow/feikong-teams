@@ -37,6 +37,7 @@ func init() {
 }
 
 var (
+	inputHistory    []string // 输入历史记录
 	fullBuffer      []string // 存储已输入的所有行
 	isContinuing    bool     // 是否处于续行状态
 	currentWorkMode string   // 当前工作模式
@@ -96,80 +97,51 @@ func completer(d prompt.Document) []prompt.Suggest {
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
-func main() {
-
-	var (
-		checkUpdates   bool
-		checkVersion   bool
-		generateEnv    bool
-		generateConfig bool
-		workMode       string
-	)
-	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
-	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
-	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
-	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
-	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group")
-	pflag.Parse()
-
-	if checkVersion {
-		info := version.Get()
-		fmt.Printf("fkteams: %s\n", info)
-		return
+func handleDirect(ctx context.Context, runner *adk.Runner, signals chan os.Signal, query string) {
+	var inputMessages []adk.Message
+	input := query
+	inputHistory = append(inputHistory, input)
+	inputMessages = []adk.Message{}
+	err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile()
+	if err == nil {
+		pterm.Success.Println("[非交互模式] 自动加载聊天历史")
 	}
-
-	if checkUpdates {
-		err := update.SelfUpdate("wsshow", "feikong-teams")
-		if err != nil {
-			log.Fatal(err)
+	agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
+	if len(agentMessages) > 0 {
+		var historyMessage strings.Builder
+		for _, agentMessage := range agentMessages {
+			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.Content)
 		}
-		return
+		inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
 	}
-
-	if generateEnv {
-		err := common.GenerateExampleEnv(".env.example")
-		if err != nil {
-			log.Fatal(err)
+	inputMessages = append(inputMessages, schema.UserMessage(input))
+	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
+	iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
 		}
-		fmt.Println("成功生成示例.env文件: .env.example")
-		return
-	}
-
-	if generateConfig {
-		err := config.GenerateExample()
-		if err != nil {
-			log.Fatal(err)
+		if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
+			log.Printf("Error processing event: %v", err)
+			break
 		}
-		fmt.Println("成功生成示例配置文件: config/config.toml")
-		return
 	}
-
-	var runner *adk.Runner
-	ctx, done := context.WithCancel(context.Background())
-
-	currentWorkMode = workMode
-
-	switch workMode {
-	case "team":
-		runner = supervisorMode(ctx)
-	case "group":
-		runner = loopAgentMode(ctx)
-	default:
-		pterm.Error.Println("暂不支持该模式：", workMode)
-		return
-	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-
-	inputHistoryPath := "./history/input_history/fkteams_input_history"
-	inputHistory, err := common.LoadHistory(inputHistoryPath, 100)
+	fmt.Printf("\n\n")
+	pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
+	err = fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
 	if err != nil {
-		log.Fatalf("加载输入历史失败: %v", err)
+		pterm.Error.Printfln("[非交互模式] 保存聊天历史失败: %v", err)
+	} else {
+		pterm.Success.Println("[非交互模式] 成功保存聊天历史")
 	}
+	signals <- syscall.SIGTERM
+}
 
+func handleInteractive(ctx context.Context, runner *adk.Runner, signals chan os.Signal) {
 	go func() {
 		var inputMessages []adk.Message
+
 		pasteKeyBind := prompt.KeyBind{
 			Key: prompt.ControlV,
 			Fn: func(buf *prompt.Buffer) {
@@ -192,8 +164,8 @@ func main() {
 		)
 
 		for {
-			in := p.Input()
 
+			in := p.Input()
 			input := handleInput(in)
 			if isContinuing {
 				continue
@@ -280,7 +252,6 @@ func main() {
 			}
 
 			inputHistory = append(inputHistory, input)
-
 			// 构建消息列表（包含历史对话）
 			inputMessages = []adk.Message{}
 			agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
@@ -311,6 +282,87 @@ func main() {
 			fmt.Println()
 		}
 	}()
+}
+
+func main() {
+	var (
+		checkUpdates   bool
+		checkVersion   bool
+		generateEnv    bool
+		generateConfig bool
+		workMode       string
+		query          string
+	)
+	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
+	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
+	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
+	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
+	pflag.StringVarP(&query, "query", "q", "", "直接查询模式，执行完查询后退出")
+	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group")
+	pflag.Parse()
+
+	if checkVersion {
+		info := version.Get()
+		fmt.Printf("fkteams: %s\n", info)
+		return
+	}
+
+	if checkUpdates {
+		err := update.SelfUpdate("wsshow", "feikong-teams")
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	if generateEnv {
+		err := common.GenerateExampleEnv(".env.example")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("成功生成示例.env文件: .env.example")
+		return
+	}
+
+	if generateConfig {
+		err := config.GenerateExample()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("成功生成示例配置文件: config/config.toml")
+		return
+	}
+
+	var err error
+	var runner *adk.Runner
+	ctx, done := context.WithCancel(context.Background())
+
+	currentWorkMode = workMode
+
+	switch workMode {
+	case "team":
+		runner = supervisorMode(ctx)
+	case "group":
+		runner = loopAgentMode(ctx)
+	default:
+		pterm.Error.Println("暂不支持该模式：", workMode)
+		return
+	}
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	inputHistoryPath := "./history/input_history/fkteams_input_history"
+	inputHistory, err = common.LoadHistory(inputHistoryPath, 100)
+	if err != nil {
+		log.Fatalf("加载输入历史失败: %v", err)
+	}
+
+	if query != "" {
+		handleDirect(ctx, runner, signals, query)
+	} else {
+		handleInteractive(ctx, runner, signals)
+	}
 
 	sig := <-signals
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
