@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>非空小队</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <button class="sidebar-toggle" id="sidebar-toggle" title="收起/展开">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 18l-6-6 6-6" />
+            </svg>
+        </button>
+
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 6v6l4 2" />
+                    </svg>
+                    <span class="logo-text">非空小队</span>
+                </div>
+            </div>
+
+            <div class="sidebar-content">
+                <div class="mode-selector">
+                    <label class="mode-label">运行模式</label>
+                    <div class="mode-buttons">
+                        <button class="mode-btn active" data-mode="supervisor">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                            <span>Supervisor</span>
+                        </button>
+                        <button class="mode-btn" data-mode="roundtable">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            <span>圆桌讨论</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="session-section">
+                    <label class="session-label">会话 ID</label>
+                    <input type="text" id="session-id" class="session-input" placeholder="输入会话ID" value="default">
+                </div>
+
+                <div class="status-section">
+                    <div class="status-indicator" id="status-indicator">
+                        <span class="status-dot disconnected"></span>
+                        <span class="status-text">未连接</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="clear-btn" id="clear-chat">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>清空对话</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="chat-container">
+                <div class="messages-wrapper" id="messages-wrapper">
+                    <div class="messages" id="messages">
+                        <div class="welcome-message">
+                            <div class="welcome-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                                    <path d="M2 17l10 5 10-5" />
+                                    <path d="M2 12l10 5 10-5" />
+                                </svg>
+                            </div>
+                            <h2>非空小队</h2>
+                            <p>多智能体协作系统</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-container">
+                    <div class="input-wrapper">
+                        <textarea id="message-input" class="message-input" placeholder="输入您的问题..." rows="1"></textarea>
+                        <button class="send-btn" id="send-btn" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13" />
+                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="input-hint">Enter 发送 · Shift+Enter 换行</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,311 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"fkteams/agents/cmder"
+	"fkteams/agents/coder"
+	"fkteams/agents/discussant"
+	"fkteams/agents/leader"
+	"fkteams/agents/searcher"
+	"fkteams/agents/storyteller"
+	"fkteams/agents/visitor"
+	"fkteams/common"
+	"fkteams/config"
+	"fkteams/fkevent"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
+	"github.com/cloudwego/eino/schema"
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	"github.com/joho/godotenv"
+)
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // 允许所有来源
+	},
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
+// WebSocket 消息类型
+type WSMessage struct {
+	Type      string `json:"type"`
+	SessionID string `json:"session_id,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Mode      string `json:"mode,omitempty"` // "supervisor" 或 "roundtable"
+}
+
+// WebSocketHandler 处理 WebSocket 连接
+func WebSocketHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Printf("WebSocket 升级失败: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		// 用于线程安全的写入
+		var writeMu sync.Mutex
+		writeJSON := func(v interface{}) error {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			return conn.WriteJSON(v)
+		}
+
+		// 发送欢迎消息
+		writeJSON(map[string]interface{}{
+			"type":    "connected",
+			"message": "欢迎连接到非空小队",
+		})
+
+		for {
+			// 读取客户端消息
+			_, msgBytes, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("WebSocket 读取错误: %v", err)
+				}
+				break
+			}
+
+			var wsMsg WSMessage
+			if err := json.Unmarshal(msgBytes, &wsMsg); err != nil {
+				writeJSON(map[string]interface{}{
+					"type":  "error",
+					"error": "消息格式错误",
+				})
+				continue
+			}
+
+			// 处理不同类型的消息
+			switch wsMsg.Type {
+			case "chat":
+				go handleChatMessage(wsMsg, writeJSON)
+			case "ping":
+				writeJSON(map[string]interface{}{
+					"type": "pong",
+				})
+			default:
+				writeJSON(map[string]interface{}{
+					"type":  "error",
+					"error": "未知消息类型",
+				})
+			}
+		}
+	}
+}
+
+// handleChatMessage 处理聊天消息
+func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
+	sessionID := wsMsg.SessionID
+	if sessionID == "" {
+		sessionID = "default"
+	}
+
+	input := wsMsg.Message
+	mode := wsMsg.Mode
+	if mode == "" {
+		mode = "supervisor"
+	}
+
+	// 准备输入消息
+	var inputMessages []adk.Message
+	historyFilePath := fmt.Sprintf("./history/chat_history/fkteams_chat_history_%s", sessionID)
+	err := fkevent.GlobalHistoryRecorder.LoadFromFile(historyFilePath)
+	if err == nil {
+		log.Printf("自动加载聊天历史: [%s]", sessionID)
+	}
+
+	agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
+	if len(agentMessages) > 0 {
+		var historyMessage strings.Builder
+		for _, agentMessage := range agentMessages {
+			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.Content)
+		}
+		inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
+	}
+	inputMessages = append(inputMessages, schema.UserMessage(input))
+	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
+
+	ctx := context.Background()
+
+	// 根据模式选择 runner
+	var runner *adk.Runner
+	if mode == "roundtable" {
+		runner = loopAgentModeWS(ctx)
+	} else {
+		runner = supervisorModeWS(ctx)
+	}
+
+	// 设置回调函数，通过 WebSocket 发送事件
+	fkevent.Callback = func(event fkevent.Event) error {
+		// 转换事件为前端可用的格式
+		wsEvent := convertEventForWS(event)
+		fkevent.GlobalHistoryRecorder.RecordEvent(event)
+		return writeJSON(wsEvent)
+	}
+
+	// 发送开始处理的消息
+	writeJSON(map[string]interface{}{
+		"type":    "processing_start",
+		"message": "开始处理您的请求...",
+	})
+
+	iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
+			log.Printf("Error processing event: %v", err)
+			writeJSON(map[string]interface{}{
+				"type":  "error",
+				"error": err.Error(),
+			})
+			break
+		}
+	}
+
+	// 保存聊天历史
+	log.Printf("任务完成，正在自动保存聊天历史到 %s ...", historyFilePath)
+	err = fkevent.GlobalHistoryRecorder.SaveToFile(historyFilePath)
+	if err != nil {
+		log.Printf("保存聊天历史失败: %v", err)
+	} else {
+		log.Printf("成功保存聊天历史到文件: %s", historyFilePath)
+	}
+
+	// 发送完成消息
+	writeJSON(map[string]interface{}{
+		"type":    "processing_end",
+		"message": "处理完成",
+	})
+}
+
+// convertEventForWS 将事件转换为前端可用的格式
+func convertEventForWS(event fkevent.Event) map[string]interface{} {
+	result := map[string]interface{}{
+		"type":       event.Type,
+		"agent_name": event.AgentName,
+	}
+
+	if event.RunPath != "" {
+		result["run_path"] = event.RunPath
+	}
+
+	if event.Content != "" {
+		result["content"] = event.Content
+	}
+
+	if len(event.ToolCalls) > 0 {
+		toolCalls := make([]map[string]interface{}, 0, len(event.ToolCalls))
+		for _, tc := range event.ToolCalls {
+			toolCall := map[string]interface{}{
+				"name": tc.Function.Name,
+			}
+			if tc.Function.Arguments != "" {
+				toolCall["arguments"] = tc.Function.Arguments
+			}
+			toolCalls = append(toolCalls, toolCall)
+		}
+		result["tool_calls"] = toolCalls
+	}
+
+	if event.ActionType != "" {
+		result["action_type"] = event.ActionType
+	}
+
+	if event.Error != "" {
+		result["error"] = event.Error
+	}
+
+	return result
+}
+
+// supervisorModeWS WebSocket 版本的 supervisor 模式
+func supervisorModeWS(ctx context.Context) *adk.Runner {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Error loading .env file")
+	}
+
+	leaderAgent := leader.NewAgent()
+	storytellerAgent := storyteller.NewAgent()
+	searcherAgent := searcher.NewAgent()
+	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
+
+	if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
+		coderAgent := coder.NewAgent()
+		subAgents = append(subAgents, coderAgent)
+	}
+
+	if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
+		cmderAgent := cmder.NewAgent()
+		subAgents = append(subAgents, cmderAgent)
+	}
+
+	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
+		visitorAgent := visitor.NewAgent()
+		defer visitor.CloseSSHClient()
+		subAgents = append(subAgents, visitorAgent)
+	}
+
+	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
+		Supervisor: leaderAgent,
+		SubAgents:  subAgents,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           supervisorAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
+
+// loopAgentModeWS WebSocket 版本的 loop agent 模式
+func loopAgentModeWS(ctx context.Context) *adk.Runner {
+	teamConfig, err := config.Get()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var subAgents []adk.Agent
+	for _, member := range teamConfig.Roundtable.Members {
+		agent := discussant.NewAgent(member)
+		subAgents = append(subAgents, agent)
+	}
+
+	loopAgent, err := adk.NewLoopAgent(ctx, &adk.LoopAgentConfig{
+		Name:          "Roundtable",
+		Description:   "多智能体共同讨论并解决问题",
+		SubAgents:     subAgents,
+		MaxIterations: teamConfig.Roundtable.MaxIterations,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           loopAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
