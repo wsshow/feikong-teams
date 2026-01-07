@@ -12,6 +12,7 @@ import (
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/fkevent"
+	"fkteams/report"
 	"fkteams/update"
 	"fkteams/version"
 	"fmt"
@@ -85,6 +86,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
 		{Text: "clear_todo", Description: "清空待办事项"},
 		{Text: "switch_work_mode", Description: "切换工作模式(团队模式/多智能体讨论模式)"},
+		{Text: "save_chat_history_to_html", Description: "保存完整聊天历史到 HTML 文件"},
 		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
 	}
@@ -260,6 +262,20 @@ func main() {
 					continue
 				}
 				pterm.Success.Printfln("成功切换到工作模式: %s", currentWorkMode)
+				continue
+			}
+			if input == "save_chat_history_to_html" {
+				filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
+				if err != nil {
+					pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
+					continue
+				}
+				htmlFilePath, err := report.ConvertMarkdownFileToHTMLFile(filePath)
+				if err != nil {
+					pterm.Error.Printfln("转换聊天历史到 HTML 失败: %v", err)
+					continue
+				}
+				pterm.Success.Printfln("成功保存聊天历史到 HTML 文件: %s", htmlFilePath)
 				continue
 			}
 
