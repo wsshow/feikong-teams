@@ -413,12 +413,12 @@ class FKTeamsChat {
         try {
             const parsed = JSON.parse(content);
             formattedContent = JSON.stringify(parsed, null, 2);
-            if (formattedContent.length > 800) {
-                formattedContent = formattedContent.substring(0, 800) + '\n...';
+            if (formattedContent.length > 2048) {
+                formattedContent = formattedContent.substring(0, 2048) + '\n...';
             }
         } catch {
-            if (content.length > 800) {
-                formattedContent = content.substring(0, 800) + '\n...';
+            if (content.length > 2048) {
+                formattedContent = content.substring(0, 2048) + '\n...';
             }
         }
 
