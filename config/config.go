@@ -27,9 +27,23 @@ type Roundtable struct {
 	MaxIterations int          `toml:"max_iterations"`
 }
 
+type Custom struct {
+	Agents []Agent `toml:"agents"`
+}
+
+type Agent struct {
+	Name         string `toml:"name"`
+	Description  string `toml:"description"`
+	SystemPrompt string `toml:"system_prompt"`
+	BaseURL      string `toml:"base_url"`
+	APIKey       string `toml:"api_key"`
+	ModelName    string `toml:"model_name"`
+}
+
 type Config struct {
 	Server     Server     `toml:"server"`
 	Roundtable Roundtable `toml:"roundtable"`
+	Custom     Custom     `toml:"custom"`
 }
 
 func Unmarshal(filePath string, v any) error {
@@ -60,13 +74,25 @@ func GenerateExample() error {
 		return fmt.Errorf("无法创建目录 %s: %w", dir, err)
 	}
 	defaultConfig := Config{
+		Custom: Custom{
+			Agents: []Agent{
+				{
+					Name:         "智能体名称",
+					Description:  "智能体描述",
+					SystemPrompt: "你是一个有帮助的助手。",
+					BaseURL:      "https://api.example.com/v1",
+					APIKey:       "your_api_key_here",
+					ModelName:    "模型名称",
+				},
+			},
+		},
 		Roundtable: Roundtable{
 			Members: []TeamMember{
 				{
 					Index:     0,
 					Name:      "Deepseek Chat",
 					Desc:      "深度求索聊天模型",
-					BaseURL:   "https://api.deepseek.com",
+					BaseURL:   "https://api.deepseek.com/v1",
 					APIKey:    "xxx",
 					ModelName: "deepseek-chat",
 				},

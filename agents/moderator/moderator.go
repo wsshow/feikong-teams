@@ -20,8 +20,8 @@ func NewAgent() adk.Agent {
 	instruction := systemMessages[0].Content
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          "小意",
-		Description:   "意图识别专家，擅长分析用户请求并判断其背后的真实意图。",
+		Name:          "小议",
+		Description:   "会议主持人，负责引导讨论并确保各成员积极参与。",
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,

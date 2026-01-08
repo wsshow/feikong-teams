@@ -4,8 +4,10 @@ import (
 	"context"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
+	"fkteams/agents/custom"
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
+	"fkteams/agents/moderator"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/agents/visitor"
@@ -68,6 +70,8 @@ func changeLivePrefix() (string, bool) {
 		prefix = "团队模式> "
 	case "group":
 		prefix = "多智能体讨论模式> "
+	case "custom":
+		prefix = "自定义会议模式> "
 	default:
 		prefix = "未知模式> "
 	}
@@ -316,7 +320,7 @@ func main() {
 	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
 	pflag.BoolVarP(&web, "web", "w", false, "启动Web服务器")
 	pflag.StringVarP(&query, "query", "q", "", "直接查询模式，执行完查询后退出")
-	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group")
+	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group 或 custom")
 	pflag.Parse()
 
 	if checkVersion {
@@ -367,6 +371,8 @@ func main() {
 		runner = supervisorMode(ctx)
 	case "group":
 		runner = loopAgentMode(ctx)
+	case "custom":
+		runner = customSupervisorMode(ctx)
 	default:
 		pterm.Error.Println("暂不支持该模式：", workMode)
 		return
@@ -477,6 +483,59 @@ func loopAgentMode(ctx context.Context) *adk.Runner {
 
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent:           loopAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
+
+func customSupervisorMode(ctx context.Context) *adk.Runner {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	cfg, err := config.Get()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
+
+	moderatorAgent := moderator.NewAgent()
+	storytellerAgent := storyteller.NewAgent()
+	searcherAgent := searcher.NewAgent()
+	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
+
+	for _, customAgent := range cfg.Custom.Agents {
+		subAgents = append(subAgents, custom.NewAgent(custom.Config{
+			Name:         customAgent.Name,
+			Description:  customAgent.Description,
+			SystemPrompt: customAgent.SystemPrompt,
+			Model: custom.Model{
+				Name:    customAgent.ModelName,
+				APIKey:  customAgent.APIKey,
+				BaseURL: customAgent.BaseURL,
+			},
+		}))
+	}
+
+	fmt.Printf("本次讨论的成员有: ")
+	var names []string
+	for _, subAgent := range subAgents {
+		names = append(names, subAgent.Name(ctx))
+	}
+	fmt.Println(strings.Join(names, ", "))
+
+	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
+		Supervisor: moderatorAgent,
+		SubAgents:  subAgents,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           supervisorAgent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
 	})
