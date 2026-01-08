@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fkteams/config"
+	"fkteams/server/handler"
 	"fkteams/server/router"
 	"fkteams/version"
 	"fmt"
@@ -41,7 +42,10 @@ func Run() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	apiSrv, sProtocol := func() (*http.Server, string) {
-		return initHttpServer(cfg.Server.Port, router.Init()), "http"
+		srv := initHttpServer(cfg.Server.Port, router.Init())
+		// 服务退出时主动断开所有 websocket 长连接
+		srv.RegisterOnShutdown(handler.CloseAllWebSockets)
+		return srv, "http"
 	}()
 	fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
 	fmt.Printf("当前服务运行在端口 [%s]\n", apiSrv.Addr)

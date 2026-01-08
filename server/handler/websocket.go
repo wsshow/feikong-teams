@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
@@ -36,6 +37,44 @@ var upgrader = websocket.Upgrader{
 	},
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+}
+
+// WS 连接池管理
+var (
+	wsConnsMu sync.Mutex
+	wsConns   = make(map[*websocket.Conn]context.CancelFunc)
+)
+
+func registerConn(conn *websocket.Conn, cancel context.CancelFunc) {
+	wsConnsMu.Lock()
+	wsConns[conn] = cancel
+	wsConnsMu.Unlock()
+}
+
+func unregisterConn(conn *websocket.Conn) {
+	wsConnsMu.Lock()
+	delete(wsConns, conn)
+	wsConnsMu.Unlock()
+}
+
+// CloseAllWebSockets 服务退出时调用，主动关闭所有 WS 连接
+func CloseAllWebSockets() {
+	wsConnsMu.Lock()
+	conns := make(map[*websocket.Conn]context.CancelFunc, len(wsConns))
+	for c, cancel := range wsConns {
+		conns[c] = cancel
+	}
+	wsConnsMu.Unlock()
+
+	for conn, cancel := range conns {
+		cancel() // 取消该连接关联的所有任务
+		_ = conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+			time.Now().Add(500*time.Millisecond),
+		)
+		_ = conn.Close()
+	}
 }
 
 // WebSocket 消息类型
@@ -54,7 +93,22 @@ func WebSocketHandler() gin.HandlerFunc {
 			log.Printf("WebSocket 升级失败: %v", err)
 			return
 		}
-		defer conn.Close()
+
+		// 为该连接创建可取消的 context
+		connCtx, connCancel := context.WithCancel(c.Request.Context())
+		registerConn(conn, connCancel)
+
+		defer func() {
+			connCancel()
+			unregisterConn(conn)
+			_ = conn.Close()
+		}()
+
+		// 监听 context 取消，主动关闭连接以打断 ReadMessage 阻塞
+		go func() {
+			<-connCtx.Done()
+			_ = conn.Close()
+		}()
 
 		// 用于线程安全的写入
 		var writeMu sync.Mutex
@@ -65,13 +119,13 @@ func WebSocketHandler() gin.HandlerFunc {
 		}
 
 		// 发送欢迎消息
-		writeJSON(map[string]interface{}{
+		_ = writeJSON(map[string]interface{}{
 			"type":    "connected",
 			"message": "欢迎连接到非空小队",
 		})
 
 		for {
-			// 读取客户端消息
+			// 读取客户端消息（连接被 Close 后会立刻返回错误，从而退出循环）
 			_, msgBytes, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -82,7 +136,7 @@ func WebSocketHandler() gin.HandlerFunc {
 
 			var wsMsg WSMessage
 			if err := json.Unmarshal(msgBytes, &wsMsg); err != nil {
-				writeJSON(map[string]interface{}{
+				_ = writeJSON(map[string]interface{}{
 					"type":  "error",
 					"error": "消息格式错误",
 				})
@@ -92,13 +146,14 @@ func WebSocketHandler() gin.HandlerFunc {
 			// 处理不同类型的消息
 			switch wsMsg.Type {
 			case "chat":
-				go handleChatMessage(wsMsg, writeJSON)
+				// 传入 connCtx，服务退出时可取消任务
+				go handleChatMessage(connCtx, wsMsg, writeJSON)
 			case "ping":
-				writeJSON(map[string]interface{}{
+				_ = writeJSON(map[string]interface{}{
 					"type": "pong",
 				})
 			default:
-				writeJSON(map[string]interface{}{
+				_ = writeJSON(map[string]interface{}{
 					"type":  "error",
 					"error": "未知消息类型",
 				})
@@ -108,7 +163,7 @@ func WebSocketHandler() gin.HandlerFunc {
 }
 
 // handleChatMessage 处理聊天消息
-func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
+func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(interface{}) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
 		sessionID = "default"
@@ -118,6 +173,13 @@ func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	mode := wsMsg.Mode
 	if mode == "" {
 		mode = "supervisor"
+	}
+
+	// 检查是否已取消
+	select {
+	case <-ctx.Done():
+		return
+	default:
 	}
 
 	// 准备输入消息
@@ -139,9 +201,7 @@ func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	inputMessages = append(inputMessages, schema.UserMessage(input))
 	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
-	ctx := context.Background()
-
-	// 根据模式选择 runner
+	// 根据模式选择 runner（使用传入的 ctx 而非 context.Background()）
 	var runner *adk.Runner
 	switch mode {
 	case "roundtable":
@@ -168,18 +228,33 @@ func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
 
 	iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
 	for {
+		// 每次迭代检查 ctx 是否已取消
+		select {
+		case <-ctx.Done():
+			log.Printf("任务被取消: session=%s", sessionID)
+			return
+		default:
+		}
+
 		event, ok := iter.Next()
 		if !ok {
 			break
 		}
 		if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
 			log.Printf("Error processing event: %v", err)
-			writeJSON(map[string]interface{}{
+			_ = writeJSON(map[string]interface{}{
 				"type":  "error",
 				"error": err.Error(),
 			})
 			break
 		}
+	}
+
+	// 再次检查，避免取消后还保存
+	select {
+	case <-ctx.Done():
+		return
+	default:
 	}
 
 	// 保存聊天历史
@@ -192,7 +267,7 @@ func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	}
 
 	// 发送完成消息
-	writeJSON(map[string]interface{}{
+	_ = writeJSON(map[string]interface{}{
 		"type":    "processing_end",
 		"message": "处理完成",
 	})
