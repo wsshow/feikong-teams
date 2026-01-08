@@ -44,7 +44,8 @@ func Run() {
 		return initHttpServer(cfg.Server.Port, router.Init()), "http"
 	}()
 	fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
-	fmt.Printf("当前服务运行在端口 %s, 协议: %s\n", apiSrv.Addr, sProtocol)
+	fmt.Printf("当前服务运行在端口 [%s]\n", apiSrv.Addr)
+	fmt.Printf("前端页面地址: http://localhost%s\n", apiSrv.Addr)
 	signalExit := make(chan os.Signal, 1)
 	signal.Notify(signalExit, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 	<-signalExit
