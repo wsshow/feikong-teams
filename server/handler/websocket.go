@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
+	"fkteams/agents/custom"
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
+	"fkteams/agents/moderator"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/agents/visitor"
@@ -41,7 +43,7 @@ type WSMessage struct {
 	Type      string `json:"type"`
 	SessionID string `json:"session_id,omitempty"`
 	Message   string `json:"message,omitempty"`
-	Mode      string `json:"mode,omitempty"` // "supervisor" 或 "roundtable"
+	Mode      string `json:"mode,omitempty"` // "supervisor" 或 "roundtable" 或 "custom"
 }
 
 // WebSocketHandler 处理 WebSocket 连接
@@ -141,9 +143,12 @@ func handleChatMessage(wsMsg WSMessage, writeJSON func(interface{}) error) {
 
 	// 根据模式选择 runner
 	var runner *adk.Runner
-	if mode == "roundtable" {
+	switch mode {
+	case "roundtable":
 		runner = loopAgentModeWS(ctx)
-	} else {
+	case "custom":
+		runner = customSupervisorModeWS(ctx)
+	default:
 		runner = supervisorModeWS(ctx)
 	}
 
@@ -303,6 +308,51 @@ func loopAgentModeWS(ctx context.Context) *adk.Runner {
 
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent:           loopAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
+
+func customSupervisorModeWS(ctx context.Context) *adk.Runner {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	cfg, err := config.Get()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	moderatorAgent := moderator.NewAgent()
+	storytellerAgent := storyteller.NewAgent()
+	searcherAgent := searcher.NewAgent()
+	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
+
+	for _, customAgent := range cfg.Custom.Agents {
+		subAgents = append(subAgents, custom.NewAgent(custom.Config{
+			Name:         customAgent.Name,
+			Description:  customAgent.Description,
+			SystemPrompt: customAgent.SystemPrompt,
+			Model: custom.Model{
+				Name:    customAgent.ModelName,
+				APIKey:  customAgent.APIKey,
+				BaseURL: customAgent.BaseURL,
+			},
+		}))
+	}
+
+	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
+		Supervisor: moderatorAgent,
+		SubAgents:  subAgents,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           supervisorAgent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
 	})

@@ -201,6 +201,21 @@ class FKTeamsChat {
         this.modeButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
+
+        // 更新状态显示
+        let modeText = '未知模式';
+        switch (mode) {
+            case 'supervisor':
+                modeText = '团队模式';
+                break;
+            case 'roundtable':
+                modeText = '圆桌讨论模式';
+                break;
+            case 'custom':
+                modeText = '自定义会议模式';
+                break;
+        }
+        console.log(`已切换到: ${modeText}`);
     }
 
     updateSendButtonState() {
