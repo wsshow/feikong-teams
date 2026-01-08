@@ -48,8 +48,6 @@ func Init() *gin.Engine {
 	apiV1 := r.Group("/api/fkteams")
 	{
 		apiV1.GET("/version", handler.VersionHandler())
-		apiV1.POST("/roundtable", handler.RoundtableHandler())
-		apiV1.POST("/supervisor", handler.SupervisorHandler())
 	}
 	return r
 }
