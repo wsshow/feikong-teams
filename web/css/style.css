@@ -794,6 +794,12 @@ body {
     cursor: not-allowed;
 }
 
+.send-btn.processing {
+    background: var(--warning);
+    color: white;
+    cursor: not-allowed;
+}
+
 /* 回到底部按钮 */
 .scroll-to-bottom {
     position: fixed;

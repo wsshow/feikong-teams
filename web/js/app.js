@@ -171,6 +171,20 @@ class FKTeamsChat {
         this.sendBtn.disabled = !hasContent || this.isProcessing;
         this.messageInput.style.height = 'auto';
         this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 120) + 'px';
+        this.updateSendButtonState();
+    }
+
+    updateSendButtonState() {
+        if (this.isProcessing) {
+            this.sendBtn.textContent = '处理中';
+            this.sendBtn.classList.add('processing');
+            this.sendBtn.disabled = true;
+        } else {
+            this.sendBtn.textContent = '发送';
+            this.sendBtn.classList.remove('processing');
+            const hasContent = this.messageInput.value.trim().length > 0;
+            this.sendBtn.disabled = !hasContent;
+        }
     }
 
     handleKeyDown(e) {
@@ -187,6 +201,19 @@ class FKTeamsChat {
         this.modeButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
+    }
+
+    updateSendButtonState() {
+        if (this.isProcessing) {
+            this.sendBtn.textContent = '处理中...';
+            this.sendBtn.classList.add('processing');
+            this.sendBtn.disabled = true;
+        } else {
+            this.sendBtn.textContent = '发送';
+            this.sendBtn.classList.remove('processing');
+            const hasContent = this.messageInput.value.trim().length > 0;
+            this.sendBtn.disabled = !hasContent;
+        }
     }
 
     sendMessage() {
@@ -212,6 +239,7 @@ class FKTeamsChat {
         this.messageInput.value = '';
         this.handleInputChange();
         this.isProcessing = true;
+        this.updateSendButtonState();
         this.updateStatus('processing', '处理中...');
     }
 
@@ -226,7 +254,7 @@ class FKTeamsChat {
             case 'processing_end':
                 this.isProcessing = false;
                 this.updateStatus('connected', '已连接');
-                this.sendBtn.disabled = this.messageInput.value.trim().length === 0;
+                this.updateSendButtonState();
                 this.currentMessageElement = null;
                 this.hasToolCallAfterMessage = false;
                 break;
@@ -453,6 +481,7 @@ class FKTeamsChat {
         this.messagesContainer.appendChild(errorEl);
         this.isProcessing = false;
         this.updateStatus('connected', '已连接');
+        this.updateSendButtonState();
     }
 
     addUserMessage(content) {
