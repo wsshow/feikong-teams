@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>非空小队</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
 </head>
 
 <body>
@@ -71,10 +72,20 @@
                     </svg>
                     <span>清空对话</span>
                 </button>
+                <button class="export-btn" id="export-html">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14,2 14,8 20,8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                        <polyline points="10,9 9,9 8,9" />
+                    </svg>
+                    <span>导出HTML</span>
+                </button>
             </div>
         </aside>
 
-        <main class="main-content">
+        <main class="main-content" id="main-content">
             <div class="chat-container">
                 <div class="messages-wrapper" id="messages-wrapper">
                     <div class="messages" id="messages">
@@ -87,22 +98,24 @@
                                 </svg>
                             </div>
                             <h2>非空小队</h2>
-                            <p>多智能体协作系统</p>
+                            <p>多智能体协作系统，开始您的对话</p>
                         </div>
                     </div>
                 </div>
 
+                <!-- 回到底部按钮 -->
+                <button class="scroll-to-bottom" id="scroll-to-bottom" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12l7 7 7-7" />
+                    </svg>
+                    <span>回到底部</span>
+                </button>
+
                 <div class="input-container">
                     <div class="input-wrapper">
-                        <textarea id="message-input" class="message-input" placeholder="输入您的问题..." rows="1"></textarea>
-                        <button class="send-btn" id="send-btn" disabled>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="22" y1="2" x2="11" y2="13" />
-                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                            </svg>
-                        </button>
+                        <textarea id="message-input" class="message-input" placeholder="请输入消息..." rows="1"></textarea>
+                        <button class="send-btn" id="send-btn" disabled>发送</button>
                     </div>
-                    <div class="input-hint">Enter 发送 · Shift+Enter 换行</div>
                 </div>
             </div>
         </main>

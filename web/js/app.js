@@ -12,6 +12,7 @@ class FKTeamsChat {
         this.hasToolCallAfterMessage = false;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
+        this.userScrolledUp = false; // 用户是否向上滚动了
 
         this.init();
     }
@@ -31,9 +32,12 @@ class FKTeamsChat {
         this.sessionIdInput = document.getElementById('session-id');
         this.statusIndicator = document.getElementById('status-indicator');
         this.clearBtn = document.getElementById('clear-chat');
+        this.exportBtn = document.getElementById('export-html');
         this.modeButtons = document.querySelectorAll('.mode-btn');
         this.sidebar = document.getElementById('sidebar');
         this.sidebarToggle = document.getElementById('sidebar-toggle');
+        this.mainContent = document.getElementById('main-content');
+        this.scrollToBottomBtn = document.getElementById('scroll-to-bottom');
     }
 
     bindEvents() {
@@ -44,17 +48,63 @@ class FKTeamsChat {
             this.sessionId = this.sessionIdInput.value || 'default';
         });
         this.clearBtn.addEventListener('click', () => this.clearChat());
+        this.exportBtn.addEventListener('click', () => this.exportToHTML());
         this.modeButtons.forEach(btn => {
             btn.addEventListener('click', () => this.setMode(btn.dataset.mode));
         });
         if (this.sidebarToggle) {
             this.sidebarToggle.addEventListener('click', () => this.toggleSidebar());
         }
+        // 监听滚动事件
+        if (this.mainContent) {
+            this.mainContent.addEventListener('scroll', () => this.handleScroll());
+        }
+        // 回到底部按钮
+        if (this.scrollToBottomBtn) {
+            this.scrollToBottomBtn.addEventListener('click', () => this.scrollToBottomAndResume());
+        }
+    }
+
+    handleScroll() {
+        const { scrollTop, scrollHeight, clientHeight } = this.mainContent;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+        // 如果距离底部超过 100px，认为用户向上滚动了
+        if (distanceFromBottom > 100) {
+            this.userScrolledUp = true;
+            this.showScrollToBottomBtn(true);
+        } else {
+            // 用户回到了底部附近
+            this.userScrolledUp = false;
+            this.showScrollToBottomBtn(false);
+        }
+    }
+
+    showScrollToBottomBtn(show) {
+        if (this.scrollToBottomBtn) {
+            this.scrollToBottomBtn.style.display = show ? 'flex' : 'none';
+        }
+    }
+
+    scrollToBottomAndResume() {
+        this.userScrolledUp = false;
+        this.showScrollToBottomBtn(false);
+        this.forceScrollToBottom();
+    }
+
+    forceScrollToBottom() {
+        if (this.mainContent) {
+            this.mainContent.scrollTop = this.mainContent.scrollHeight;
+        }
     }
 
     toggleSidebar() {
         const isCollapsed = this.sidebar.classList.toggle('collapsed');
         this.sidebarToggle.classList.toggle('collapsed', isCollapsed);
+        // 调整回到底部按钮的位置
+        if (this.scrollToBottomBtn) {
+            this.scrollToBottomBtn.classList.toggle('sidebar-collapsed', isCollapsed);
+        }
         localStorage.setItem('sidebarCollapsed', isCollapsed);
     }
 
@@ -63,6 +113,10 @@ class FKTeamsChat {
         if (isCollapsed) {
             this.sidebar.classList.add('collapsed');
             this.sidebarToggle.classList.add('collapsed');
+            // 同步调整回到底部按钮位置
+            if (this.scrollToBottomBtn) {
+                this.scrollToBottomBtn.classList.add('sidebar-collapsed');
+            }
         }
     }
 
@@ -142,6 +196,10 @@ class FKTeamsChat {
         const welcomeMsg = this.messagesContainer.querySelector('.welcome-message');
         if (welcomeMsg) welcomeMsg.remove();
 
+        // 用户发送新消息时，重置滚动状态
+        this.userScrolledUp = false;
+        this.showScrollToBottomBtn(false);
+
         this.addUserMessage(message);
 
         this.ws.send(JSON.stringify({
@@ -205,8 +263,31 @@ class FKTeamsChat {
         return text.replace(/^[\s\n\r\u00A0\u2000-\u200B\uFEFF]+/, '');
     }
 
+    // 渲染 Markdown
+    renderMarkdown(text) {
+        if (!text) return '';
+        try {
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({
+                    breaks: true,
+                    gfm: true
+                });
+                return marked.parse(text);
+            }
+        } catch (e) {
+            console.error('Markdown parse error:', e);
+        }
+        return this.escapeHtml(text);
+    }
+
     handleStreamChunk(event) {
-        if (this.hasToolCallAfterMessage || !this.currentMessageElement) {
+        // 检查是否需要创建新卡片：工具调用后、没有当前元素、或者 agent 名称变化
+        const currentAgentName = this.currentMessageElement?.getAttribute('data-agent');
+        const needNewCard = this.hasToolCallAfterMessage ||
+            !this.currentMessageElement ||
+            (event.agent_name && currentAgentName !== event.agent_name);
+
+        if (needNewCard) {
             this.currentMessageElement = this.createAssistantMessage(event.agent_name);
             this.hasToolCallAfterMessage = false;
         }
@@ -216,21 +297,32 @@ class FKTeamsChat {
             const indicator = bodyEl.querySelector('.streaming-indicator');
             if (indicator) indicator.remove();
 
-            let currentText = bodyEl.textContent || '';
+            // 获取原始文本
+            let rawText = bodyEl.getAttribute('data-raw') || '';
             let newContent = event.content || '';
 
-            if (currentText === '') {
+            if (rawText === '') {
                 newContent = this.trimLeadingWhitespace(newContent);
             }
 
-            bodyEl.textContent = currentText + newContent;
+            rawText += newContent;
+            bodyEl.setAttribute('data-raw', rawText);
+
+            // 实时渲染 Markdown
+            bodyEl.innerHTML = this.renderMarkdown(rawText);
         }
     }
 
     handleMessage(event) {
         if (!event.content) return;
 
-        if (this.hasToolCallAfterMessage || !this.currentMessageElement) {
+        // 检查是否需要创建新卡片：工具调用后、没有当前元素、或者 agent 名称变化
+        const currentAgentName = this.currentMessageElement?.getAttribute('data-agent');
+        const needNewCard = this.hasToolCallAfterMessage ||
+            !this.currentMessageElement ||
+            (event.agent_name && currentAgentName !== event.agent_name);
+
+        if (needNewCard) {
             this.currentMessageElement = this.createAssistantMessage(event.agent_name);
             this.hasToolCallAfterMessage = false;
         }
@@ -239,7 +331,10 @@ class FKTeamsChat {
         if (bodyEl) {
             const indicator = bodyEl.querySelector('.streaming-indicator');
             if (indicator) indicator.remove();
-            bodyEl.textContent = this.trimLeadingWhitespace(event.content);
+
+            const content = this.trimLeadingWhitespace(event.content);
+            bodyEl.setAttribute('data-raw', content);
+            bodyEl.innerHTML = this.renderMarkdown(content);
         }
     }
 
@@ -379,6 +474,7 @@ class FKTeamsChat {
     createAssistantMessage(agentName) {
         const messageEl = document.createElement('div');
         messageEl.className = 'message assistant';
+        messageEl.setAttribute('data-agent', agentName || '');
         messageEl.innerHTML = `
             <div class="message-content">
                 <div class="message-header">
@@ -405,7 +501,7 @@ class FKTeamsChat {
                     </svg>
                 </div>
                 <h2>非空小队</h2>
-                <p>多智能体协作系统</p>
+                <p>多智能体协作系统，开始您的对话</p>
             </div>
         `;
         this.currentMessageElement = null;
@@ -413,9 +509,13 @@ class FKTeamsChat {
     }
 
     scrollToBottom() {
+        // 如果用户向上滚动了，不自动滚动
+        if (this.userScrolledUp) {
+            return;
+        }
         requestAnimationFrame(() => {
-            if (this.messagesWrapper) {
-                this.messagesWrapper.scrollTop = this.messagesWrapper.scrollHeight;
+            if (this.mainContent) {
+                this.mainContent.scrollTop = this.mainContent.scrollHeight;
             }
         });
     }
@@ -429,6 +529,206 @@ class FKTeamsChat {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    exportToHTML() {
+        const messagesContainer = document.getElementById('messages');
+        if (!messagesContainer) return;
+
+        // 获取当前会话ID用于文件名
+        const sessionId = this.sessionId || 'default';
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+        const filename = `fkteams_chat_${sessionId}_${timestamp}.html`;
+
+        // 创建HTML模板
+        const htmlTemplate = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>非空小队对话记录 - ${sessionId}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fafafa;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e5e5e5;
+        }
+        .header h1 {
+            color: #5c6bc0;
+            margin-bottom: 10px;
+        }
+        .header .info {
+            color: #666;
+            font-size: 14px;
+        }
+        svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+        .tool-call-header svg,
+        .tool-result-header svg,
+        .action-event svg {
+            width: 14px;
+            height: 14px;
+        }
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .message-name {
+            font-weight: 600;
+            color: #333;
+        }
+        .agent-tag {
+            background: #e8eaf6;
+            color: #5c6bc0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .message-time {
+            color: #999;
+            font-size: 11px;
+        }
+        .message-body {
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid #e5e5e5;
+            word-break: break-word;
+        }
+        .message.user .message-body {
+            background: #5c6bc0;
+            color: white;
+            margin-left: 60px;
+        }
+        .tool-call, .tool-result {
+            margin: 8px 0;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .tool-call {
+            background: #e3f2fd;
+            border: 1px solid #42a5f5;
+        }
+        .tool-result {
+            background: #f5f5f5;
+            border: 1px solid #e5e5e5;
+        }
+        .action-event {
+            padding: 8px 12px;
+            background: #fff3e0;
+            border-radius: 6px;
+            color: #ffa726;
+            margin: 8px 0;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        pre {
+            background: #f6f8fa;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        code {
+            background: rgba(0,0,0,0.06);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>非空小队对话记录</h1>
+        <div class="info">
+            <div>会话ID: ${sessionId}</div>
+            <div>导出时间: ${new Date().toLocaleString('zh-CN')}</div>
+        </div>
+    </div>
+    <div class="messages">
+        ${messagesContainer.innerHTML}
+    </div>
+</body>
+</html>`;
+
+        // 创建并下载文件
+        const blob = new Blob([htmlTemplate], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // 显示成功提示
+        this.showNotification(`对话记录已导出为 ${filename}`, 'success');
+    }
+
+    showNotification(message, type = 'info') {
+        // 创建通知元素
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${type === 'success' ? '#66bb6a' : '#42a5f5'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        `;
+        notification.textContent = message;
+
+        // 添加滑入动画
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        document.body.appendChild(notification);
+
+        // 3秒后自动移除
+        setTimeout(() => {
+            notification.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+                if (style.parentNode) {
+                    document.head.removeChild(style);
+                }
+            }, 300);
+        }, 3000);
     }
 }
 
