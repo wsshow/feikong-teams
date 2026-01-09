@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/tools/command"
 	"fkteams/tools/file"
+	"fkteams/tools/mcp"
 	"fkteams/tools/search"
 	"fkteams/tools/ssh"
 	"fkteams/tools/todo"
@@ -28,7 +29,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		return []tool.BaseTool{duckduckgoTool}, err
 	default:
 		if strings.HasPrefix(name, "mcp-") {
-			return nil, fmt.Errorf("mcp tools are not supported in this environment")
+			return mcp.GetToolsByName(name)
 		}
 		return nil, fmt.Errorf("tool %s not found", name)
 	}

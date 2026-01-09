@@ -5,9 +5,10 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino-ext/components/tool/mcp"
+	"github.com/cloudwego/eino/components/tool"
 )
 
-func GetTools() (dtg DictToolGroup, err error) {
+func getAllMCPTools() (dtg DictToolGroup, err error) {
 
 	ctx := context.Background()
 	mcpClients, err := setupMCPClients(ctx)
@@ -30,4 +31,20 @@ func GetTools() (dtg DictToolGroup, err error) {
 	}
 
 	return dtg, nil
+}
+
+var cachedTools DictToolGroup
+
+func GetToolsByName(toolName string) ([]tool.BaseTool, error) {
+	if cachedTools == nil {
+		var err error
+		cachedTools, err = getAllMCPTools()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if tg, exists := cachedTools[toolName]; exists {
+		return tg.Tools, nil
+	}
+	return nil, fmt.Errorf("MCP tool %s not found", toolName)
 }
