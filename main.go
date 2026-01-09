@@ -515,6 +515,7 @@ func customSupervisorMode(ctx context.Context) *adk.Runner {
 				APIKey:  customAgent.APIKey,
 				BaseURL: customAgent.BaseURL,
 			},
+			ToolNames: customAgent.Tools,
 		}))
 	}
 

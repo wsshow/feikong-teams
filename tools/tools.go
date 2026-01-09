@@ -28,7 +28,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err
 	default:
-		if strings.HasPrefix(name, "mcp-") {
+		if name, ok := strings.CutPrefix(name, "mcp-"); ok {
 			return mcp.GetToolsByName(name)
 		}
 		return nil, fmt.Errorf("tool %s not found", name)
