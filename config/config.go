@@ -33,12 +33,13 @@ type Custom struct {
 }
 
 type Agent struct {
-	Name         string `toml:"name"`
-	Desc         string `toml:"desc"`
-	SystemPrompt string `toml:"system_prompt"`
-	BaseURL      string `toml:"base_url"`
-	APIKey       string `toml:"api_key"`
-	ModelName    string `toml:"model_name"`
+	Name         string   `toml:"name"`
+	Desc         string   `toml:"desc"`
+	SystemPrompt string   `toml:"system_prompt"`
+	BaseURL      string   `toml:"base_url"`
+	APIKey       string   `toml:"api_key"`
+	ModelName    string   `toml:"model_name"`
+	Tools        []string `toml:"tools,omitempty"`
 }
 
 type MCPServer struct {
@@ -96,6 +97,7 @@ func GenerateExample() error {
 					BaseURL:      "https://api.example.com/v1",
 					APIKey:       "your_api_key_here",
 					ModelName:    "模型名称",
+					Tools:        []string{"工具名称，例如：file"},
 				},
 			},
 			MCPServers: []MCPServer{
