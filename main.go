@@ -350,7 +350,9 @@ func main() {
 	// 加载环境变量
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		fmt.Println("加载 .env 文件失败，请确保已创建该文件")
+		fmt.Println("可以使用 --generate-env 或者 -g 参数生成示例文件")
+		return
 	}
 
 	if checkUpdates {
