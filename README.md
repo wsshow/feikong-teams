@@ -117,6 +117,12 @@ FEIKONG_OPENAI_MODEL=gpt-5
 # 网络搜索工具配置（可选）
 FEIKONG_PROXY_URL=http://127.0.0.1:7890
 
+# 代码助手
+FEIKONG_CODER_ENABLED = false
+
+# 本地命令行助手
+FEIKONG_CMDER_ENABLED = false
+
 # SSH 访问者智能体配置（可选）
 FEIKONG_SSH_VISITOR_ENABLED=true # 设置为 true 启用小访智能体
 FEIKONG_SSH_HOST=ip:port
