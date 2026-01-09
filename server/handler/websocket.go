@@ -408,7 +408,7 @@ func customSupervisorModeWS(ctx context.Context) *adk.Runner {
 	for _, customAgent := range cfg.Custom.Agents {
 		subAgents = append(subAgents, custom.NewAgent(custom.Config{
 			Name:         customAgent.Name,
-			Description:  customAgent.Description,
+			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
 			Model: custom.Model{
 				Name:    customAgent.ModelName,

@@ -28,16 +28,29 @@ type Roundtable struct {
 }
 
 type Custom struct {
-	Agents []Agent `toml:"agents"`
+	Agents     []Agent     `toml:"agents"`
+	MCPServers []MCPServer `toml:"mcp_servers"`
 }
 
 type Agent struct {
 	Name         string `toml:"name"`
-	Description  string `toml:"description"`
+	Desc         string `toml:"desc"`
 	SystemPrompt string `toml:"system_prompt"`
 	BaseURL      string `toml:"base_url"`
 	APIKey       string `toml:"api_key"`
 	ModelName    string `toml:"model_name"`
+}
+
+type MCPServer struct {
+	Name          string   `toml:"name"`
+	Desc          string   `toml:"desc"`
+	Enabled       bool     `toml:"enabled"`
+	Timeout       int      `toml:"timeout"`
+	URL           string   `toml:"url,omitempty"`
+	Command       string   `toml:"command,omitempty"`  // Command: "uvx" or "npx"
+	EnvVars       []string `toml:"env_vars,omitempty"` // Environment variables for stdio
+	Args          []string `toml:"args,omitempty"`     // Command arguments array
+	TransportType string   `toml:"transport_type"`
 }
 
 type Config struct {
@@ -78,11 +91,31 @@ func GenerateExample() error {
 			Agents: []Agent{
 				{
 					Name:         "智能体名称",
-					Description:  "智能体描述",
+					Desc:         "智能体描述",
 					SystemPrompt: "你是一个有帮助的助手。",
 					BaseURL:      "https://api.example.com/v1",
 					APIKey:       "your_api_key_here",
 					ModelName:    "模型名称",
+				},
+			},
+			MCPServers: []MCPServer{
+				{
+					Name:          "MCP服务名称",
+					Desc:          "MCP服务描述",
+					Enabled:       false,
+					Timeout:       30,
+					URL:           "http://127.0.0.1:12345/mcp",
+					TransportType: "http",
+				},
+				{
+					Name:          "本地Stdio MCP服务",
+					Desc:          "通过stdio通信的本地MCP服务",
+					Enabled:       false,
+					Timeout:       30,
+					Command:       "go",
+					EnvVars:       []string{"FEIKONG_MCP_LOG_LEVEL=info"},
+					Args:          []string{"run", "main.go"},
+					TransportType: "stdio",
 				},
 			},
 		},

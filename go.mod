@@ -9,10 +9,12 @@ require (
 	github.com/cloudwego/eino v0.7.15
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20251223041451-fede3afb5715
+	github.com/cloudwego/eino-ext/components/tool/mcp v0.0.8
 	github.com/gin-gonic/gin v1.11.0
 	github.com/gomarkdown/markdown v0.0.0-20250810172220-2e2c11897d1a
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
+	github.com/mark3labs/mcp-go v0.43.2
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pkg/sftp v1.13.10
 	github.com/pterm/pterm v0.12.82
@@ -52,6 +54,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gookit/color v1.5.4 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
+	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
@@ -73,11 +76,13 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
+	github.com/spf13/cast v1.7.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
