@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -99,12 +100,36 @@ func (up Updater) Apply(rel *Release,
 	}
 	defer os.RemoveAll(tmpDir)
 
-	url := rel.Assets[idx].BrowserDownloadURL
-	srcFilename := filepath.Join(tmpDir, filepath.Base(url))
+	downloadURL := rel.Assets[idx].BrowserDownloadURL
+	srcFilename := filepath.Join(tmpDir, filepath.Base(downloadURL))
 	dstFilename := srcFilename
 
+	// 配置HTTP客户端
+	proxyStr := os.Getenv("FEIKONG_PROXY_URL")
+	var proxyFunc func(*http.Request) (*url.URL, error)
+	if proxyStr != "" {
+		proxyURL, err := url.Parse(proxyStr)
+		if err != nil {
+			return fmt.Errorf("invalid FEIKONG_PROXY_URL: %w", err)
+		}
+		proxyFunc = http.ProxyURL(proxyURL)
+	} else {
+		proxyFunc = http.ProxyFromEnvironment
+	}
+	transport := &http.Transport{
+		Proxy:                 proxyFunc,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   time.Second * 30,
+	}
+
 	// 创建下载器
-	downloader := dl.NewDownloader(url, dl.WithFileName(dstFilename))
+	downloader := dl.NewDownloader(downloadURL, dl.WithFileName(dstFilename), dl.WithHTTPClient(httpClient))
 
 	// 设置进度回调
 	var lastProgress float64
