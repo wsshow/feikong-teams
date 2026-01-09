@@ -1,6 +1,6 @@
 # fkteams
 
-一个基于多智能体协作的 AI 助手，支持**命令行模式**和**Web界面模式**，提供**团队模式**和**多智能体讨论模式**`(圆桌会议模式)`两种工作方式，通过多个专业智能体协同工作来完成复杂的编程和系统任务。
+一个基于多智能体协作的 AI 助手，支持**命令行模式**和**Web界面模式**，提供**团队模式**、**自定义会议模式**和**多智能体讨论模式**（圆桌会议模式）三种工作方式，通过多个专业智能体协同工作来完成复杂的编程和系统任务。
 
 ## 演示图
 
@@ -20,14 +20,16 @@
 - **会话管理**：支持自定义会话ID，便于管理不同主题的对话
 - **历史导出**：一键导出当前对话为格式化HTML文件
 - **响应式设计**：支持桌面和移动设备访问
-- **侧边栏控制**：可折叠侧边栏，支持模式切换和会话配置
+- **侧边栏控制**：可折叠侧边栏，支持三种模式切换和会话配置
 
 #### 命令行模式  
 - **交互式命令行**：传统的命令行交互体验，适合开发者和高级用户
 - **彩色输出**：使用 pterm 提供美观的终端显示效果
 - **命令补全**：支持历史命令和自动补全功能
 
-### 双模式架构
+### 多模式架构
+
+fkteams 提供三种工作模式，满足不同场景的需求：
 
 #### 团队模式 (Team Mode)
 - **监督者模式架构**：由"统御"智能体负责任务规划和智能体调度
@@ -38,16 +40,26 @@
   - **小访 (Visitor)**：SSH 访问专家，支持通过 SSH 连接远程服务器执行命令和传输文件
   - **小天 (Storyteller)**：讲故事专家，擅长创作和叙述
 
+#### 自定义会议模式 (Custom Mode)
+- **灵活的智能体组合**：通过配置文件自定义参与讨论的智能体
+- **工具自由配置**：为每个智能体单独配置所需的内置工具和 MCP 工具
+- **多模型支持**：每个智能体可使用不同的 AI 模型和提示词
+- **监督者协调**：由主持人智能体负责协调和调度自定义智能体
+- **适用场景**：需要特定领域专家组合的任务场景
+
 #### 多智能体讨论模式 / 圆桌会议模式 (Roundtable Mode)
 - **多模型协作**：支持配置不同的 AI 模型（如 DeepSeek、Claude、GPT 等）作为圆桌讨论成员
 - **多轮深度讨论**：多个智能体就同一问题进行多轮讨论，充分吸纳不同角度的分析意见
 - **观点融合**：每个讨论者参考他人意见的同时给出独到见解，最终形成更全面准确的结论
 - **可配置迭代**：通过 `max_iterations` 控制讨论轮数，平衡讨论深度与效率
 
-### 无缝模式切换
-- **实时切换**：在运行时输入 `switch_work_mode` 即可在团队模式和讨论模式之间切换
-- **上下文保留**：切换模式时完整保留所有对话历史，无需重新开始
-- **灵活应对**：简单任务用团队模式快速执行，复杂决策切换到讨论模式深入分析
+### 灵活的模式选择
+- **三种模式**：支持团队模式、自定义会议模式和讨论模式（圆桌会议模式）
+- **按需启动**：通过命令行参数 `-m team/custom/group` 或 Web 界面选择工作模式
+- **场景适配**：
+  - **团队模式**：适合标准任务，使用内置的专业智能体
+  - **自定义模式**：适合特定领域任务，使用自定义配置的专家智能体
+  - **讨论模式**：适合复杂决策，多个 AI 模型深度讨论分析
 
 ### 完整的历史记录
 - **会话记忆**：支持上下文持久化，多轮对话记忆
@@ -56,6 +68,18 @@
   - Web界面：一键导出为格式化HTML文件
   - 命令行：可将完整聊天历史导出为 Markdown 文件
 - **历史加载**：支持加载之前保存的聊天历史，继续未完成的对话
+
+### 强大的工具生态
+- **内置工具**：文件操作、命令执行、SSH连接、网络搜索等基础工具
+- **MCP协议支持**：完整支持 Model Context Protocol (MCP)，可接入丰富的 MCP 工具生态
+- **多种连接方式**：支持 HTTP、SSE、Stdio 三种 MCP 连接方式
+- **灵活配置**：通过配置文件轻松添加和管理 MCP 服务
+
+### 自定义智能体系统
+- **灵活创建**：通过配置文件轻松创建自定义智能体
+- **自由组合工具**：为每个智能体配置所需的内置工具和 MCP 工具
+- **独立模型配置**：每个智能体可以使用不同的 AI 模型和提示词
+- **系统提示词定制**：完全自定义智能体的行为和能力
 
 ### 其他特性
 - **流式输出**：实时显示智能体思考过程和工具调用
@@ -110,13 +134,14 @@ FEIKONG_SSH_PASSWORD=your_ssh_password
 ./fkteams --generate-config
 ```
 
-编辑 `config/config.toml` 配置圆桌会议成员和服务器设置：
+编辑 `config/config.toml` 配置圆桌会议成员、MCP服务和自定义智能体：
 
 ```toml
 [server]
 port = 23456        # Web服务器端口
 log_level = "info"  # 日志级别
 
+# 圆桌会议配置
 [roundtable]
 max_iterations = 2  # 讨论轮数
 
@@ -136,14 +161,68 @@ base_url = 'https://api.anthropic.com/v1'
 api_key = 'your_claude_api_key'
 model_name = 'claude-3-sonnet'
 
-[[roundtable.members]]
-index = 2
-name = 'GPT'
-desc = 'OpenAI GPT 模型，擅长综合分析'
-base_url = 'https://api.openai.com/v1'
-api_key = 'your_openai_api_key'
-model_name = 'gpt-4'
+# 自定义智能体配置
+[custom]
+
+# 配置自定义智能体
+[[custom.agents]]
+name = "数据分析师"
+desc = "专业的数据分析智能体"
+system_prompt = """你是一个专业的数据分析师，擅长数据处理和可视化。
+你需要：
+1. 分析用户提供的数据
+2. 使用合适的工具进行数据处理
+3. 生成可视化图表
+4. 给出专业的分析建议
+"""
+base_url = "https://api.openai.com/v1"
+api_key = "your_api_key"
+model_name = "gpt-4"
+tools = ["file", "command", "mcp-filesystem"]  # 可使用内置工具和MCP工具
+
+# 配置 MCP 服务
+[[custom.mcp_servers]]
+name = "filesystem"  # MCP服务名称，使用时需加前缀：mcp-filesystem
+desc = "文件系统操作工具"
+enabled = true
+timeout = 30
+url = "http://127.0.0.1:3000/mcp"
+transport_type = "http"  # 支持 http, sse, stdio
+
+[[custom.mcp_servers]]
+name = "database"
+desc = "数据库操作工具"
+enabled = true
+timeout = 30
+command = "npx"  # 或 "uvx" for Python
+env_vars = ["DATABASE_URL=postgresql://localhost/mydb"]
+args = ["-y", "@modelcontextprotocol/server-postgres"]
+transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 ```
+
+**配置说明**：
+
+#### 内置工具列表
+- `file` - 文件读写操作（限制在 code 目录）
+- `command` - 命令行执行
+- `ssh` - SSH 远程连接
+- `search` - 网络搜索（DuckDuckGo）
+- `todo` - 待办事项管理
+
+#### MCP 工具使用
+- MCP 工具在配置时需要添加 `mcp-` 前缀
+- 例如：名为 `filesystem` 的 MCP 服务，在工具列表中写作 `mcp-filesystem`
+- 支持三种连接方式：
+  - **HTTP**：连接远程 HTTP MCP 服务
+  - **SSE**：通过 Server-Sent Events 连接
+  - **Stdio**：启动本地 MCP 进程并通过标准输入输出通信
+
+#### 自定义智能体配置要点
+- `name`：智能体名称，用于标识
+- `desc`：智能体描述，帮助用户了解其能力
+- `system_prompt`：系统提示词，定义智能体的行为和能力
+- `tools`：工具列表，可包含内置工具和 MCP 工具
+- `base_url`、`api_key`、`model_name`：AI 模型配置
 
 ### 4. 运行
 
@@ -177,6 +256,9 @@ Web界面特性：
 # 默认启动团队模式
 go run main.go
 
+# 启动自定义会议模式
+go run main.go -m custom
+
 # 启动多智能体讨论模式
 go run main.go -m group
 ```
@@ -192,6 +274,9 @@ make build
 # 默认启动团队模式
 ./release/fkteams_darwin_arm64
 
+# 启动自定义会议模式
+./release/fkteams_darwin_arm64 -m custom
+
 # 启动多智能体讨论模式
 ./release/fkteams_darwin_arm64 -m group
 ```
@@ -204,7 +289,7 @@ make build
 2. 打开浏览器访问：`http://localhost:23456`
 3. 在聊天界面输入你的问题或任务
 4. 实时查看AI助手的回复和工具调用过程
-5. 使用侧边栏切换工作模式（团队模式/讨论模式）
+5. 使用侧边栏切换工作模式（团队/自定义/讨论）
 6. 点击"导出HTML"按钮保存对话历史
 
 #### 命令行使用
@@ -217,28 +302,28 @@ make build
 
 #### 常用命令（命令行模式）
 
-| 命令                            | 说明                              |
-| ------------------------------- | --------------------------------- |
-| `quit` / `q`                    | 退出程序                          |
-| `switch_work_mode`              | 切换工作模式（团队模式/讨论模式） |
-| `save_chat_history`             | 保存聊天历史                      |
-| `load_chat_history`             | 加载聊天历史                      |
-| `clear_chat_history`            | 清空聊天历史                      |
-| `save_chat_history_to_markdown` | 导出聊天历史为 Markdown 文件      |
-| `clear_todo`                    | 清空待办事项                      |
-| `help`                          | 显示帮助信息                      |
+| 命令                            | 说明                                         |
+| ------------------------------- | -------------------------------------------- |
+| `quit` / `q`                    | 退出程序                                     |
+| `switch_work_mode`              | 切换工作模式（团队模式/自定义模式/讨论模式） |
+| `save_chat_history`             | 保存聊天历史                                 |
+| `load_chat_history`             | 加载聊天历史                                 |
+| `clear_chat_history`            | 清空聊天历史                                 |
+| `save_chat_history_to_markdown` | 导出聊天历史为 Markdown 文件                 |
+| `clear_todo`                    | 清空待办事项                                 |
+| `help`                          | 显示帮助信息                                 |
 
 #### 命令行参数
 
-| 参数                | 简写 | 说明                                       |
-| ------------------- | ---- | ------------------------------------------ |
-| `--web`             | `-w` | 启动Web服务器模式（推荐）                  |
-| `--work-mode`       | `-m` | 工作模式: `team`（团队）或 `group`（讨论） |
-| `--query`           | `-q` | 直接查询模式，执行完查询后退出             |
-| `--version`         | `-v` | 显示版本信息                               |
-| `--update`          | `-u` | 检查并更新到最新版本                       |
-| `--generate-env`    | `-g` | 生成示例 .env 文件                         |
-| `--generate-config` | `-c` | 生成示例配置文件                           |
+| 参数                | 简写 | 说明                                                           |
+| ------------------- | ---- | -------------------------------------------------------------- |
+| `--web`             | `-w` | 启动Web服务器模式（推荐）                                      |
+| `--work-mode`       | `-m` | 工作模式: `team`（团队）、`group`（讨论）或 `custom`（自定义） |
+| `--query`           | `-q` | 直接查询模式，执行完查询后退出                                 |
+| `--version`         | `-v` | 显示版本信息                                                   |
+| `--update`          | `-u` | 检查并更新到最新版本                                           |
+| `--generate-env`    | `-g` | 生成示例 .env 文件                                             |
+| `--generate-config` | `-c` | 生成示例配置文件                                               |
 
 ## 使用场景示例
 
@@ -253,7 +338,7 @@ make build
 **使用流程**：
 1. 启动Web服务：`./fkteams --web`
 2. 浏览器访问：`http://localhost:23456`
-3. 在界面中选择工作模式（团队模式/讨论模式）
+3. 在界面中选择工作模式（团队模式/自定义模式/讨论模式）
 4. 开始对话，实时查看AI回复和工具执行过程
 5. 使用"导出HTML"功能保存重要对话
 
@@ -296,14 +381,251 @@ make build
 - `max_iterations` 建议设置为 1-3，过多轮次可能导致观点趋同
 - 可以给每个成员设置描述性的 `desc`，帮助理解其专长
 
+## MCP 工具集成指南
+
+### 什么是 MCP？
+
+Model Context Protocol (MCP) 是一个开放的协议标准，用于 AI 应用与外部工具和数据源的集成。fkteams 完整支持 MCP 协议，可以轻松接入丰富的 MCP 工具生态。
+
+### MCP 服务配置
+
+在 `config/config.toml` 中配置 MCP 服务：
+
+```toml
+[[custom.mcp_servers]]
+name = "filesystem"
+desc = "文件系统操作工具"
+enabled = true          # 是否启用
+timeout = 30           # 超时时间（秒）
+url = "http://127.0.0.1:3000/mcp"
+transport_type = "http"
+
+[[custom.mcp_servers]]
+name = "postgres"
+desc = "PostgreSQL 数据库工具"
+enabled = true
+timeout = 30
+command = "npx"        # 启动命令
+env_vars = ["DATABASE_URL=postgresql://localhost/mydb"]  # 环境变量
+args = ["-y", "@modelcontextprotocol/server-postgres"]   # 命令参数
+transport_type = "stdio"
+```
+
+### 支持的连接方式
+
+1. **HTTP 方式**
+   - 适合：远程 MCP 服务
+   - 配置：设置 `url` 和 `transport_type = "http"`
+
+2. **SSE 方式**
+   - 适合：需要服务器推送的场景
+   - 配置：设置 `url` 和 `transport_type = "sse"`
+
+3. **Stdio 方式**
+   - 适合：本地 MCP 工具
+   - 配置：设置 `command`、`args` 和 `transport_type = "stdio"`
+   - 支持通过 `env_vars` 配置环境变量
+
+### 在自定义智能体中使用 MCP 工具
+
+```toml
+[[custom.agents]]
+name = "数据处理专家"
+desc = "专门处理数据相关任务"
+system_prompt = "你是一个数据处理专家..."
+tools = [
+  "file",              # 内置文件工具
+  "mcp-filesystem",    # MCP 文件系统工具（需加 mcp- 前缀）
+  "mcp-postgres"       # MCP 数据库工具
+]
+base_url = "https://api.openai.com/v1"
+api_key = "your_api_key"
+model_name = "gpt-4"
+```
+
+### MCP 工具命名规则
+
+- MCP 服务在配置文件中使用 `name` 字段定义
+- 在智能体的 `tools` 列表中引用时，需要添加 `mcp-` 前缀
+- 例如：`name = "filesystem"` → 使用时写作 `mcp-filesystem`
+
+### 常用 MCP 服务示例
+
+```toml
+# 文件系统操作
+[[custom.mcp_servers]]
+name = "filesystem"
+desc = "文件系统读写工具"
+enabled = true
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
+transport_type = "stdio"
+
+# GitHub 集成
+[[custom.mcp_servers]]
+name = "github"
+desc = "GitHub API 工具"
+enabled = true
+command = "npx"
+env_vars = ["GITHUB_TOKEN=your_github_token"]
+args = ["-y", "@modelcontextprotocol/server-github"]
+transport_type = "stdio"
+
+# Google Drive
+[[custom.mcp_servers]]
+name = "gdrive"
+desc = "Google Drive 工具"
+enabled = true
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-gdrive"]
+transport_type = "stdio"
+
+# Brave Search
+[[custom.mcp_servers]]
+name = "brave-search"
+desc = "Brave 搜索引擎"
+enabled = true
+command = "npx"
+env_vars = ["BRAVE_API_KEY=your_api_key"]
+args = ["-y", "@modelcontextprotocol/server-brave-search"]
+transport_type = "stdio"
+```
+
+更多 MCP 服务请访问：https://github.com/modelcontextprotocol/servers
+
+## 自定义智能体使用指南
+
+> **⚠️ 重要提示**：自定义智能体只在**自定义会议模式** (`custom`) 下启用。需要使用 `-m custom` 参数启动或在 Web 界面中选择自定义模式。
+
+### 工作模式说明
+
+自定义智能体与其他工作模式的关系：
+
+- **团队模式** (`team`)：使用内置的五个专业智能体（小搜、小码、小令、小访、小天）
+- **讨论模式** (`group`)：使用 `[roundtable.members]` 配置的圆桌会议成员
+- **自定义模式** (`custom`)：使用 `[[custom.agents]]` 配置的自定义智能体
+
+### 启动自定义模式
+
+```bash
+# 命令行模式
+./fkteams -m custom
+
+# Web 模式（在侧边栏选择自定义模式）
+./fkteams --web
+
+# 直接查询模式
+./fkteams -m custom -q "你的问题"
+```
+
+### 创建自定义智能体
+
+1. **编辑配置文件** `config/config.toml`：
+
+```toml
+[[custom.agents]]
+name = "前端开发专家"
+desc = "专注于前端开发的智能体"
+system_prompt = """你是一个专业的前端开发工程师。
+你擅长：
+- React、Vue、Angular 等现代前端框架
+- HTML、CSS、JavaScript/TypeScript
+- 响应式设计和移动端适配
+- 性能优化和最佳实践
+
+你需要：
+1. 理解用户的前端开发需求
+2. 使用合适的工具创建和修改代码
+3. 确保代码质量和最佳实践
+4. 提供清晰的技术建议
+"""
+base_url = "https://api.openai.com/v1"
+api_key = "your_api_key"
+model_name = "gpt-4"
+tools = ["file", "command", "search"]
+```
+
+2. **启动自定义模式**：
+   ```bash
+   # 命令行启动
+   ./fkteams -m custom
+   
+   # 或 Web 模式中选择自定义模式
+   ./fkteams --web
+   ```
+
+3. **使用说明**：
+   - 自定义模式下会自动加载配置文件中的所有自定义智能体
+   - 主持人智能体会根据任务需求调度合适的自定义智能体
+   - 可以与内置智能体（如小搜、小天）混合使用
+
+### 配置参数说明
+
+| 参数            | 说明                            | 必填 |
+| --------------- | ------------------------------- | ---- |
+| `name`          | 智能体名称                      | ✓    |
+| `desc`          | 智能体描述                      | ✓    |
+| `system_prompt` | 系统提示词，定义智能体的行为    | ✓    |
+| `base_url`      | AI 模型 API 地址                | ✓    |
+| `api_key`       | API 密钥                        | ✓    |
+| `model_name`    | 使用的模型名称                  | ✓    |
+| `tools`         | 工具列表（内置工具和 MCP 工具） | ✗    |
+
+### 系统提示词编写技巧
+
+1. **明确角色定位**：清楚说明智能体的专业领域
+2. **定义能力范围**：列出智能体擅长的具体技能
+3. **设定工作流程**：指导智能体如何处理任务
+4. **强调约束条件**：说明需要遵守的规则和限制
+
+### 工具配置最佳实践
+
+1. **按需选择**：只配置智能体真正需要的工具
+2. **组合使用**：合理搭配内置工具和 MCP 工具
+3. **权限控制**：注意工具的安全性和访问权限
+
+### 使用场景示例
+
+**场景 1：代码审查助手**
+```toml
+[[custom.agents]]
+name = "代码审查专家"
+desc = "专业的代码审查和质量分析"
+system_prompt = """你是一个严格的代码审查专家...
+重点关注：代码质量、安全漏洞、性能问题、最佳实践"""
+tools = ["file", "mcp-github"]
+```
+
+**场景 2：DevOps 助手**
+```toml
+[[custom.agents]]
+name = "DevOps 工程师"
+desc = "自动化运维和部署专家"
+system_prompt = """你是一个经验丰富的 DevOps 工程师...
+擅长：CI/CD、容器化、监控告警、自动化脚本"""
+tools = ["command", "ssh", "file", "mcp-github"]
+```
+
+**场景 3：数据分析师**
+```toml
+[[custom.agents]]
+name = "数据分析师"
+desc = "数据处理和可视化专家"
+system_prompt = """你是一个数据分析专家...
+能力：数据清洗、统计分析、数据可视化、报告生成"""
+tools = ["file", "mcp-postgres", "mcp-filesystem"]
+```
+
 ## 安全说明
 
 - **文件操作限制**：小码智能体的文件操作被限制在可执行文件同级的 `code/` 目录下，防止误操作系统文件
 - **命令执行权限**：小令智能体会根据当前操作系统类型（Windows/Linux/macOS）执行相应的命令
 - **SSH 连接管理**：小访智能体通过 SSH 连接远程服务器，确保连接信息安全存储和使用
+- **MCP 工具隔离**：每个 MCP 服务运行在独立的进程中，可以单独控制启用/禁用
+- **工具权限管理**：自定义智能体只能使用配置中明确指定的工具，避免权限滥用
 - **日志记录**：所有智能体的操作和输出都会被记录，可以主动输出成 markdown 文件，便于审计和调试
 - **工具调用可视化**：所有工具调用都会在终端显示，提供透明度
-- **环境变量保护**：请确保 `.env` 文件不被泄露，避免敏感信息外泄
+- **环境变量保护**：请确保 `.env` 文件和 `config.toml` 不被泄露，避免敏感信息外泄
 
 ## 构建
 
@@ -327,3 +649,12 @@ make build
 - [go-prompt](https://github.com/c-bata/go-prompt) - 交互式命令行提示库
 - [Pterm](https://github.com/pterm/pterm) - 美观的终端 UI 库
 - [Cloudwego Eino](https://github.com/cloudwego/eino) - 强大的 AI 编程框架
+- [MCP Go](https://github.com/mark3labs/mcp-go) - Go 语言的 MCP 协议实现
+- [Model Context Protocol](https://modelcontextprotocol.io/) - AI 工具集成标准协议
+
+## 相关链接
+
+- [MCP 官方文档](https://modelcontextprotocol.io/)
+- [MCP 服务器列表](https://github.com/modelcontextprotocol/servers)
+- [Cloudwego Eino 文档](https://github.com/cloudwego/eino)
+- [项目 GitHub](https://github.com/wsshow/feikong-teams)
