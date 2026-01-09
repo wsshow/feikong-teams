@@ -38,7 +38,7 @@ func NewAgent() adk.Agent {
 	fmt.Printf("[tips] 文件工具已限制在目录: %s\n", codeDir)
 
 	// 创建文件操作工具
-	fileTools, err := toolFile.GetFileTools()
+	fileTools, err := toolFile.GetTools()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -17,7 +17,7 @@ func NewAgent() adk.Agent {
 	ctx := context.Background()
 
 	// 创建 CLI 操作工具
-	cliTools, err := command.GetCLITools()
+	cliTools, err := command.GetTools()
 	if err != nil {
 		log.Fatal("创建 CLI 工具失败:", err)
 	}

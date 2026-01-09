@@ -34,7 +34,7 @@ func NewAgent() adk.Agent {
 	fmt.Printf("[tips] SSH 访问者智能体已初始化，连接到: %s (用户: %s)\n", host, username)
 
 	// 创建 SSH 工具
-	sshTools, err := toolSSH.GetSSHTools()
+	sshTools, err := toolSSH.GetTools()
 	if err != nil {
 		log.Fatal("创建 SSH 工具失败:", err)
 	}
