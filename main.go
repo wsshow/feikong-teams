@@ -329,14 +329,6 @@ func main() {
 		return
 	}
 
-	if checkUpdates {
-		err := update.SelfUpdate("wsshow", "feikong-teams")
-		if err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-
 	if generateEnv {
 		err := common.GenerateExampleEnv(".env.example")
 		if err != nil {
@@ -355,12 +347,25 @@ func main() {
 		return
 	}
 
+	// 加载环境变量
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	if checkUpdates {
+		err := update.SelfUpdate("wsshow", "feikong-teams")
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	if web {
 		server.Run()
 		return
 	}
 
-	var err error
 	var runner *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
 
@@ -407,10 +412,6 @@ func main() {
 }
 
 func supervisorMode(ctx context.Context) *adk.Runner {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
 	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 
 	leaderAgent := leader.NewAgent()
@@ -491,10 +492,6 @@ func loopAgentMode(ctx context.Context) *adk.Runner {
 }
 
 func customSupervisorMode(ctx context.Context) *adk.Runner {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
 	cfg, err := config.Get()
 	if err != nil {
 		log.Fatal(err)

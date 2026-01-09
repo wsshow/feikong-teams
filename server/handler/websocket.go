@@ -28,7 +28,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/joho/godotenv"
 )
 
 var upgrader = websocket.Upgrader{
@@ -315,10 +314,6 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 
 // supervisorModeWS WebSocket 版本的 supervisor 模式
 func supervisorModeWS(ctx context.Context) *adk.Runner {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Error loading .env file")
-	}
 
 	leaderAgent := leader.NewAgent()
 	storytellerAgent := storyteller.NewAgent()
@@ -391,10 +386,7 @@ func loopAgentModeWS(ctx context.Context) *adk.Runner {
 }
 
 func customSupervisorModeWS(ctx context.Context) *adk.Runner {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+
 	cfg, err := config.Get()
 	if err != nil {
 		log.Fatal(err)
