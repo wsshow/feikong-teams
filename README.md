@@ -542,7 +542,7 @@ system_prompt = """你是一个专业的前端开发工程师。
 base_url = "https://api.openai.com/v1"
 api_key = "your_api_key"
 model_name = "gpt-4"
-tools = ["file", "command", "search"]
+tools = ["command", "search"]
 ```
 
 2. **启动自定义模式**：
@@ -593,7 +593,7 @@ name = "代码审查专家"
 desc = "专业的代码审查和质量分析"
 system_prompt = """你是一个严格的代码审查专家...
 重点关注：代码质量、安全漏洞、性能问题、最佳实践"""
-tools = ["file", "mcp-github"]
+tools = ["command", "mcp-github"]
 ```
 
 **场景 2：DevOps 助手**
@@ -603,7 +603,7 @@ name = "DevOps 工程师"
 desc = "自动化运维和部署专家"
 system_prompt = """你是一个经验丰富的 DevOps 工程师...
 擅长：CI/CD、容器化、监控告警、自动化脚本"""
-tools = ["command", "ssh", "file", "mcp-github"]
+tools = ["command", "mcp-github"]
 ```
 
 **场景 3：数据分析师**
@@ -613,7 +613,7 @@ name = "数据分析师"
 desc = "数据处理和可视化专家"
 system_prompt = """你是一个数据分析专家...
 能力：数据清洗、统计分析、数据可视化、报告生成"""
-tools = ["file", "mcp-postgres", "mcp-filesystem"]
+tools = ["command", "mcp-postgres", "mcp-filesystem"]
 ```
 
 ## 安全说明

@@ -3,11 +3,8 @@ package tools
 import (
 	"context"
 	"fkteams/tools/command"
-	"fkteams/tools/file"
 	"fkteams/tools/mcp"
 	"fkteams/tools/search"
-	"fkteams/tools/ssh"
-	"fkteams/tools/todo"
 	"fmt"
 	"strings"
 
@@ -16,12 +13,6 @@ import (
 
 func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	switch name {
-	case "file":
-		return file.GetTools()
-	case "ssh":
-		return ssh.GetTools()
-	case "todo":
-		return todo.GetTools()
 	case "command":
 		return command.GetTools()
 	case "search":

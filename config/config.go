@@ -97,7 +97,7 @@ func GenerateExample() error {
 					BaseURL:      "https://api.example.com/v1",
 					APIKey:       "your_api_key_here",
 					ModelName:    "模型名称",
-					Tools:        []string{"工具名称，例如：file", "MCP工具要求添加【mcp-】前缀，例如：mcp-服务名称"},
+					Tools:        []string{"工具名称，例如：command", "MCP工具要求添加【mcp-】前缀，例如：mcp-服务名称"},
 				},
 			},
 			MCPServers: []MCPServer{
