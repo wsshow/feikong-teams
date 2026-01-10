@@ -1,6 +1,9 @@
 package common
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // CleanupFunc 定义清理函数类型
 type CleanupFunc func() error
@@ -97,6 +100,48 @@ func (rc *ResourceCleaner) ExecuteAndClear() error {
 		return errs[0]
 	}
 	return nil
+}
+
+// ExecuteNamed 执行指定名称的清理函数
+func (rc *ResourceCleaner) ExecuteNamed(name string) error {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	idx, exists := rc.names[name]
+	if !exists {
+		return fmt.Errorf("cleanup function '%s' not found", name)
+	}
+
+	if idx >= len(rc.cleanups) || rc.cleanups[idx] == nil {
+		return fmt.Errorf("cleanup function '%s' already executed or removed", name)
+	}
+
+	// 执行清理函数
+	err := rc.cleanups[idx]()
+
+	// 执行后移除
+	rc.cleanups[idx] = nil
+	delete(rc.names, name)
+
+	return err
+}
+
+// ExecuteNamedKeep 执行指定名称的清理函数但保留（可重复执行）
+func (rc *ResourceCleaner) ExecuteNamedKeep(name string) error {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	idx, exists := rc.names[name]
+	if !exists {
+		return fmt.Errorf("cleanup function '%s' not found", name)
+	}
+
+	if idx >= len(rc.cleanups) || rc.cleanups[idx] == nil {
+		return fmt.Errorf("cleanup function '%s' already removed", name)
+	}
+
+	// 执行但不移除
+	return rc.cleanups[idx]()
 }
 
 // Clear 清空所有清理函数但不执行
