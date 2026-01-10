@@ -90,6 +90,13 @@ func GenerateExample() error {
 	}
 	defaultConfig := Config{
 		Custom: Custom{
+			Moderator: Agent{
+				Name:         "主持人名称",
+				Desc:         "主持人描述",
+				SystemPrompt: "你是一个公正的主持人，负责引导讨论。",
+				BaseURL:      "https://api.example.com/v1",
+				APIKey:       "your_api_key_here",
+			},
 			Agents: []Agent{
 				{
 					Name:         "智能体名称",
