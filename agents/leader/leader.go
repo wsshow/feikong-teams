@@ -13,6 +13,8 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
+var globalTodoToolsInstance *todo.TodoTools
+
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
@@ -29,13 +31,17 @@ func NewAgent() adk.Agent {
 	// 设置 todo 目录为可执行文件同级的目录
 	todoDir := filepath.Join(execDir, "todo")
 
-	// 初始化 Todo 工具
-	if err := todo.InitTodoTool(todoDir); err != nil {
+	// 创建 Todo 工具实例
+	todoToolsInstance, err := todo.NewTodoTools(todoDir)
+	if err != nil {
 		log.Fatal("初始化 Todo 工具失败:", err)
 	}
 
+	// 保存实例以便后续操作
+	globalTodoToolsInstance = todoToolsInstance
+
 	// 创建 Todo 工具
-	todoTools, err := todo.GetTools()
+	todoTools, err := todoToolsInstance.GetTools()
 	if err != nil {
 		log.Fatal("创建 Todo 工具失败:", err)
 	}
@@ -67,5 +73,13 @@ func NewAgent() adk.Agent {
 }
 
 func ClearTodoTool() error {
-	return todo.ClearTodoTool()
+	if globalTodoToolsInstance == nil {
+		return nil
+	}
+	// 使用TodoClear方法清空所有待办事项
+	_, err := globalTodoToolsInstance.TodoClear(context.Background(), &todo.TodoClearRequest{})
+	if err != nil {
+		return err
+	}
+	return nil
 }
