@@ -7,7 +7,6 @@ import (
 	"fkteams/agents/custom"
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
-	"fkteams/agents/moderator"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/agents/visitor"
@@ -500,10 +499,20 @@ func customSupervisorMode(ctx context.Context) *adk.Runner {
 	}
 	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 
-	moderatorAgent := moderator.NewAgent()
-	storytellerAgent := storyteller.NewAgent()
-	searcherAgent := searcher.NewAgent()
-	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
+	var moderatorAgent adk.Agent
+	var subAgents []adk.Agent
+
+	moderatorAgent = custom.NewAgent(custom.Config{
+		Name:         cfg.Custom.Moderator.Name,
+		Description:  cfg.Custom.Moderator.Desc,
+		SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
+		Model: custom.Model{
+			Name:    cfg.Custom.Moderator.ModelName,
+			APIKey:  cfg.Custom.Moderator.APIKey,
+			BaseURL: cfg.Custom.Moderator.BaseURL,
+		},
+		ToolNames: cfg.Custom.Moderator.Tools,
+	})
 
 	for _, customAgent := range cfg.Custom.Agents {
 		subAgents = append(subAgents, custom.NewAgent(custom.Config{
@@ -519,6 +528,7 @@ func customSupervisorMode(ctx context.Context) *adk.Runner {
 		}))
 	}
 
+	fmt.Printf("本次讨论的主持人: %s\n", moderatorAgent.Name(ctx))
 	fmt.Printf("本次讨论的成员有: ")
 	var names []string
 	for _, subAgent := range subAgents {

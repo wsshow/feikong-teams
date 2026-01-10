@@ -28,6 +28,7 @@ type Roundtable struct {
 }
 
 type Custom struct {
+	Moderator  Agent       `toml:"moderator"`
 	Agents     []Agent     `toml:"agents"`
 	MCPServers []MCPServer `toml:"mcp_servers"`
 }
