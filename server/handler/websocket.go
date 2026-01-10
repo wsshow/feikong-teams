@@ -392,10 +392,24 @@ func customSupervisorModeWS(ctx context.Context) *adk.Runner {
 		log.Fatal(err)
 	}
 
-	moderatorAgent := moderator.NewAgent()
-	storytellerAgent := storyteller.NewAgent()
-	searcherAgent := searcher.NewAgent()
-	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
+	var moderatorAgent adk.Agent
+	var subAgents []adk.Agent
+
+	if cfg.Custom.Moderator.Name != "" {
+		moderatorAgent = custom.NewAgent(custom.Config{
+			Name:         cfg.Custom.Moderator.Name,
+			Description:  cfg.Custom.Moderator.Desc,
+			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
+			Model: custom.Model{
+				Name:    cfg.Custom.Moderator.ModelName,
+				APIKey:  cfg.Custom.Moderator.APIKey,
+				BaseURL: cfg.Custom.Moderator.BaseURL,
+			},
+			ToolNames: cfg.Custom.Moderator.Tools,
+		})
+	} else {
+		moderatorAgent = moderator.NewAgent()
+	}
 
 	for _, customAgent := range cfg.Custom.Agents {
 		subAgents = append(subAgents, custom.NewAgent(custom.Config{
@@ -407,8 +421,15 @@ func customSupervisorModeWS(ctx context.Context) *adk.Runner {
 				APIKey:  customAgent.APIKey,
 				BaseURL: customAgent.BaseURL,
 			},
+			ToolNames: customAgent.Tools,
 		}))
 	}
+
+	var names []string
+	for _, subAgent := range subAgents {
+		names = append(names, subAgent.Name(ctx))
+	}
+	fmt.Println(strings.Join(names, ", "))
 
 	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
 		Supervisor: moderatorAgent,
