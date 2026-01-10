@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -17,28 +16,22 @@ import (
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
-	// 初始化安全的文件系统，限制操作在二进制文件同级的 code 目录下
-	// 获取可执行文件的路径
-	execPath, err := os.Executable()
-	if err != nil {
-		log.Fatal("无法获取可执行文件路径:", err)
+	codeDir := "./code"
+	codeDirEnv := os.Getenv("FEIKONG_FILE_TOOL_SAFE_DIR")
+	if codeDirEnv != "" {
+		codeDir = codeDirEnv
 	}
 
-	// 获取可执行文件所在的目录
-	execDir := filepath.Dir(execPath)
-
-	// 设置 code 目录为可执行文件同级的 code 目录
-	codeDir := filepath.Join(execDir, "code")
-
-	// 初始化安全的文件系统
-	if err := toolFile.InitSecuredFileSystem(codeDir); err != nil {
-		log.Fatal("初始化文件系统失败:", err)
+	// 创建文件工具实例
+	fileToolsInstance, err := toolFile.NewFileTools(codeDir)
+	if err != nil {
+		log.Fatal("初始化文件工具失败:", err)
 	}
 
 	fmt.Printf("[tips] 文件工具已限制在目录: %s\n", codeDir)
 
 	// 创建文件操作工具
-	fileTools, err := toolFile.GetTools()
+	fileTools, err := fileToolsInstance.GetTools()
 	if err != nil {
 		log.Fatal(err)
 	}
