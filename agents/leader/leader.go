@@ -5,8 +5,6 @@ import (
 	"fkteams/agents/common"
 	"fkteams/tools/todo"
 	"log"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -18,18 +16,7 @@ var globalTodoToolsInstance *todo.TodoTools
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
-	// 初始化 Todo 工具
-	// 获取可执行文件的路径
-	execPath, err := os.Executable()
-	if err != nil {
-		log.Fatal("无法获取可执行文件路径:", err)
-	}
-
-	// 获取可执行文件所在的目录
-	execDir := filepath.Dir(execPath)
-
-	// 设置 todo 目录为可执行文件同级的目录
-	todoDir := filepath.Join(execDir, "todo")
+	todoDir := "./todo"
 
 	// 创建 Todo 工具实例
 	todoToolsInstance, err := todo.NewTodoTools(todoDir)
