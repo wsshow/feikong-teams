@@ -15,6 +15,7 @@ import (
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/fkevent"
+	"fkteams/g"
 	"fmt"
 	"log"
 	"net/http"
@@ -37,8 +38,6 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 }
-
-var cleaner = common.NewResourceCleaner()
 
 // WS 连接池管理
 var (
@@ -214,7 +213,7 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 	}
 
 	defer func() {
-		err = cleaner.ExecuteAndClear()
+		err = g.Cleaner.ExecuteAndClear()
 		if err != nil {
 			fmt.Printf("清理资源失败: %v\n", err)
 		}
@@ -341,7 +340,7 @@ func supervisorModeWS(ctx context.Context) *adk.Runner {
 
 	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 		visitorAgent := visitor.NewAgent()
-		cleaner.Add(func() error {
+		g.Cleaner.Add(func() error {
 			visitor.CloseSSHClient()
 			return nil
 		})

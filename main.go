@@ -14,6 +14,7 @@ import (
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/fkevent"
+	"fkteams/g"
 	"fkteams/report"
 	"fkteams/server"
 	"fkteams/update"
@@ -40,11 +41,10 @@ func init() {
 }
 
 var (
-	inputHistory    []string                      // 输入历史记录
-	fullBuffer      []string                      // 存储已输入的所有行
-	isContinuing    bool                          // 是否处于续行状态
-	currentWorkMode string                        // 当前工作模式
-	cleaner         = common.NewResourceCleaner() // 资源清理器
+	inputHistory    []string // 输入历史记录
+	fullBuffer      []string // 存储已输入的所有行
+	isContinuing    bool     // 是否处于续行状态
+	currentWorkMode string   // 当前工作模式
 )
 
 func handleInput(in string) (finalCmd string) {
@@ -387,7 +387,7 @@ func main() {
 	}
 
 	defer func() {
-		err = cleaner.ExecuteAndClear()
+		err = g.Cleaner.ExecuteAndClear()
 		if err != nil {
 			log.Fatalf("清理资源失败: %v", err)
 		}
@@ -441,7 +441,7 @@ func supervisorMode(ctx context.Context) *adk.Runner {
 
 	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 		visitorAgent := visitor.NewAgent()
-		cleaner.Add(func() error {
+		g.Cleaner.Add(func() error {
 			visitor.CloseSSHClient()
 			return nil
 		})

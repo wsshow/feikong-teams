@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fkteams/g"
 	"fkteams/tools/command"
 	"fkteams/tools/file"
 	"fkteams/tools/mcp"
@@ -50,6 +51,10 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
 		}
+		g.Cleaner.Add(func() error {
+			sshTools.Close()
+			return nil
+		})
 		return sshTools.GetTools()
 	case "command":
 		return command.GetTools()
