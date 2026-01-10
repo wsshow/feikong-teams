@@ -80,7 +80,7 @@ func (rc *ResourceCleaner) Execute() []error {
 	// 反向执行（LIFO）
 	for i := len(rc.cleanups) - 1; i >= 0; i-- {
 		if rc.cleanups[i] != nil {
-			if err := rc.cleanups[i](); err != nil {
+			if err := rc.safeExecute(rc.cleanups[i]); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -91,6 +91,17 @@ func (rc *ResourceCleaner) Execute() []error {
 	rc.names = make(map[string]int)
 
 	return errs
+}
+
+// safeExecute 安全执行清理函数，捕获 panic
+func (rc *ResourceCleaner) safeExecute(cleanup CleanupFunc) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during cleanup: %v", r)
+		}
+	}()
+
+	return cleanup()
 }
 
 // ExecuteAndClear 执行所有清理函数并返回第一个错误
@@ -116,8 +127,8 @@ func (rc *ResourceCleaner) ExecuteNamed(name string) error {
 		return fmt.Errorf("cleanup function '%s' already executed or removed", name)
 	}
 
-	// 执行清理函数
-	err := rc.cleanups[idx]()
+	// 安全执行清理函数
+	err := rc.safeExecute(rc.cleanups[idx])
 
 	// 执行后移除
 	rc.cleanups[idx] = nil
@@ -140,8 +151,8 @@ func (rc *ResourceCleaner) ExecuteNamedKeep(name string) error {
 		return fmt.Errorf("cleanup function '%s' already removed", name)
 	}
 
-	// 执行但不移除
-	return rc.cleanups[idx]()
+	// 安全执行但不移除
+	return rc.safeExecute(rc.cleanups[idx])
 }
 
 // Clear 清空所有清理函数但不执行
