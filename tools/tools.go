@@ -6,6 +6,7 @@ import (
 	"fkteams/tools/file"
 	"fkteams/tools/mcp"
 	"fkteams/tools/search"
+	"fkteams/tools/ssh"
 	"fkteams/tools/todo"
 	"fmt"
 	"os"
@@ -38,6 +39,18 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 		}
 		return todoTools.GetTools()
+	case "ssh":
+		host := os.Getenv("FEIKONG_SSH_HOST")
+		username := os.Getenv("FEIKONG_SSH_USERNAME")
+		password := os.Getenv("FEIKONG_SSH_PASSWORD")
+		if host == "" || username == "" || password == "" {
+			return nil, fmt.Errorf("SSH 连接信息未配置。请设置以下环境变量：FEIKONG_SSH_HOST, FEIKONG_SSH_USERNAME, FEIKONG_SSH_PASSWORD")
+		}
+		sshTools, err := ssh.NewSSHTools(host, username, password)
+		if err != nil {
+			return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
+		}
+		return sshTools.GetTools()
 	case "command":
 		return command.GetTools()
 	case "search":
