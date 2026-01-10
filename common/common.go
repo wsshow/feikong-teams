@@ -13,8 +13,20 @@ FEIKONG_OPENAI_BASE_URL =
 FEIKONG_OPENAI_API_KEY = 
 FEIKONG_OPENAI_MODEL = 
 
-# 网络搜索工具配置代理
+# 配置代理：网络搜索工具、程序更新等
 FEIKONG_PROXY_URL = 
+
+# 代码助手
+FEIKONG_CODER_ENABLED = false
+
+# 本地命令行助手
+FEIKONG_CMDER_ENABLED = false
+
+# 文件工具的使用目录, 默认为: ./code
+FEIKONG_FILE_TOOL_DIR = ./code
+
+# Todo工具的使用目录, 默认为: ./todo
+FEIKONG_TODO_TOOL_DIR = ./todo
 
 # SSH 远程服务器配置
 FEIKONG_SSH_VISITOR_ENABLED = false

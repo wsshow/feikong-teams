@@ -17,7 +17,7 @@ func NewAgent() adk.Agent {
 	ctx := context.Background()
 
 	codeDir := "./code"
-	codeDirEnv := os.Getenv("FEIKONG_FILE_TOOL_SAFE_DIR")
+	codeDirEnv := os.Getenv("FEIKONG_FILE_TOOL_DIR")
 	if codeDirEnv != "" {
 		codeDir = codeDirEnv
 	}

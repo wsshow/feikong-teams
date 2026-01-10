@@ -6,6 +6,7 @@ import (
 	"fkteams/tools/file"
 	"fkteams/tools/mcp"
 	"fkteams/tools/search"
+	"fkteams/tools/todo"
 	"fmt"
 	"os"
 	"strings"
@@ -17,7 +18,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	switch name {
 	case "file":
 		safeDir := "./code"
-		codeDirEnv := os.Getenv("FEIKONG_FILE_TOOL_SAFE_DIR")
+		codeDirEnv := os.Getenv("FEIKONG_FILE_TOOL_DIR")
 		if codeDirEnv != "" {
 			safeDir = codeDirEnv
 		}
@@ -26,6 +27,17 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 		}
 		return fileTools.GetTools()
+	case "todo":
+		todoDir := "./todo"
+		todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
+		if todoDirEnv != "" {
+			todoDir = todoDirEnv
+		}
+		todoTools, err := todo.NewTodoTools(todoDir)
+		if err != nil {
+			return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
+		}
+		return todoTools.GetTools()
 	case "command":
 		return command.GetTools()
 	case "search":

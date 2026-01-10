@@ -5,6 +5,7 @@ import (
 	"fkteams/agents/common"
 	"fkteams/tools/todo"
 	"log"
+	"os"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -17,6 +18,10 @@ func NewAgent() adk.Agent {
 	ctx := context.Background()
 
 	todoDir := "./todo"
+	todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
+	if todoDirEnv != "" {
+		todoDir = todoDirEnv
+	}
 
 	// 创建 Todo 工具实例
 	todoToolsInstance, err := todo.NewTodoTools(todoDir)
