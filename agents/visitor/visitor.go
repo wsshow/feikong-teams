@@ -13,6 +13,8 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
+var globalSSHToolsInstance *toolSSH.SSHTools
+
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
@@ -26,15 +28,19 @@ func NewAgent() adk.Agent {
 		log.Fatal("SSH 连接信息未配置。请设置以下环境变量：FEIKONG_SSH_HOST, FEIKONG_SSH_USERNAME, FEIKONG_SSH_PASSWORD")
 	}
 
-	// 初始化 SSH 客户端
-	if err := toolSSH.InitSSHClient(host, username, password); err != nil {
-		log.Fatalf("初始化 SSH 客户端失败: %v", err)
+	// 创建 SSH 工具实例
+	sshToolsInstance, err := toolSSH.NewSSHTools(host, username, password)
+	if err != nil {
+		log.Fatalf("初始化 SSH 工具失败: %v", err)
 	}
+
+	// 保存实例以便后续关闭
+	globalSSHToolsInstance = sshToolsInstance
 
 	fmt.Printf("[tips] SSH 访问者智能体已初始化，连接到: %s (用户: %s)\n", host, username)
 
 	// 创建 SSH 工具
-	sshTools, err := toolSSH.GetTools()
+	sshTools, err := sshToolsInstance.GetTools()
 	if err != nil {
 		log.Fatal("创建 SSH 工具失败:", err)
 	}
@@ -70,5 +76,8 @@ func NewAgent() adk.Agent {
 }
 
 func CloseSSHClient() {
-	toolSSH.CloseSSHClient()
+	if globalSSHToolsInstance != nil {
+		globalSSHToolsInstance.Close()
+		globalSSHToolsInstance = nil
+	}
 }

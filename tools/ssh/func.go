@@ -7,33 +7,33 @@ import (
 	"time"
 )
 
-type RemoteShellTool struct {
-	Client *SshClient
+// SSHTools SSH工具实例，每个agent可以有独立的实例
+type SSHTools struct {
+	client *SshClient
 }
 
-var globalSSHConn *RemoteShellTool
-
-// InitSSHClient 初始化 SSH 连接信息
-func InitSSHClient(host, username, password string) error {
+// NewSSHTools 创建一个新的SSH工具实例
+func NewSSHTools(host, username, password string) (*SSHTools, error) {
 	if host == "" || username == "" || password == "" {
-		return fmt.Errorf("host, username 和 password 都是必需的")
+		return nil, fmt.Errorf("host, username 和 password 都是必需的")
 	}
-	globalSSHConn = &RemoteShellTool{
-		Client: NewClient(username, password, host),
+
+	client := NewClient(username, password, host)
+	if err := client.Connect(); err != nil {
+		log.Printf("%+v", client)
+		return nil, fmt.Errorf("SSH 连接失败: %v", err)
 	}
-	if err := globalSSHConn.Client.Connect(); err != nil {
-		log.Printf("%+v", globalSSHConn.Client)
-		return fmt.Errorf("SSH 连接失败: %v", err)
-	}
-	return nil
+
+	return &SSHTools{
+		client: client,
+	}, nil
 }
 
-// CloseSSHClient 清除 SSH 连接信息
-func CloseSSHClient() {
-	if globalSSHConn != nil && globalSSHConn.Client != nil {
-		globalSSHConn.Client.Close()
+// Close 关闭SSH连接
+func (st *SSHTools) Close() {
+	if st != nil && st.client != nil {
+		st.client.Close()
 	}
-	globalSSHConn = nil
 }
 
 // SSHExecuteRequest 执行远程命令请求
@@ -51,10 +51,10 @@ type SSHExecuteResponse struct {
 }
 
 // SSHExecute 在远程服务器执行命令
-func SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SSHExecuteResponse, error) {
-	if globalSSHConn == nil {
+func (st *SSHTools) SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SSHExecuteResponse, error) {
+	if st == nil || st.client == nil {
 		return &SSHExecuteResponse{
-			ErrorMessage: "SSH 客户端未初始化，请先设置环境变量 SSH_HOST, SSH_USERNAME, SSH_PASSWORD",
+			ErrorMessage: "SSH 客户端未初始化",
 		}, nil
 	}
 
@@ -81,12 +81,9 @@ func SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SSHExecuteRespons
 		}, nil
 	}
 
-	// 3. 创建 SSH 连接
-	client := globalSSHConn.Client
-
-	// 4. 执行命令并计时
+	// 3. 执行命令并计时
 	startTime := time.Now()
-	output, err := executeWithTimeout(client, req.Command, timeout)
+	output, err := executeWithTimeout(st.client, req.Command, timeout)
 	executionTime := time.Since(startTime)
 
 	if err != nil {
@@ -137,10 +134,10 @@ type SSHFileUploadResponse struct {
 }
 
 // SSHFileUpload 上传文件到远程服务器
-func SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest) (*SSHFileUploadResponse, error) {
-	if globalSSHConn == nil {
+func (st *SSHTools) SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest) (*SSHFileUploadResponse, error) {
+	if st == nil || st.client == nil {
 		return &SSHFileUploadResponse{
-			ErrorMessage: "SSH 客户端未初始化，请先设置环境变量 SSH_HOST, SSH_USERNAME, SSH_PASSWORD",
+			ErrorMessage: "SSH 客户端未初始化",
 		}, nil
 	}
 
@@ -150,10 +147,7 @@ func SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest) (*SSHFileUplo
 		}, nil
 	}
 
-	// 创建 SSH 连接
-	client := globalSSHConn.Client
-
-	n, err := client.CopyLocalFileToRemote(req.LocalPath, req.RemotePath)
+	n, err := st.client.CopyLocalFileToRemote(req.LocalPath, req.RemotePath)
 	if err != nil {
 		return &SSHFileUploadResponse{
 			ErrorMessage: fmt.Sprintf("文件上传失败: %v", err),
@@ -180,10 +174,10 @@ type SSHFileDownloadResponse struct {
 }
 
 // SSHFileDownload 从远程服务器下载文件
-func SSHFileDownload(ctx context.Context, req *SSHFileDownloadRequest) (*SSHFileDownloadResponse, error) {
-	if globalSSHConn == nil {
+func (st *SSHTools) SSHFileDownload(ctx context.Context, req *SSHFileDownloadRequest) (*SSHFileDownloadResponse, error) {
+	if st == nil || st.client == nil {
 		return &SSHFileDownloadResponse{
-			ErrorMessage: "SSH 客户端未初始化，请先设置环境变量 SSH_HOST, SSH_USERNAME, SSH_PASSWORD",
+			ErrorMessage: "SSH 客户端未初始化",
 		}, nil
 	}
 
@@ -193,10 +187,7 @@ func SSHFileDownload(ctx context.Context, req *SSHFileDownloadRequest) (*SSHFile
 		}, nil
 	}
 
-	// 创建 SSH 连接
-	client := globalSSHConn.Client
-
-	n, err := client.CopyRemoteFileToLocal(req.RemotePath, req.LocalPath)
+	n, err := st.client.CopyRemoteFileToLocal(req.RemotePath, req.LocalPath)
 	if err != nil {
 		return &SSHFileDownloadResponse{
 			ErrorMessage: fmt.Sprintf("文件下载失败: %v", err),
@@ -221,10 +212,10 @@ type SSHListDirResponse struct {
 }
 
 // SSHListDir 列出远程目录的内容
-func SSHListDir(ctx context.Context, req *SSHListDirRequest) (*SSHListDirResponse, error) {
-	if globalSSHConn == nil {
+func (st *SSHTools) SSHListDir(ctx context.Context, req *SSHListDirRequest) (*SSHListDirResponse, error) {
+	if st == nil || st.client == nil {
 		return &SSHListDirResponse{
-			ErrorMessage: "SSH 客户端未初始化，请先设置环境变量 SSH_HOST, SSH_USERNAME, SSH_PASSWORD",
+			ErrorMessage: "SSH 客户端未初始化",
 		}, nil
 	}
 
@@ -234,10 +225,7 @@ func SSHListDir(ctx context.Context, req *SSHListDirRequest) (*SSHListDirRespons
 		}, nil
 	}
 
-	// 创建 SSH 连接
-	client := globalSSHConn.Client
-
-	fileNames, err := client.ReadRemoteDir(req.RemotePath)
+	fileNames, err := st.client.ReadRemoteDir(req.RemotePath)
 	if err != nil {
 		return &SSHListDirResponse{
 			ErrorMessage: fmt.Sprintf("列出目录失败: %v", err),
