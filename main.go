@@ -7,6 +7,7 @@ import (
 	"fkteams/agents/custom"
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
+	"fkteams/agents/moderator"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/agents/visitor"
@@ -502,17 +503,21 @@ func customSupervisorMode(ctx context.Context) *adk.Runner {
 	var moderatorAgent adk.Agent
 	var subAgents []adk.Agent
 
-	moderatorAgent = custom.NewAgent(custom.Config{
-		Name:         cfg.Custom.Moderator.Name,
-		Description:  cfg.Custom.Moderator.Desc,
-		SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
-		Model: custom.Model{
-			Name:    cfg.Custom.Moderator.ModelName,
-			APIKey:  cfg.Custom.Moderator.APIKey,
-			BaseURL: cfg.Custom.Moderator.BaseURL,
-		},
-		ToolNames: cfg.Custom.Moderator.Tools,
-	})
+	if cfg.Custom.Moderator.Name != "" {
+		moderatorAgent = custom.NewAgent(custom.Config{
+			Name:         cfg.Custom.Moderator.Name,
+			Description:  cfg.Custom.Moderator.Desc,
+			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
+			Model: custom.Model{
+				Name:    cfg.Custom.Moderator.ModelName,
+				APIKey:  cfg.Custom.Moderator.APIKey,
+				BaseURL: cfg.Custom.Moderator.BaseURL,
+			},
+			ToolNames: cfg.Custom.Moderator.Tools,
+		})
+	} else {
+		moderatorAgent = moderator.NewAgent()
+	}
 
 	for _, customAgent := range cfg.Custom.Agents {
 		subAgents = append(subAgents, custom.NewAgent(custom.Config{
