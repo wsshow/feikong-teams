@@ -38,6 +38,8 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
+var cleaner = common.NewResourceCleaner()
+
 // WS 连接池管理
 var (
 	wsConnsMu sync.Mutex
@@ -200,7 +202,7 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 	inputMessages = append(inputMessages, schema.UserMessage(input))
 	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
-	// 根据模式选择 runner（使用传入的 ctx 而非 context.Background()）
+	// 根据模式选择 runner
 	var runner *adk.Runner
 	switch mode {
 	case "roundtable":
@@ -210,6 +212,13 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 	default:
 		runner = supervisorModeWS(ctx)
 	}
+
+	defer func() {
+		err = cleaner.ExecuteAndClear()
+		if err != nil {
+			fmt.Printf("清理资源失败: %v\n", err)
+		}
+	}()
 
 	// 设置回调函数，通过 WebSocket 发送事件
 	fkevent.Callback = func(event fkevent.Event) error {
@@ -332,7 +341,10 @@ func supervisorModeWS(ctx context.Context) *adk.Runner {
 
 	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 		visitorAgent := visitor.NewAgent()
-		defer visitor.CloseSSHClient()
+		cleaner.Add(func() error {
+			visitor.CloseSSHClient()
+			return nil
+		})
 		subAgents = append(subAgents, visitorAgent)
 	}
 

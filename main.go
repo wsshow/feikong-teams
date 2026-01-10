@@ -40,10 +40,11 @@ func init() {
 }
 
 var (
-	inputHistory    []string // 输入历史记录
-	fullBuffer      []string // 存储已输入的所有行
-	isContinuing    bool     // 是否处于续行状态
-	currentWorkMode string   // 当前工作模式
+	inputHistory    []string                      // 输入历史记录
+	fullBuffer      []string                      // 存储已输入的所有行
+	isContinuing    bool                          // 是否处于续行状态
+	currentWorkMode string                        // 当前工作模式
+	cleaner         = common.NewResourceCleaner() // 资源清理器
 )
 
 func handleInput(in string) (finalCmd string) {
@@ -385,6 +386,13 @@ func main() {
 		return
 	}
 
+	defer func() {
+		err = cleaner.ExecuteAndClear()
+		if err != nil {
+			log.Fatalf("清理资源失败: %v", err)
+		}
+	}()
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
@@ -433,7 +441,10 @@ func supervisorMode(ctx context.Context) *adk.Runner {
 
 	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 		visitorAgent := visitor.NewAgent()
-		defer visitor.CloseSSHClient()
+		cleaner.Add(func() error {
+			visitor.CloseSSHClient()
+			return nil
+		})
 		subAgents = append(subAgents, visitorAgent)
 	}
 
