@@ -279,6 +279,9 @@ class FKTeamsChat {
             case 'cancelled':
                 this.handleCancelled(event);
                 break;
+            case 'history_cleared':
+                this.showNotification('历史记录已清除', 'success');
+                break;
             case 'stream_chunk':
                 this.handleStreamChunk(event);
                 break;
@@ -575,6 +578,14 @@ class FKTeamsChat {
     }
 
     clearChat() {
+        // 发送清除历史的消息到后端
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'clear_history',
+                session_id: this.sessionId
+            }));
+        }
+
         this.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <div class="welcome-icon">

@@ -247,6 +247,28 @@ func WebSocketHandler() gin.HandlerFunc {
 					"type":    "cancelled",
 					"message": "任务已取消",
 				})
+			case "clear_history":
+				// 清除指定会话的历史文件
+				sessionID := wsMsg.SessionID
+				if sessionID == "" {
+					sessionID = "default"
+				}
+				historyFilePath := fmt.Sprintf("./history/chat_history/fkteams_chat_history_%s", sessionID)
+
+				// 删除文件
+				if err := os.Remove(historyFilePath); err != nil && !os.IsNotExist(err) {
+					log.Printf("删除历史文件失败: %v", err)
+					_ = writeJSON(map[string]interface{}{
+						"type":  "error",
+						"error": "清除历史失败",
+					})
+				} else {
+					log.Printf("已清除会话历史: session=%s", sessionID)
+					_ = writeJSON(map[string]interface{}{
+						"type":    "history_cleared",
+						"message": "历史记录已清除",
+					})
+				}
 			case "ping":
 				_ = writeJSON(map[string]interface{}{
 					"type": "pong",
@@ -345,7 +367,13 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		// 每次迭代检查 taskCtx 是否已取消
 		select {
 		case <-taskCtx.Done():
-			log.Printf("任务被取消: session=%s", sessionID)
+			log.Printf("任务被取消: session=%s，正在保存历史...", sessionID)
+			// 取消时也保存历史记录
+			if err := fkevent.GlobalHistoryRecorder.SaveToFile(historyFilePath); err != nil {
+				log.Printf("保存取消任务历史失败: %v", err)
+			} else {
+				log.Printf("已保存取消任务的历史到: %s", historyFilePath)
+			}
 			return
 		default:
 		}
@@ -364,14 +392,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		}
 	}
 
-	// 再次检查，避免取消后还保存
-	select {
-	case <-taskCtx.Done():
-		return
-	default:
-	}
-
-	// 保存聊天历史
+	// 保存聊天历史（正常完成）
 	log.Printf("任务完成，正在自动保存聊天历史到 %s ...", historyFilePath)
 	err = fkevent.GlobalHistoryRecorder.SaveToFile(historyFilePath)
 	if err != nil {
