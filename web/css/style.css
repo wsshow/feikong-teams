@@ -693,6 +693,11 @@ body {
     color: var(--success);
 }
 
+.action-event.cancelled {
+    background: var(--error-light);
+    color: var(--error);
+}
+
 /* Error Message */
 .error-message {
     display: flex;
@@ -798,6 +803,35 @@ body {
     background: var(--warning);
     color: white;
     cursor: not-allowed;
+}
+
+/* 取消按钮 */
+.cancel-btn {
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--error);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all var(--transition);
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    align-self: flex-end;
+    margin-bottom: 2px;
+}
+
+.cancel-btn:hover {
+    background: #e53935;
+}
+
+.cancel-btn svg {
+    width: 16px;
+    height: 16px;
 }
 
 /* 回到底部按钮 */

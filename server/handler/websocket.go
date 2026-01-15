@@ -45,6 +45,41 @@ var (
 	wsConns   = make(map[*websocket.Conn]context.CancelFunc)
 )
 
+// 任务取消管理（每个连接一个）
+type taskManager struct {
+	mu         sync.Mutex
+	taskCancel context.CancelFunc
+}
+
+var (
+	taskManagersMu sync.Mutex
+	taskManagers   = make(map[*websocket.Conn]*taskManager)
+)
+
+func getTaskManager(conn *websocket.Conn) *taskManager {
+	taskManagersMu.Lock()
+	defer taskManagersMu.Unlock()
+	if tm, exists := taskManagers[conn]; exists {
+		return tm
+	}
+	tm := &taskManager{}
+	taskManagers[conn] = tm
+	return tm
+}
+
+func removeTaskManager(conn *websocket.Conn) {
+	taskManagersMu.Lock()
+	defer taskManagersMu.Unlock()
+	if tm, exists := taskManagers[conn]; exists {
+		tm.mu.Lock()
+		if tm.taskCancel != nil {
+			tm.taskCancel()
+		}
+		tm.mu.Unlock()
+		delete(taskManagers, conn)
+	}
+}
+
 func registerConn(conn *websocket.Conn, cancel context.CancelFunc) {
 	wsConnsMu.Lock()
 	wsConns[conn] = cancel
@@ -98,8 +133,12 @@ func WebSocketHandler() gin.HandlerFunc {
 		connCtx, connCancel := context.WithCancel(c.Request.Context())
 		registerConn(conn, connCancel)
 
+		// 获取该连接的任务管理器
+		tm := getTaskManager(conn)
+
 		defer func() {
 			connCancel()
+			removeTaskManager(conn)
 			unregisterConn(conn)
 			_ = conn.Close()
 		}()
@@ -146,8 +185,20 @@ func WebSocketHandler() gin.HandlerFunc {
 			// 处理不同类型的消息
 			switch wsMsg.Type {
 			case "chat":
-				// 传入 connCtx，服务退出时可取消任务
-				go handleChatMessage(connCtx, wsMsg, writeJSON)
+				// 传入连接 context 和任务管理器
+				go handleChatMessage(connCtx, tm, wsMsg, writeJSON)
+			case "cancel":
+				// 只取消当前任务，不关闭连接
+				tm.mu.Lock()
+				if tm.taskCancel != nil {
+					tm.taskCancel()
+					tm.taskCancel = nil
+				}
+				tm.mu.Unlock()
+				_ = writeJSON(map[string]interface{}{
+					"type":    "cancelled",
+					"message": "任务已取消",
+				})
 			case "ping":
 				_ = writeJSON(map[string]interface{}{
 					"type": "pong",
@@ -163,7 +214,7 @@ func WebSocketHandler() gin.HandlerFunc {
 }
 
 // handleChatMessage 处理聊天消息
-func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(interface{}) error) {
+func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage, writeJSON func(interface{}) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
 		sessionID = "default"
@@ -175,9 +226,25 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 		mode = "supervisor"
 	}
 
+	// 为这个任务创建独立的 context
+	taskCtx, taskCancel := context.WithCancel(connCtx)
+	defer taskCancel()
+
+	// 注册任务取消函数
+	tm.mu.Lock()
+	tm.taskCancel = taskCancel
+	tm.mu.Unlock()
+
+	// 任务结束时清理
+	defer func() {
+		tm.mu.Lock()
+		tm.taskCancel = nil
+		tm.mu.Unlock()
+	}()
+
 	// 检查是否已取消
 	select {
-	case <-ctx.Done():
+	case <-taskCtx.Done():
 		return
 	default:
 	}
@@ -205,11 +272,11 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 	var runner *adk.Runner
 	switch mode {
 	case "roundtable":
-		runner = loopAgentModeWS(ctx)
+		runner = loopAgentModeWS(taskCtx)
 	case "custom":
-		runner = customSupervisorModeWS(ctx)
+		runner = customSupervisorModeWS(taskCtx)
 	default:
-		runner = supervisorModeWS(ctx)
+		runner = supervisorModeWS(taskCtx)
 	}
 
 	defer func() {
@@ -233,11 +300,11 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 		"message": "开始处理您的请求...",
 	})
 
-	iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
+	iter := runner.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
 	for {
-		// 每次迭代检查 ctx 是否已取消
+		// 每次迭代检查 taskCtx 是否已取消
 		select {
-		case <-ctx.Done():
+		case <-taskCtx.Done():
 			log.Printf("任务被取消: session=%s", sessionID)
 			return
 		default:
@@ -247,7 +314,7 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 		if !ok {
 			break
 		}
-		if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
+		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
 			log.Printf("Error processing event: %v", err)
 			_ = writeJSON(map[string]interface{}{
 				"type":  "error",
@@ -259,7 +326,7 @@ func handleChatMessage(ctx context.Context, wsMsg WSMessage, writeJSON func(inte
 
 	// 再次检查，避免取消后还保存
 	select {
-	case <-ctx.Done():
+	case <-taskCtx.Done():
 		return
 	default:
 	}

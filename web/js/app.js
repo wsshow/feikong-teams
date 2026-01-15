@@ -29,6 +29,7 @@ class FKTeamsChat {
         this.messagesWrapper = document.getElementById('messages-wrapper');
         this.messageInput = document.getElementById('message-input');
         this.sendBtn = document.getElementById('send-btn');
+        this.cancelBtn = document.getElementById('cancel-btn');
         this.sessionIdInput = document.getElementById('session-id');
         this.statusIndicator = document.getElementById('status-indicator');
         this.clearBtn = document.getElementById('clear-chat');
@@ -42,6 +43,7 @@ class FKTeamsChat {
 
     bindEvents() {
         this.sendBtn.addEventListener('click', () => this.sendMessage());
+        this.cancelBtn.addEventListener('click', () => this.cancelTask());
         this.messageInput.addEventListener('input', () => this.handleInputChange());
         this.messageInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
         this.sessionIdInput.addEventListener('change', () => {
@@ -220,12 +222,13 @@ class FKTeamsChat {
 
     updateSendButtonState() {
         if (this.isProcessing) {
-            this.sendBtn.textContent = '处理中...';
-            this.sendBtn.classList.add('processing');
-            this.sendBtn.disabled = true;
+            this.sendBtn.style.display = 'none';
+            this.cancelBtn.style.display = 'flex';
+            this.messageInput.disabled = true;
         } else {
-            this.sendBtn.textContent = '发送';
-            this.sendBtn.classList.remove('processing');
+            this.sendBtn.style.display = 'flex';
+            this.cancelBtn.style.display = 'none';
+            this.messageInput.disabled = false;
             const hasContent = this.messageInput.value.trim().length > 0;
             this.sendBtn.disabled = !hasContent;
         }
@@ -272,6 +275,9 @@ class FKTeamsChat {
                 this.updateSendButtonState();
                 this.currentMessageElement = null;
                 this.hasToolCallAfterMessage = false;
+                break;
+            case 'cancelled':
+                this.handleCancelled(event);
                 break;
             case 'stream_chunk':
                 this.handleStreamChunk(event);
@@ -532,6 +538,40 @@ class FKTeamsChat {
         this.messagesContainer.appendChild(messageEl);
         this.scrollToBottom();
         return messageEl;
+    }
+
+    cancelTask() {
+        if (!this.isProcessing) return;
+
+        // 发送取消消息
+        this.ws.send(JSON.stringify({
+            type: 'cancel'
+        }));
+
+        this.showNotification('正在取消任务...', 'info');
+    }
+
+    handleCancelled(event) {
+        this.isProcessing = false;
+        this.updateStatus('connected', '已连接');
+        this.updateSendButtonState();
+        this.currentMessageElement = null;
+        this.hasToolCallAfterMessage = false;
+
+        // 添加取消提示
+        const cancelEl = document.createElement('div');
+        cancelEl.className = 'action-event cancelled';
+        cancelEl.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <span>${this.escapeHtml(event.message || '任务已取消')}</span>
+        `;
+        this.messagesContainer.appendChild(cancelEl);
+
+        this.showNotification('任务已取消', 'success');
     }
 
     clearChat() {
