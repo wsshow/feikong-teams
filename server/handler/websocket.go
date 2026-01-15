@@ -56,6 +56,54 @@ var (
 	taskManagers   = make(map[*websocket.Conn]*taskManager)
 )
 
+// Runner 缓存管理（按模式缓存）
+var (
+	runnerCacheMu sync.RWMutex
+	runnerCache   = make(map[string]*adk.Runner)
+)
+
+// getOrCreateRunner 获取或创建 runner（带缓存）
+func getOrCreateRunner(ctx context.Context, mode string) *adk.Runner {
+	runnerCacheMu.RLock()
+	if runner, exists := runnerCache[mode]; exists {
+		runnerCacheMu.RUnlock()
+		return runner
+	}
+	runnerCacheMu.RUnlock()
+
+	// 需要创建新的 runner
+	runnerCacheMu.Lock()
+	defer runnerCacheMu.Unlock()
+
+	// 双重检查，避免并发创建
+	if runner, exists := runnerCache[mode]; exists {
+		return runner
+	}
+
+	// 创建 runner
+	var runner *adk.Runner
+	switch mode {
+	case "roundtable":
+		runner = loopAgentModeWS(ctx)
+	case "custom":
+		runner = customSupervisorModeWS(ctx)
+	default:
+		runner = supervisorModeWS(ctx)
+	}
+
+	runnerCache[mode] = runner
+	log.Printf("[WebSocket] 已创建并缓存 runner: mode=%s", mode)
+	return runner
+}
+
+// ClearRunnerCache 清除 runner 缓存（用于配置更新等场景）
+func ClearRunnerCache() {
+	runnerCacheMu.Lock()
+	defer runnerCacheMu.Unlock()
+	runnerCache = make(map[string]*adk.Runner)
+	log.Println("[WebSocket] Runner 缓存已清除")
+}
+
 func getTaskManager(conn *websocket.Conn) *taskManager {
 	taskManagersMu.Lock()
 	defer taskManagersMu.Unlock()
@@ -268,16 +316,8 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	inputMessages = append(inputMessages, schema.UserMessage(input))
 	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
-	// 根据模式选择 runner
-	var runner *adk.Runner
-	switch mode {
-	case "roundtable":
-		runner = loopAgentModeWS(taskCtx)
-	case "custom":
-		runner = customSupervisorModeWS(taskCtx)
-	default:
-		runner = supervisorModeWS(taskCtx)
-	}
+	// 使用缓存的 runner（避免重复创建智能体）
+	runner := getOrCreateRunner(taskCtx, mode)
 
 	defer func() {
 		err = g.Cleaner.ExecuteAndClear()
