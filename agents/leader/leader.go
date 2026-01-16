@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/tools/todo"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -14,8 +15,7 @@ import (
 
 var globalTodoToolsInstance *todo.TodoTools
 
-func NewAgent() adk.Agent {
-	ctx := context.Background()
+func NewAgent(ctx context.Context) adk.Agent {
 
 	todoDir := "./todo"
 	todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
@@ -40,11 +40,14 @@ func NewAgent() adk.Agent {
 
 	systemMessages, err := LeaderPromptTemplate.Format(ctx, map[string]any{
 		"current_time": time.Now().Format("2006-01-02 15:04:05"),
+		"team_members": ctx.Value("team_members"),
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	instruction := systemMessages[0].Content
+
+	fmt.Printf("\n\nLeader Prompt: %s\n\n\n", instruction)
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "统御",

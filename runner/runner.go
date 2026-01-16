@@ -25,7 +25,7 @@ import (
 
 // CreateSupervisorRunner 创建 Supervisor 模式的 Runner
 func CreateSupervisorRunner(ctx context.Context) *adk.Runner {
-	leaderAgent := leader.NewAgent()
+
 	storytellerAgent := storyteller.NewAgent()
 	searcherAgent := searcher.NewAgent()
 	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
@@ -49,6 +49,15 @@ func CreateSupervisorRunner(ctx context.Context) *adk.Runner {
 		subAgents = append(subAgents, visitorAgent)
 	}
 
+	organizeCtx := context.WithValue(ctx, "team_members", strings.Join(func() []string {
+		var names []string
+		for _, agent := range subAgents {
+			names = append(names, agent.Name(ctx))
+		}
+		return names
+	}(), ", "))
+
+	leaderAgent := leader.NewAgent(organizeCtx)
 	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
 		Supervisor: leaderAgent,
 		SubAgents:  subAgents,
