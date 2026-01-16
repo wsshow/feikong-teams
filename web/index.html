@@ -80,6 +80,13 @@
                     </svg>
                     <span>清空对话</span>
                 </button>
+                <button class="history-btn" id="history-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    <span>历史记录</span>
+                </button>
                 <button class="export-btn" id="export-html">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -135,6 +142,49 @@
                 </div>
             </div>
         </main>
+
+        <!-- 历史记录弹窗 -->
+        <div class="history-modal" id="history-modal" style="display: none;">
+            <div class="history-modal-content">
+                <div class="history-modal-header">
+                    <h3>历史记录</h3>
+                    <button class="history-modal-close" id="history-modal-close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="history-modal-body">
+                    <div class="history-list" id="history-list">
+                        <div class="history-loading">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 重命名弹窗 -->
+        <div class="rename-modal" id="rename-modal" style="display: none;">
+            <div class="rename-modal-content">
+                <div class="rename-modal-header">
+                    <h3>重命名文件</h3>
+                    <button class="rename-modal-close" id="rename-modal-close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="rename-modal-body">
+                    <label class="rename-label">新文件名</label>
+                    <input type="text" class="rename-input" id="rename-input" placeholder="请输入新文件名">
+                </div>
+                <div class="rename-modal-footer">
+                    <button class="rename-cancel-btn" id="rename-cancel-btn">取消</button>
+                    <button class="rename-confirm-btn" id="rename-confirm-btn">确定</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>

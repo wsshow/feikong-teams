@@ -48,6 +48,12 @@ func Init() *gin.Engine {
 	apiV1 := r.Group("/api/fkteams")
 	{
 		apiV1.GET("/version", handler.VersionHandler())
+
+		// 历史文件管理 API
+		apiV1.GET("/history/files", handler.ListHistoryFilesHandler())
+		apiV1.GET("/history/files/:filename", handler.LoadHistoryFileHandler())
+		apiV1.DELETE("/history/files/:filename", handler.DeleteHistoryFileHandler())
+		apiV1.POST("/history/files/rename", handler.RenameHistoryFileHandler())
 	}
 	return r
 }

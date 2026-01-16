@@ -13,6 +13,7 @@ class FKTeamsChat {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.userScrolledUp = false; // 用户是否向上滚动了
+        this.currentRenameFilename = null; // 当前正在重命名的文件名
 
         this.init();
     }
@@ -34,6 +35,15 @@ class FKTeamsChat {
         this.statusIndicator = document.getElementById('status-indicator');
         this.clearBtn = document.getElementById('clear-chat');
         this.exportBtn = document.getElementById('export-html');
+        this.historyBtn = document.getElementById('history-btn');
+        this.historyModal = document.getElementById('history-modal');
+        this.historyModalClose = document.getElementById('history-modal-close');
+        this.historyList = document.getElementById('history-list');
+        this.renameModal = document.getElementById('rename-modal');
+        this.renameModalClose = document.getElementById('rename-modal-close');
+        this.renameInput = document.getElementById('rename-input');
+        this.renameCancelBtn = document.getElementById('rename-cancel-btn');
+        this.renameConfirmBtn = document.getElementById('rename-confirm-btn');
         this.modeButtons = document.querySelectorAll('.mode-btn');
         this.sidebar = document.getElementById('sidebar');
         this.sidebarToggle = document.getElementById('sidebar-toggle');
@@ -51,6 +61,30 @@ class FKTeamsChat {
         });
         this.clearBtn.addEventListener('click', () => this.clearChat());
         this.exportBtn.addEventListener('click', () => this.exportToHTML());
+        this.historyBtn.addEventListener('click', () => this.showHistoryModal());
+        this.historyModalClose.addEventListener('click', () => this.hideHistoryModal());
+        // 点击背景关闭弹窗
+        this.historyModal.addEventListener('click', (e) => {
+            if (e.target === this.historyModal) {
+                this.hideHistoryModal();
+            }
+        });
+        // 重命名弹窗事件
+        this.renameModalClose.addEventListener('click', () => this.hideRenameModal());
+        this.renameCancelBtn.addEventListener('click', () => this.hideRenameModal());
+        this.renameConfirmBtn.addEventListener('click', () => this.confirmRename());
+        this.renameModal.addEventListener('click', (e) => {
+            if (e.target === this.renameModal) {
+                this.hideRenameModal();
+            }
+        });
+        this.renameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.confirmRename();
+            } else if (e.key === 'Escape') {
+                this.hideRenameModal();
+            }
+        });
         this.modeButtons.forEach(btn => {
             btn.addEventListener('click', () => this.setMode(btn.dataset.mode));
         });
@@ -281,6 +315,9 @@ class FKTeamsChat {
                 break;
             case 'history_cleared':
                 this.showNotification('历史记录已清除', 'success');
+                break;
+            case 'history_loaded':
+                this.handleHistoryLoaded(event);
                 break;
             case 'stream_chunk':
                 this.handleStreamChunk(event);
@@ -524,16 +561,20 @@ class FKTeamsChat {
         this.scrollToBottom();
     }
 
-    createAssistantMessage(agentName) {
+    createAssistantMessage(agentName, timeInfo = null) {
         const messageEl = document.createElement('div');
         messageEl.className = 'message assistant';
         messageEl.setAttribute('data-agent', agentName || '');
+
+        // 如果提供了时间信息，使用历史时间；否则使用当前时间
+        const timeDisplay = timeInfo ? this.formatHistoryTime(timeInfo) : this.getCurrentTime();
+
         messageEl.innerHTML = `
             <div class="message-content">
                 <div class="message-header">
                     <span class="message-name">${this.escapeHtml(agentName || 'Assistant')}</span>
                     <span class="agent-tag">${this.escapeHtml(agentName || 'AI')}</span>
-                    <span class="message-time">${this.getCurrentTime()}</span>
+                    <span class="message-time">${timeDisplay}</span>
                 </div>
                 <div class="message-body"><span class="streaming-indicator"><span></span><span></span><span></span></span></div>
             </div>
@@ -824,6 +865,295 @@ class FKTeamsChat {
                 }
             }, 300);
         }, 3000);
+    }
+
+    // ===== 历史记录管理 =====
+
+    async showHistoryModal() {
+        this.historyModal.style.display = 'flex';
+        await this.loadHistoryFiles();
+    }
+
+    hideHistoryModal() {
+        this.historyModal.style.display = 'none';
+    }
+
+    async loadHistoryFiles() {
+        this.historyList.innerHTML = '<div class="history-loading">加载中...</div>';
+
+        try {
+            const response = await fetch('/api/fkteams/history/files');
+            if (!response.ok) {
+                throw new Error('加载失败');
+            }
+
+            const result = await response.json();
+            if (result.code !== 0) {
+                throw new Error(result.message || '加载失败');
+            }
+            this.renderHistoryList(result.data.files);
+        } catch (error) {
+            console.error('Error loading history files:', error);
+            this.historyList.innerHTML = '<div class="history-error">加载历史文件失败</div>';
+        }
+    }
+
+    renderHistoryList(files) {
+        if (!files || files.length === 0) {
+            this.historyList.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+            return;
+        }
+
+        // 按修改时间排序（最新的在前）
+        files.sort((a, b) => new Date(b.mod_time) - new Date(a.mod_time));
+
+        const listHTML = files.map(file => `
+            <div class="history-item" data-filename="${this.escapeHtml(file.filename)}">
+                <div class="history-item-info">
+                    <div class="history-item-name">${this.escapeHtml(file.display_name)}</div>
+                    <div class="history-item-meta">
+                        <span class="history-item-time">${this.formatTime(file.mod_time)}</span>
+                        <span class="history-item-size">${this.formatSize(file.size)}</span>
+                    </div>
+                </div>
+                <div class="history-item-actions">
+                    <button class="history-action-btn load-btn" title="加载">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                        </svg>
+                    </button>
+                    <button class="history-action-btn rename-btn" title="重命名">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                        </svg>
+                    </button>
+                    <button class="history-action-btn delete-btn" title="删除">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        this.historyList.innerHTML = listHTML;
+
+        // 绑定事件
+        this.historyList.querySelectorAll('.load-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.target.closest('.history-item');
+                const filename = item.dataset.filename;
+                this.loadHistoryFile(filename);
+            });
+        });
+
+        this.historyList.querySelectorAll('.rename-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.target.closest('.history-item');
+                const filename = item.dataset.filename;
+                this.renameHistoryFile(filename);
+            });
+        });
+
+        this.historyList.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.target.closest('.history-item');
+                const filename = item.dataset.filename;
+                this.deleteHistoryFile(filename);
+            });
+        });
+    }
+
+    loadHistoryFile(filename) {
+        // 通过 WebSocket 加载历史文件
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'load_history',
+                message: filename
+            }));
+            this.hideHistoryModal();
+            this.showNotification('正在加载历史记录...', 'info');
+        } else {
+            this.showNotification('WebSocket 未连接', 'error');
+        }
+    }
+
+    handleHistoryLoaded(event) {
+        // 清空当前消息
+        this.messagesContainer.innerHTML = '';
+        this.currentMessageElement = null;
+        this.hasToolCallAfterMessage = false;
+
+        // 更新 session ID
+        if (event.session_id) {
+            this.sessionId = event.session_id;
+            this.sessionIdInput.value = event.session_id;
+        }
+
+        // 渲染历史消息
+        if (event.messages && event.messages.length > 0) {
+            event.messages.forEach(msg => {
+                const timeInfo = {
+                    startTime: msg.start_time,
+                    endTime: msg.end_time
+                };
+                const messageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
+                const bodyEl = messageEl.querySelector('.message-body');
+                if (bodyEl) {
+                    bodyEl.setAttribute('data-raw', msg.content);
+                    bodyEl.innerHTML = this.renderMarkdown(msg.content);
+                }
+            });
+            this.showNotification(`已加载 ${event.messages.length} 条历史消息`, 'success');
+        } else {
+            this.showNotification('历史记录为空', 'info');
+        }
+
+        this.scrollToBottom();
+    }
+
+    async deleteHistoryFile(filename) {
+        if (!confirm(`确定要删除 "${filename}" 吗？此操作不可恢复！`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/fkteams/history/files/${encodeURIComponent(filename)}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('删除失败');
+            }
+
+            const result = await response.json();
+            if (result.code !== 0) {
+                throw new Error(result.message || '删除失败');
+            }
+
+            this.showNotification('删除成功', 'success');
+            await this.loadHistoryFiles(); // 重新加载列表
+        } catch (error) {
+            console.error('Error deleting file:', error);
+            this.showNotification(error.message || '删除失败', 'error');
+        }
+    }
+
+    async renameHistoryFile(filename) {
+        this.currentRenameFilename = filename;
+        this.renameInput.value = filename;
+        this.showRenameModal();
+    }
+
+    showRenameModal() {
+        this.renameModal.style.display = 'flex';
+        setTimeout(() => {
+            this.renameInput.focus();
+            this.renameInput.select();
+        }, 100);
+    }
+
+    hideRenameModal() {
+        this.renameModal.style.display = 'none';
+        this.currentRenameFilename = null;
+    }
+
+    async confirmRename() {
+        const newName = this.renameInput.value.trim();
+        const oldFilename = this.currentRenameFilename;
+
+        if (!newName || newName === oldFilename) {
+            this.hideRenameModal();
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/fkteams/history/files/rename', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    old_filename: oldFilename,
+                    new_filename: newName
+                })
+            });
+
+            if (!response.ok) {
+                const result = await response.json();
+                throw new Error(result.message || '重命名失败');
+            }
+
+            const result = await response.json();
+            if (result.code !== 0) {
+                throw new Error(result.message || '重命名失败');
+            }
+
+            this.showNotification('重命名成功', 'success');
+            this.hideRenameModal();
+            await this.loadHistoryFiles(); // 重新加载列表
+        } catch (error) {
+            console.error('Error renaming file:', error);
+            this.showNotification(error.message || '重命名失败', 'error');
+        }
+    }
+
+    formatTime(timeString) {
+        const date = new Date(timeString);
+        const now = new Date();
+        const diff = now - date;
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+        if (days === 0) {
+            return '今天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        } else if (days === 1) {
+            return '昨天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        } else if (days < 7) {
+            return days + ' 天前';
+        } else {
+            return date.toLocaleDateString('zh-CN');
+        }
+    }
+
+    formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    formatHistoryTime(timeInfo) {
+        if (!timeInfo || !timeInfo.startTime) {
+            return this.getCurrentTime();
+        }
+
+        const startDate = new Date(timeInfo.startTime);
+        const endDate = timeInfo.endTime ? new Date(timeInfo.endTime) : null;
+
+        // 格式化开始时间
+        const timeStr = startDate.toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        // 如果有结束时间，计算持续时长
+        if (endDate) {
+            const duration = endDate - startDate;
+            if (duration > 0) {
+                const seconds = Math.floor(duration / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const remainingSeconds = seconds % 60;
+
+                if (minutes > 0) {
+                    return `${timeStr} (${minutes}分${remainingSeconds}秒)`;
+                } else if (seconds > 0) {
+                    return `${timeStr} (${seconds}秒)`;
+                }
+            }
+        }
+
+        return timeStr;
     }
 }
 

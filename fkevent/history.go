@@ -12,11 +12,11 @@ import (
 
 // AgentMessage 代理的一次完整发言
 type AgentMessage struct {
-	AgentName string    // 代理名称
-	Content   string    // 完整内容
-	RunPath   string    // 运行路径
-	StartTime time.Time // 开始时间
-	EndTime   time.Time // 结束时间（当切换到下一个 agent 时）
+	AgentName string    `json:"agent_name"` // 代理名称
+	Content   string    `json:"content"`    // 完整内容
+	RunPath   string    `json:"run_path"`   // 运行路径
+	StartTime time.Time `json:"start_time"` // 开始时间
+	EndTime   time.Time `json:"end_time"`   // 结束时间（当切换到下一个 agent 时）
 }
 
 // HistoryRecorder 记录事件历史

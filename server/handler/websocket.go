@@ -269,6 +269,46 @@ func WebSocketHandler() gin.HandlerFunc {
 						"message": "历史记录已清除",
 					})
 				}
+			case "load_history":
+				// 加载指定的历史文件
+				filename := wsMsg.Message // 使用 Message 字段传递文件名
+				if filename == "" {
+					_ = writeJSON(map[string]interface{}{
+						"type":  "error",
+						"error": "文件名不能为空",
+					})
+					break
+				}
+
+				// 安全检查
+				if strings.Contains(filename, "..") || strings.Contains(filename, "/") {
+					_ = writeJSON(map[string]interface{}{
+						"type":  "error",
+						"error": "无效的文件名",
+					})
+					break
+				}
+
+				filePath := fmt.Sprintf("./history/chat_history/%s", filename)
+				err := fkevent.GlobalHistoryRecorder.LoadFromFile(filePath)
+				if err != nil {
+					log.Printf("加载历史文件失败: %v", err)
+					_ = writeJSON(map[string]interface{}{
+						"type":  "error",
+						"error": fmt.Sprintf("加载历史失败: %v", err),
+					})
+				} else {
+					sessionID := extractSessionID(filename)
+					log.Printf("已加载历史文件: %s (session=%s)", filename, sessionID)
+
+					_ = writeJSON(map[string]interface{}{
+						"type":       "history_loaded",
+						"message":    "历史记录已加载",
+						"filename":   filename,
+						"session_id": sessionID,
+						"messages":   fkevent.GlobalHistoryRecorder.GetMessages(),
+					})
+				}
 			case "ping":
 				_ = writeJSON(map[string]interface{}{
 					"type": "pong",
