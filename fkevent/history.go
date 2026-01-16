@@ -575,14 +575,14 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 // SaveToMarkdownWithTimestamp 保存为带时间戳的 Markdown 文件
 func (h *HistoryRecorder) SaveToMarkdownWithTimestamp() (string, error) {
 	timestamp := time.Now().Format("20060102_150405")
-	filePath := fmt.Sprintf("./history/chat_history/fkteams_chat_history_%s.md", timestamp)
+	filePath := fmt.Sprintf("./history/output_history/fkteams_chat_history_%s.md", timestamp)
 	err := h.SaveToMarkdownFile(filePath)
 	return filePath, err
 }
 
 // SaveToDefaultMarkdownFile 保存到默认 Markdown 文件路径
 func (h *HistoryRecorder) SaveToDefaultMarkdownFile() error {
-	return h.SaveToMarkdownFile("./history/chat_history/fkteams_chat_history.md")
+	return h.SaveToMarkdownFile("./history/output_history/fkteams_chat_history.md")
 }
 
 // 全局历史记录器实例
