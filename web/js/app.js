@@ -59,6 +59,12 @@ class FKTeamsChat {
         this.sessionIdInput.addEventListener('change', () => {
             this.sessionId = this.sessionIdInput.value || 'default';
         });
+        this.sessionIdInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.sessionIdInput.blur(); // 失去焦点，触发 change 事件
+            }
+        });
         this.clearBtn.addEventListener('click', () => this.clearChat());
         this.exportBtn.addEventListener('click', () => this.exportToHTML());
         this.historyBtn.addEventListener('click', () => this.showHistoryModal());
