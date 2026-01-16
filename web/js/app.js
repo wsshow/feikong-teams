@@ -54,6 +54,7 @@ class FKTeamsChat {
         this.sidebarToggle = document.getElementById('sidebar-toggle');
         this.mainContent = document.getElementById('main-content');
         this.scrollToBottomBtn = document.getElementById('scroll-to-bottom');
+        this.chatLoading = document.getElementById('chat-loading');
     }
 
     bindEvents() {
@@ -1013,14 +1014,26 @@ class FKTeamsChat {
     loadHistoryFile(filename) {
         // 通过 WebSocket 加载历史文件
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.showChatLoading();
             this.ws.send(JSON.stringify({
                 type: 'load_history',
                 message: filename
             }));
             this.hideHistoryModal();
-            this.showNotification('正在加载历史记录...', 'info');
         } else {
             this.showNotification('WebSocket 未连接', 'error');
+        }
+    }
+
+    showChatLoading() {
+        if (this.chatLoading) {
+            this.chatLoading.style.display = 'flex';
+        }
+    }
+
+    hideChatLoading() {
+        if (this.chatLoading) {
+            this.chatLoading.style.display = 'none';
         }
     }
 
@@ -1065,6 +1078,9 @@ class FKTeamsChat {
     }
 
     handleHistoryLoaded(event) {
+        // 隐藏loading
+        this.hideChatLoading();
+
         // 清空当前消息
         this.messagesContainer.innerHTML = '';
         this.currentMessageElement = null;
