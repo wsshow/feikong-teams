@@ -44,6 +44,11 @@ class FKTeamsChat {
         this.renameInput = document.getElementById('rename-input');
         this.renameCancelBtn = document.getElementById('rename-cancel-btn');
         this.renameConfirmBtn = document.getElementById('rename-confirm-btn');
+        this.deleteModal = document.getElementById('delete-modal');
+        this.deleteModalClose = document.getElementById('delete-modal-close');
+        this.deleteCancelBtn = document.getElementById('delete-cancel-btn');
+        this.deleteConfirmBtn = document.getElementById('delete-confirm-btn');
+        this.deleteFilenameSpan = document.getElementById('delete-filename');
         this.modeButtons = document.querySelectorAll('.mode-btn');
         this.sidebar = document.getElementById('sidebar');
         this.sidebarToggle = document.getElementById('sidebar-toggle');
@@ -57,7 +62,11 @@ class FKTeamsChat {
         this.messageInput.addEventListener('input', () => this.handleInputChange());
         this.messageInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
         this.sessionIdInput.addEventListener('change', () => {
-            this.sessionId = this.sessionIdInput.value || 'default';
+            const newSessionId = this.sessionIdInput.value || 'default';
+            if (newSessionId !== this.sessionId) {
+                this.sessionId = newSessionId;
+                this.checkAndLoadSessionHistory(newSessionId);
+            }
         });
         this.sessionIdInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -89,6 +98,15 @@ class FKTeamsChat {
                 this.confirmRename();
             } else if (e.key === 'Escape') {
                 this.hideRenameModal();
+            }
+        });
+        // 删除弹窗事件
+        this.deleteModalClose.addEventListener('click', () => this.hideDeleteModal());
+        this.deleteCancelBtn.addEventListener('click', () => this.hideDeleteModal());
+        this.deleteConfirmBtn.addEventListener('click', () => this.confirmDelete());
+        this.deleteModal.addEventListener('click', (e) => {
+            if (e.target === this.deleteModal) {
+                this.hideDeleteModal();
             }
         });
         this.modeButtons.forEach(btn => {
@@ -124,7 +142,21 @@ class FKTeamsChat {
 
     showScrollToBottomBtn(show) {
         if (this.scrollToBottomBtn) {
-            this.scrollToBottomBtn.style.display = show ? 'flex' : 'none';
+            if (show) {
+                this.scrollToBottomBtn.style.display = 'flex';
+                // 触发重排以启动动画
+                this.scrollToBottomBtn.offsetHeight;
+                this.scrollToBottomBtn.style.opacity = '1';
+                this.scrollToBottomBtn.style.transform = 'translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(0)';
+            } else {
+                this.scrollToBottomBtn.style.opacity = '0';
+                this.scrollToBottomBtn.style.transform = 'translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(20px)';
+                setTimeout(() => {
+                    if (this.scrollToBottomBtn.style.opacity === '0') {
+                        this.scrollToBottomBtn.style.display = 'none';
+                    }
+                }, 200); // 等待动画完成
+            }
         }
     }
 
@@ -171,6 +203,8 @@ class FKTeamsChat {
         this.ws.onopen = () => {
             this.updateStatus('connected', '已连接');
             this.reconnectAttempts = 0;
+            // 连接成功后，检查并加载默认会话的历史记录
+            this.checkAndLoadSessionHistory(this.sessionId);
         };
 
         this.ws.onclose = () => {
@@ -633,6 +667,11 @@ class FKTeamsChat {
             }));
         }
 
+        this.clearChatUI();
+    }
+
+    clearChatUI() {
+        // 只清空界面，不发送删除历史的消息到后端
         this.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <div class="welcome-icon">
@@ -985,6 +1024,46 @@ class FKTeamsChat {
         }
     }
 
+    async checkAndLoadSessionHistory(sessionId) {
+        try {
+            // 构造文件名
+            const filename = `fkteams_chat_history_${sessionId}`;
+
+            // 检查文件是否存在
+            const response = await fetch('/api/fkteams/history/files');
+            if (!response.ok) {
+                // 如果无法获取文件列表，只清空界面不删除历史
+                this.clearChatUI();
+                return;
+            }
+
+            const result = await response.json();
+            if (result.code !== 0 || !result.data || !result.data.files) {
+                // 如果没有历史文件，只清空界面不删除历史
+                this.clearChatUI();
+                return;
+            }
+
+            // 查找是否存在该会话的历史文件
+            const fileExists = result.data.files.some(file =>
+                file.filename === filename || file === filename
+            );
+
+            if (fileExists) {
+                // 存在历史记录，加载它
+                this.loadHistoryFile(filename);
+            } else {
+                // 不存在历史记录，只清空界面显示新会话
+                this.clearChatUI();
+                this.showNotification(`已切换到新会话: ${sessionId}`, 'success');
+            }
+        } catch (error) {
+            console.error('Error checking session history:', error);
+            // 出错时只清空界面，不删除历史
+            this.clearChatUI();
+        }
+    }
+
     handleHistoryLoaded(event) {
         // 清空当前消息
         this.messagesContainer.innerHTML = '';
@@ -1004,21 +1083,65 @@ class FKTeamsChat {
                     startTime: msg.start_time,
                     endTime: msg.end_time
                 };
-                const messageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
-                const bodyEl = messageEl.querySelector('.message-body');
-                if (bodyEl) {
-                    bodyEl.setAttribute('data-raw', msg.content);
-                    bodyEl.innerHTML = this.renderMarkdown(msg.content);
-                }
 
-                // 渲染工具调用（如果有）
-                if (msg.tool_calls && msg.tool_calls.length > 0) {
-                    this.renderHistoryToolCalls(msg.tool_calls);
-                }
+                // 如果有 events 数组，按时间顺序渲染每个事件
+                if (msg.events && msg.events.length > 0) {
+                    let currentMessageEl = null;
+                    let currentContent = '';
 
-                // 渲染 action 事件（如果有）
-                if (msg.actions && msg.actions.length > 0) {
-                    this.renderHistoryActions(msg.actions, msg.agent_name);
+                    msg.events.forEach(evt => {
+                        switch (evt.type) {
+                            case 'text':
+                                // 累积文本内容
+                                currentContent += evt.content;
+                                // 如果还没有创建消息元素，创建一个
+                                if (!currentMessageEl) {
+                                    currentMessageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
+                                }
+                                // 更新消息体
+                                const bodyEl = currentMessageEl.querySelector('.message-body');
+                                if (bodyEl) {
+                                    bodyEl.setAttribute('data-raw', currentContent);
+                                    bodyEl.innerHTML = this.renderMarkdown(currentContent);
+                                }
+                                break;
+
+                            case 'tool_call':
+                                // 渲染单个工具调用
+                                if (evt.tool_call) {
+                                    this.renderSingleToolCall(evt.tool_call);
+                                }
+                                // 重置当前消息元素和内容，后续文本会创建新卡片
+                                currentMessageEl = null;
+                                currentContent = '';
+                                break;
+
+                            case 'action':
+                                // 渲染单个 action 事件
+                                if (evt.action) {
+                                    this.renderSingleAction(evt.action, msg.agent_name);
+                                }
+                                break;
+                        }
+                    });
+                } else {
+                    // 兼容旧格式（没有 events 字段的历史记录）
+                    const messageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
+                    const bodyEl = messageEl.querySelector('.message-body');
+                    if (bodyEl && msg.content) {
+                        bodyEl.setAttribute('data-raw', msg.content);
+                        bodyEl.innerHTML = this.renderMarkdown(msg.content);
+                    }
+
+                    // 渲染工具调用（如果有）
+                    if (msg.tool_calls && msg.tool_calls.length > 0) {
+                        this.renderHistoryToolCalls(msg.tool_calls);
+                    }
+
+                    // 渲染 action 事件（如果有）
+                    if (msg.actions && msg.actions.length > 0) {
+                        this.renderHistoryActions(msg.actions, msg.agent_name);
+                    }
                 }
             });
             this.showNotification(`已加载 ${event.messages.length} 条历史消息`, 'success');
@@ -1031,107 +1154,134 @@ class FKTeamsChat {
 
     renderHistoryToolCalls(toolCalls) {
         toolCalls.forEach(tc => {
-            // 渲染工具调用
-            const toolCallEl = document.createElement('div');
-            toolCallEl.className = 'tool-call';
-
-            let argsDisplay = tc.arguments || '无参数';
-            try {
-                const args = JSON.parse(tc.arguments);
-                argsDisplay = JSON.stringify(args, null, 2);
-            } catch {
-                // 保持原样
-            }
-
-            toolCallEl.innerHTML = `
-                <div class="tool-call-header">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
-                    <span>工具调用:</span>
-                    <code class="tool-call-name">${this.escapeHtml(tc.name)}</code>
-                </div>
-                <pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>
-            `;
-            this.messagesContainer.appendChild(toolCallEl);
-
-            // 渲染工具结果（如果有）
-            if (tc.result) {
-                let formattedResult = tc.result;
-                try {
-                    const parsed = JSON.parse(tc.result);
-                    formattedResult = JSON.stringify(parsed, null, 2);
-                    if (formattedResult.length > 2048) {
-                        formattedResult = formattedResult.substring(0, 2048) + '\n...';
-                    }
-                } catch {
-                    if (tc.result.length > 2048) {
-                        formattedResult = tc.result.substring(0, 2048) + '\n...';
-                    }
-                }
-
-                const toolResultEl = document.createElement('div');
-                toolResultEl.className = 'tool-result';
-                toolResultEl.innerHTML = `
-                    <div class="tool-result-header">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                        <span>执行结果</span>
-                    </div>
-                    <pre class="tool-result-content">${this.escapeHtml(formattedResult)}</pre>
-                `;
-                this.messagesContainer.appendChild(toolResultEl);
-            }
+            this.renderSingleToolCall(tc);
         });
+    }
+
+    renderSingleToolCall(tc) {
+        // 渲染工具调用
+        const toolCallEl = document.createElement('div');
+        toolCallEl.className = 'tool-call';
+
+        let argsDisplay = tc.arguments || '无参数';
+        try {
+            const args = JSON.parse(tc.arguments);
+            argsDisplay = JSON.stringify(args, null, 2);
+        } catch {
+            // 保持原样
+        }
+
+        toolCallEl.innerHTML = `
+            <div class="tool-call-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                <span>工具调用:</span>
+                <code class="tool-call-name">${this.escapeHtml(tc.name)}</code>
+            </div>
+            <pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>
+        `;
+        this.messagesContainer.appendChild(toolCallEl);
+
+        // 渲染工具结果（如果有）
+        if (tc.result) {
+            let formattedResult = tc.result;
+            try {
+                const parsed = JSON.parse(tc.result);
+                formattedResult = JSON.stringify(parsed, null, 2);
+                if (formattedResult.length > 2048) {
+                    formattedResult = formattedResult.substring(0, 2048) + '\n...';
+                }
+            } catch {
+                if (tc.result.length > 2048) {
+                    formattedResult = tc.result.substring(0, 2048) + '\n...';
+                }
+            }
+
+            const toolResultEl = document.createElement('div');
+            toolResultEl.className = 'tool-result';
+            toolResultEl.innerHTML = `
+                <div class="tool-result-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>执行结果</span>
+                </div>
+                <pre class="tool-result-content">${this.escapeHtml(formattedResult)}</pre>
+            `;
+            this.messagesContainer.appendChild(toolResultEl);
+        }
     }
 
     renderHistoryActions(actions, agentName) {
         actions.forEach(action => {
-            let actionClass = '';
-            let actionIcon = '';
-
-            switch (action.action_type) {
-                case 'transfer':
-                    actionClass = 'transfer';
-                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                        <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-                    </svg>`;
-                    break;
-                case 'exit':
-                    actionClass = 'exit';
-                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="20 6 9 17 4 12"/>
-                    </svg>`;
-                    break;
-                case 'interrupted':
-                    actionClass = 'interrupted';
-                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="15" y1="9" x2="9" y2="15"/>
-                        <line x1="9" y1="9" x2="15" y2="15"/>
-                    </svg>`;
-                    break;
-                default:
-                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
-                        <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>`;
-            }
-
-            const actionEl = document.createElement('div');
-            actionEl.className = `action-event ${actionClass}`;
-            actionEl.innerHTML = `${actionIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>`;
-            this.messagesContainer.appendChild(actionEl);
+            this.renderSingleAction(action, agentName);
         });
     }
 
-    async deleteHistoryFile(filename) {
-        if (!confirm(`确定要删除 "${filename}" 吗？此操作不可恢复！`)) {
-            return;
+    renderSingleAction(action, agentName) {
+        let actionClass = '';
+        let actionIcon = '';
+
+        switch (action.action_type) {
+            case 'transfer':
+                actionClass = 'transfer';
+                actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                </svg>`;
+                break;
+            case 'exit':
+                actionClass = 'exit';
+                actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>`;
+                break;
+            case 'interrupted':
+                actionClass = 'interrupted';
+                actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>`;
+                break;
+            default:
+                actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>`;
         }
+
+        const actionEl = document.createElement('div');
+        actionEl.className = `action-event ${actionClass}`;
+        actionEl.innerHTML = `${actionIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>`;
+        this.messagesContainer.appendChild(actionEl);
+    }
+
+    deleteHistoryFile(filename) {
+        this.currentDeleteFilename = filename;
+        this.deleteFilenameSpan.textContent = filename;
+        this.showDeleteModal();
+    }
+
+    showDeleteModal() {
+        this.deleteModal.style.display = 'flex';
+        setTimeout(() => {
+            this.deleteConfirmBtn.focus();
+        }, 100);
+    }
+
+    hideDeleteModal() {
+        this.deleteModal.style.display = 'none';
+        this.currentDeleteFilename = null;
+    }
+
+    async confirmDelete() {
+        const filename = this.currentDeleteFilename;
+        this.hideDeleteModal();
+
+        if (!filename) return;
 
         try {
             const response = await fetch(`/api/fkteams/history/files/${encodeURIComponent(filename)}`, {

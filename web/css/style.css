@@ -71,18 +71,26 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: left var(--transition);
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        background 0.2s ease,
+        box-shadow 0.2s ease;
 }
 
 .sidebar-toggle:hover {
     background: var(--bg-tertiary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .sidebar-toggle svg {
     width: 14px;
     height: 14px;
     color: var(--text-secondary);
-    transition: transform var(--transition);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.2s ease;
+}
+
+.sidebar-toggle:hover svg {
+    color: var(--text-primary);
 }
 
 .sidebar-toggle.collapsed {
@@ -101,18 +109,29 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    transition: width var(--transition), opacity var(--transition);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        border 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
 }
 
 .sidebar.collapsed {
     width: 0;
+    opacity: 0;
     border-right: none;
 }
 
 .sidebar-header {
     padding: 16px;
     border-bottom: 1px solid var(--border-color);
+    transition: opacity 0.2s ease;
+}
+
+.sidebar.collapsed .sidebar-header,
+.sidebar.collapsed .sidebar-content,
+.sidebar.collapsed .sidebar-footer {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .logo {
@@ -137,11 +156,13 @@ body {
     flex: 1;
     padding: 16px;
     overflow-y: auto;
+    transition: opacity 0.2s ease;
 }
 
 .sidebar-footer {
     padding: 12px 16px;
     border-top: 1px solid var(--border-color);
+    transition: opacity 0.2s ease;
 }
 
 /* Mode Selector */
@@ -665,6 +686,137 @@ body {
     background: var(--accent-secondary);
 }
 
+/* ===== Delete Modal ===== */
+.delete-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 10000;
+    justify-content: center;
+    align-items: center;
+    animation: fadeIn 0.2s ease;
+}
+
+.delete-modal-content {
+    background: var(--bg-primary);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 420px;
+    animation: slideUp 0.3s ease;
+}
+
+.delete-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.delete-modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--error);
+}
+
+.delete-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: all var(--transition);
+    border-radius: 4px;
+}
+
+.delete-modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.delete-modal-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+.delete-modal-body {
+    padding: 24px 20px;
+    text-align: center;
+}
+
+.delete-warning-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 16px;
+    color: var(--warning);
+}
+
+.delete-message {
+    font-size: 15px;
+    color: var(--text-primary);
+    margin: 0 0 8px 0;
+    line-height: 1.5;
+}
+
+.delete-message span {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.delete-warning {
+    font-size: 13px;
+    color: var(--error);
+    margin: 0;
+    font-weight: 500;
+}
+
+.delete-modal-footer {
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+    justify-content: flex-end;
+}
+
+.delete-cancel-btn,
+.delete-confirm-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.delete-cancel-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.delete-cancel-btn:hover {
+    background: var(--bg-hover);
+}
+
+.delete-confirm-btn {
+    background: var(--error);
+    color: white;
+}
+
+.delete-confirm-btn:hover {
+    background: #e53935;
+}
+
 /* ===== Main Content ===== */
 .main-content {
     flex: 1;
@@ -1184,7 +1336,7 @@ body {
     position: fixed;
     bottom: 100px;
     left: 50%;
-    transform: translateX(calc(-50% + var(--sidebar-width) / 2));
+    transform: translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(0);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1196,18 +1348,27 @@ body {
     font-size: 13px;
     color: var(--text-secondary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transition: all var(--transition);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity 0.2s ease,
+        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     z-index: 10;
+    opacity: 0;
 }
 
 /* 当侧边栏折叠时调整按钮位置 */
 .scroll-to-bottom.sidebar-collapsed {
-    transform: translateX(-50%) !important;
+    transform: translateX(-50%) translateY(0) !important;
 }
 
 .scroll-to-bottom:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
+    transform: translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.scroll-to-bottom.sidebar-collapsed:hover {
+    transform: translateX(-50%) translateY(-2px) !important;
 }
 
 .scroll-to-bottom svg {

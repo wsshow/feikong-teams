@@ -185,6 +185,35 @@
                 </div>
             </div>
         </div>
+
+        <!-- 删除确认弹窗 -->
+        <div class="delete-modal" id="delete-modal" style="display: none;">
+            <div class="delete-modal-content">
+                <div class="delete-modal-header">
+                    <h3>确认删除</h3>
+                    <button class="delete-modal-close" id="delete-modal-close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="delete-modal-body">
+                    <svg class="delete-warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    <p class="delete-message">确定要删除 "<span id="delete-filename"></span>" 吗？</p>
+                    <p class="delete-warning">此操作不可恢复！</p>
+                </div>
+                <div class="delete-modal-footer">
+                    <button class="delete-cancel-btn" id="delete-cancel-btn">取消</button>
+                    <button class="delete-confirm-btn" id="delete-confirm-btn">删除</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>

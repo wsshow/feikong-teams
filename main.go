@@ -116,7 +116,7 @@ func handleDirect(ctx context.Context, runner *adk.Runner, signals chan os.Signa
 	if len(agentMessages) > 0 {
 		var historyMessage strings.Builder
 		for _, agentMessage := range agentMessages {
-			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.Content)
+			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.GetTextContent())
 		}
 		inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
 	}
@@ -279,7 +279,7 @@ func handleInteractive(ctx context.Context, runner *adk.Runner, signals chan os.
 			if len(agentMessages) > 0 {
 				var historyMessage strings.Builder
 				for _, agentMessage := range agentMessages {
-					fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.Content)
+					fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.GetTextContent())
 				}
 				inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
 			}

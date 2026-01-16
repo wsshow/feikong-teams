@@ -23,38 +23,51 @@ type ActionRecord struct {
 	Content    string `json:"content"`     // action 内容描述
 }
 
+// MessageEvent 消息事件（按时间顺序记录）
+type MessageEvent struct {
+	Type     string          `json:"type"`                // 事件类型: "text", "tool_call", "action"
+	Content  string          `json:"content,omitempty"`   // 文字内容（type=text）
+	ToolCall *ToolCallRecord `json:"tool_call,omitempty"` // 工具调用（type=tool_call）
+	Action   *ActionRecord   `json:"action,omitempty"`    // action 事件（type=action）
+}
+
 // AgentMessage 代理的一次完整发言
 type AgentMessage struct {
-	AgentName string           `json:"agent_name"`           // 代理名称
-	Content   string           `json:"content"`              // 完整内容
-	RunPath   string           `json:"run_path"`             // 运行路径
-	StartTime time.Time        `json:"start_time"`           // 开始时间
-	EndTime   time.Time        `json:"end_time"`             // 结束时间（当切换到下一个 agent 时）
-	ToolCalls []ToolCallRecord `json:"tool_calls,omitempty"` // 工具调用记录
-	Actions   []ActionRecord   `json:"actions,omitempty"`    // action 事件记录
+	AgentName string         `json:"agent_name"` // 代理名称
+	RunPath   string         `json:"run_path"`   // 运行路径
+	StartTime time.Time      `json:"start_time"` // 开始时间
+	EndTime   time.Time      `json:"end_time"`   // 结束时间
+	Events    []MessageEvent `json:"events"`     // 按时间顺序的事件列表
+}
+
+// GetTextContent 获取消息中的所有文本内容（合并）
+func (m *AgentMessage) GetTextContent() string {
+	var builder strings.Builder
+	for _, event := range m.Events {
+		if event.Type == "text" {
+			builder.WriteString(event.Content)
+		}
+	}
+	return builder.String()
 }
 
 // HistoryRecorder 记录事件历史
 type HistoryRecorder struct {
 	mu               sync.RWMutex
 	messages         []AgentMessage    // 按时间顺序保存所有发言
-	currentBuilder   *strings.Builder  // 当前正在构建的内容
 	currentAgent     string            // 当前正在发言的 agent
 	currentRunPath   string            // 当前运行路径
 	currentStartTime time.Time         // 当前发言开始时间
-	currentToolCalls []ToolCallRecord  // 当前消息的工具调用记录
+	currentEvents    []MessageEvent    // 当前消息的事件列表
 	pendingToolCalls map[string]string // 待完成的工具调用（工具名 -> 参数）
-	currentActions   []ActionRecord    // 当前消息的 action 事件记录
 }
 
 // NewHistoryRecorder 创建新的历史记录器
 func NewHistoryRecorder() *HistoryRecorder {
 	return &HistoryRecorder{
 		messages:         make([]AgentMessage, 0),
-		currentBuilder:   &strings.Builder{},
-		currentToolCalls: make([]ToolCallRecord, 0),
+		currentEvents:    make([]MessageEvent, 0),
 		pendingToolCalls: make(map[string]string),
-		currentActions:   make([]ActionRecord, 0),
 	}
 }
 
@@ -75,14 +88,21 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			h.currentAgent = event.AgentName
 			h.currentRunPath = event.RunPath
 			h.currentStartTime = time.Now()
-			h.currentBuilder.Reset()
-			h.currentToolCalls = make([]ToolCallRecord, 0)
+			h.currentEvents = make([]MessageEvent, 0)
 			h.pendingToolCalls = make(map[string]string)
-			h.currentActions = make([]ActionRecord, 0)
 		}
 
-		// 累积当前内容
-		h.currentBuilder.WriteString(event.Content)
+		// 添加文本事件（合并连续的文本）
+		if len(h.currentEvents) > 0 && h.currentEvents[len(h.currentEvents)-1].Type == "text" {
+			// 合并到最后一个文本事件
+			h.currentEvents[len(h.currentEvents)-1].Content += event.Content
+		} else {
+			// 创建新的文本事件
+			h.currentEvents = append(h.currentEvents, MessageEvent{
+				Type:    "text",
+				Content: event.Content,
+			})
+		}
 		return
 	}
 
@@ -101,11 +121,14 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	if event.Type == "tool_result" || event.Type == "tool_result_chunk" {
 		// 尝试匹配待处理的工具调用
 		for toolName, args := range h.pendingToolCalls {
-			// 将工具结果添加到当前消息的工具调用记录中
-			h.currentToolCalls = append(h.currentToolCalls, ToolCallRecord{
-				Name:      toolName,
-				Arguments: args,
-				Result:    event.Content,
+			// 添加工具调用事件
+			h.currentEvents = append(h.currentEvents, MessageEvent{
+				Type: "tool_call",
+				ToolCall: &ToolCallRecord{
+					Name:      toolName,
+					Arguments: args,
+					Result:    event.Content,
+				},
 			})
 			// 清除已处理的工具调用
 			delete(h.pendingToolCalls, toolName)
@@ -116,10 +139,13 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	// 处理 action 事件（如 transfer、exit 等）
 	if event.Type == "action" {
-		// 将 action 事件添加到当前消息的 action 记录中
-		h.currentActions = append(h.currentActions, ActionRecord{
-			ActionType: event.ActionType,
-			Content:    event.Content,
+		// 添加 action 事件
+		h.currentEvents = append(h.currentEvents, MessageEvent{
+			Type: "action",
+			Action: &ActionRecord{
+				ActionType: event.ActionType,
+				Content:    event.Content,
+			},
 		})
 		return
 	}
@@ -138,42 +164,34 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 	// 记录用户输入为特殊的消息
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "用户",
-		Content:   input,
 		RunPath:   "",
 		StartTime: time.Now(),
 		EndTime:   time.Now(),
+		Events: []MessageEvent{
+			{
+				Type:    "text",
+				Content: input,
+			},
+		},
 	})
 
 	// 重置当前状态
 	h.currentAgent = ""
-	h.currentBuilder.Reset()
 }
 
 // finalizeCurrentMessage 完成当前消息的记录
 func (h *HistoryRecorder) finalizeCurrentMessage() {
-	if h.currentAgent == "" {
+	if h.currentAgent == "" || len(h.currentEvents) == 0 {
 		return
 	}
 
-	content := h.currentBuilder.String()
-	if content != "" {
-		msg := AgentMessage{
-			AgentName: h.currentAgent,
-			Content:   content,
-			RunPath:   h.currentRunPath,
-			StartTime: h.currentStartTime,
-			EndTime:   time.Now(),
-		}
-		// 如果有工具调用记录，添加到消息中
-		if len(h.currentToolCalls) > 0 {
-			msg.ToolCalls = h.currentToolCalls
-		}
-		// 如果有 action 事件记录，添加到消息中
-		if len(h.currentActions) > 0 {
-			msg.Actions = h.currentActions
-		}
-		h.messages = append(h.messages, msg)
-	}
+	h.messages = append(h.messages, AgentMessage{
+		AgentName: h.currentAgent,
+		RunPath:   h.currentRunPath,
+		StartTime: h.currentStartTime,
+		EndTime:   time.Now(),
+		Events:    h.currentEvents,
+	})
 }
 
 // FinalizeCurrent 手动完成当前消息记录（在对话结束时调用）
@@ -182,10 +200,8 @@ func (h *HistoryRecorder) FinalizeCurrent() {
 	defer h.mu.Unlock()
 	h.finalizeCurrentMessage()
 	h.currentAgent = ""
-	h.currentBuilder.Reset()
-	h.currentToolCalls = make([]ToolCallRecord, 0)
+	h.currentEvents = make([]MessageEvent, 0)
 	h.pendingToolCalls = make(map[string]string)
-	h.currentActions = make([]ActionRecord, 0)
 }
 
 // GetMessages 获取所有消息（按时间顺序）
@@ -218,7 +234,14 @@ func (h *HistoryRecorder) GetCurrentMessage() (string, string) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	return h.currentAgent, h.currentBuilder.String()
+	// 合并所有文本事件
+	var builder strings.Builder
+	for _, event := range h.currentEvents {
+		if event.Type == "text" {
+			builder.WriteString(event.Content)
+		}
+	}
+	return h.currentAgent, builder.String()
 }
 
 // GetFullHistory 获取完整的对话历史（格式化字符串）
@@ -234,18 +257,27 @@ func (h *HistoryRecorder) GetFullHistory() string {
 		result.WriteString("=== ")
 		result.WriteString(msg.AgentName)
 		result.WriteString(" ===\n")
-		result.WriteString(msg.Content)
+		// 按顺序输出所有事件
+		for _, event := range msg.Events {
+			if event.Type == "text" {
+				result.WriteString(event.Content)
+			}
+		}
 	}
 
 	// 包含当前正在构建的内容
-	if h.currentAgent != "" && h.currentBuilder.Len() > 0 {
+	if h.currentAgent != "" && len(h.currentEvents) > 0 {
 		if len(h.messages) > 0 {
 			result.WriteString("\n\n")
 		}
 		result.WriteString("=== ")
 		result.WriteString(h.currentAgent)
 		result.WriteString(" (当前) ===\n")
-		result.WriteString(h.currentBuilder.String())
+		for _, event := range h.currentEvents {
+			if event.Type == "text" {
+				result.WriteString(event.Content)
+			}
+		}
 	}
 
 	return result.String()
@@ -259,7 +291,13 @@ func (h *HistoryRecorder) GetConversationSummary() string {
 	var result strings.Builder
 	for i, msg := range h.messages {
 		duration := msg.EndTime.Sub(msg.StartTime)
-		contentLen := len([]rune(msg.Content))
+		// 计算文本字数
+		var contentLen int
+		for _, event := range msg.Events {
+			if event.Type == "text" {
+				contentLen += len([]rune(event.Content))
+			}
+		}
 		result.WriteString(fmt.Sprintf("%d. [%s] %s - %d字 (%v)\n",
 			i+1, msg.StartTime.Format("15:04:05"), msg.AgentName, contentLen, duration.Round(time.Millisecond)))
 	}
@@ -272,12 +310,10 @@ func (h *HistoryRecorder) Clear() {
 	defer h.mu.Unlock()
 
 	h.messages = make([]AgentMessage, 0)
-	h.currentBuilder.Reset()
+	h.currentEvents = make([]MessageEvent, 0)
 	h.currentAgent = ""
 	h.currentRunPath = ""
-	h.currentToolCalls = make([]ToolCallRecord, 0)
 	h.pendingToolCalls = make(map[string]string)
-	h.currentActions = make([]ActionRecord, 0)
 }
 
 // GetAgentNames 获取所有参与对话的 agent 名称（去重）
@@ -313,22 +349,16 @@ func (h *HistoryRecorder) SaveToFile(filePath string) error {
 	defer h.mu.RUnlock()
 
 	// 确保当前消息已完成
-	if h.currentAgent != "" && h.currentBuilder.Len() > 0 {
+	if h.currentAgent != "" && len(h.currentEvents) > 0 {
 		// 临时创建一个包含当前消息的副本
 		tempMessages := make([]AgentMessage, len(h.messages))
 		copy(tempMessages, h.messages)
 		msg := AgentMessage{
 			AgentName: h.currentAgent,
-			Content:   h.currentBuilder.String(),
 			RunPath:   h.currentRunPath,
 			StartTime: h.currentStartTime,
 			EndTime:   time.Now(),
-		}
-		if len(h.currentToolCalls) > 0 {
-			msg.ToolCalls = h.currentToolCalls
-		}
-		if len(h.currentActions) > 0 {
-			msg.Actions = h.currentActions
+			Events:    h.currentEvents,
 		}
 		tempMessages = append(tempMessages, msg)
 		return saveMessagesToFile(tempMessages, filePath)
@@ -379,11 +409,9 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	// 替换当前消息
 	h.messages = messages
 	h.currentAgent = ""
-	h.currentBuilder.Reset()
+	h.currentEvents = make([]MessageEvent, 0)
 	h.currentRunPath = ""
-	h.currentToolCalls = make([]ToolCallRecord, 0)
 	h.pendingToolCalls = make(map[string]string)
-	h.currentActions = make([]ActionRecord, 0)
 
 	return nil
 }
@@ -438,19 +466,13 @@ func (h *HistoryRecorder) SaveToMarkdownFile(filePath string) error {
 	messages := make([]AgentMessage, len(h.messages))
 	copy(messages, h.messages)
 
-	if h.currentAgent != "" && h.currentBuilder.Len() > 0 {
+	if h.currentAgent != "" && len(h.currentEvents) > 0 {
 		msg := AgentMessage{
 			AgentName: h.currentAgent,
-			Content:   h.currentBuilder.String(),
 			RunPath:   h.currentRunPath,
 			StartTime: h.currentStartTime,
 			EndTime:   time.Now(),
-		}
-		if len(h.currentToolCalls) > 0 {
-			msg.ToolCalls = h.currentToolCalls
-		}
-		if len(h.currentActions) > 0 {
-			msg.Actions = h.currentActions
+			Events:    h.currentEvents,
 		}
 		messages = append(messages, msg)
 	}
@@ -506,34 +528,35 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 			md.WriteString(fmt.Sprintf("**路径**: `%s`\n\n", msg.RunPath))
 		}
 
-		// 工具调用（如果有）
-		if len(msg.ToolCalls) > 0 {
-			md.WriteString("**工具调用**:\n\n")
-			for i, tc := range msg.ToolCalls {
-				md.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, tc.Name))
-				if tc.Arguments != "" {
-					md.WriteString(fmt.Sprintf("   - 参数: `%s`\n", tc.Arguments))
-				}
-				if tc.Result != "" {
-					md.WriteString(fmt.Sprintf("   - 结果: %s\n", tc.Result))
-				}
-			}
-			md.WriteString("\n")
-		}
-
-		// Action 事件（如果有）
-		if len(msg.Actions) > 0 {
-			md.WriteString("**Action 事件**:\n\n")
-			for i, action := range msg.Actions {
-				md.WriteString(fmt.Sprintf("%d. **[%s]** %s\n", i+1, action.ActionType, action.Content))
-			}
-			md.WriteString("\n")
-		}
-
-		// 内容
+		// 按时间顺序遍历所有事件
 		md.WriteString("**内容**:\n\n")
-		md.WriteString(msg.Content)
-		md.WriteString("\n\n")
+		for _, event := range msg.Events {
+			switch event.Type {
+			case "text":
+				// 输出文本内容
+				md.WriteString(event.Content)
+				md.WriteString("\n\n")
+
+			case "tool_call":
+				// 输出工具调用
+				if event.ToolCall != nil {
+					md.WriteString(fmt.Sprintf("> **🛠️ 工具调用**: %s\n", event.ToolCall.Name))
+					if event.ToolCall.Arguments != "" {
+						md.WriteString(fmt.Sprintf("> - **参数**: `%s`\n", event.ToolCall.Arguments))
+					}
+					if event.ToolCall.Result != "" {
+						md.WriteString(fmt.Sprintf("> - **结果**: %s\n", event.ToolCall.Result))
+					}
+					md.WriteString("\n")
+				}
+
+			case "action":
+				// 输出 action 事件
+				if event.Action != nil {
+					md.WriteString(fmt.Sprintf("> **⚡ Action**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content))
+				}
+			}
+		}
 
 		// 分隔线（除了最后一条消息）
 		if i < len(messages)-1 {
