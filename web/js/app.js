@@ -1010,6 +1010,16 @@ class FKTeamsChat {
                     bodyEl.setAttribute('data-raw', msg.content);
                     bodyEl.innerHTML = this.renderMarkdown(msg.content);
                 }
+
+                // 渲染工具调用（如果有）
+                if (msg.tool_calls && msg.tool_calls.length > 0) {
+                    this.renderHistoryToolCalls(msg.tool_calls);
+                }
+
+                // 渲染 action 事件（如果有）
+                if (msg.actions && msg.actions.length > 0) {
+                    this.renderHistoryActions(msg.actions, msg.agent_name);
+                }
             });
             this.showNotification(`已加载 ${event.messages.length} 条历史消息`, 'success');
         } else {
@@ -1017,6 +1027,105 @@ class FKTeamsChat {
         }
 
         this.scrollToBottom();
+    }
+
+    renderHistoryToolCalls(toolCalls) {
+        toolCalls.forEach(tc => {
+            // 渲染工具调用
+            const toolCallEl = document.createElement('div');
+            toolCallEl.className = 'tool-call';
+
+            let argsDisplay = tc.arguments || '无参数';
+            try {
+                const args = JSON.parse(tc.arguments);
+                argsDisplay = JSON.stringify(args, null, 2);
+            } catch {
+                // 保持原样
+            }
+
+            toolCallEl.innerHTML = `
+                <div class="tool-call-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    <span>工具调用:</span>
+                    <code class="tool-call-name">${this.escapeHtml(tc.name)}</code>
+                </div>
+                <pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>
+            `;
+            this.messagesContainer.appendChild(toolCallEl);
+
+            // 渲染工具结果（如果有）
+            if (tc.result) {
+                let formattedResult = tc.result;
+                try {
+                    const parsed = JSON.parse(tc.result);
+                    formattedResult = JSON.stringify(parsed, null, 2);
+                    if (formattedResult.length > 2048) {
+                        formattedResult = formattedResult.substring(0, 2048) + '\n...';
+                    }
+                } catch {
+                    if (tc.result.length > 2048) {
+                        formattedResult = tc.result.substring(0, 2048) + '\n...';
+                    }
+                }
+
+                const toolResultEl = document.createElement('div');
+                toolResultEl.className = 'tool-result';
+                toolResultEl.innerHTML = `
+                    <div class="tool-result-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        <span>执行结果</span>
+                    </div>
+                    <pre class="tool-result-content">${this.escapeHtml(formattedResult)}</pre>
+                `;
+                this.messagesContainer.appendChild(toolResultEl);
+            }
+        });
+    }
+
+    renderHistoryActions(actions, agentName) {
+        actions.forEach(action => {
+            let actionClass = '';
+            let actionIcon = '';
+
+            switch (action.action_type) {
+                case 'transfer':
+                    actionClass = 'transfer';
+                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                        <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                    </svg>`;
+                    break;
+                case 'exit':
+                    actionClass = 'exit';
+                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>`;
+                    break;
+                case 'interrupted':
+                    actionClass = 'interrupted';
+                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>`;
+                    break;
+                default:
+                    actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>`;
+            }
+
+            const actionEl = document.createElement('div');
+            actionEl.className = `action-event ${actionClass}`;
+            actionEl.innerHTML = `${actionIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>`;
+            this.messagesContainer.appendChild(actionEl);
+        });
     }
 
     async deleteHistoryFile(filename) {
