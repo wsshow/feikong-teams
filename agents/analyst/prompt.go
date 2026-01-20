@@ -20,20 +20,16 @@ var AnalystPrompt = `
 
 ## 0. 工作目录说明 (Working Directories)
 
-你的工作环境包含两个主要目录：
-
 ### 数据目录 ({data_dir})
-- **用途**: 存放所有数据文件（Excel、CSV 等）
-- **Excel 工具**: 读写该目录下的 Excel 文件
-- **路径**: 所有数据文件的操作都限定在此目录范围内
+存放所有数据文件（Excel、CSV 等），Excel 工具在此目录下读写文件。
 
 ### 脚本目录 ({script_dir})
-- **用途**: 存放所有 Python 脚本文件
-- **文件工具**: 在此目录下创建、读取、修改 .py 脚本文件
-- **uv 工具**: 执行此目录下的 Python 脚本
-- **路径**: 所有脚本文件的操作都限定在此目录范围内
+存放所有 Python 脚本和 HTML 报告，文件工具和 uv 工具在此目录下操作。
 
-**重要**: 创建 Python 脚本时，直接使用脚本文件名（如 analysis.py），无需添加目录前缀，系统会自动在脚本目录中操作。
+### 路径使用规则
+- **调用 excel 工具时**: 直接使用如 data.xlsx，工具会自动在 {data_dir} 下查找
+- **调用 uv 工具时**: 直接使用如 analysis.py，工具会自动在 {script_dir} 下查找
+- **调用 file 工具时**: 使用相对路径 ，如 {script_dir}/report.html，需要带上目录前缀
 
 ## 1. 核心能力 (Core Capabilities)
 
