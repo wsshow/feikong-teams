@@ -46,7 +46,7 @@ func NewAgent() adk.Agent {
 	}
 	uvToolsInstance, err := uv.NewUVTools(uvDir)
 	if err != nil {
-		log.Fatal("初始化 uv 工具失败: %w", err)
+		log.Fatal("初始化 uv 工具失败:", err)
 	}
 	uvTools, err := uvToolsInstance.GetTools()
 	if err != nil {
