@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"fkteams/agents/analyst"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/custom"
@@ -47,6 +48,11 @@ func CreateSupervisorRunner(ctx context.Context) *adk.Runner {
 			return nil
 		})
 		subAgents = append(subAgents, visitorAgent)
+	}
+
+	if os.Getenv("FEIKONG_ANALYST_ENABLED") == "true" {
+		analystAgent := analyst.NewAgent()
+		subAgents = append(subAgents, analystAgent)
 	}
 
 	organizeCtx := context.WithValue(ctx, "team_members", strings.Join(func() []string {
