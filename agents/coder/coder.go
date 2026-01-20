@@ -39,6 +39,7 @@ func NewAgent() adk.Agent {
 	// 格式化系统消息
 	systemMessages, err := CoderPromptTemplate.Format(ctx, map[string]any{
 		"current_time": time.Now().Format("2006-01-02 15:04:05"),
+		"code_dir":     codeDir,
 	})
 	if err != nil {
 		log.Fatal(err)
