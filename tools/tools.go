@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/g"
 	"fkteams/tools/command"
+	"fkteams/tools/excel"
 	"fkteams/tools/file"
 	"fkteams/tools/git"
 	"fkteams/tools/mcp"
@@ -41,6 +42,17 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil, fmt.Errorf("初始化Git工具失败: %w", err)
 		}
 		return gitTools.GetTools()
+	case "excel":
+		excelDir := "./data"
+		excelDirEnv := os.Getenv("FEIKONG_EXCEL_TOOL_DIR")
+		if excelDirEnv != "" {
+			excelDir = excelDirEnv
+		}
+		excelTools, err := excel.NewExcelTools(excelDir)
+		if err != nil {
+			return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
+		}
+		return excelTools.GetTools()
 	case "todo":
 		todoDir := "./todo"
 		todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
