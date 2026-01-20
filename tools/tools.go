@@ -8,6 +8,7 @@ import (
 	"fkteams/tools/file"
 	"fkteams/tools/git"
 	"fkteams/tools/mcp"
+	"fkteams/tools/script/uv"
 	"fkteams/tools/search"
 	"fkteams/tools/ssh"
 	"fkteams/tools/todo"
@@ -85,6 +86,17 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	case "search":
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err
+	case "uv":
+		uvDir := "./script"
+		uvDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
+		if uvDirEnv != "" {
+			uvDir = uvDirEnv
+		}
+		uvTools, err := uv.NewUVTools(uvDir)
+		if err != nil {
+			return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
+		}
+		return uvTools.GetTools()
 	default:
 		if name, ok := strings.CutPrefix(name, "mcp-"); ok {
 			return mcp.GetToolsByName(name)
