@@ -18,14 +18,6 @@ import (
 
 func NewAgent() adk.Agent {
 	ctx := context.Background()
-	systemMessages, err := AnalystPromptTemplate.Format(ctx, map[string]any{
-		"current_time": time.Now().Format("2006-01-02 15:04:05"),
-		"os":           runtime.GOOS,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	instruction := systemMessages[0].Content
 
 	// 初始化 Excel 工具
 	excelDir := "./data"
@@ -76,6 +68,17 @@ func NewAgent() adk.Agent {
 	toolList = append(toolList, excelTools...)
 	toolList = append(toolList, fileTools...)
 	toolList = append(toolList, uvTools...)
+
+	systemMessages, err := AnalystPromptTemplate.Format(ctx, map[string]any{
+		"current_time": time.Now().Format("2006-01-02 15:04:05"),
+		"os":           runtime.GOOS,
+		"data_dir":     excelDir,
+		"script_dir":   uvDir,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	instruction := systemMessages[0].Content
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小析",
