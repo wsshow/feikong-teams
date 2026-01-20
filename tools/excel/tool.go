@@ -292,6 +292,97 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		return nil, err
 	}
 
+	// 批量操作
+	batchCreateSheetsTool, err := utils.InferTool(
+		"excel_batch_create_sheets",
+		"批量创建工作表",
+		et.BatchCreateSheets,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchDeleteSheetsTool, err := utils.InferTool(
+		"excel_batch_delete_sheets",
+		"批量删除工作表",
+		et.BatchDeleteSheets,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchSetCellValuesTool, err := utils.InferTool(
+		"excel_batch_set_cell_values",
+		"批量设置单元格值",
+		et.BatchSetCellValues,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchFillRowsTool, err := utils.InferTool(
+		"excel_batch_fill_rows",
+		"批量填充行数据",
+		et.BatchFillRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchFillColsTool, err := utils.InferTool(
+		"excel_batch_fill_cols",
+		"批量填充列数据",
+		et.BatchFillCols,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchInsertRowsTool, err := utils.InferTool(
+		"excel_batch_insert_rows",
+		"批量插入行",
+		et.BatchInsertRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchRemoveRowsTool, err := utils.InferTool(
+		"excel_batch_remove_rows",
+		"批量删除行",
+		et.BatchRemoveRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchInsertColsTool, err := utils.InferTool(
+		"excel_batch_insert_cols",
+		"批量插入列",
+		et.BatchInsertCols,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchRemoveColsTool, err := utils.InferTool(
+		"excel_batch_remove_cols",
+		"批量删除列",
+		et.BatchRemoveCols,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchSetCellStylesTool, err := utils.InferTool(
+		"excel_batch_set_cell_styles",
+		"批量设置单元格样式",
+		et.BatchSetCellStyles,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return []tool.BaseTool{
 		// 工作簿
 		createWorkbookTool,
@@ -330,5 +421,16 @@ func (et *ExcelTools) GetTools() ([]tool.BaseTool, error) {
 		// 图片和图表
 		addPictureTool,
 		addChartTool,
+		// 批量操作
+		batchCreateSheetsTool,
+		batchDeleteSheetsTool,
+		batchSetCellValuesTool,
+		batchFillRowsTool,
+		batchFillColsTool,
+		batchInsertRowsTool,
+		batchRemoveRowsTool,
+		batchInsertColsTool,
+		batchRemoveColsTool,
+		batchSetCellStylesTool,
 	}, nil
 }
