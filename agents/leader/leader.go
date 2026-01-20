@@ -4,7 +4,6 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/tools/todo"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -46,8 +45,6 @@ func NewAgent(ctx context.Context) adk.Agent {
 		log.Fatal(err)
 	}
 	instruction := systemMessages[0].Content
-
-	fmt.Printf("\n\nLeader Prompt: %s\n\n\n", instruction)
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "统御",
