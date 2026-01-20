@@ -9,24 +9,36 @@ func GenerateExampleEnv(filePath string) error {
 # 请将此文件复制为 .env 并根据需要进行修改
 
 # 模型配置配置
-FEIKONG_OPENAI_BASE_URL =
-FEIKONG_OPENAI_API_KEY = 
-FEIKONG_OPENAI_MODEL = 
+FEIKONG_OPENAI_BASE_URL = https://api.openai.com/v1
+FEIKONG_OPENAI_API_KEY = xxxxx
+FEIKONG_OPENAI_MODEL = GPT-5
 
 # 配置代理：网络搜索工具、程序更新等
-FEIKONG_PROXY_URL = 
-
-# 代码助手
-FEIKONG_CODER_ENABLED = false
-
-# 本地命令行助手
-FEIKONG_CMDER_ENABLED = false
+FEIKONG_PROXY_URL = http://127.0.0.1:7890
 
 # 文件工具的使用目录, 默认为: ./code
 FEIKONG_FILE_TOOL_DIR = ./code
 
 # Todo工具的使用目录, 默认为: ./todo
 FEIKONG_TODO_TOOL_DIR = ./todo
+
+# git 工具的使用目录, 默认为: ./code
+FEIKONG_GIT_TOOL_DIR = ./code
+
+# excel 工具的使用目录, 默认为: ./data
+FEIKONG_EXCEL_TOOL_DIR = ./data
+
+# uv 工具的使用目录, 默认为: ./script
+FEIKONG_UV_TOOL_DIR = ./script
+
+# bun 工具的使用目录, 默认为: ./script
+FEIKONG_BUN_TOOL_DIR = ./script
+
+# 代码助手
+FEIKONG_CODER_ENABLED = false
+
+# 本地命令行助手
+FEIKONG_CMDER_ENABLED = false
 
 # SSH 远程服务器配置
 FEIKONG_SSH_VISITOR_ENABLED = false
