@@ -1,235 +1,160 @@
-# fkteams AI 开发指南
+# fkteams 开发规范
 
-## 项目概览
+## 项目简介
 
-fkteams 是一个基于 CloudWeGo Eino 框架的多智能体协作系统，支持命令行和 Web 双界面模式。核心采用 **监督者模式 (Supervisor Pattern)** 架构，由领导智能体协调多个专业智能体完成复杂任务。
+fkteams 是基于 CloudWeGo Eino 框架的多智能体协作系统，采用监督者模式架构，支持 CLI 和 Web 双界面。
 
-### 三种工作模式
+## AI 开发行为规范
 
-1. **团队模式** (`-m team`): 预定义的 5 个专业智能体（小搜/小码/小令/小访/小天），由"统御"智能体协调
-2. **自定义会议模式** (`-m custom`): 通过 `config/config.toml` 自定义智能体及其工具配置
-3. **多智能体讨论模式** (`-m group`): 多个 AI 模型进行圆桌会议式讨论
+### 禁止行为
 
-## 核心架构模式
+1. **禁止随意创建文件**: 不要自行创建 markdown 文档、测试文件或其他辅助文件，除非用户明确要求
+2. **禁止冗余代码**: 不添加未使用的 import、变量或函数
+3. **禁止过度注释**: 只在复杂逻辑处添加必要注释
 
-### 智能体创建模式 (Agent Pattern)
+### 必须执行
 
-所有智能体遵循统一创建模式，参考 [agents/coder/coder.go](../../agents/coder/coder.go):
+1. **功能变更后更新 README.md**: 任何功能新增、修改或删除，必须同步更新 `README.md` 相关章节
+2. **新增环境变量更新 .env.example**: 添加新环境变量时，必须在 `.env.example` 中添加对应条目和注释
+3. **代码审查**: 编码完成后必须检查代码是否有语法错误、逻辑问题，确保无编译报错
+4. **保持简洁**: 代码实现以最简洁有效的方式完成，避免过度设计
+
+## 项目结构
+
+```
+fkteams/
+├── main.go                 # 程序入口
+├── agents/                 # 智能体实现
+│   ├── common/             # 公共配置 (NewChatModel, MaxIterations)
+│   ├── coder/              # 代码专家 (小码)
+│   ├── searcher/           # 搜索专家 (小搜)
+│   ├── cmder/              # 命令行专家 (小令)
+│   ├── visitor/            # SSH专家 (小访)
+│   ├── storyteller/        # 讲故事专家 (小天)
+│   ├── analyst/            # 数据分析师
+│   ├── leader/             # 团队协调者 (统御)
+│   ├── moderator/          # 自定义模式主持人
+│   └── ...
+├── tools/                  # 工具实现
+│   ├── tools.go            # 工具注册入口
+│   ├── file/               # 文件操作 (沙箱隔离)
+│   ├── git/                # Git 仓库操作
+│   ├── excel/              # Excel 文件处理
+│   ├── command/            # 命令执行
+│   ├── ssh/                # SSH 连接
+│   ├── search/             # DuckDuckGo 搜索
+│   ├── todo/               # 待办事项管理
+│   ├── script/             # 脚本工具
+│   │   ├── uv/             # Python uv 工具
+│   │   └── bun/            # JavaScript bun 工具
+│   ├── mcp/                # MCP 协议工具
+│   └── ...
+├── config/                 # 配置管理
+├── fkevent/                # 事件系统
+├── server/                 # Web 服务
+└── release/                # 构建输出
+```
+
+## 开发约定
+
+### 智能体开发
+
+每个智能体包含两个文件:
+- `{name}.go`: 实现 `NewAgent() adk.Agent` 函数
+- `prompt.go`: 定义 `PromptTemplate` 系统提示词
 
 ```go
+// 标准智能体创建模式
 func NewAgent() adk.Agent {
     ctx := context.Background()
-    
-    // 1. 初始化工具（如需要）
-    tools, err := toolPackage.GetTools()
-    
-    // 2. 格式化系统提示词（使用当前时间等上下文）
-    systemMessages, err := PromptTemplate.Format(ctx, map[string]any{
+    tools, _ := toolPackage.GetTools()
+    systemMessages, _ := PromptTemplate.Format(ctx, map[string]any{
         "current_time": time.Now().Format("2006-01-02 15:04:05"),
     })
-    
-    // 3. 创建智能体，注入 Model、Instruction、Tools
     return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
         Name:          "智能体名称",
         Description:   "智能体描述",
         Instruction:   systemMessages[0].Content,
         Model:         common.NewChatModel(),
-        MaxIterations: common.MaxIterations, // 固定 60 轮
+        MaxIterations: common.MaxIterations,
         ToolsConfig:   adk.ToolsConfig{...},
     })
 }
 ```
 
-**关键约定**:
-- 每个智能体包含 `{agent_name}.go` 和 `prompt.go` 两个文件
-- `prompt.go` 使用 Eino 的 `compose.PromptTemplate` 定义系统提示词
-- 智能体名称使用中文（小码、小搜等），便于用户理解
-- 所有智能体最大迭代次数固定为 60 (`common.MaxIterations`)
+### 工具开发
 
-### 监督者模式 (Supervisor Pattern)
+工具通过 `tools/tools.go` 的 `GetToolsByName(name string)` 注册:
+- 内置工具: `file`, `git`, `excel`, `todo`, `ssh`, `command`, `search`, `uv`, `bun`
+- MCP 工具: 使用 `mcp-{server_name}` 前缀
 
-团队和自定义模式使用 Supervisor 协调多智能体，参考 [main.go](../../main.go):
+### 命名规范
 
-```go
-supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
-    Instruction: leaderInstruction,
-    Leader:      leaderAgent,              // 协调者智能体
-    Agents:      []adk.Agent{agent1, ...}, // 被协调的专业智能体
-    Model:       common.NewChatModel(),
-})
+| 类型 | 规范 | 示例 |
+|------|------|------|
+| 智能体名称 | 中文 | 小码、小搜 |
+| 包/文件名 | 小写英文 | coder, searcher |
+| 工具函数 | 下划线分隔 | file_read, ssh_execute |
+| 环境变量 | FEIKONG_ 前缀 | FEIKONG_OPENAI_API_KEY |
+
+### 代码风格规范
+
+1. **错误信息使用英文**: `fmt.Errorf`、`errors.New` 等错误信息一律使用英文
+   ```go
+   // 正确
+   return fmt.Errorf("failed to read file: %w", err)
+   // 错误
+   return fmt.Errorf("读取文件失败: %w", err)
+   ```
+
+2. **注释使用中文**: 代码注释、文档注释使用中文
+   ```go
+   // 初始化文件工具，限制在指定目录内
+   func NewFileTools(dir string) (*FileTools, error) {
+       // ...
+   }
+   ```
+
+3. **日志输出**: 面向用户的日志可使用中文，内部调试日志使用英文
+
+### 环境变量
+
+必需:
+```bash
+FEIKONG_OPENAI_API_KEY    # API 密钥
+FEIKONG_OPENAI_BASE_URL   # API 地址
+FEIKONG_OPENAI_MODEL      # 模型名称
 ```
 
-**工作流程**:
-1. Leader Agent 分析任务并决定调用哪个 Agent
-2. 被调用的 Agent 执行具体工具操作
-3. Leader Agent 综合结果并决定下一步
-
-### 工具系统架构
-
-#### 内置工具
-
-工具通过名称获取，参考 [tools/tools.go](../../tools/tools.go) (L17-L62):
-
-```go
-func GetToolsByName(name string) ([]tool.BaseTool, error) {
-    switch name {
-    case "file":    // 文件操作，限制在 ./code 目录
-    case "todo":    // 待办事项管理
-    case "ssh":     // SSH 远程连接
-    case "command": // 命令行执行
-    case "search":  // DuckDuckGo 搜索
-    default:
-        // MCP 工具以 "mcp-" 前缀
-        if name, ok := strings.CutPrefix(name, "mcp-"); ok {
-            return mcp.GetToolsByName(name)
-        }
-    }
-}
+可选 (完整列表见 `.env.example`):
+```bash
+FEIKONG_FILE_TOOL_DIR     # 文件工具目录 (默认 ./code)
+FEIKONG_TODO_TOOL_DIR     # Todo 目录 (默认 ./todo)
+FEIKONG_PROXY_URL         # 代理地址
+FEIKONG_SSH_*             # SSH 连接配置
 ```
 
-**文件工具安全限制**: 所有文件操作自动限制在配置的安全目录内（默认 `./code`），通过 `afero` 的 `BasePathFs` 实现沙箱隔离。
-
-#### MCP 工具集成
-
-支持 Model Context Protocol，配置在 `config/config.toml` 的 `[[custom.mcp_servers]]` 节，支持三种传输方式:
-- `transport_type = "http"`: HTTP 连接，需配置 `url`
-- `transport_type = "sse"`: Server-Sent Events，需配置 `url`  
-- `transport_type = "stdio"`: 标准输入输出，需配置 `command` 和 `args`
-
-MCP 工具通过前缀 `mcp-{server_name}` 引用，工具在首次调用时初始化并缓存。
-
-### 事件系统 (Event System)
-
-双界面模式通过统一的事件系统实现，参考 [fkevent/event.go](../../fkevent/event.go):
-
-```go
-var Callback func(event Event) error  // 全局回调函数
-
-func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
-    // 将 Eino 事件转换为统一的 Event 结构
-    // 支持: message, tool_call, tool_result, error
-}
-```
-
-**CLI 模式**: 直接使用 `pterm` 彩色打印
-**Web 模式**: 通过 `Callback` 函数发送 WebSocket 消息到前端
-
-### 历史记录管理
-
-会话历史通过 `fkevent.GlobalHistoryRecorder` 管理:
-- `LoadFromDefaultFile()`: 加载默认历史文件
-- `GetMessages()`: 获取历史消息用于上下文注入
-- `RecordUserInput()` / `RecordAgentResponse()`: 记录对话
-- `SaveToMarkdownWithTimestamp()`: 导出为 Markdown
-
-历史文件存储在 `release/history/` 目录，按会话 ID 分文件存储。
-
-## 开发工作流
-
-### 构建与运行
+## 构建与运行
 
 ```bash
-# 开发构建（当前平台）
-make build  # 输出到 release/ 目录
-
-# 运行命令行模式
-./release/fkteams_darwin_arm64 -m team -q "你的问题"
-
-# 运行 Web 模式（默认 8080 端口）
-./release/fkteams_darwin_arm64 -m team -w
+make build                                    # 构建到 release/
+./release/fkteams_darwin_arm64 -m team -q "问题"  # CLI 模式
+./release/fkteams_darwin_arm64 -m team -w     # Web 模式 (默认 8080)
 ```
 
-### 环境变量配置
+## 代码风格
 
-必需变量（参考 [agents/common/common.go](../../agents/common/common.go)):
-```bash
-FEIKONG_OPENAI_API_KEY    # OpenAI API 密钥
-FEIKONG_OPENAI_BASE_URL   # API 基础 URL
-FEIKONG_OPENAI_MODEL      # 模型名称（如 deepseek-chat）
-```
+1. 错误处理: 初始化失败用 `log.Fatal()`，运行时错误通过事件系统传递
+2. 并发安全: WebSocket 连接池使用 `sync.Mutex` 保护
+3. 文件操作: 所有路径通过 `afero.BasePathFs` 沙箱隔离
+4. 日志格式: `log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)`
 
-可选变量:
-```bash
-FEIKONG_FILE_TOOL_DIR     # 文件工具安全目录（默认 ./code）
-FEIKONG_TODO_TOOL_DIR     # Todo 工具数据目录（默认 ./todo）
-FEIKONG_SSH_HOST          # SSH 连接主机
-FEIKONG_SSH_USERNAME      # SSH 用户名
-FEIKONG_SSH_PASSWORD      # SSH 密码
-```
+## 检查清单
 
-### 添加新智能体
+完成开发后确认:
 
-1. 在 `agents/` 创建新目录 `agents/newagent/`
-2. 创建 `newagent.go` 实现 `NewAgent()` 函数
-3. 创建 `prompt.go` 定义 `PromptTemplate`
-4. 如需新工具，在 `tools/` 添加工具包
-5. 在 `main.go` 或 `server/handler/websocket.go` 注册智能体
-
-参考 [agents/coder/](../../agents/coder/) 的完整实现。
-
-### 自定义模式配置
-
-编辑 `config/config.toml` 的 `[custom]` 部分:
-
-```toml
-[custom.moderator]
-name = "主持人"
-desc = "负责协调讨论"
-system_prompt = "你是一个公正的主持人..."
-base_url = "https://api.example.com/v1"
-api_key = "your_key"
-model_name = "deepseek-chat"
-
-[[custom.agents]]
-name = "专家1"
-desc = "领域专家"
-system_prompt = "你是一个专家..."
-tools = ["file", "mcp-server-name"]  # 内置工具或 MCP 工具
-# ... 其他配置
-
-[[custom.mcp_servers]]
-name = "example-server"
-enabled = true
-transport_type = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-example"]
-```
-
-## 关键技术约定
-
-### 依赖管理
-- 使用 Go 1.25.3+
-- 核心框架: CloudWeGo Eino (ADK 和预构建组件)
-- UI 库: pterm (CLI), Gin + WebSocket (Web)
-- 文件系统: spf13/afero (沙箱隔离)
-
-### 错误处理
-- 工具初始化失败使用 `log.Fatal()` 快速失败
-- 运行时错误通过 Event 系统传递，由 `fkevent.ProcessAgentEvent` 统一处理
-- WebSocket 连接错误会自动清理并通知前端
-
-### 并发安全
-- WebSocket 连接池使用 `sync.Mutex` 保护 (`server/handler/websocket.go`)
-- 每个 WebSocket 连接有独立的 context 和 cancel 函数
-- MCP 工具实现工具缓存避免重复初始化
-
-### 命名约定
-- 智能体使用中文名称（用户友好）
-- 文件/包使用英文小写（技术标准）
-- 工具名称使用下划线分隔（`file_read`, `ssh_execute`）
-- 环境变量统一前缀 `FEIKONG_`
-
-## 常见陷阱
-
-⚠️ **文件工具路径**: 永远不要在文件工具外部直接操作文件系统，所有路径自动沙箱化
-⚠️ **智能体迭代**: 不要修改 `MaxIterations` 除非理解整个系统影响
-⚠️ **MCP 工具缓存**: MCP 工具首次初始化后缓存，配置变更需重启程序
-⚠️ **历史记录**: 在非交互模式使用 `-q` 时，历史会自动加载和保存
-⚠️ **WebSocket 生命周期**: 每个 WebSocket 请求创建新 Runner，连接断开需清理资源
-
-## 调试技巧
-
-- 使用 `log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)` 查看详细日志
-- 查看 `release/history/` 目录的对话记录文件
-- Web 模式打开浏览器控制台查看 WebSocket 消息
-- 团队模式可在 Leader 的 prompt 中查看决策逻辑
+- [ ] 代码无编译错误
+- [ ] 无未使用的 import/变量
+- [ ] 功能变更已更新 README.md
+- [ ] 新环境变量已添加到 .env.example
+- [ ] 遵循现有代码风格
