@@ -5,6 +5,7 @@ import (
 	"fkteams/g"
 	"fkteams/tools/command"
 	"fkteams/tools/file"
+	"fkteams/tools/git"
 	"fkteams/tools/mcp"
 	"fkteams/tools/search"
 	"fkteams/tools/ssh"
@@ -29,6 +30,17 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 		}
 		return fileTools.GetTools()
+	case "git":
+		gitDir := "./code"
+		gitDirEnv := os.Getenv("FEIKONG_GIT_TOOL_DIR")
+		if gitDirEnv != "" {
+			gitDir = gitDirEnv
+		}
+		gitTools, err := git.NewGitTools(gitDir)
+		if err != nil {
+			return nil, fmt.Errorf("初始化Git工具失败: %w", err)
+		}
+		return gitTools.GetTools()
 	case "todo":
 		todoDir := "./todo"
 		todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
