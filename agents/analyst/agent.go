@@ -6,6 +6,7 @@ import (
 	"fkteams/tools/excel"
 	"fkteams/tools/file"
 	"fkteams/tools/script/uv"
+	"fkteams/tools/todo"
 	"log"
 	"os"
 	"runtime"
@@ -19,13 +20,24 @@ import (
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
-	// 初始化 Excel 工具
-	excelDir := "./data"
-	excelDirEnv := os.Getenv("FEIKONG_EXCEL_TOOL_DIR")
-	if excelDirEnv != "" {
-		excelDir = excelDirEnv
+	analystSafeDir := "./script"
+	analystDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
+	if analystDirEnv != "" {
+		analystSafeDir = analystDirEnv
 	}
-	excelToolsInstance, err := excel.NewExcelTools(excelDir)
+
+	// 初始化 Todo 工具
+	todoToolsInstance, err := todo.NewTodoTools(analystSafeDir)
+	if err != nil {
+		log.Fatalf("初始化Todo工具失败: %v", err)
+	}
+	todoTools, err := todoToolsInstance.GetTools()
+	if err != nil {
+		log.Fatal("创建 Todo 工具失败:", err)
+	}
+
+	// 初始化 Excel 工具
+	excelToolsInstance, err := excel.NewExcelTools(analystSafeDir)
 	if err != nil {
 		log.Fatalf("初始化Excel工具失败: %v", err)
 	}
@@ -35,12 +47,7 @@ func NewAgent() adk.Agent {
 	}
 
 	// 初始化文件工具
-	safeDir := "./script"
-	codeDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
-	if codeDirEnv != "" {
-		safeDir = codeDirEnv
-	}
-	fileToolsInstance, err := file.NewFileTools(safeDir)
+	fileToolsInstance, err := file.NewFileTools(analystSafeDir)
 	if err != nil {
 		log.Fatalf("初始化文件工具失败: %v", err)
 	}
@@ -50,12 +57,7 @@ func NewAgent() adk.Agent {
 	}
 
 	// 初始化 uv 工具
-	uvDir := "./script"
-	uvDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
-	if uvDirEnv != "" {
-		uvDir = uvDirEnv
-	}
-	uvToolsInstance, err := uv.NewUVTools(uvDir)
+	uvToolsInstance, err := uv.NewUVTools(analystSafeDir)
 	if err != nil {
 		log.Fatal("初始化uv工具失败:", err)
 	}
@@ -65,6 +67,7 @@ func NewAgent() adk.Agent {
 	}
 
 	var toolList []tool.BaseTool
+	toolList = append(toolList, todoTools...)
 	toolList = append(toolList, excelTools...)
 	toolList = append(toolList, fileTools...)
 	toolList = append(toolList, uvTools...)
@@ -72,8 +75,8 @@ func NewAgent() adk.Agent {
 	systemMessages, err := AnalystPromptTemplate.Format(ctx, map[string]any{
 		"current_time": time.Now().Format("2006-01-02 15:04:05"),
 		"os":           runtime.GOOS,
-		"data_dir":     excelDir,
-		"script_dir":   uvDir,
+		"data_dir":     analystSafeDir,
+		"script_dir":   analystSafeDir,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -82,7 +85,7 @@ func NewAgent() adk.Agent {
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小析",
-		Description:   "数据分析专家，擅长操作 excel 并使用脚本从数据中提取有价值的信息。",
+		Description:   "数据分析专家，擅长使用 Excel 和 Python 脚本从复杂数据中提取有价值的信息。",
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
