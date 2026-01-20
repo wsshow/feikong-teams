@@ -27,9 +27,9 @@ var AnalystPrompt = `
 存放所有 Python 脚本和 HTML 报告，文件工具和 uv 工具在此目录下操作。
 
 ### 路径使用规则
-- **调用 excel 工具时**: 直接使用如 data.xlsx，工具会自动在 {data_dir} 下查找
-- **调用 uv 工具时**: 直接使用如 analysis.py，工具会自动在 {script_dir} 下查找
-- **调用 file 工具时**: 使用相对路径 ，如 {script_dir}/report.html，需要带上目录前缀
+- **调用 excel 工具时**: 直接使用如 data.xlsx, 而不是 {data_dir}/data.xlsx, 禁止带上 {data_dir} 目录前缀
+- **调用 uv 工具时**: 直接使用如 analysis.py, 而不是 {script_dir}/analysis.py, 禁止带上 {script_dir} 目录前缀
+- **调用 file 工具时**: 使用相对路径 ，如 {script_dir}/report.html, 需要带上目录前缀
 
 ## 1. 核心能力 (Core Capabilities)
 
