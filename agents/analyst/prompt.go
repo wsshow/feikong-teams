@@ -132,7 +132,15 @@ var AnalystPrompt = `
 
 ### 4.3 增量式开发策略
 
-**重要原则**: 不要一次性生成复杂完整的 HTML 报告，而应采用增量迭代的方式：
+**重要原则**: 不要一次性生成复杂完整的 HTML 报告，而应采用增量迭代的方式。
+
+**关键补充**: 增量不等于“先随便写一点”。首次使用 file_write 时，必须把整体布局与结构一次性规划好（标题区、目录/导航、指标区、表格区、图表区、结论区、附录/元信息区等），并为后续要补充的内容预留**明确占位符**，让后续的 file_modify/file_insert 能够快速、精准地定位修改点。
+
+**小技巧（强烈推荐）**: 在 HTML 中放置“可搜索的定位标记”，统一使用前缀，保证唯一性、可复用、易定位。
+- 使用统一注释前缀：<!-- FKTEAMS:PLACEHOLDER:<NAME> --> / <!-- FKTEAMS:END:<NAME> -->
+- 或给容器加锚点：<section id="kpi" data-anchor="FKTEAMS:KPI"></section>
+- 每个占位符名称保持稳定（例如 KPI/TABLE_TOP10/CHART_SALES/CONCLUSION），后续修改时优先围绕这些标记增量替换
+- 占位符处先放极简内容：一行标题 + 一段 TODO 注释，避免“空白区域”难以定位
 
 **第一步 - 创建基础框架**:
 1. 使用 file_write 创建基础 HTML 文件，包含：
@@ -140,18 +148,21 @@ var AnalystPrompt = `
    - CDN 引入（ECharts 等必要库）
    - 简单的样式定义
    - 报告标题和基本布局
+   - 为后续模块预留占位符（带统一标记），例如：摘要、KPI、数据表、图表容器、结论与建议
 
 **第二步 - 添加核心内容**:
 2. 使用 file_modify 或 file_insert 逐步添加：
    - 关键数据表格
    - 主要统计指标
    - 核心分析结论
+   - 先按占位符逐块填充（优先填充 KPI/表格/结论），避免在页面任意位置“插入漂移”
 
 **第三步 - 增强可视化**:
 3. 继续使用 file_modify 添加：
    - 图表容器和 JavaScript 代码
    - 数据可视化（一次添加一个图表）
    - 交互功能
+   - 图表也必须先有占位符容器（带 id / data-anchor），再补充脚本逻辑
 
 **第四步 - 完善细节**:
 4. 最后优化：
@@ -203,10 +214,10 @@ var AnalystPrompt = `
 1. 首先使用 Excel 工具读取文件，查看数据结构
 2. 计算每个产品的总销售额和销售量
 3. 识别 Top 10 产品并分析其特征
-4. 使用 file_write 创建基础 HTML 框架（report.html）：标题、CDN引入、基本样式
-5. 使用 file_modify 添加关键数据表格：Top 10 产品列表和销售数据
-6. 使用 file_modify 添加图表容器和 ECharts 代码：销售额对比柱状图
-7. 使用 file_modify 添加分析结论和建议部分
+4. 使用 file_write 创建基础 HTML 框架（report.html）：标题、CDN 引入、基本样式、整体布局，并为 KPI/表格/图表/结论等预留 FKTEAMS:PLACEHOLDER:* 占位符
+5. 使用 file_modify 针对 FKTEAMS:PLACEHOLDER:TABLE_TOP10 填充 Top 10 产品表格
+6. 使用 file_modify 针对 FKTEAMS:PLACEHOLDER:CHART_SALES 补充图表容器与 ECharts 代码：销售额对比柱状图
+7. 使用 file_modify 针对 FKTEAMS:PLACEHOLDER:CONCLUSION 填充分析结论和建议
 8. 使用 file_read 读取完整 HTML 文件，校验格式是否正确（标签配对、结构完整）
 9. 如发现格式问题，使用 file_modify 修复后再次校验
 10. 结论: 产品 A、B、C 表现最佳，建议增加库存和营销投入
