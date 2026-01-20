@@ -8,6 +8,7 @@ import (
 	"fkteams/tools/file"
 	"fkteams/tools/git"
 	"fkteams/tools/mcp"
+	"fkteams/tools/script/bun"
 	"fkteams/tools/script/uv"
 	"fkteams/tools/search"
 	"fkteams/tools/ssh"
@@ -97,6 +98,17 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
 		}
 		return uvTools.GetTools()
+	case "bun":
+		bunDir := "./script"
+		bunDirEnv := os.Getenv("FEIKONG_BUN_TOOL_DIR")
+		if bunDirEnv != "" {
+			bunDir = bunDirEnv
+		}
+		bunTools, err := bun.NewBunTools(bunDir)
+		if err != nil {
+			return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
+		}
+		return bunTools.GetTools()
 	default:
 		if name, ok := strings.CutPrefix(name, "mcp-"); ok {
 			return mcp.GetToolsByName(name)
