@@ -42,7 +42,27 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultExit
 
 	case "help":
-		pterm.Println("帮助信息: 输入您的问题以获取回答，输入 'quit' 或 'q' 退出程序。")
+		pterm.Println("=== fkteams 命令帮助 ===")
+		pterm.Println()
+		pterm.Println("基本操作:")
+		pterm.Println("  help                             显示此帮助信息")
+		pterm.Println("  q, quit, Enter                   退出程序")
+		pterm.Println()
+		pterm.Println("聊天历史管理:")
+		pterm.Println("  load_chat_history               从默认文件加载聊天历史")
+		pterm.Println("  save_chat_history               保存聊天历史到默认文件")
+		pterm.Println("  clear_chat_history              清空当前聊天历史")
+		pterm.Println("  save_chat_history_to_markdown   导出聊天历史为 Markdown 文件")
+		pterm.Println("  save_chat_history_to_html       导出聊天历史为 HTML 文件")
+		pterm.Println()
+		pterm.Println("任务管理:")
+		pterm.Println("  clear_todo                      清空所有待办事项")
+		pterm.Println()
+		pterm.Println("模式切换:")
+		pterm.Println("  switch_work_mode               切换当前工作模式")
+		pterm.Println()
+		pterm.Println("其他操作:")
+		pterm.Println("  直接输入问题                     与智能体团队对话")
 		return ResultHandled
 
 	case "load_chat_history":
