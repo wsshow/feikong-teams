@@ -129,7 +129,7 @@ func handleCtrlC() {
 		return
 	}
 	queryCancelling.Store(true)
-
+	fmt.Println()
 	pterm.Info.Println("正在中断查询...")
 	queryCtxMutex.Lock()
 	if queryCancelFunc != nil {
@@ -185,7 +185,6 @@ func startKeyboardMonitor() func() {
 
 	return func() {
 		close(stopChan)
-		// 不等待 goroutine 退出，让它们自然结束，避免卡顿
 	}
 }
 
