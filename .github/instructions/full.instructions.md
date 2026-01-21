@@ -88,6 +88,56 @@ func NewAgent() adk.Agent {
 - 内置工具: `file`, `git`, `excel`, `todo`, `ssh`, `command`, `search`, `uv`, `bun`
 - MCP 工具: 使用 `mcp-{server_name}` 前缀
 
+#### 工具函数错误处理规范
+
+**关键原则**: 工具函数不应该抛出 Go error，而应该将错误信息放在响应结构体的 `ErrorMessage` 字段中。
+
+```go
+// ❌ 错误做法 - 会导致 Agent 流程中断，用户看到系统级错误
+func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error) {
+    if req.Param == "" {
+        return &Response{
+            ErrorMessage: "参数不能为空",
+        }, fmt.Errorf("param is required")  // ❌ 不要返回 error
+    }
+    
+    if err := someOperation(); err != nil {
+        return &Response{
+            ErrorMessage: fmt.Sprintf("操作失败: %v", err),
+        }, err  // ❌ 不要返回 error
+    }
+    
+    return &Response{Success: true}, nil
+}
+
+// ✅ 正确做法 - Agent 可以看到错误信息并继续执行
+func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error) {
+    if req.Param == "" {
+        return &Response{
+            Success:      false,
+            ErrorMessage: "参数不能为空，请检查输入",
+        }, nil  // ✅ 返回 nil
+    }
+    
+    if err := someOperation(); err != nil {
+        return &Response{
+            Success:      false,
+            ErrorMessage: fmt.Sprintf("操作失败: %v，请检查...", err),
+        }, nil  // ✅ 返回 nil
+    }
+    
+    return &Response{Success: true, Message: "操作成功"}, nil
+}
+```
+
+**为什么这样做？**
+1. Agent 可以读取错误信息并采取补救措施
+2. 用户看到友好的错误提示而非系统异常
+3. 不会中断整个执行流程，Agent 可以继续尝试其他方案
+
+**何时可以返回 error？**
+仅在工具初始化阶段（如 `NewXXXTools`）可以返回 error，因为初始化失败应该阻止程序启动。
+
 ### 命名规范
 
 | 类型 | 规范 | 示例 |
