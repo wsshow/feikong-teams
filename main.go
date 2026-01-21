@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"fkteams/agents/leader"
+	"fkteams/cli"
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/fkevent"
 	"fkteams/g"
-	"fkteams/report"
 	"fkteams/runner"
 	"fkteams/server"
 	"fkteams/update"
@@ -16,15 +15,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"syscall"
 
 	"github.com/atotto/clipboard"
 	"github.com/c-bata/go-prompt"
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 	"github.com/joho/godotenv"
 	"github.com/pterm/pterm"
 	"github.com/spf13/pflag"
@@ -35,51 +30,31 @@ func init() {
 }
 
 var (
-	inputHistory    []string // 输入历史记录
-	fullBuffer      []string // 存储已输入的所有行
-	isContinuing    bool     // 是否处于续行状态
-	currentWorkMode string   // 当前工作模式
-
-	// 查询状态管理
-	queryRunning    atomic.Bool        // 查询是否在运行
-	queryCancelling atomic.Bool        // 是否正在取消查询（防止重复中断）
-	queryCancelFunc context.CancelFunc // 查询的取消函数
-	queryCtxMutex   sync.Mutex         // 保护 queryCancelFunc
+	inputHistory  []string           // 输入历史记录
+	inputBuffer   *cli.InputBuffer   // 输入缓冲区
+	currentMode   cli.WorkMode       // 当前工作模式
+	queryState    *cli.QueryState    // 查询状态管理
+	queryExecutor *cli.QueryExecutor // 查询执行器
 )
 
+func init() {
+	inputBuffer = cli.NewInputBuffer()
+	queryState = cli.NewQueryState()
+}
+
 func handleInput(in string) (finalCmd string) {
-	cleanIn := strings.TrimSpace(in)
-	// 如果以 \ 结尾，表示要续行
-	if before, ok := strings.CutSuffix(cleanIn, "\\"); ok {
-		fullBuffer = append(fullBuffer, before)
-		isContinuing = true
-		return
+	cmd, needContinue := inputBuffer.HandleInput(in)
+	if needContinue {
+		return ""
 	}
-	// 否则，合并所有行并执行
-	fullBuffer = append(fullBuffer, cleanIn)
-	finalCmd = strings.Join(fullBuffer, "\n")
-	// 执行完毕，重置状态
-	fullBuffer = []string{}
-	isContinuing = false
-	return finalCmd
+	return cmd
 }
 
 func changeLivePrefix() (string, bool) {
-	prefix := ""
-	switch currentWorkMode {
-	case "team":
-		prefix = "团队模式> "
-	case "group":
-		prefix = "多智能体讨论模式> "
-	case "custom":
-		prefix = "自定义会议模式> "
-	default:
-		prefix = "未知模式> "
-	}
-	if isContinuing {
+	if inputBuffer.IsContinuing() {
 		return "请继续输入: ", true
 	}
-	return prefix, true
+	return currentMode.GetPromptPrefix(), true
 }
 
 func completer(d prompt.Document) []prompt.Suggest {
@@ -103,198 +78,68 @@ func completer(d prompt.Document) []prompt.Suggest {
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
-// startSignalHandler 监听系统信号，SIGINT 用于中断查询，其他信号用于退出
+// startSignalHandler 监听系统信号
 func startSignalHandler(rawSignals chan os.Signal, exitSignals chan os.Signal) {
 	go func() {
 		for sig := range rawSignals {
-			if sig == syscall.SIGINT {
-				handleCtrlC()
-			} else {
-				// SIGTERM/SIGHUP 等信号转发给 main 函数退出
-				exitSignals <- sig
-				return
-			}
-		}
-	}()
-}
-
-// handleCtrlC 处理 Ctrl+C 事件，只中断查询，不退出程序
-func handleCtrlC() {
-	if !queryRunning.Load() {
-		return // 空闲状态，忽略
-	}
-
-	// 防止重复中断
-	if queryCancelling.Load() {
-		return
-	}
-	queryCancelling.Store(true)
-	fmt.Println()
-	pterm.Info.Println("正在中断查询...")
-	queryCtxMutex.Lock()
-	if queryCancelFunc != nil {
-		queryCancelFunc()
-	}
-	queryCtxMutex.Unlock()
-}
-
-// startKeyboardMonitor 在查询期间监听键盘，检测 Ctrl+C (0x03)
-// 因为 go-prompt 会将终端设置为 raw mode，SIGINT 不会被触发
-func startKeyboardMonitor() func() {
-	stopChan := make(chan struct{})
-	stdinChan := make(chan byte, 10)
-
-	// 读取 stdin 的 goroutine
-	go func() {
-		buf := make([]byte, 1)
-		for {
 			select {
-			case <-stopChan:
-				return
+			case exitSignals <- sig:
+				if sig == syscall.SIGINT {
+					cli.HandleCtrlC(queryState)
+				}
 			default:
 			}
-
-			// 使用非阻塞检查，避免停止时卡顿
-			n, err := os.Stdin.Read(buf)
-			if err != nil {
-				return
-			}
-			if n > 0 {
-				select {
-				case stdinChan <- buf[0]:
-				case <-stopChan:
-					return
-				}
-			}
 		}
 	}()
-
-	// 处理键盘输入的 goroutine
-	go func() {
-		for {
-			select {
-			case <-stopChan:
-				return
-			case b := <-stdinChan:
-				if b == 0x03 { // Ctrl+C
-					handleCtrlC()
-				}
-			}
-		}
-	}()
-
-	return func() {
-		close(stopChan)
-	}
 }
 
-func handleDirect(ctx context.Context, runner *adk.Runner, exitSignals chan os.Signal, query string) {
-	var inputMessages []adk.Message
-	input := query
-	inputHistory = append(inputHistory, input)
-	inputMessages = []adk.Message{}
-	err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile()
-	if err == nil {
+func handleDirect(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal, query string) {
+	inputHistory = append(inputHistory, query)
+
+	// 自动加载聊天历史
+	if err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile(); err == nil {
 		pterm.Success.Println("[非交互模式] 自动加载聊天历史")
 	}
-	agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
-	if len(agentMessages) > 0 {
-		var historyMessage strings.Builder
-		for _, agentMessage := range agentMessages {
-			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.GetTextContent())
-		}
-		inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
+
+	// 执行查询（非交互模式也需要键盘监听来检测 Ctrl+C）
+	executor := cli.NewQueryExecutor(r, queryState)
+	if err := executor.Execute(ctx, query, true, nil); err != nil {
+		log.Printf("执行查询失败: %v", err)
 	}
-	inputMessages = append(inputMessages, schema.UserMessage(input))
-	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
-	// 创建可取消的 context
-	queryCtx, cancelFunc := context.WithCancel(ctx)
-	queryCtxMutex.Lock()
-	queryCancelFunc = cancelFunc
-	queryCtxMutex.Unlock()
-
-	queryRunning.Store(true)
-	queryCancelling.Store(false)
-
-	// 启动键盘监听（直接模式也需要支持 Ctrl+C 中断）
-	stopKeyboardMonitor := startKeyboardMonitor()
-	defer func() {
-		stopKeyboardMonitor()
-		queryRunning.Store(false)
-		queryCancelling.Store(false)
-	}()
-
-	iter := runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
-
-	// 使用 channel 接收事件，以便能够中断
-	eventChan := make(chan struct {
-		event *adk.AgentEvent
-		ok    bool
-	}, 1)
-
-	go func() {
-		for {
-			event, ok := iter.Next()
-			eventChan <- struct {
-				event *adk.AgentEvent
-				ok    bool
-			}{event, ok}
-			if !ok {
-				close(eventChan)
-				return
-			}
-		}
-	}()
-
-queryLoop:
-	for {
-		select {
-		case <-queryCtx.Done():
-			pterm.Warning.Println("查询已中断")
-			break queryLoop
-		case result, ok := <-eventChan:
-			if !ok {
-				break queryLoop
-			}
-			if !result.ok {
-				break queryLoop
-			}
-			if err := fkevent.ProcessAgentEvent(queryCtx, result.event); err != nil {
-				log.Printf("Error processing event: %v", err)
-				break queryLoop
-			}
-		}
-	}
 	fmt.Println()
 	// 保存聊天历史
 	pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
-	err = fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
-	if err != nil {
+	if err := fkevent.GlobalHistoryRecorder.SaveToDefaultFile(); err != nil {
 		pterm.Error.Printfln("[非交互模式] 保存聊天历史失败: %v", err)
 	} else {
 		pterm.Success.Println("[非交互模式] 成功保存聊天历史到默认文件")
 	}
+
 	// 保存为 HTML 文件
-	filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
+	htmlFilePath, err := cli.SaveChatHistoryToHTML()
 	if err != nil {
-		pterm.Error.Printfln("[非交互模式] 保存聊天历史到 Markdown 失败: %v", err)
-		exitSignals <- syscall.SIGTERM
-		return
+		pterm.Error.Printfln("[非交互模式] %v", err)
+	} else {
+		pterm.Success.Printfln("[非交互模式] 成功保存聊天历史到网页文件: %s", htmlFilePath)
 	}
-	htmlFilePath, err := report.ConvertMarkdownFileToNiceHTMLFile(filePath)
-	if err != nil {
-		pterm.Error.Printfln("[非交互模式] 转换聊天历史到网页失败: %v", err)
-		exitSignals <- syscall.SIGTERM
-		return
+	// 非阻塞发送退出信号
+	select {
+	case exitSignals <- syscall.SIGTERM:
+	default:
 	}
-	pterm.Success.Printfln("[非交互模式] 成功保存聊天历史到网页文件: %s", htmlFilePath)
-	exitSignals <- syscall.SIGTERM
 }
 
-func handleInteractive(ctx context.Context, runner *adk.Runner, exitSignals chan os.Signal) {
+func handleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal) {
 	go func() {
-		var inputMessages []adk.Message
+		// 创建查询执行器
+		executor := cli.NewQueryExecutor(r, queryState)
+
+		// 创建模式切换器
+		modeSwitcher := &interactiveModeSwitcher{ctx: ctx, executor: executor}
+
+		// 创建命令处理器
+		cmdHandler := cli.NewCommandHandler(modeSwitcher)
 
 		pasteKeyBind := prompt.KeyBind{
 			Key: prompt.ControlV,
@@ -318,171 +163,56 @@ func handleInteractive(ctx context.Context, runner *adk.Runner, exitSignals chan
 		)
 
 		for {
-
 			in := p.Input()
 			input := handleInput(in)
-			if isContinuing {
+			if inputBuffer.IsContinuing() {
 				continue
 			}
 
-			if input == "q" || input == "quit" || input == "" {
-				pterm.Info.Println("谢谢使用，再见！")
+			// 处理命令
+			result := cmdHandler.Handle(input)
+			switch result {
+			case cli.ResultExit:
 				exitSignals <- syscall.SIGTERM
 				return
-			}
-			if input == "help" {
-				pterm.Println("帮助信息: 输入您的问题以获取回答，输入 'quit' 或 'q' 退出程序。")
+			case cli.ResultHandled:
 				continue
-			}
-			if input == "load_chat_history" {
-				err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile()
-				if err != nil {
-					pterm.Error.Printfln("加载聊天历史失败: %v", err)
-				} else {
-					pterm.Success.Println("成功加载聊天历史")
-				}
-				continue
-			}
-			if input == "save_chat_history" {
-				err := fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
-				if err != nil {
-					pterm.Error.Printfln("保存聊天历史失败: %v", err)
-				} else {
-					pterm.Success.Println("成功保存聊天历史")
-				}
-				continue
-			}
-			if input == "clear_chat_history" {
-				fkevent.GlobalHistoryRecorder.Clear()
-				pterm.Success.Println("成功清空当前聊天历史")
-				continue
-			}
-			if input == "save_chat_history_to_markdown" {
-				filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
-				if err != nil {
-					pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
-				} else {
-					pterm.Success.Printfln("成功保存聊天历史到 Markdown 文件: %s", filePath)
-				}
-				continue
-			}
-			if input == "clear_todo" {
-				err := leader.ClearTodoTool()
-				if err != nil {
-					pterm.Error.Printfln("清空待办事项失败: %v", err)
-					continue
-				}
-				pterm.Success.Println("成功清空待办事项")
-				continue
-			}
-			if input == "switch_work_mode" {
-				switch currentWorkMode {
-				case "team":
-					runner = loopAgentMode(ctx)
-					currentWorkMode = "group"
-				case "group":
-					runner = supervisorMode(ctx)
-					currentWorkMode = "team"
-				default:
-					pterm.Error.Println("未知的当前工作模式: ", currentWorkMode)
-					continue
-				}
-				pterm.Success.Printfln("成功切换到工作模式: %s", currentWorkMode)
-				continue
-			}
-			if input == "save_chat_history_to_html" {
-				filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
-				if err != nil {
-					pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
-					continue
-				}
-				htmlFilePath, err := report.ConvertMarkdownFileToNiceHTMLFile(filePath)
-				if err != nil {
-					pterm.Error.Printfln("转换聊天历史到 HTML 失败: %v", err)
-					continue
-				}
-				pterm.Success.Printfln("成功保存聊天历史到 HTML 文件: %s", htmlFilePath)
-				continue
+			case cli.ResultNotFound:
+				// 不是命令，作为查询处理
 			}
 
 			inputHistory = append(inputHistory, input)
-			// 构建消息列表（包含历史对话）
-			inputMessages = []adk.Message{}
-			agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
-			if len(agentMessages) > 0 {
-				var historyMessage strings.Builder
-				for _, agentMessage := range agentMessages {
-					fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.GetTextContent())
-				}
-				inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
+
+			// 执行查询（交互模式需要键盘监听，因为 go-prompt 会拦截 SIGINT）
+			if err := executor.Execute(ctx, input, true, nil); err != nil {
+				log.Printf("执行查询失败: %v", err)
 			}
-			// 添加当前用户输入
-			inputMessages = append(inputMessages, schema.UserMessage(input))
-			// 记录用户输入到历史
-			fkevent.GlobalHistoryRecorder.RecordUserInput(input)
-
-			// 创建可取消的 context
-			queryCtx, cancelFunc := context.WithCancel(ctx)
-			queryCtxMutex.Lock()
-			queryCancelFunc = cancelFunc
-			queryCtxMutex.Unlock()
-
-			queryRunning.Store(true)
-			queryCancelling.Store(false)
-
-			// 启动键盘监听（因为 go-prompt 会拦截 SIGINT）
-			stopKeyboardMonitor := startKeyboardMonitor()
-
-			iter := runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
-
-			// 使用 channel 接收事件，以便能够中断
-			eventChan := make(chan struct {
-				event *adk.AgentEvent
-				ok    bool
-			}, 1)
-
-			go func() {
-				for {
-					event, ok := iter.Next()
-					eventChan <- struct {
-						event *adk.AgentEvent
-						ok    bool
-					}{event, ok}
-					if !ok {
-						close(eventChan)
-						return
-					}
-				}
-			}()
-
-		queryLoop:
-			for {
-				select {
-				case <-queryCtx.Done():
-					pterm.Warning.Println("查询已中断")
-					break queryLoop
-				case result, ok := <-eventChan:
-					if !ok {
-						break queryLoop
-					}
-					if !result.ok {
-						break queryLoop
-					}
-					if err := fkevent.ProcessAgentEvent(queryCtx, result.event); err != nil {
-						log.Printf("Error processing event: %v", err)
-						break queryLoop
-					}
-				}
-			}
-
-			// 查询结束，立即清理状态
-			stopKeyboardMonitor()
-			queryRunning.Store(false)
-			queryCancelling.Store(false)
-
 			fmt.Println()
 		}
 	}()
+}
+
+// interactiveModeSwitcher 交互模式切换器
+type interactiveModeSwitcher struct {
+	ctx      context.Context
+	executor *cli.QueryExecutor
+}
+
+// SwitchMode 切换工作模式
+func (s *interactiveModeSwitcher) SwitchMode() (string, error) {
+	var newRunner *adk.Runner
+	switch currentMode {
+	case cli.ModeTeam:
+		newRunner = loopAgentMode(s.ctx)
+		currentMode = cli.ModeGroup
+	case cli.ModeGroup:
+		newRunner = supervisorMode(s.ctx)
+		currentMode = cli.ModeTeam
+	default:
+		return "", fmt.Errorf("未知的当前工作模式: %s", currentMode)
+	}
+	s.executor.SetRunner(newRunner)
+	return currentMode.String(), nil
 }
 
 func main() {
@@ -549,18 +279,18 @@ func main() {
 		return
 	}
 
-	var runner *adk.Runner
+	var r *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
 
-	currentWorkMode = workMode
+	currentMode = cli.ParseWorkMode(workMode)
 
-	switch workMode {
-	case "team":
-		runner = supervisorMode(ctx)
-	case "group":
-		runner = loopAgentMode(ctx)
-	case "custom":
-		runner = customSupervisorMode(ctx)
+	switch currentMode {
+	case cli.ModeTeam:
+		r = supervisorMode(ctx)
+	case cli.ModeGroup:
+		r = loopAgentMode(ctx)
+	case cli.ModeCustom:
+		r = customSupervisorMode(ctx)
 	default:
 		pterm.Error.Println("暂不支持该模式：", workMode)
 		return
@@ -589,9 +319,9 @@ func main() {
 	}
 
 	if query != "" {
-		handleDirect(ctx, runner, exitSignals, query)
+		handleDirect(ctx, r, exitSignals, query)
 	} else {
-		handleInteractive(ctx, runner, exitSignals)
+		handleInteractive(ctx, r, exitSignals)
 	}
 
 	sig := <-exitSignals
