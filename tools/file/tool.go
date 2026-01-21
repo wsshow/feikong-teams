@@ -86,5 +86,19 @@ func (ft *FileTools) GetTools() ([]tool.BaseTool, error) {
 	}
 	tools = append(tools, dirDeleteTool)
 
+	// 文件搜索工具
+	fileSearchTool, err := utils.InferTool("file_search", "在文件中搜索指定的文本模式（支持正则表达式）。用于快速定位代码或文本内容", ft.FileSearch)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, fileSearchTool)
+
+	// 文件替换工具
+	fileReplaceTool, err := utils.InferTool("file_replace", "在文件中查找并替换文本（支持正则表达式）。适用于批量修改代码或文本内容", ft.FileReplace)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, fileReplaceTool)
+
 	return tools, nil
 }

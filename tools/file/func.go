@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -632,5 +633,211 @@ func (ft *FileTools) DirDelete(ctx context.Context, req *DirDeleteRequest) (*Dir
 
 	return &DirDeleteResponse{
 		Message: fmt.Sprintf("成功删除目录 %s", req.Dirpath),
+	}, nil
+}
+
+// FileSearchRequest 搜索文件内容请求
+type FileSearchRequest struct {
+	Filepath string `json:"filepath" jsonschema:"description=要搜索的文件路径,required"`
+	Pattern  string `json:"pattern" jsonschema:"description=搜索模式(支持正则表达式),required"`
+	MaxCount int    `json:"max_count,omitempty" jsonschema:"description=最大返回结果数,默认100"`
+}
+
+// SearchMatch 搜索匹配结果
+type SearchMatch struct {
+	LineNumber int    `json:"line_number" jsonschema:"description=行号(从1开始)"`
+	LineText   string `json:"line_text" jsonschema:"description=匹配的行内容"`
+}
+
+// FileSearchResponse 搜索文件内容响应
+type FileSearchResponse struct {
+	Matches      []SearchMatch `json:"matches,omitempty" jsonschema:"description=匹配结果列表"`
+	TotalMatches int           `json:"total_matches" jsonschema:"description=总匹配数"`
+	ErrorMessage string        `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FileSearch 在文件中搜索指定模式
+func (ft *FileTools) FileSearch(ctx context.Context, req *FileSearchRequest) (*FileSearchResponse, error) {
+	if req.Filepath == "" {
+		return &FileSearchResponse{
+			ErrorMessage: "filepath 参数是必需的",
+		}, nil
+	}
+
+	if req.Pattern == "" {
+		return &FileSearchResponse{
+			ErrorMessage: "pattern 参数是必需的",
+		}, nil
+	}
+
+	// 验证并规范化路径
+	relPath, err := ft.validatePath(req.Filepath)
+	if err != nil {
+		return &FileSearchResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// 编译正则表达式
+	regex, err := regexp.Compile(req.Pattern)
+	if err != nil {
+		// 如果不是正则,则作为普通字符串搜索
+		regex = nil
+	}
+
+	// 读取文件
+	file, err := ft.securedFs.Open(relPath)
+	if err != nil {
+		return &FileSearchResponse{
+			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
+		}, nil
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var matches []SearchMatch
+	lineNumber := 1
+	maxCount := req.MaxCount
+	if maxCount <= 0 {
+		maxCount = 100
+	}
+
+	for scanner.Scan() && len(matches) < maxCount {
+		line := scanner.Text()
+		matched := false
+
+		if regex != nil {
+			matched = regex.MatchString(line)
+		} else {
+			matched = strings.Contains(line, req.Pattern)
+		}
+
+		if matched {
+			matches = append(matches, SearchMatch{
+				LineNumber: lineNumber,
+				LineText:   line,
+			})
+		}
+		lineNumber++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return &FileSearchResponse{
+			ErrorMessage: fmt.Sprintf("读取文件时出错: %v", err),
+		}, nil
+	}
+
+	return &FileSearchResponse{
+		Matches:      matches,
+		TotalMatches: len(matches),
+	}, nil
+}
+
+// FileReplaceRequest 替换文件内容请求
+type FileReplaceRequest struct {
+	Filepath   string `json:"filepath" jsonschema:"description=要修改的文件路径,required"`
+	OldPattern string `json:"old_pattern" jsonschema:"description=要替换的模式(支持正则表达式),required"`
+	NewText    string `json:"new_text" jsonschema:"description=替换后的文本,required"`
+	MaxCount   int    `json:"max_count,omitempty" jsonschema:"description=最大替换次数,0表示替换所有,默认0"`
+}
+
+// FileReplaceResponse 替换文件内容响应
+type FileReplaceResponse struct {
+	Message       string `json:"message" jsonschema:"description=操作结果消息"`
+	ReplacedCount int    `json:"replaced_count" jsonschema:"description=实际替换次数"`
+	ErrorMessage  string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FileReplace 在文件中替换指定模式
+func (ft *FileTools) FileReplace(ctx context.Context, req *FileReplaceRequest) (*FileReplaceResponse, error) {
+	if req.Filepath == "" {
+		return &FileReplaceResponse{
+			ErrorMessage: "filepath 参数是必需的",
+		}, nil
+	}
+
+	if req.OldPattern == "" {
+		return &FileReplaceResponse{
+			ErrorMessage: "old_pattern 参数是必需的",
+		}, nil
+	}
+
+	// 验证并规范化路径
+	relPath, err := ft.validatePath(req.Filepath)
+	if err != nil {
+		return &FileReplaceResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// 读取文件内容
+	content, err := afero.ReadFile(ft.securedFs, relPath)
+	if err != nil {
+		return &FileReplaceResponse{
+			ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
+		}, nil
+	}
+
+	// 执行替换
+	originalContent := string(content)
+	newContent := originalContent
+	replacedCount := 0
+
+	// 尝试作为正则表达式处理
+	if regex, err := regexp.Compile(req.OldPattern); err == nil {
+		// 正则替换
+		if req.MaxCount > 0 {
+			// 限制替换次数
+			count := 0
+			newContent = regex.ReplaceAllStringFunc(originalContent, func(match string) string {
+				if count < req.MaxCount {
+					count++
+					return req.NewText
+				}
+				return match
+			})
+			replacedCount = count
+		} else {
+			// 替换所有
+			matches := regex.FindAllStringIndex(originalContent, -1)
+			replacedCount = len(matches)
+			newContent = regex.ReplaceAllString(originalContent, req.NewText)
+		}
+	} else {
+		// 普通字符串替换
+		if req.MaxCount > 0 {
+			// 限制替换次数
+			count := 0
+			for strings.Contains(newContent, req.OldPattern) && count < req.MaxCount {
+				newContent = strings.Replace(newContent, req.OldPattern, req.NewText, 1)
+				count++
+			}
+			replacedCount = count
+		} else {
+			// 替换所有
+			replacedCount = strings.Count(originalContent, req.OldPattern)
+			newContent = strings.ReplaceAll(originalContent, req.OldPattern, req.NewText)
+		}
+	}
+
+	// 如果没有任何替换,返回提示
+	if newContent == originalContent {
+		return &FileReplaceResponse{
+			Message:       "未找到匹配的内容,文件未修改",
+			ReplacedCount: 0,
+		}, nil
+	}
+
+	// 写回文件
+	err = afero.WriteFile(ft.securedFs, relPath, []byte(newContent), 0644)
+	if err != nil {
+		return &FileReplaceResponse{
+			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
+		}, nil
+	}
+
+	return &FileReplaceResponse{
+		Message:       fmt.Sprintf("成功在文件 %s 中替换了 %d 处内容", req.Filepath, replacedCount),
+		ReplacedCount: replacedCount,
 	}, nil
 }

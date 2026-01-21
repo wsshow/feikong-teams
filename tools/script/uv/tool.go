@@ -64,5 +64,26 @@ func (ut *UVTools) GetTools() ([]tool.BaseTool, error) {
 	}
 	tools = append(tools, getEnvInfoTool)
 
+	// 运行代码片段工具
+	runCodeTool, err := utils.InferTool("uv_run_code", "快速执行 Python 代码片段(无需创建文件)。适用于测试小段代码、验证想法或快速计算。", ut.RunCode)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, runCodeTool)
+
+	// 语法检查工具
+	checkSyntaxTool, err := utils.InferTool("uv_check_syntax", "检查 Python 代码或文件的语法错误。在执行前验证代码正确性，避免运行时错误。", ut.CheckSyntax)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, checkSyntaxTool)
+
+	// 代码格式化工具
+	formatCodeTool, err := utils.InferTool("uv_format_code", "格式化 Python 代码，使其符合 PEP8 规范。提高代码可读性和一致性。", ut.FormatCode)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, formatCodeTool)
+
 	return tools, nil
 }
