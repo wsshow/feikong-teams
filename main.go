@@ -17,6 +17,8 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/atotto/clipboard"
@@ -37,6 +39,12 @@ var (
 	fullBuffer      []string // 存储已输入的所有行
 	isContinuing    bool     // 是否处于续行状态
 	currentWorkMode string   // 当前工作模式
+
+	// 查询状态管理
+	queryRunning    atomic.Bool        // 查询是否在运行
+	queryCancelling atomic.Bool        // 是否正在取消查询（防止重复中断）
+	queryCancelFunc context.CancelFunc // 查询的取消函数
+	queryCtxMutex   sync.Mutex         // 保护 queryCancelFunc
 )
 
 func handleInput(in string) (finalCmd string) {
@@ -95,7 +103,93 @@ func completer(d prompt.Document) []prompt.Suggest {
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
-func handleDirect(ctx context.Context, runner *adk.Runner, signals chan os.Signal, query string) {
+// startSignalHandler 监听系统信号，SIGINT 用于中断查询，其他信号用于退出
+func startSignalHandler(rawSignals chan os.Signal, exitSignals chan os.Signal) {
+	go func() {
+		for sig := range rawSignals {
+			if sig == syscall.SIGINT {
+				handleCtrlC()
+			} else {
+				// SIGTERM/SIGHUP 等信号转发给 main 函数退出
+				exitSignals <- sig
+				return
+			}
+		}
+	}()
+}
+
+// handleCtrlC 处理 Ctrl+C 事件，只中断查询，不退出程序
+func handleCtrlC() {
+	if !queryRunning.Load() {
+		return // 空闲状态，忽略
+	}
+
+	// 防止重复中断
+	if queryCancelling.Load() {
+		return
+	}
+	queryCancelling.Store(true)
+
+	pterm.Info.Println("正在中断查询...")
+	queryCtxMutex.Lock()
+	if queryCancelFunc != nil {
+		queryCancelFunc()
+	}
+	queryCtxMutex.Unlock()
+}
+
+// startKeyboardMonitor 在查询期间监听键盘，检测 Ctrl+C (0x03)
+// 因为 go-prompt 会将终端设置为 raw mode，SIGINT 不会被触发
+func startKeyboardMonitor() func() {
+	stopChan := make(chan struct{})
+	stdinChan := make(chan byte, 10)
+
+	// 读取 stdin 的 goroutine
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			select {
+			case <-stopChan:
+				return
+			default:
+			}
+
+			// 使用非阻塞检查，避免停止时卡顿
+			n, err := os.Stdin.Read(buf)
+			if err != nil {
+				return
+			}
+			if n > 0 {
+				select {
+				case stdinChan <- buf[0]:
+				case <-stopChan:
+					return
+				}
+			}
+		}
+	}()
+
+	// 处理键盘输入的 goroutine
+	go func() {
+		for {
+			select {
+			case <-stopChan:
+				return
+			case b := <-stdinChan:
+				if b == 0x03 { // Ctrl+C
+					handleCtrlC()
+				}
+			}
+		}
+	}()
+
+	return func() {
+		close(stopChan)
+		// 不等待 goroutine 退出，让它们自然结束，避免卡顿
+	}
+}
+
+func handleDirect(ctx context.Context, runner *adk.Runner, exitSignals chan os.Signal, query string) {
 	var inputMessages []adk.Message
 	input := query
 	inputHistory = append(inputHistory, input)
@@ -114,18 +208,66 @@ func handleDirect(ctx context.Context, runner *adk.Runner, signals chan os.Signa
 	}
 	inputMessages = append(inputMessages, schema.UserMessage(input))
 	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
-	iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
-	for {
-		event, ok := iter.Next()
-		if !ok {
-			break
+
+	// 创建可取消的 context
+	queryCtx, cancelFunc := context.WithCancel(ctx)
+	queryCtxMutex.Lock()
+	queryCancelFunc = cancelFunc
+	queryCtxMutex.Unlock()
+
+	queryRunning.Store(true)
+	queryCancelling.Store(false)
+
+	// 启动键盘监听（直接模式也需要支持 Ctrl+C 中断）
+	stopKeyboardMonitor := startKeyboardMonitor()
+	defer func() {
+		stopKeyboardMonitor()
+		queryRunning.Store(false)
+		queryCancelling.Store(false)
+	}()
+
+	iter := runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
+
+	// 使用 channel 接收事件，以便能够中断
+	eventChan := make(chan struct {
+		event *adk.AgentEvent
+		ok    bool
+	}, 1)
+
+	go func() {
+		for {
+			event, ok := iter.Next()
+			eventChan <- struct {
+				event *adk.AgentEvent
+				ok    bool
+			}{event, ok}
+			if !ok {
+				close(eventChan)
+				return
+			}
 		}
-		if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
-			log.Printf("Error processing event: %v", err)
-			break
+	}()
+
+queryLoop:
+	for {
+		select {
+		case <-queryCtx.Done():
+			pterm.Warning.Println("查询已中断")
+			break queryLoop
+		case result, ok := <-eventChan:
+			if !ok {
+				break queryLoop
+			}
+			if !result.ok {
+				break queryLoop
+			}
+			if err := fkevent.ProcessAgentEvent(queryCtx, result.event); err != nil {
+				log.Printf("Error processing event: %v", err)
+				break queryLoop
+			}
 		}
 	}
-	fmt.Printf("\n\n")
+	fmt.Println()
 	// 保存聊天历史
 	pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
 	err = fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
@@ -138,20 +280,20 @@ func handleDirect(ctx context.Context, runner *adk.Runner, signals chan os.Signa
 	filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
 	if err != nil {
 		pterm.Error.Printfln("[非交互模式] 保存聊天历史到 Markdown 失败: %v", err)
-		signals <- syscall.SIGTERM
+		exitSignals <- syscall.SIGTERM
 		return
 	}
 	htmlFilePath, err := report.ConvertMarkdownFileToNiceHTMLFile(filePath)
 	if err != nil {
 		pterm.Error.Printfln("[非交互模式] 转换聊天历史到网页失败: %v", err)
-		signals <- syscall.SIGTERM
+		exitSignals <- syscall.SIGTERM
 		return
 	}
 	pterm.Success.Printfln("[非交互模式] 成功保存聊天历史到网页文件: %s", htmlFilePath)
-	signals <- syscall.SIGTERM
+	exitSignals <- syscall.SIGTERM
 }
 
-func handleInteractive(ctx context.Context, runner *adk.Runner, signals chan os.Signal) {
+func handleInteractive(ctx context.Context, runner *adk.Runner, exitSignals chan os.Signal) {
 	go func() {
 		var inputMessages []adk.Message
 
@@ -186,7 +328,7 @@ func handleInteractive(ctx context.Context, runner *adk.Runner, signals chan os.
 
 			if input == "q" || input == "quit" || input == "" {
 				pterm.Info.Println("谢谢使用，再见！")
-				signals <- syscall.SIGTERM
+				exitSignals <- syscall.SIGTERM
 				return
 			}
 			if input == "help" {
@@ -280,18 +422,65 @@ func handleInteractive(ctx context.Context, runner *adk.Runner, signals chan os.
 			// 记录用户输入到历史
 			fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
-			iter := runner.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams"))
-			for {
-				event, ok := iter.Next()
-				if !ok {
-					break
-				}
+			// 创建可取消的 context
+			queryCtx, cancelFunc := context.WithCancel(ctx)
+			queryCtxMutex.Lock()
+			queryCancelFunc = cancelFunc
+			queryCtxMutex.Unlock()
 
-				if err := fkevent.ProcessAgentEvent(ctx, event); err != nil {
-					log.Printf("Error processing event: %v", err)
-					break
+			queryRunning.Store(true)
+			queryCancelling.Store(false)
+
+			// 启动键盘监听（因为 go-prompt 会拦截 SIGINT）
+			stopKeyboardMonitor := startKeyboardMonitor()
+
+			iter := runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
+
+			// 使用 channel 接收事件，以便能够中断
+			eventChan := make(chan struct {
+				event *adk.AgentEvent
+				ok    bool
+			}, 1)
+
+			go func() {
+				for {
+					event, ok := iter.Next()
+					eventChan <- struct {
+						event *adk.AgentEvent
+						ok    bool
+					}{event, ok}
+					if !ok {
+						close(eventChan)
+						return
+					}
+				}
+			}()
+
+		queryLoop:
+			for {
+				select {
+				case <-queryCtx.Done():
+					pterm.Warning.Println("查询已中断")
+					break queryLoop
+				case result, ok := <-eventChan:
+					if !ok {
+						break queryLoop
+					}
+					if !result.ok {
+						break queryLoop
+					}
+					if err := fkevent.ProcessAgentEvent(queryCtx, result.event); err != nil {
+						log.Printf("Error processing event: %v", err)
+						break queryLoop
+					}
 				}
 			}
+
+			// 查询结束，立即清理状态
+			stopKeyboardMonitor()
+			queryRunning.Store(false)
+			queryCancelling.Store(false)
+
 			fmt.Println()
 		}
 	}()
@@ -388,6 +577,12 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
+	// 退出信号 channel
+	exitSignals := make(chan os.Signal, 1)
+
+	// 启动信号处理 goroutine
+	startSignalHandler(signals, exitSignals)
+
 	inputHistoryPath := "./history/input_history/fkteams_input_history"
 	inputHistory, err = common.LoadHistory(inputHistoryPath, 100)
 	if err != nil {
@@ -395,12 +590,12 @@ func main() {
 	}
 
 	if query != "" {
-		handleDirect(ctx, runner, signals, query)
+		handleDirect(ctx, runner, exitSignals, query)
 	} else {
-		handleInteractive(ctx, runner, signals)
+		handleInteractive(ctx, runner, exitSignals)
 	}
 
-	sig := <-signals
+	sig := <-exitSignals
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
 
 	done()
