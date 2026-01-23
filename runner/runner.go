@@ -2,58 +2,37 @@ package runner
 
 import (
 	"context"
-	"fkteams/agents/analyst"
-	"fkteams/agents/cmder"
-	"fkteams/agents/coder"
+	"fkteams/agents"
 	"fkteams/agents/custom"
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
 	"fkteams/agents/moderator"
-	"fkteams/agents/searcher"
-	"fkteams/agents/storyteller"
-	"fkteams/agents/visitor"
 	"fkteams/common"
 	"fkteams/config"
-	"fkteams/g"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 )
 
+// CreateAgentRunner 创建普通 ReACT 模式的 Runner
+func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           agent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
+
 // CreateSupervisorRunner 创建 Supervisor 模式的 Runner
 func CreateSupervisorRunner(ctx context.Context) *adk.Runner {
-
-	storytellerAgent := storyteller.NewAgent()
-	searcherAgent := searcher.NewAgent()
-	subAgents := []adk.Agent{searcherAgent, storytellerAgent}
-
-	if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
-		coderAgent := coder.NewAgent()
-		subAgents = append(subAgents, coderAgent)
-	}
-
-	if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
-		cmderAgent := cmder.NewAgent()
-		subAgents = append(subAgents, cmderAgent)
-	}
-
-	if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
-		visitorAgent := visitor.NewAgent()
-		g.Cleaner.Add(func() error {
-			visitor.CloseSSHClient()
-			return nil
-		})
-		subAgents = append(subAgents, visitorAgent)
-	}
-
-	if os.Getenv("FEIKONG_ANALYST_ENABLED") == "true" {
-		analystAgent := analyst.NewAgent()
-		subAgents = append(subAgents, analystAgent)
-	}
+	// 从注册表获取团队智能体
+	subAgents := agents.GetTeamAgents(ctx)
 
 	organizeCtx := context.WithValue(ctx, "team_members", strings.Join(func() []string {
 		var names []string

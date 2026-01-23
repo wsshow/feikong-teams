@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fkteams/agents"
+	"fkteams/agents/analyst"
 	"fkteams/cli"
 	"fkteams/common"
 	"fkteams/config"
@@ -15,6 +17,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/atotto/clipboard"
@@ -35,6 +38,7 @@ var (
 	currentMode   cli.WorkMode       // 当前工作模式
 	queryState    *cli.QueryState    // 查询状态管理
 	queryExecutor *cli.QueryExecutor // 查询执行器
+	currentAgent  string             // 当前智能体名称
 )
 
 func init() {
@@ -54,15 +58,49 @@ func changeLivePrefix() (string, bool) {
 	if inputBuffer.IsContinuing() {
 		return "请继续输入: ", true
 	}
-	return currentMode.GetPromptPrefix(), true
+	prefix := currentMode.GetPromptPrefix()
+	if currentAgent != "" {
+		prefix = fmt.Sprintf("[%s]> ", currentAgent)
+	}
+	return prefix, true
 }
 
 func completer(d prompt.Document) []prompt.Suggest {
+	textBefore := d.TextBeforeCursor()
+
+	// 检查是否输入了 @ 符号
+	if strings.HasPrefix(textBefore, "@") || strings.Contains(textBefore, " @") {
+		// 提取 @ 之后的内容
+		lastAt := strings.LastIndex(textBefore, "@")
+		afterAt := textBefore[lastAt+1:]
+
+		// 如果 @ 后面有空格，则不提示
+		if strings.Contains(afterAt, " ") {
+			return []prompt.Suggest{}
+		}
+
+		// 构建智能体建议列表
+		var agentSuggests []prompt.Suggest
+		for _, agent := range agents.GetRegistry() {
+			agentSuggests = append(agentSuggests, prompt.Suggest{
+				Text:        "@" + agent.Name,
+				Description: agent.Description,
+			})
+		}
+
+		// 过滤建议
+		if afterAt == "" {
+			return agentSuggests
+		}
+		return prompt.FilterHasPrefix(agentSuggests, "@"+afterAt, true)
+	}
+
 	if d.GetWordBeforeCursor() == "" {
 		return []prompt.Suggest{}
 	}
 	s := []prompt.Suggest{
 		{Text: "quit", Description: "退出"},
+		{Text: "list_agents", Description: "列出所有可用的智能体"},
 		{Text: "load_chat_history", Description: "加载聊天历史"},
 		{Text: "save_chat_history", Description: "保存聊天历史"},
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
@@ -166,6 +204,33 @@ func handleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.S
 			in := p.Input()
 			input := handleInput(in)
 			if inputBuffer.IsContinuing() {
+				continue
+			}
+
+			// 检查是否切换智能体
+			if agentName, query := cli.ExtractAgentMention(input); agentName != "" {
+				agentInfo := agents.GetAgentByName(agentName)
+				if agentInfo == nil {
+					pterm.Error.Printf("未找到智能体: %s\n", agentName)
+					fmt.Println()
+					continue
+				}
+
+				// 创建新的智能体
+				newAgent := agentInfo.Creator(ctx)
+				newRunner := runner.CreateAgentRunner(ctx, newAgent)
+				executor.SetRunner(newRunner)
+				currentAgent = agentName
+				pterm.Success.Printf("已切换到智能体: %s (%s)\n", agentName, agentInfo.Description)
+
+				// 如果有查询内容，则继续执行
+				if query != "" {
+					inputHistory = append(inputHistory, query)
+					if err := executor.Execute(ctx, query, true, nil); err != nil {
+						log.Printf("执行查询失败: %v", err)
+					}
+				}
+				fmt.Println()
 				continue
 			}
 
@@ -352,4 +417,9 @@ func customSupervisorMode(ctx context.Context) *adk.Runner {
 	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 	runner.PrintCustomAgentsInfo(ctx)
 	return runner.CreateCustomSupervisorRunner(ctx)
+}
+
+func createBaseRunner(ctx context.Context) *adk.Runner {
+	analystAgent := analyst.NewAgent()
+	return runner.CreateAgentRunner(ctx, analystAgent)
 }

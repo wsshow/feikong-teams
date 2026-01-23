@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -45,6 +46,19 @@ func (b *InputBuffer) IsContinuing() bool {
 func (b *InputBuffer) Reset() {
 	b.lines = []string{}
 	b.isContinuing = false
+}
+
+// ExtractAgentMention 提取输入中的智能体 @ 提及
+// 返回智能体名字（不含@符号）和剩余的查询内容
+func ExtractAgentMention(input string) (agentName string, query string) {
+	input = strings.TrimSpace(input)
+	// 匹配 @智能体名称 模式（名字可以是中文或英文）
+	re := regexp.MustCompile(`^@([\p{Han}\w]+)\s*(.*)$`)
+	matches := re.FindStringSubmatch(input)
+	if len(matches) == 3 {
+		return matches[1], strings.TrimSpace(matches[2])
+	}
+	return "", input
 }
 
 // WorkMode 工作模式

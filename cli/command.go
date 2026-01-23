@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fkteams/agents"
 	"fkteams/agents/leader"
 	"fkteams/fkevent"
 
@@ -47,6 +48,10 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("基本操作:")
 		pterm.Println("  help                             显示此帮助信息")
 		pterm.Println("  q, quit, Enter                   退出程序")
+		pterm.Println()
+		pterm.Println("智能体切换:")
+		pterm.Println("  list_agents                     列出所有可用的智能体")
+		pterm.Println("  @智能体名 [查询内容]              切换到指定智能体并可选执行查询")
 		pterm.Println()
 		pterm.Println("聊天历史管理:")
 		pterm.Println("  load_chat_history               从默认文件加载聊天历史")
@@ -128,7 +133,29 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		}
 		return ResultHandled
 
+	case "list_agents":
+		ListAvailableAgents()
+		return ResultHandled
+
 	default:
 		return ResultNotFound
 	}
+}
+
+// ListAvailableAgents 列出所有可用的智能体
+func ListAvailableAgents() {
+	pterm.Println()
+	pterm.Println("=== 可用智能体列表 ===")
+	pterm.Println()
+	pterm.Println("使用方式: 输入 @智能体名 [查询内容] 即可切换到该智能体")
+	pterm.Println()
+
+	for _, agent := range agents.GetRegistry() {
+		pterm.Printf("  @%s\n", agent.Name)
+		pterm.Printf("    描述: %s\n", agent.Description)
+		pterm.Println()
+	}
+
+	pterm.Println("提示: 输入 @ 后会自动提示可用的智能体")
+	pterm.Println()
 }
