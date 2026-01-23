@@ -60,7 +60,7 @@ func changeLivePrefix() (string, bool) {
 	}
 	prefix := currentMode.GetPromptPrefix()
 	if currentAgent != "" {
-		prefix = fmt.Sprintf("[%s]> ", currentAgent)
+		prefix = fmt.Sprintf("%s> ", currentAgent)
 	}
 	return prefix, true
 }
@@ -230,7 +230,7 @@ func handleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.S
 						log.Printf("执行查询失败: %v", err)
 					}
 				}
-				fmt.Println()
+				fmt.Printf("\n\n")
 				continue
 			}
 
@@ -252,7 +252,7 @@ func handleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.S
 			if err := executor.Execute(ctx, input, true, nil); err != nil {
 				log.Printf("执行查询失败: %v", err)
 			}
-			fmt.Println()
+			fmt.Printf("\n\n")
 		}
 	}()
 }
@@ -277,6 +277,7 @@ func (s *interactiveModeSwitcher) SwitchMode() (string, error) {
 		return "", fmt.Errorf("未知的当前工作模式: %s", currentMode)
 	}
 	s.executor.SetRunner(newRunner)
+	currentAgent = "" // 切换模式时清空当前智能体
 	return currentMode.String(), nil
 }
 
