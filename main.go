@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/agents/analyst"
 	"fkteams/cli"
 	"fkteams/common"
 	"fkteams/config"
@@ -418,9 +417,4 @@ func customSupervisorMode(ctx context.Context) *adk.Runner {
 	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 	runner.PrintCustomAgentsInfo(ctx)
 	return runner.CreateCustomSupervisorRunner(ctx)
-}
-
-func createBaseRunner(ctx context.Context) *adk.Runner {
-	analystAgent := analyst.NewAgent()
-	return runner.CreateAgentRunner(ctx, analystAgent)
 }
