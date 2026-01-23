@@ -1081,6 +1081,26 @@ body {
     white-space: pre-wrap;
 }
 
+/* Message highlight animation */
+.message-highlight {
+    animation: messageHighlight 2s ease;
+}
+
+@keyframes messageHighlight {
+
+    0%,
+    100% {
+        background: transparent;
+    }
+
+    10%,
+    90% {
+        background: rgba(92, 107, 192, 0.1);
+        box-shadow: 0 0 0 4px rgba(92, 107, 192, 0.15);
+        border-radius: 12px;
+    }
+}
+
 .message.user .message-body code {
     background: rgba(255, 255, 255, 0.2);
 }
@@ -1373,6 +1393,181 @@ body {
 .cancel-btn svg {
     width: 16px;
     height: 16px;
+}
+
+/* ===== 快速导航菜单 ===== */
+.quick-nav-wrapper {
+    position: fixed;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 11;
+    display: flex;
+    align-items: center;
+}
+
+/* 右侧的横条列表 */
+.quick-nav-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 10px 0;
+    position: relative;
+    z-index: 2;
+}
+
+/* 隐藏滚动条 */
+.quick-nav-bars::-webkit-scrollbar {
+    width: 0;
+    display: none;
+}
+
+/* 单个短横线 */
+.quick-nav-bar {
+    width: 24px;
+    height: 3px;
+    background: #d0d0d0;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.quick-nav-bar:hover {
+    background: var(--accent-secondary);
+    width: 28px;
+}
+
+.quick-nav-bar.active {
+    background: var(--accent-primary);
+    width: 28px;
+}
+
+/* 悬浮展开的问题面板 */
+.quick-nav-panel {
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 320px;
+    max-height: 500px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+}
+
+/* 在面板右侧添加一个透明的桥接区域 */
+.quick-nav-panel::after {
+    content: '';
+    position: absolute;
+    right: -8px;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    background: transparent;
+}
+
+.quick-nav-wrapper:hover .quick-nav-panel {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.quick-nav-panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.quick-nav-panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.quick-nav-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.quick-nav-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+/* 问题列表项 */
+.quick-nav-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quick-nav-item:hover {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+    transform: translateX(-2px);
+}
+
+.quick-nav-item.active {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(92, 107, 192, 0.2);
+}
+
+.quick-nav-item-index {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.quick-nav-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.quick-nav-item-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    margin-bottom: 4px;
+}
+
+.quick-nav-item-time {
+    font-size: 11px;
+    color: var(--text-tertiary);
 }
 
 /* 回到底部按钮 */

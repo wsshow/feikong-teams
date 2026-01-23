@@ -14,6 +14,7 @@ class FKTeamsChat {
         this.maxReconnectAttempts = 5;
         this.userScrolledUp = false; // 用户是否向上滚动了
         this.currentRenameFilename = null; // 当前正在重命名的文件名
+        this.userQuestions = []; // 存储用户问题列表
 
         this.init();
     }
@@ -55,6 +56,9 @@ class FKTeamsChat {
         this.mainContent = document.getElementById('main-content');
         this.scrollToBottomBtn = document.getElementById('scroll-to-bottom');
         this.chatLoading = document.getElementById('chat-loading');
+        this.quickNavBars = document.getElementById('quick-nav-bars');
+        this.quickNavPanel = document.getElementById('quick-nav-panel');
+        this.quickNavPanelList = document.getElementById('quick-nav-panel-list');
     }
 
     bindEvents() {
@@ -180,6 +184,7 @@ class FKTeamsChat {
         if (this.scrollToBottomBtn) {
             this.scrollToBottomBtn.classList.toggle('sidebar-collapsed', isCollapsed);
         }
+        // 调整快速导航按钮和菜单的位置
         localStorage.setItem('sidebarCollapsed', isCollapsed);
     }
 
@@ -192,6 +197,7 @@ class FKTeamsChat {
             if (this.scrollToBottomBtn) {
                 this.scrollToBottomBtn.classList.add('sidebar-collapsed');
             }
+            // 同步调整快速导航按钮和菜单位置
         }
     }
 
@@ -589,6 +595,7 @@ class FKTeamsChat {
     addUserMessage(content) {
         const messageEl = document.createElement('div');
         messageEl.className = 'message user';
+        messageEl.setAttribute('data-message-id', `msg-${Date.now()}`);
         messageEl.innerHTML = `
             <div class="message-content">
                 <div class="message-header">
@@ -599,6 +606,10 @@ class FKTeamsChat {
             </div>
         `;
         this.messagesContainer.appendChild(messageEl);
+
+        // 添加到问题列表
+        this.addQuestionToNav(content, messageEl);
+
         this.scrollToBottom();
     }
 
@@ -688,6 +699,9 @@ class FKTeamsChat {
         `;
         this.currentMessageElement = null;
         this.hasToolCallAfterMessage = false;
+
+        // 清空问题导航
+        this.clearQuickNav();
     }
 
     scrollToBottom() {
@@ -1086,6 +1100,9 @@ class FKTeamsChat {
         this.currentMessageElement = null;
         this.hasToolCallAfterMessage = false;
 
+        // 清空快速导航（将重新构建）
+        this.clearQuickNav();
+
         // 更新 session ID
         if (event.session_id) {
             this.sessionId = event.session_id;
@@ -1095,6 +1112,13 @@ class FKTeamsChat {
         // 渲染历史消息
         if (event.messages && event.messages.length > 0) {
             event.messages.forEach(msg => {
+                // 检查是否是用户消息
+                if (msg.agent_name === '用户') {
+                    // 渲染用户消息
+                    this.renderHistoryUserMessage(msg);
+                    return;
+                }
+
                 const timeInfo = {
                     startTime: msg.start_time,
                     endTime: msg.end_time
@@ -1166,6 +1190,50 @@ class FKTeamsChat {
         }
 
         this.scrollToBottom();
+    }
+
+    renderHistoryUserMessage(msg) {
+        // 从events中提取用户输入的文本
+        let userContent = '';
+        if (msg.events && msg.events.length > 0) {
+            msg.events.forEach(evt => {
+                if (evt.type === 'text' && evt.content) {
+                    userContent += evt.content;
+                }
+            });
+        }
+
+        if (!userContent) return;
+
+        // 创建用户消息元素
+        const messageEl = document.createElement('div');
+        messageEl.className = 'message user';
+        const messageId = `msg-${msg.start_time || Date.now()}`;
+        messageEl.setAttribute('data-message-id', messageId);
+
+        // 格式化时间
+        const timeDisplay = msg.start_time ? this.formatHistoryTime({ startTime: msg.start_time }) : this.getCurrentTime();
+
+        messageEl.innerHTML = `
+            <div class="message-content">
+                <div class="message-header">
+                    <span class="message-name">您</span>
+                    <span class="message-time">${timeDisplay}</span>
+                </div>
+                <div class="message-body">${this.escapeHtml(userContent)}</div>
+            </div>
+        `;
+        this.messagesContainer.appendChild(messageEl);
+
+        // 添加到快速导航
+        const question = {
+            id: messageId,
+            content: userContent,
+            time: timeDisplay,
+            element: messageEl
+        };
+        this.userQuestions.push(question);
+        this.updateQuickNav();
     }
 
     renderHistoryToolCalls(toolCalls) {
@@ -1435,6 +1503,133 @@ class FKTeamsChat {
         }
 
         return timeStr;
+    }
+
+    // ===== 快速导航功能 =====
+
+    addQuestionToNav(content, messageElement) {
+        const questionId = messageElement.getAttribute('data-message-id');
+        const question = {
+            id: questionId,
+            content: content,
+            time: this.getCurrentTime(),
+            element: messageElement
+        };
+
+        this.userQuestions.push(question);
+        this.updateQuickNav();
+    }
+
+    updateQuickNav() {
+        if (!this.quickNavBars || !this.quickNavPanelList) return;
+
+        if (this.userQuestions.length === 0) {
+            if (this.quickNavBars.parentElement) {
+                this.quickNavBars.parentElement.style.display = 'none';
+            }
+            return;
+        }
+
+        if (this.quickNavBars.parentElement) {
+            this.quickNavBars.parentElement.style.display = 'flex';
+        }
+
+        // 生成右侧的短横线（倒序显示，最新的在上）
+        this.quickNavBars.innerHTML = '';
+        const reversedQuestions = [...this.userQuestions].reverse();
+
+        reversedQuestions.forEach((question, index) => {
+            const bar = document.createElement('div');
+            bar.className = 'quick-nav-bar';
+            bar.setAttribute('data-question-id', question.id);
+
+            // 最新的一个高亮显示
+            if (index === 0) {
+                bar.classList.add('active');
+            }
+
+            bar.addEventListener('click', () => {
+                this.scrollToQuestion(question.id);
+            });
+
+            this.quickNavBars.appendChild(bar);
+        });
+
+        // 生成面板中的问题列表
+        this.quickNavPanelList.innerHTML = '';
+
+        reversedQuestions.forEach((question, index) => {
+            // 实际序号（从1开始）
+            const actualIndex = this.userQuestions.length - index;
+
+            const item = document.createElement('div');
+            item.className = 'quick-nav-item';
+            item.setAttribute('data-question-id', question.id);
+
+            item.innerHTML = `
+                <div class="quick-nav-item-index">${actualIndex}</div>
+                <div class="quick-nav-item-content">
+                    <div class="quick-nav-item-text">${this.escapeHtml(question.content)}</div>
+                    <div class="quick-nav-item-time">${question.time}</div>
+                </div>
+            `;
+
+            item.addEventListener('click', () => {
+                this.scrollToQuestion(question.id);
+            });
+
+            this.quickNavPanelList.appendChild(item);
+        });
+    }
+
+    scrollToQuestion(questionId) {
+        const messageElement = this.messagesContainer.querySelector(`[data-message-id="${questionId}"]`);
+        if (messageElement) {
+            // 滚动到该消息位置
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // 添加高亮效果
+            messageElement.classList.add('message-highlight');
+            setTimeout(() => {
+                messageElement.classList.remove('message-highlight');
+            }, 2000);
+        }
+
+        // 更新导航面板中的高亮状态
+        this.updateQuickNavHighlight(questionId);
+    }
+
+    updateQuickNavHighlight(questionId) {
+        // 更新短横线的激活状态
+        if (this.quickNavBars) {
+            const allBars = this.quickNavBars.querySelectorAll('.quick-nav-bar');
+            allBars.forEach(bar => {
+                if (bar.getAttribute('data-question-id') === questionId) {
+                    bar.classList.add('active');
+                } else {
+                    bar.classList.remove('active');
+                }
+            });
+        }
+
+        // 更新面板列表项的高亮状态
+        if (this.quickNavPanelList) {
+            const allItems = this.quickNavPanelList.querySelectorAll('.quick-nav-item');
+            allItems.forEach(item => {
+                if (item.getAttribute('data-question-id') === questionId) {
+                    item.classList.add('active');
+                    // 滚动到可视区域
+                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+    }
+
+    clearQuickNav() {
+        this.userQuestions = [];
+        this.updateQuickNav();
     }
 }
 
