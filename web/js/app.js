@@ -15,6 +15,10 @@ class FKTeamsChat {
         this.userScrolledUp = false; // 用户是否向上滚动了
         this.currentRenameFilename = null; // 当前正在重命名的文件名
         this.userQuestions = []; // 存储用户问题列表
+        this.agents = []; // 存储智能体列表
+        this.agentSuggestions = null; // 智能体建议弹窗
+        this.selectedAgentIndex = -1; // 当前选中的智能体索引
+        this.currentAgent = null; // 当前使用的智能体
 
         this.init();
     }
@@ -23,6 +27,7 @@ class FKTeamsChat {
         this.bindElements();
         this.bindEvents();
         this.restoreSidebarState();
+        this.loadAgents(); // 加载智能体列表
         this.connect();
     }
 
@@ -64,7 +69,10 @@ class FKTeamsChat {
     bindEvents() {
         this.sendBtn.addEventListener('click', () => this.sendMessage());
         this.cancelBtn.addEventListener('click', () => this.cancelTask());
-        this.messageInput.addEventListener('input', () => this.handleInputChange());
+        this.messageInput.addEventListener('input', () => {
+            this.handleInputChange();
+            this.handleInputForMention();
+        });
         this.messageInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
         this.sessionIdInput.addEventListener('change', () => {
             const newSessionId = this.sessionIdInput.value || 'default';
@@ -271,6 +279,11 @@ class FKTeamsChat {
     }
 
     handleKeyDown(e) {
+        // 先处理智能体建议的键盘导航
+        if (this.handleSuggestionKeyDown(e)) {
+            return;
+        }
+
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (!this.sendBtn.disabled) {
@@ -284,6 +297,12 @@ class FKTeamsChat {
         this.modeButtons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
+
+        // 切换模式时，清除当前智能体
+        if (this.currentAgent) {
+            this.currentAgent = null;
+            this.showNotification('已切换回团队模式', 'success');
+        }
 
         // 更新状态显示
         let modeText = '未知模式';
@@ -326,20 +345,94 @@ class FKTeamsChat {
         this.userScrolledUp = false;
         this.showScrollToBottomBtn(false);
 
+        // 隐藏智能体建议
+        this.hideAgentSuggestions();
+
+        // 检查是否有@智能体提及
+        const mention = this.extractAgentMention(message);
+
+        if (mention) {
+            // 查找智能体
+            const agent = this.agents.find(a => a.name === mention.agentName);
+            if (agent) {
+                this.currentAgent = agent;
+
+                // 显示切换通知
+                this.showAgentSwitchNotification(agent.name, agent.description);
+            } else {
+                // 智能体不存在，显示错误
+                this.showNotification(`未找到智能体: ${mention.agentName}`, 'error');
+                return;
+            }
+        }
+
         this.addUserMessage(message);
 
-        this.ws.send(JSON.stringify({
+        // 发送消息 - 始终发送完整的原始消息（包括@智能体部分）
+        // 如果指定了智能体则包含agent_name字段
+        const payload = {
             type: 'chat',
             session_id: this.sessionId,
-            message: message,
+            message: message,  // 发送完整的原始消息
             mode: this.mode
-        }));
+        };
+
+        if (this.currentAgent) {
+            payload.agent_name = this.currentAgent.name;
+        }
+
+        this.ws.send(JSON.stringify(payload));
 
         this.messageInput.value = '';
         this.handleInputChange();
         this.isProcessing = true;
         this.updateSendButtonState();
         this.updateStatus('processing', '处理中...');
+    }
+
+    // 显示智能体切换通知
+    showAgentSwitchNotification(agentName, description) {
+        const notificationEl = document.createElement('div');
+        notificationEl.className = 'action-event agent-switch';
+        notificationEl.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>已切换到智能体: <strong>${this.escapeHtml(agentName)}</strong> - ${this.escapeHtml(description)}</span>
+            <button class="reset-mode-btn" onclick="app.resetToTeamMode()" title="切换回团队模式">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                团队模式
+            </button>
+        `;
+        this.messagesContainer.appendChild(notificationEl);
+        this.scrollToBottom();
+    }
+
+    // 重置回团队模式
+    resetToTeamMode() {
+        this.currentAgent = null;
+        const resetNotificationEl = document.createElement('div');
+        resetNotificationEl.className = 'action-event agent-switch';
+        resetNotificationEl.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>已切换回 <strong>${this.mode === 'supervisor' ? '团队模式' : this.mode === 'roundtable' ? '圆桌讨论模式' : '自定义会议模式'}</strong></span>
+        `;
+        this.messagesContainer.appendChild(resetNotificationEl);
+        this.scrollToBottom();
+        this.showNotification('已切换回团队模式', 'success');
     }
 
     handleServerEvent(event) {
@@ -1631,8 +1724,194 @@ class FKTeamsChat {
         this.userQuestions = [];
         this.updateQuickNav();
     }
+
+    // 加载智能体列表
+    async loadAgents() {
+        try {
+            const response = await fetch('/api/fkteams/agents');
+            const result = await response.json();
+            if (result.code === 0 && result.data) {
+                this.agents = result.data;
+                console.log('已加载智能体列表:', this.agents);
+            }
+        } catch (error) {
+            console.error('加载智能体列表失败:', error);
+        }
+    }
+
+    // 处理输入框输入，检测@提及
+    handleInputForMention(e) {
+        const textarea = this.messageInput;
+        const value = textarea.value;
+        const cursorPos = textarea.selectionStart;
+
+        // 获取光标前的文本
+        const textBefore = value.substring(0, cursorPos);
+
+        // 匹配最后一个@符号及其后的内容
+        const atMatch = textBefore.match(/@([\u4e00-\u9fa5\w]*)$/);
+
+        if (atMatch) {
+            const searchText = atMatch[1];
+            this.showAgentSuggestions(searchText, cursorPos);
+        } else {
+            this.hideAgentSuggestions();
+        }
+    }
+
+    // 显示智能体建议列表
+    showAgentSuggestions(searchText, cursorPos) {
+        // 过滤智能体列表
+        const filteredAgents = this.agents.filter(agent => {
+            const name = agent.name.toLowerCase();
+            const search = searchText.toLowerCase();
+            return name.includes(search);
+        });
+
+        if (filteredAgents.length === 0) {
+            this.hideAgentSuggestions();
+            return;
+        }
+
+        // 创建或更新建议弹窗
+        if (!this.agentSuggestions) {
+            this.agentSuggestions = document.createElement('div');
+            this.agentSuggestions.className = 'agent-suggestions';
+            document.body.appendChild(this.agentSuggestions);
+        }
+
+        // 计算弹窗位置（显示在输入框上方）
+        const inputRect = this.messageInput.getBoundingClientRect();
+        this.agentSuggestions.style.left = inputRect.left + 'px';
+        this.agentSuggestions.style.bottom = (window.innerHeight - inputRect.top + 10) + 'px';
+        this.agentSuggestions.style.width = inputRect.width + 'px';
+
+        // 生成建议列表HTML
+        this.agentSuggestions.innerHTML = filteredAgents.map((agent, index) => `
+            <div class="agent-suggestion-item ${index === 0 ? 'selected' : ''}" data-index="${index}" data-name="${this.escapeHtml(agent.name)}">
+                <div class="agent-suggestion-name">@${this.escapeHtml(agent.name)}</div>
+                <div class="agent-suggestion-desc">${this.escapeHtml(agent.description)}</div>
+            </div>
+        `).join('');
+
+        this.agentSuggestions.style.display = 'block';
+        this.selectedAgentIndex = 0;
+
+        // 绑定点击事件
+        this.agentSuggestions.querySelectorAll('.agent-suggestion-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const agentName = item.getAttribute('data-name');
+                this.insertAgentMention(agentName);
+            });
+        });
+    }
+
+    // 隐藏智能体建议列表
+    hideAgentSuggestions() {
+        if (this.agentSuggestions) {
+            this.agentSuggestions.style.display = 'none';
+        }
+        this.selectedAgentIndex = -1;
+    }
+
+    // 插入智能体提及
+    insertAgentMention(agentName) {
+        const textarea = this.messageInput;
+        const value = textarea.value;
+        const cursorPos = textarea.selectionStart;
+
+        // 获取光标前的文本，找到最后一个@符号的位置
+        const textBefore = value.substring(0, cursorPos);
+        const atMatch = textBefore.match(/@([\u4e00-\u9fa5\w]*)$/);
+
+        if (atMatch) {
+            const atPos = cursorPos - atMatch[0].length;
+            const textAfter = value.substring(cursorPos);
+
+            // 替换@及其后的部分文本为完整的智能体名称
+            textarea.value = value.substring(0, atPos) + '@' + agentName + ' ' + textAfter;
+
+            // 设置光标位置到插入文本之后
+            const newCursorPos = atPos + agentName.length + 2;
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+
+            // 触发input事件更新高度
+            this.handleInputChange();
+        }
+
+        this.hideAgentSuggestions();
+        textarea.focus();
+    }
+
+    // 处理建议列表的键盘导航
+    handleSuggestionKeyDown(e) {
+        if (!this.agentSuggestions || this.agentSuggestions.style.display === 'none') {
+            return false;
+        }
+
+        const items = this.agentSuggestions.querySelectorAll('.agent-suggestion-item');
+        if (items.length === 0) return false;
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                this.selectedAgentIndex = (this.selectedAgentIndex + 1) % items.length;
+                this.updateSuggestionSelection(items);
+                return true;
+
+            case 'ArrowUp':
+                e.preventDefault();
+                this.selectedAgentIndex = (this.selectedAgentIndex - 1 + items.length) % items.length;
+                this.updateSuggestionSelection(items);
+                return true;
+
+            case 'Enter':
+            case 'Tab':
+                if (this.selectedAgentIndex >= 0 && this.selectedAgentIndex < items.length) {
+                    e.preventDefault();
+                    const selectedItem = items[this.selectedAgentIndex];
+                    const agentName = selectedItem.getAttribute('data-name');
+                    this.insertAgentMention(agentName);
+                    return true;
+                }
+                break;
+
+            case 'Escape':
+                e.preventDefault();
+                this.hideAgentSuggestions();
+                return true;
+        }
+
+        return false;
+    }
+
+    // 更新建议列表选中状态
+    updateSuggestionSelection(items) {
+        items.forEach((item, index) => {
+            item.classList.toggle('selected', index === this.selectedAgentIndex);
+        });
+
+        // 滚动到可视区域
+        if (this.selectedAgentIndex >= 0 && this.selectedAgentIndex < items.length) {
+            items[this.selectedAgentIndex].scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    // 提取智能体提及
+    extractAgentMention(input) {
+        const trimmed = input.trim();
+        const match = trimmed.match(/^@([\u4e00-\u9fa5\w]+)\s*(.*)$/);
+        if (match) {
+            return {
+                agentName: match[1],
+                query: match[2].trim()
+            };
+        }
+        return null;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    window.fkteamsChat = new FKTeamsChat();
+    window.app = new FKTeamsChat();
+    window.fkteamsChat = window.app; // 保持向后兼容
 });

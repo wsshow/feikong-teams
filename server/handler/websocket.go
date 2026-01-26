@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fkteams/agents"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
@@ -85,6 +86,42 @@ func getOrCreateRunner(ctx context.Context, mode string) *adk.Runner {
 	return runner
 }
 
+// getOrCreateAgentRunner 获取或创建指定智能体的 runner
+func getOrCreateAgentRunner(ctx context.Context, agentName string) *adk.Runner {
+	cacheKey := "agent_" + agentName
+
+	runnerCacheMu.RLock()
+	if runner, exists := runnerCache[cacheKey]; exists {
+		runnerCacheMu.RUnlock()
+		return runner
+	}
+	runnerCacheMu.RUnlock()
+
+	// 需要创建新的 runner
+	runnerCacheMu.Lock()
+	defer runnerCacheMu.Unlock()
+
+	// 双重检查
+	if runner, exists := runnerCache[cacheKey]; exists {
+		return runner
+	}
+
+	// 查找智能体
+	agentInfo := agents.GetAgentByName(agentName)
+	if agentInfo == nil {
+		log.Printf("[WebSocket] 未找到智能体: %s", agentName)
+		return nil
+	}
+
+	// 创建智能体和 runner
+	agent := agentInfo.Creator(ctx)
+	runner := runner.CreateAgentRunner(ctx, agent)
+
+	runnerCache[cacheKey] = runner
+	log.Printf("[WebSocket] 已创建并缓存智能体 runner: agent=%s", agentName)
+	return runner
+}
+
 // ClearRunnerCache 清除 runner 缓存（用于配置更新等场景）
 func ClearRunnerCache() {
 	runnerCacheMu.Lock()
@@ -154,7 +191,8 @@ type WSMessage struct {
 	Type      string `json:"type"`
 	SessionID string `json:"session_id,omitempty"`
 	Message   string `json:"message,omitempty"`
-	Mode      string `json:"mode,omitempty"` // "supervisor" 或 "roundtable" 或 "custom"
+	Mode      string `json:"mode,omitempty"`       // "supervisor" 或 "roundtable" 或 "custom"
+	AgentName string `json:"agent_name,omitempty"` // 指定的智能体名称
 }
 
 // WebSocketHandler 处理 WebSocket 连接
@@ -324,6 +362,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	if mode == "" {
 		mode = "supervisor"
 	}
+	agentName := wsMsg.AgentName
 
 	// 为这个任务创建独立的 context
 	taskCtx, taskCancel := context.WithCancel(connCtx)
@@ -367,8 +406,23 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	inputMessages = append(inputMessages, schema.UserMessage(input))
 	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
 
-	// 使用缓存的 runner（避免重复创建智能体）
-	runner := getOrCreateRunner(taskCtx, mode)
+	// 获取 runner：如果指定了智能体，则创建单智能体 runner；否则使用默认模式
+	var runner *adk.Runner
+	if agentName != "" {
+		// 使用指定的智能体
+		runner = getOrCreateAgentRunner(taskCtx, agentName)
+		if runner == nil {
+			_ = writeJSON(map[string]interface{}{
+				"type":  "error",
+				"error": fmt.Sprintf("未找到智能体: %s", agentName),
+			})
+			return
+		}
+		log.Printf("使用指定智能体: %s", agentName)
+	} else {
+		// 使用缓存的 runner（避免重复创建智能体）
+		runner = getOrCreateRunner(taskCtx, mode)
+	}
 
 	defer func() {
 		err = g.Cleaner.ExecuteAndClear()
