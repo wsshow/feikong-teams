@@ -19,6 +19,8 @@ class FKTeamsChat {
         this.agentSuggestions = null; // 智能体建议弹窗
         this.selectedAgentIndex = -1; // 当前选中的智能体索引
         this.currentAgent = null; // 当前使用的智能体
+        this.activeNotifications = []; // 活动的通知列表
+        this.notificationStyleAdded = false; // 标记样式是否已添加
 
         this.init();
     }
@@ -978,46 +980,82 @@ class FKTeamsChat {
     }
 
     showNotification(message, type = 'info') {
+        // 添加动画样式（只添加一次）
+        if (!this.notificationStyleAdded) {
+            const style = document.createElement('style');
+            style.id = 'notification-styles';
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+            this.notificationStyleAdded = true;
+        }
+
+        // 限制最多同时显示3个通知
+        if (this.activeNotifications.length >= 3) {
+            const oldest = this.activeNotifications.shift();
+            this.removeNotification(oldest);
+        }
+
         // 创建通知元素
         const notification = document.createElement('div');
+        const bgColor = type === 'success' ? '#66bb6a' : type === 'error' ? '#ef5350' : '#42a5f5';
+
+        // 计算通知的位置（堆叠显示）
+        const topOffset = 20 + (this.activeNotifications.length * 70);
+
         notification.style.cssText = `
             position: fixed;
-            top: 20px;
+            top: ${topOffset}px;
             right: 20px;
-            background: ${type === 'success' ? '#66bb6a' : '#42a5f5'};
+            background: ${bgColor};
             color: white;
             padding: 12px 20px;
             border-radius: 6px;
             font-size: 14px;
             z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             animation: slideIn 0.3s ease;
+            transition: top 0.3s ease;
         `;
         notification.textContent = message;
 
-        // 添加滑入动画
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-        `;
-        document.head.appendChild(style);
-
         document.body.appendChild(notification);
+        this.activeNotifications.push(notification);
 
         // 3秒后自动移除
         setTimeout(() => {
-            notification.style.animation = 'slideIn 0.3s ease reverse';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    document.body.removeChild(notification);
-                }
-                if (style.parentNode) {
-                    document.head.removeChild(style);
-                }
-            }, 300);
+            this.removeNotification(notification);
         }, 3000);
+    }
+
+    removeNotification(notification) {
+        if (!notification || !notification.parentNode) return;
+
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+
+            // 从活动列表中移除
+            const index = this.activeNotifications.indexOf(notification);
+            if (index > -1) {
+                this.activeNotifications.splice(index, 1);
+            }
+
+            // 更新剩余通知的位置
+            this.activeNotifications.forEach((notif, idx) => {
+                notif.style.top = (20 + idx * 70) + 'px';
+            });
+        }, 300);
     }
 
     // ===== 历史记录管理 =====
@@ -1780,12 +1818,6 @@ class FKTeamsChat {
             document.body.appendChild(this.agentSuggestions);
         }
 
-        // 计算弹窗位置（显示在输入框上方）
-        const inputRect = this.messageInput.getBoundingClientRect();
-        this.agentSuggestions.style.left = inputRect.left + 'px';
-        this.agentSuggestions.style.bottom = (window.innerHeight - inputRect.top + 10) + 'px';
-        this.agentSuggestions.style.width = inputRect.width + 'px';
-
         // 生成建议列表HTML
         this.agentSuggestions.innerHTML = filteredAgents.map((agent, index) => `
             <div class="agent-suggestion-item ${index === 0 ? 'selected' : ''}" data-index="${index}" data-name="${this.escapeHtml(agent.name)}">
@@ -1796,6 +1828,21 @@ class FKTeamsChat {
 
         this.agentSuggestions.style.display = 'block';
         this.selectedAgentIndex = 0;
+
+        // 计算弹窗位置（显示在输入框上方，使用input-wrapper的尺寸）
+        const inputWrapper = this.messageInput.closest('.input-wrapper');
+        const wrapperRect = inputWrapper ? inputWrapper.getBoundingClientRect() : this.messageInput.getBoundingClientRect();
+
+        // 设置宽度与input-wrapper一致
+        this.agentSuggestions.style.width = wrapperRect.width + 'px';
+        this.agentSuggestions.style.left = wrapperRect.left + 'px';
+
+        // 获取建议框的实际高度来更精确定位
+        const suggestionsHeight = this.agentSuggestions.offsetHeight;
+        // 定位在输入框正上方，留10px间隙
+        this.agentSuggestions.style.bottom = (window.innerHeight - wrapperRect.top + 10) + 'px';
+        // 移除可能冲突的top属性
+        this.agentSuggestions.style.top = 'auto';
 
         // 绑定点击事件
         this.agentSuggestions.querySelectorAll('.agent-suggestion-item').forEach(item => {
