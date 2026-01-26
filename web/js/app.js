@@ -2096,23 +2096,31 @@ class FKTeamsChat {
 
         // 绑定点击事件
         this.fileSuggestions.querySelectorAll('.file-suggestion-item').forEach(item => {
-            item.addEventListener('click', async () => {
+            // 单击：选择文件或文件夹
+            item.addEventListener('click', () => {
+                const filePath = item.getAttribute('data-path');
+                const isParent = item.getAttribute('data-is-parent') === 'true';
+
+                if (isParent) {
+                    // 返回上级目录
+                    const newPath = filePath ? filePath + '/' : '';
+                    this.showFileSuggestions(newPath, cursorPos);
+                } else {
+                    // 选择文件或文件夹
+                    this.insertFileMention(filePath);
+                }
+            });
+
+            // 双击：进入文件夹
+            item.addEventListener('dblclick', async (e) => {
+                e.stopPropagation();
                 const filePath = item.getAttribute('data-path');
                 const isDir = item.getAttribute('data-is-dir') === 'true';
                 const isParent = item.getAttribute('data-is-parent') === 'true';
 
-                if (isDir) {
-                    if (isParent) {
-                        // 返回上级目录
-                        const newPath = filePath ? filePath + '/' : '';
-                        await this.showFileSuggestions(newPath, cursorPos);
-                    } else {
-                        // 进入子目录
-                        await this.showFileSuggestions(filePath + '/', cursorPos);
-                    }
-                } else {
-                    // 如果是文件，插入文件路径
-                    this.insertFileMention(filePath);
+                if (isDir && !isParent) {
+                    // 进入子目录
+                    await this.showFileSuggestions(filePath + '/', cursorPos);
                 }
             });
         });
@@ -2189,7 +2197,35 @@ class FKTeamsChat {
                 return true;
 
             case 'Enter':
+                // Enter键：选择文件或文件夹
+                if (this.selectedFileIndex >= -1 && this.selectedFileIndex <= maxIndex) {
+                    e.preventDefault();
+                    let selectedItem;
+                    if (hasParent) {
+                        selectedItem = this.selectedFileIndex === -1 ? items[0] : items[this.selectedFileIndex + 1];
+                    } else {
+                        selectedItem = items[this.selectedFileIndex];
+                    }
+
+                    if (!selectedItem) return false;
+
+                    const filePath = selectedItem.getAttribute('data-path');
+                    const isParent = selectedItem.getAttribute('data-is-parent') === 'true';
+
+                    if (isParent) {
+                        // 返回上级目录
+                        const newPath = filePath ? filePath + '/' : '';
+                        this.showFileSuggestions(newPath, this.messageInput.selectionStart);
+                    } else {
+                        // 选择文件或文件夹
+                        this.insertFileMention(filePath);
+                    }
+                    return true;
+                }
+                break;
+
             case 'Tab':
+                // Tab键：进入文件夹或选择文件
                 if (this.selectedFileIndex >= -1 && this.selectedFileIndex <= maxIndex) {
                     e.preventDefault();
                     let selectedItem;
@@ -2215,7 +2251,7 @@ class FKTeamsChat {
                             this.showFileSuggestions(filePath + '/', this.messageInput.selectionStart);
                         }
                     } else {
-                        this.insertFileMention(filePath);
+                        // 文件则选择
                     }
                     return true;
                 }
