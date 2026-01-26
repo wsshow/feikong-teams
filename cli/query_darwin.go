@@ -1,5 +1,5 @@
-//go:build !windows
-// +build !windows
+//go:build darwin
+// +build darwin
 
 package cli
 
@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-// StartKeyboardMonitor 在查询期间监听 Ctrl+C (Unix 实现)
+// StartKeyboardMonitor 在查询期间监听 Ctrl+C (macOS 实现)
 // 通过临时恢复终端的 Cooked 模式，让操作系统处理 Ctrl+C 信号
 func StartKeyboardMonitor(state *QueryState) func() {
 	fd := int(os.Stdin.Fd())
