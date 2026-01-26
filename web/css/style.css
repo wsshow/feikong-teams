@@ -1737,6 +1737,88 @@ body {
     line-height: 1.4;
 }
 
+/* ===== File Suggestions ===== */
+.file-suggestions {
+    position: fixed;
+    display: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.file-suggestion-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background var(--transition);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.file-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.file-suggestion-item:hover,
+.file-suggestion-item.selected {
+    background: var(--info-light);
+}
+
+.file-suggestion-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.file-suggestion-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.file-suggestion-parent .file-suggestion-icon {
+    color: var(--primary-color);
+}
+
+.file-suggestion-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-suggestion-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-suggestion-path {
+    font-size: 11px;
+    color: var(--info);
+    font-family: 'Consolas', 'Monaco', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-suggestion-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
     .sidebar {

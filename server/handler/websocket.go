@@ -188,11 +188,12 @@ func CloseAllWebSockets() {
 
 // WebSocket 消息类型
 type WSMessage struct {
-	Type      string `json:"type"`
-	SessionID string `json:"session_id,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Mode      string `json:"mode,omitempty"`       // "supervisor" 或 "roundtable" 或 "custom"
-	AgentName string `json:"agent_name,omitempty"` // 指定的智能体名称
+	Type      string   `json:"type"`
+	SessionID string   `json:"session_id,omitempty"`
+	Message   string   `json:"message,omitempty"`
+	Mode      string   `json:"mode,omitempty"`       // "supervisor" 或 "roundtable" 或 "custom"
+	AgentName string   `json:"agent_name,omitempty"` // 指定的智能体名称
+	FilePaths []string `json:"file_paths,omitempty"` // 文件路径列表
 }
 
 // WebSocketHandler 处理 WebSocket 连接

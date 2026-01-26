@@ -52,6 +52,9 @@ func Init() *gin.Engine {
 		// 智能体 API
 		apiV1.GET("/agents", handler.GetAgentsHandler())
 
+		// 文件列表 API
+		apiV1.GET("/files", handler.GetFilesHandler())
+
 		// 历史文件管理 API
 		apiV1.GET("/history/files", handler.ListHistoryFilesHandler())
 		apiV1.GET("/history/files/:filename", handler.LoadHistoryFileHandler())
