@@ -119,11 +119,16 @@ func completer(d prompt.Document) []prompt.Suggest {
 func startSignalHandler(rawSignals chan os.Signal, exitSignals chan os.Signal) {
 	go func() {
 		for sig := range rawSignals {
+			if sig == syscall.SIGINT {
+				// 如果查询正在运行，只取消查询，不退出程序
+				if queryState.IsRunning() {
+					cli.HandleCtrlC(queryState)
+					continue
+				}
+			}
+			// 空闲状态或其他信号，发送退出信号
 			select {
 			case exitSignals <- sig:
-				if sig == syscall.SIGINT {
-					cli.HandleCtrlC(queryState)
-				}
 			default:
 			}
 		}

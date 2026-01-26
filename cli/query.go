@@ -6,7 +6,6 @@ import (
 	"fkteams/report"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -186,53 +185,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMo
 	}
 }
 
-// StartKeyboardMonitor 在查询期间监听键盘，检测 Ctrl+C (0x03)
-func StartKeyboardMonitor(state *QueryState) func() {
-	stopChan := make(chan struct{})
-	stdinChan := make(chan byte, 10)
-
-	// 读取 stdin 的 goroutine
-	go func() {
-		buf := make([]byte, 1)
-		for {
-			select {
-			case <-stopChan:
-				return
-			default:
-			}
-
-			n, err := os.Stdin.Read(buf)
-			if err != nil {
-				return
-			}
-			if n > 0 {
-				select {
-				case stdinChan <- buf[0]:
-				case <-stopChan:
-					return
-				}
-			}
-		}
-	}()
-
-	// 处理键盘输入的 goroutine
-	go func() {
-		for {
-			select {
-			case <-stopChan:
-				return
-			case b := <-stdinChan:
-				if b == 0x03 { // Ctrl+C
-					HandleCtrlC(state)
-				}
-			}
-		}
-	}()
-
-	return func() {
-		close(stopChan)
-	}
-}
+// StartKeyboardMonitor 在查询期间监听 Ctrl+C
+// 平台特定实现在 query_unix.go 和 query_windows.go 中
 
 // HandleCtrlC 处理 Ctrl+C 事件，只中断查询，不退出程序
 func HandleCtrlC(state *QueryState) {
@@ -245,7 +199,7 @@ func HandleCtrlC(state *QueryState) {
 		return
 	}
 	state.cancelling.Store(true)
-	fmt.Println()
+	fmt.Printf("\n\n")
 	pterm.Info.Println("正在中断查询...")
 	state.cancelMu.Lock()
 	if state.cancelFunc != nil {
