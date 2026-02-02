@@ -22,7 +22,7 @@ type FileTools struct {
 }
 
 // NewFileTools 创建一个新的文件工具实例
-// baseDir 是允许操作的基础目录（通常是 ./code 目录）
+// baseDir 是允许操作的基础目录（通常是 ./workspace 目录）
 func NewFileTools(baseDir string) (*FileTools, error) {
 	// 转换为绝对路径
 	absPath, err := filepath.Abs(baseDir)

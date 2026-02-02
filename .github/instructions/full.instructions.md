@@ -178,8 +178,8 @@ FEIKONG_OPENAI_MODEL      # 模型名称
 
 可选 (完整列表见 `.env.example`):
 ```bash
-FEIKONG_FILE_TOOL_DIR     # 文件工具目录 (默认 ./code)
-FEIKONG_TODO_TOOL_DIR     # Todo 目录 (默认 ./todo)
+FEIKONG_FILE_TOOL_DIR     # 文件工具目录 (默认 ./workspace)
+FEIKONG_TODO_TOOL_DIR     # Todo 目录 (默认 ./workspace)
 FEIKONG_PROXY_URL         # 代理地址
 FEIKONG_SSH_*             # SSH 连接配置
 ```

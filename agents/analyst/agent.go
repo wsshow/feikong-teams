@@ -20,7 +20,7 @@ import (
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
-	analystSafeDir := "./script"
+	analystSafeDir := "./workspace"
 	analystDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
 	if analystDirEnv != "" {
 		analystSafeDir = analystDirEnv

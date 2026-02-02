@@ -16,23 +16,23 @@ FEIKONG_OPENAI_MODEL = GPT-5
 # 配置代理：网络搜索工具、程序更新等
 FEIKONG_PROXY_URL = http://127.0.0.1:7890
 
-# 文件工具的使用目录, 默认为: ./code
-FEIKONG_FILE_TOOL_DIR = ./code
+# 文件工具的使用目录, 默认为: ./workspace
+FEIKONG_FILE_TOOL_DIR = ./workspace
 
-# Todo工具的使用目录, 默认为: ./todo
-FEIKONG_TODO_TOOL_DIR = ./todo
+# Todo工具的使用目录, 默认为: ./workspace
+FEIKONG_TODO_TOOL_DIR = ./workspace
 
-# git 工具的使用目录, 默认为: ./code
-FEIKONG_GIT_TOOL_DIR = ./code
+# git 工具的使用目录, 默认为: ./workspace
+FEIKONG_GIT_TOOL_DIR = ./workspace
 
-# excel 工具的使用目录, 默认为: ./data
-FEIKONG_EXCEL_TOOL_DIR = ./data
+# excel 工具的使用目录, 默认为: ./workspace
+FEIKONG_EXCEL_TOOL_DIR = ./workspace
 
-# uv 工具的使用目录, 默认为: ./script
-FEIKONG_UV_TOOL_DIR = ./script
+# uv 工具的使用目录, 默认为: ./workspace
+FEIKONG_UV_TOOL_DIR = ./workspace
 
-# bun 工具的使用目录, 默认为: ./script
-FEIKONG_BUN_TOOL_DIR = ./script
+# bun 工具的使用目录, 默认为: ./workspace
+FEIKONG_BUN_TOOL_DIR = ./workspace
 
 # 代码助手
 FEIKONG_CODER_ENABLED = false

@@ -16,7 +16,7 @@ var globalTodoToolsInstance *todo.TodoTools
 
 func NewAgent(ctx context.Context) adk.Agent {
 
-	todoDir := "./todo"
+	todoDir := "./workspace"
 	todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
 	if todoDirEnv != "" {
 		todoDir = todoDirEnv

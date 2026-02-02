@@ -23,7 +23,7 @@ import (
 func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	switch name {
 	case "file":
-		safeDir := "./code"
+		safeDir := "./workspace"
 		codeDirEnv := os.Getenv("FEIKONG_FILE_TOOL_DIR")
 		if codeDirEnv != "" {
 			safeDir = codeDirEnv
@@ -34,7 +34,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return fileTools.GetTools()
 	case "git":
-		gitDir := "./code"
+		gitDir := "./workspace"
 		gitDirEnv := os.Getenv("FEIKONG_GIT_TOOL_DIR")
 		if gitDirEnv != "" {
 			gitDir = gitDirEnv
@@ -45,7 +45,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return gitTools.GetTools()
 	case "excel":
-		excelDir := "./data"
+		excelDir := "./workspace"
 		excelDirEnv := os.Getenv("FEIKONG_EXCEL_TOOL_DIR")
 		if excelDirEnv != "" {
 			excelDir = excelDirEnv
@@ -56,7 +56,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return excelTools.GetTools()
 	case "todo":
-		todoDir := "./todo"
+		todoDir := "./workspace"
 		todoDirEnv := os.Getenv("FEIKONG_TODO_TOOL_DIR")
 		if todoDirEnv != "" {
 			todoDir = todoDirEnv
@@ -88,7 +88,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err
 	case "uv":
-		uvDir := "./script"
+		uvDir := "./workspace"
 		uvDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
 		if uvDirEnv != "" {
 			uvDir = uvDirEnv
@@ -99,7 +99,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return uvTools.GetTools()
 	case "bun":
-		bunDir := "./script"
+		bunDir := "./workspace"
 		bunDirEnv := os.Getenv("FEIKONG_BUN_TOOL_DIR")
 		if bunDirEnv != "" {
 			bunDir = bunDirEnv

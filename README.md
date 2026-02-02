@@ -131,17 +131,32 @@ FEIKONG_OPENAI_MODEL=gpt-5
 # 网络搜索工具配置（可选）
 FEIKONG_PROXY_URL=http://127.0.0.1:7890
 
+# 文件工具的使用目录, 默认为: ./workspace
+FEIKONG_FILE_TOOL_DIR = ./workspace
+
+# Todo工具的使用目录, 默认为: ./workspace
+FEIKONG_TODO_TOOL_DIR = ./workspace
+
+# git 工具的使用目录, 默认为: ./workspace
+FEIKONG_GIT_TOOL_DIR = ./workspace
+
+# excel 工具的使用目录, 默认为: ./workspace
+FEIKONG_EXCEL_TOOL_DIR = ./workspace
+
+# uv 工具的使用目录, 默认为: ./workspace
+FEIKONG_UV_TOOL_DIR = ./workspace
+
+# bun 工具的使用目录, 默认为: ./workspace
+FEIKONG_BUN_TOOL_DIR = ./workspace
+
 # 代码助手
 FEIKONG_CODER_ENABLED = false
 
 # 本地命令行助手
 FEIKONG_CMDER_ENABLED = false
 
-# 文件工具的使用目录, 默认为: ./code
-FEIKONG_FILE_TOOL_DIR = ./code
-
-# Todo工具的使用目录, 默认为: ./todo
-FEIKONG_TODO_TOOL_DIR = ./todo
+# 数据分析师
+FEIKONG_ANALYST_ENABLED = false
 
 # SSH 访问者智能体配置（可选）
 FEIKONG_SSH_VISITOR_ENABLED=true # 设置为 true 启用小访智能体
