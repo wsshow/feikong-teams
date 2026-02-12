@@ -13,15 +13,34 @@ type Initializer interface {
 }
 
 // 注册所有初始化器（后续新增只需在此追加）
-var initializers = []Initializer{
-	&uvInitializer{},
+var initializers = map[string]Initializer{
+	"uv":  &uvInitializer{},
+	"bun": &bunInitializer{},
 }
 
-// Run 执行所有已注册的初始化操作
+// Run 让用户选择需要初始化的环境并执行
 func Run() {
-	pterm.Info.Println("开始初始化运行环境...")
+	// 构建选项列表
+	options := make([]string, 0, len(initializers))
+	for name := range initializers {
+		options = append(options, name)
+	}
 
-	for _, init := range initializers {
+	// 交互式多选
+	selectedOptions, _ := pterm.DefaultInteractiveMultiselect.
+		WithOptions(options).
+		WithDefaultOptions(options).
+		Show("请选择需要初始化的环境（ENTER选择/取消，TAB确认）")
+
+	if len(selectedOptions) == 0 {
+		pterm.Warning.Println("未选择任何环境，跳过初始化")
+		return
+	}
+
+	pterm.Info.Printfln("即将初始化: %v", selectedOptions)
+
+	for _, name := range selectedOptions {
+		init := initializers[name]
 		pterm.Info.Printfln("[%s] 开始检测...", init.Name())
 		if err := init.Run(); err != nil {
 			pterm.Error.Printfln("[%s] 初始化失败: %v", init.Name(), err)
