@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -64,8 +65,100 @@ func changeLivePrefix() (string, bool) {
 	return prefix, true
 }
 
+// getWorkspaceDir 获取工作目录路径
+func getWorkspaceDir() string {
+	dir := os.Getenv("FEIKONG_FILE_TOOL_DIR")
+	if dir == "" {
+		dir = "./workspace"
+	}
+	return dir
+}
+
+// listFileSuggestions 根据输入路径列出文件/文件夹补全建议
+func listFileSuggestions(partialPath string) []prompt.Suggest {
+	baseDir := getWorkspaceDir()
+
+	// 确定要列出的目录和过滤前缀
+	listDir := baseDir
+	filterPrefix := partialPath
+
+	if partialPath != "" {
+		// 如果以 / 结尾，直接列出该子目录
+		if strings.HasSuffix(partialPath, "/") {
+			listDir = filepath.Join(baseDir, partialPath)
+			filterPrefix = ""
+		} else {
+			// 提取目录部分和文件名前缀
+			dir := filepath.Dir(partialPath)
+			if dir != "." {
+				listDir = filepath.Join(baseDir, dir)
+			}
+			filterPrefix = filepath.Base(partialPath)
+		}
+	}
+
+	entries, err := os.ReadDir(listDir)
+	if err != nil {
+		return []prompt.Suggest{}
+	}
+
+	// 计算相对路径前缀（用于构建完整路径）
+	relPrefix := ""
+	if partialPath != "" {
+		if strings.HasSuffix(partialPath, "/") {
+			relPrefix = partialPath
+		} else {
+			dir := filepath.Dir(partialPath)
+			if dir != "." {
+				relPrefix = dir + "/"
+			}
+		}
+	}
+
+	var suggests []prompt.Suggest
+	for _, entry := range entries {
+		name := entry.Name()
+		// 跳过隐藏文件
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+
+		// 前缀过滤
+		if filterPrefix != "" && !strings.HasPrefix(strings.ToLower(name), strings.ToLower(filterPrefix)) {
+			continue
+		}
+
+		displayName := relPrefix + name
+		desc := "文件"
+		if entry.IsDir() {
+			displayName += "/"
+			desc = "目录"
+		}
+
+		suggests = append(suggests, prompt.Suggest{
+			Text:        "#" + displayName,
+			Description: desc,
+		})
+	}
+
+	return suggests
+}
+
 func completer(d prompt.Document) []prompt.Suggest {
 	textBefore := d.TextBeforeCursor()
+
+	// 检查是否输入了 # 符号（文件引用）
+	if strings.HasPrefix(textBefore, "#") || strings.Contains(textBefore, " #") {
+		lastHash := strings.LastIndex(textBefore, "#")
+		afterHash := textBefore[lastHash+1:]
+
+		// 如果 # 后面有空格，则不提示
+		if strings.Contains(afterHash, " ") {
+			return []prompt.Suggest{}
+		}
+
+		return listFileSuggestions(afterHash)
+	}
 
 	// 检查是否输入了 @ 符号
 	if strings.HasPrefix(textBefore, "@") || strings.Contains(textBefore, " @") {
