@@ -69,9 +69,8 @@ class FKTeamsChat {
         this.mainContent = document.getElementById('main-content');
         this.scrollToBottomBtn = document.getElementById('scroll-to-bottom');
         this.chatLoading = document.getElementById('chat-loading');
-        this.quickNavBars = document.getElementById('quick-nav-bars');
-        this.quickNavPanel = document.getElementById('quick-nav-panel');
-        this.quickNavPanelList = document.getElementById('quick-nav-panel-list');
+        this.quickNavWrapper = document.getElementById('quick-nav-wrapper');
+        this.quickNavList = document.getElementById('quick-nav-list');
         this.newSessionBtn = document.getElementById('new-session-btn');
         this.sidebarSessionList = document.getElementById('sidebar-session-list');
     }

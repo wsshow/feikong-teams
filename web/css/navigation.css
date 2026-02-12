@@ -1,176 +1,134 @@
 /* navigation.css - 快速导航、滚动到底部、滚动条样式 */
 
-/* ===== Quick Nav ===== */
+/* ===== Quick Nav - 一体化问题导航 ===== */
+/* 默认收缩为小圆点列，悬浮展开显示问题文本 */
+
 .quick-nav-wrapper {
     position: fixed;
-    right: 24px;
+    right: 12px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 11;
-    display: flex;
-    align-items: center;
 }
 
-.quick-nav-bars {
+.quick-nav-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    max-height: 80vh;
+    gap: 0;
+    max-height: 70vh;
     overflow-y: auto;
-    padding: 10px 0;
-    position: relative;
-    z-index: 2;
+    padding: 6px;
+    background: transparent;
+    border: 1.5px solid transparent;
+    border-radius: 10px;
+    transition: all 0.25s ease;
 }
 
-.quick-nav-bars::-webkit-scrollbar {
+.quick-nav-list::-webkit-scrollbar {
     width: 0;
     display: none;
 }
 
-.quick-nav-bar {
-    width: 20px;
-    height: 4px;
-    background: var(--border-color);
-    border-radius: 2px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.quick-nav-bar:hover {
-    background: var(--accent-secondary);
-    width: 28px;
-    transform: scaleY(1.5);
-}
-
-.quick-nav-bar.active {
-    background: var(--accent-primary);
-    width: 28px;
-    box-shadow: 1px 1px 0 rgba(107, 127, 198, 0.3);
-}
-
-.quick-nav-panel {
-    position: absolute;
-    right: 32px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 320px;
-    max-height: 500px;
+/* 悬浮时展开：显示背景边框 */
+.quick-nav-wrapper:hover .quick-nav-list {
     background: var(--bg-secondary);
-    border: 2px solid var(--border-sketch);
-    border-radius: 14px;
-    box-shadow: -4px 4px 0px rgba(60, 50, 30, 0.1);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.15s;
-    z-index: 1;
+    border-color: var(--border-sketch);
+    box-shadow: -2px 3px 0px rgba(60, 50, 30, 0.08);
+    padding: 6px 8px;
+    gap: 1px;
 }
 
-.quick-nav-panel::after {
-    content: '';
-    position: absolute;
-    right: -36px;
-    top: 0;
-    bottom: 0;
-    width: 36px;
-    background: transparent;
-}
-
-.quick-nav-wrapper:hover .quick-nav-panel {
-    opacity: 1;
-    pointer-events: auto;
-    transition-delay: 0s;
-}
-
-.quick-nav-panel-header {
-    padding: 12px 16px;
-    border-bottom: 2px dashed var(--border-color);
-    background: var(--bg-tertiary);
-}
-
-.quick-nav-panel-title {
-    font-family: var(--font-hand);
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.quick-nav-panel-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-}
-
+/* 空状态 */
 .quick-nav-empty {
-    padding: 40px 20px;
+    padding: 8px 4px;
     text-align: center;
     color: var(--text-tertiary);
     font-family: var(--font-hand);
-    font-size: 16px;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
+/* 单个导航项 */
 .quick-nav-item {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    margin-bottom: 6px;
-    background: var(--bg-primary);
-    border: 2px solid var(--border-color);
-    border-radius: 10px;
+    align-items: center;
+    gap: 0;
+    padding: 4px 2px;
+    border-radius: 5px;
     cursor: pointer;
     transition: all 0.2s ease;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .quick-nav-item:hover {
     background: var(--accent-light);
-    border-color: var(--accent-primary);
-    transform: translateX(-3px);
-    box-shadow: var(--shadow-sketch);
 }
 
 .quick-nav-item.active {
     background: var(--accent-light);
-    border-color: var(--accent-primary);
-    box-shadow: 2px 3px 0px rgba(107, 127, 198, 0.2);
 }
 
-.quick-nav-item-index {
+/* 圆点指示器 */
+.quick-nav-dot {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--accent-primary);
-    color: white;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    font-size: 11px;
-    font-weight: 600;
+    background: var(--border-color);
+    opacity: 0.5;
+    transition: all 0.2s ease;
 }
 
-.quick-nav-item-content {
-    flex: 1;
-    min-width: 0;
+.quick-nav-item:hover .quick-nav-dot,
+.quick-nav-item.active .quick-nav-dot {
+    background: var(--accent-primary);
+    opacity: 1;
 }
 
-.quick-nav-item-text {
-    font-size: 13px;
-    line-height: 1.5;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
+.quick-nav-item.active .quick-nav-dot {
+    width: 7px;
+    height: 7px;
+    box-shadow: 0 0 0 2px rgba(107, 127, 198, 0.15);
+}
+
+/* 问题文本（默认隐藏） */
+.quick-nav-text {
+    max-width: 0;
+    opacity: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    word-break: break-word;
-    margin-bottom: 4px;
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--text-primary);
+    transition: all 0.25s ease;
+    padding-left: 0;
 }
 
-.quick-nav-item-time {
-    font-size: 11px;
+/* 悬浮展开时显示文本 */
+.quick-nav-wrapper:hover .quick-nav-text {
+    max-width: 180px;
+    opacity: 1;
+    padding-left: 8px;
+}
+
+/* 序号标记 */
+.quick-nav-index {
+    flex-shrink: 0;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    font-size: 10px;
+    font-family: var(--font-hand);
+    font-weight: 600;
     color: var(--text-tertiary);
+    transition: all 0.25s ease;
+    padding-left: 0;
+}
+
+.quick-nav-wrapper:hover .quick-nav-index {
+    max-width: 20px;
+    opacity: 1;
+    padding-left: 6px;
 }
 
 /* Scroll to bottom */
@@ -281,26 +239,22 @@
 }
 
 /* 弹窗内部滚动条 */
-.history-modal-body::-webkit-scrollbar,
-.quick-nav-panel-list::-webkit-scrollbar {
+.history-modal-body::-webkit-scrollbar {
     width: 4px;
 }
 
-.history-modal-body::-webkit-scrollbar-track,
-.quick-nav-panel-list::-webkit-scrollbar-track {
+.history-modal-body::-webkit-scrollbar-track {
     background: transparent;
     margin: 6px 0;
 }
 
-.history-modal-body::-webkit-scrollbar-thumb,
-.quick-nav-panel-list::-webkit-scrollbar-thumb {
+.history-modal-body::-webkit-scrollbar-thumb {
     background: rgba(190, 182, 168, 0.4);
     border-radius: 10px;
     min-height: 24px;
 }
 
-.history-modal-body::-webkit-scrollbar-thumb:hover,
-.quick-nav-panel-list::-webkit-scrollbar-thumb:hover {
+.history-modal-body::-webkit-scrollbar-thumb:hover {
     background: rgba(158, 149, 133, 0.55);
 }
 
