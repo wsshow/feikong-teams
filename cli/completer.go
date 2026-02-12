@@ -11,7 +11,7 @@ import (
 
 // GetWorkspaceDir 获取工作目录路径
 func GetWorkspaceDir() string {
-	dir := os.Getenv("FEIKONG_FILE_TOOL_DIR")
+	dir := os.Getenv("FEIKONG_WORKSPACE_DIR")
 	if dir == "" {
 		dir = "./workspace"
 	}

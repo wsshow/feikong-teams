@@ -21,7 +21,7 @@ func NewAgent() adk.Agent {
 	ctx := context.Background()
 
 	analystSafeDir := "./workspace"
-	analystDirEnv := os.Getenv("FEIKONG_UV_TOOL_DIR")
+	analystDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
 	if analystDirEnv != "" {
 		analystSafeDir = analystDirEnv
 	}

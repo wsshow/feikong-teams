@@ -23,11 +23,11 @@ type FileInfo struct {
 func GetFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 获取环境变量配置的目录
-		baseDir := os.Getenv("FEIKONG_FILE_TOOL_DIR")
+		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
 		if baseDir == "" {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    -1,
-				"message": "FEIKONG_FILE_TOOL_DIR 未配置",
+				"message": "FEIKONG_WORKSPACE_DIR 未配置",
 				"data":    []FileInfo{},
 			})
 			return
