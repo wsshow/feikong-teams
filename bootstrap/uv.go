@@ -41,7 +41,7 @@ func (u *uvInitializer) Run() error {
 	return nil
 }
 
-// install 执行 uv 安装
+// install 执行 uv 安装，支持 FEIKONG_PROXY_URL 代理
 func (u *uvInitializer) install() error {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
@@ -52,6 +52,7 @@ func (u *uvInitializer) install() error {
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = appendProxyEnv(os.Environ())
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("install command failed: %w", err)
 	}
@@ -64,4 +65,20 @@ func (u *uvInitializer) upgrade(uvPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量
+func appendProxyEnv(env []string) []string {
+	proxyURL := os.Getenv("FEIKONG_PROXY_URL")
+	if proxyURL == "" {
+		return env
+	}
+	pterm.Info.Printfln("使用代理: %s", proxyURL)
+	env = append(env,
+		"HTTP_PROXY="+proxyURL,
+		"HTTPS_PROXY="+proxyURL,
+		"http_proxy="+proxyURL,
+		"https_proxy="+proxyURL,
+	)
+	return env
 }
