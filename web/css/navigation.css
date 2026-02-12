@@ -173,69 +173,70 @@
     height: 16px;
 }
 
-/* Scrollbar - 浅色手绘素描风格（窄/短/圆润） */
-.main-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.main-content::-webkit-scrollbar-track {
-    background: transparent;
-    margin: 8px 0;
-}
-
-.main-content::-webkit-scrollbar-thumb {
-    background: rgba(180, 170, 155, 0.45);
-    border-radius: 10px;
-    min-height: 30px;
-}
-
-.main-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(158, 149, 133, 0.6);
-}
+/* ===== 滚动条 - 浅色手绘素描风格 ===== */
+/* 设计理念：纤细温暖、若隐若现、圆润柔和 */
 
 /* 全局默认滚动条 */
 ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 5px;
+    height: 5px;
 }
 
 ::-webkit-scrollbar-track {
     background: transparent;
-    margin: 6px 0;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(190, 182, 168, 0.4);
-    border-radius: 10px;
-    min-height: 24px;
+    background: rgba(178, 168, 148, 0.3);
+    border-radius: 100px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(158, 149, 133, 0.55);
+    background: rgba(158, 149, 133, 0.5);
 }
 
 ::-webkit-scrollbar-corner {
     background: transparent;
 }
 
-/* 侧边栏会话列表滚动条 */
+/* 主内容区滚动条 - 稍宽，提供更好的操控感 */
+.main-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.main-content::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 12px 0;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+    background: rgba(178, 168, 148, 0.25);
+    border-radius: 100px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(158, 149, 133, 0.45);
+    border: 0;
+}
+
+/* 侧边栏会话列表 - 极细，不抢视线 */
 .sidebar-sessions::-webkit-scrollbar {
-    width: 3px;
+    width: 2px;
 }
 
 .sidebar-sessions::-webkit-scrollbar-track {
     background: transparent;
-    margin: 4px 0;
 }
 
 .sidebar-sessions::-webkit-scrollbar-thumb {
-    background: rgba(190, 182, 168, 0.35);
-    border-radius: 10px;
-    min-height: 20px;
+    background: rgba(178, 168, 148, 0.25);
+    border-radius: 100px;
 }
 
 .sidebar-sessions::-webkit-scrollbar-thumb:hover {
-    background: rgba(158, 149, 133, 0.5);
+    background: rgba(158, 149, 133, 0.45);
 }
 
 /* 弹窗内部滚动条 */
@@ -245,20 +246,19 @@
 
 .history-modal-body::-webkit-scrollbar-track {
     background: transparent;
-    margin: 6px 0;
+    margin: 8px 0;
 }
 
 .history-modal-body::-webkit-scrollbar-thumb {
-    background: rgba(190, 182, 168, 0.4);
-    border-radius: 10px;
-    min-height: 24px;
+    background: rgba(178, 168, 148, 0.28);
+    border-radius: 100px;
 }
 
 .history-modal-body::-webkit-scrollbar-thumb:hover {
-    background: rgba(158, 149, 133, 0.55);
+    background: rgba(158, 149, 133, 0.48);
 }
 
-/* 代码块滚动条 */
+/* 代码块滚动条 - 最细，融入代码背景 */
 pre::-webkit-scrollbar {
     width: 3px;
     height: 3px;
@@ -269,44 +269,43 @@ pre::-webkit-scrollbar-track {
 }
 
 pre::-webkit-scrollbar-thumb {
-    background: rgba(190, 182, 168, 0.35);
-    border-radius: 10px;
+    background: rgba(178, 168, 148, 0.22);
+    border-radius: 100px;
 }
 
 pre::-webkit-scrollbar-thumb:hover {
-    background: rgba(158, 149, 133, 0.5);
+    background: rgba(158, 149, 133, 0.4);
 }
 
-/* 建议弹窗滚动条(@ 和 #) */
+/* 建议弹窗滚动条（@ 和 #） */
 .agent-suggestions::-webkit-scrollbar,
 .file-suggestions::-webkit-scrollbar {
-    width: 4px;
+    width: 3px;
 }
 
 .agent-suggestions::-webkit-scrollbar-track,
 .file-suggestions::-webkit-scrollbar-track {
     background: transparent;
-    margin: 6px 0;
 }
 
 .agent-suggestions::-webkit-scrollbar-thumb,
 .file-suggestions::-webkit-scrollbar-thumb {
-    background: rgba(190, 182, 168, 0.4);
-    border-radius: 10px;
+    background: rgba(178, 168, 148, 0.28);
+    border-radius: 100px;
 }
 
 .agent-suggestions::-webkit-scrollbar-thumb:hover,
 .file-suggestions::-webkit-scrollbar-thumb:hover {
-    background: rgba(158, 149, 133, 0.55);
+    background: rgba(158, 149, 133, 0.48);
 }
 
 /* Firefox 滚动条 */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(190, 182, 168, 0.4) transparent;
+    scrollbar-color: rgba(178, 168, 148, 0.25) transparent;
 }
 
 .main-content {
     scrollbar-width: thin;
-    scrollbar-color: rgba(180, 170, 155, 0.45) transparent;
+    scrollbar-color: rgba(178, 168, 148, 0.25) transparent;
 }
