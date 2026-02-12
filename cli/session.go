@@ -205,16 +205,20 @@ type sessionModeSwitcher struct {
 	executor *QueryExecutor
 }
 
-// SwitchMode 切换工作模式
+// SwitchMode 切换工作模式（循环切换：team → deep → group → custom → team）
 func (m *sessionModeSwitcher) SwitchMode() (string, error) {
 	var newMode WorkMode
 	switch m.session.CurrentMode {
 	case ModeTeam:
+		newMode = ModeDeep
+	case ModeDeep:
 		newMode = ModeGroup
 	case ModeGroup:
+		newMode = ModeCustom
+	case ModeCustom:
 		newMode = ModeTeam
 	default:
-		return "", fmt.Errorf("unsupported mode switch from: %s", m.session.CurrentMode)
+		newMode = ModeTeam
 	}
 
 	newRunner := m.session.createModeRunner(m.ctx, newMode)

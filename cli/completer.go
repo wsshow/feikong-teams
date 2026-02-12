@@ -142,7 +142,7 @@ func Completer(d prompt.Document) []prompt.Suggest {
 		{Text: "save_chat_history", Description: "保存聊天历史"},
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
 		{Text: "clear_todo", Description: "清空待办事项"},
-		{Text: "switch_work_mode", Description: "切换工作模式(团队模式/多智能体讨论模式)"},
+		{Text: "switch_work_mode", Description: "切换工作模式(团队/深度/讨论/自定义)"},
 		{Text: "save_chat_history_to_html", Description: "保存完整聊天历史到 HTML 文件"},
 		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
 		{Text: "help", Description: "帮助信息"},
