@@ -310,6 +310,7 @@ list_agents
 | `--update`          | `-u` | 检查并更新到最新版本                                                           |
 | `--generate-env`    | `-g` | 生成示例 .env 文件                                                             |
 | `--generate-config` | `-c` | 生成示例配置文件                                                               |
+| `--init`            | `-i` | 初始化运行环境（安装/升级 uv 等依赖）                                          |
 
 ## 使用场景示例
 

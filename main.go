@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fkteams/bootstrap"
 	"fkteams/cli"
 	"fkteams/common"
 	"fkteams/config"
@@ -32,6 +33,7 @@ func main() {
 		checkVersion   bool
 		generateEnv    bool
 		generateConfig bool
+		initEnv        bool
 		web            bool
 		workMode       string
 		query          string
@@ -40,6 +42,7 @@ func main() {
 	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
 	pflag.BoolVarP(&generateEnv, "generate-env", "g", false, "生成示例.env文件并退出")
 	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
+	pflag.BoolVarP(&initEnv, "init", "i", false, "初始化运行环境（安装/升级 uv 等依赖）")
 	pflag.BoolVarP(&web, "web", "w", false, "启动Web服务器")
 	pflag.StringVarP(&query, "query", "q", "", "直接查询模式，执行完查询后退出")
 	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 deep 或 group 或 custom")
@@ -63,6 +66,11 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println("成功生成示例配置文件: config/config.toml")
+		return
+	}
+
+	if initEnv {
+		bootstrap.Run()
 		return
 	}
 
