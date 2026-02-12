@@ -432,13 +432,13 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		}
 	}()
 
-	// 设置回调函数，通过 WebSocket 发送事件
-	fkevent.Callback = func(event fkevent.Event) error {
+	// 将回调函数绑定到 context，支持并发安全
+	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
 		// 转换事件为前端可用的格式
 		wsEvent := convertEventForWS(event)
 		fkevent.GlobalHistoryRecorder.RecordEvent(event)
 		return writeJSON(wsEvent)
-	}
+	})
 
 	// 发送开始处理的消息
 	writeJSON(map[string]interface{}{

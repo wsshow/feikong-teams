@@ -24,11 +24,25 @@ func formatRunPath(runPath []adk.RunStep) string {
 	return fmt.Sprintf("%v", runPath)
 }
 
-var Callback func(event Event) error
+// callbackKey 用于在 context 中存储回调函数，支持并发安全
+type callbackKey struct{}
+
+// WithCallback 将回调函数绑定到 context，每个 goroutine 可拥有独立的回调
+func WithCallback(ctx context.Context, cb func(Event) error) context.Context {
+	return context.WithValue(ctx, callbackKey{}, cb)
+}
+
+// getCallback 从 context 中获取回调函数
+func getCallback(ctx context.Context) func(Event) error {
+	if cb, ok := ctx.Value(callbackKey{}).(func(Event) error); ok {
+		return cb
+	}
+	return nil
+}
 
 func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 	if event.Err != nil {
-		return handleEvent(Event{
+		return handleEvent(ctx, Event{
 			Type:      "error",
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
@@ -43,7 +57,7 @@ func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 	}
 
 	if event.Action != nil {
-		if err := handleAction(event); err != nil {
+		if err := handleAction(ctx, event); err != nil {
 			return err
 		}
 	}
@@ -55,7 +69,7 @@ func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
 	msgOutput := event.Output.MessageOutput
 
 	if msg := msgOutput.Message; msg != nil {
-		return handleRegularMessage(event, msg)
+		return handleRegularMessage(ctx, event, msg)
 	}
 
 	if stream := msgOutput.MessageStream; stream != nil {
@@ -65,7 +79,7 @@ func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
 	return nil
 }
 
-func handleRegularMessage(event *adk.AgentEvent, msg *schema.Message) error {
+func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schema.Message) error {
 	eventType := "message"
 	if msg.Role == schema.Tool {
 		eventType = "tool_result"
@@ -82,10 +96,10 @@ func handleRegularMessage(event *adk.AgentEvent, msg *schema.Message) error {
 		nEvent.ToolCalls = msg.ToolCalls
 	}
 
-	return handleEvent(nEvent)
+	return handleEvent(ctx, nEvent)
 }
 
-func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
+func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
 	toolCallsMap := make(map[int][]*schema.Message)
 	toolCallStarted := make(map[int]bool) // 记录哪些工具调用已经发送了开始提示
 
@@ -95,7 +109,7 @@ func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *sc
 			break
 		}
 		if err != nil {
-			return handleEvent(Event{
+			return handleEvent(ctx, Event{
 				Type:      "error",
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
@@ -109,7 +123,7 @@ func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *sc
 				eventType = "tool_result_chunk"
 			}
 
-			if err := handleEvent(Event{
+			if err := handleEvent(ctx, Event{
 				Type:      eventType,
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
@@ -125,7 +139,7 @@ func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *sc
 					// 如果这是该工具调用的第一个 chunk，立即显示准备提示
 					if !toolCallStarted[*tc.Index] && tc.Function.Name != "" {
 						toolCallStarted[*tc.Index] = true
-						if err := handleEvent(Event{
+						if err := handleEvent(ctx, Event{
 							Type:      "tool_calls_preparing",
 							AgentName: event.AgentName,
 							RunPath:   formatRunPath(event.RunPath),
@@ -166,7 +180,7 @@ func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *sc
 			return err
 		}
 
-		if err := handleEvent(Event{
+		if err := handleEvent(ctx, Event{
 			Type:      "tool_calls",
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
@@ -179,11 +193,11 @@ func handleStreamingMessage(_ context.Context, event *adk.AgentEvent, stream *sc
 	return nil
 }
 
-func handleAction(event *adk.AgentEvent) error {
+func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 	action := event.Action
 
 	if action.TransferToAgent != nil {
-		return handleEvent(Event{
+		return handleEvent(ctx, Event{
 			Type:       "action",
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
@@ -199,7 +213,7 @@ func handleAction(event *adk.AgentEvent) error {
 				content = stringer.String()
 			}
 
-			if err := handleEvent(Event{
+			if err := handleEvent(ctx, Event{
 				Type:       "action",
 				AgentName:  event.AgentName,
 				RunPath:    formatRunPath(event.RunPath),
@@ -212,7 +226,7 @@ func handleAction(event *adk.AgentEvent) error {
 	}
 
 	if action.Exit {
-		return handleEvent(Event{
+		return handleEvent(ctx, Event{
 			Type:       "action",
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
@@ -224,9 +238,10 @@ func handleAction(event *adk.AgentEvent) error {
 	return nil
 }
 
-func handleEvent(event Event) error {
-	if Callback != nil {
-		return Callback(event)
+// handleEvent 从 context 中获取回调函数，无回调时走默认的记录+打印逻辑
+func handleEvent(ctx context.Context, event Event) error {
+	if cb := getCallback(ctx); cb != nil {
+		return cb(event)
 	}
 	RecordEventWithHistory(event)
 	return nil
