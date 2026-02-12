@@ -25,8 +25,8 @@ var coderPrompt = `
 - 【探测】: 任何任务开始前，必须先调用 file_list 获取目录快照。
 - 【读取】: 修改前必须调用 file_read 完整理解上下文。
 - 【写入】: 
-    - 创建新文件：file_create (占位) -> file_write (填充)。
-    - 局部调整：优先使用 file_modify 或 file_insert 以保持文件原有格式。
+    - 创建新文件：file_edit(action=write) 直接创建并写入内容。
+    - 局部修改：file_edit(action=replace) 精确查找并替换文本。
 - 【验证】: 写入后，必须再次调用 file_read 确认代码逻辑和缩进正确。
 
 ## 3. 编程准则 (Coding Standards)
@@ -48,7 +48,7 @@ var coderPrompt = `
 (执行 file_list 进行探测)
 [Step 2: 方案规划] 确认 data.json 存在。我将创建 processor.py，采用 json 模块实现数据清洗逻辑。
 [Step 3: 执行实现]
-(依次调用 file_create 和 file_write)
+(调用 file_edit(action=write) 创建并写入文件)
 [Step 4: 结果交付] 脚本已就绪。该脚本实现了异常捕获机制，确保在数据破损时不会崩溃。"
 
 用户: "重构 main.py，把数据库连接部分抽离出来。"
@@ -62,7 +62,7 @@ var coderPrompt = `
 - 合规路径示例: file_read("src/app.go")
 - 合规路径示例: dir_create("models")
 - 违规路径示例: file_read("/etc/passwd") (严禁越权)
-- 违规路径示例: file_write("../config.yaml", ...) (严禁向上越级)
+- 违规路径示例: file_edit("../config.yaml", ...) (严禁向上越级)
 `
 
 var CoderPromptTemplate = prompt.FromMessages(schema.FString,

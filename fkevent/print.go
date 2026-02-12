@@ -40,7 +40,7 @@ func printEvent() func(Event) {
 					formatted = formatSearchResults(event.Content)
 				case "execute_command", "command_execute":
 					formatted = formatCommandResult(event.Content)
-				case "file_read", "file_write", "file_append", "file_modify", "file_insert", "file_list", "file_create", "file_delete", "dir_create", "dir_delete":
+				case "file_read", "file_edit", "file_list", "file_create", "file_delete", "dir_create", "dir_delete", "file_search":
 					formatted = formatFileOpResult(event.Content)
 				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)

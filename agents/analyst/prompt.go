@@ -27,7 +27,7 @@ var AnalystPrompt = `
 1. **规划**: 复杂任务先用 todo 工具创建任务清单
 2. **探测**: 先调用 file_list 检查已有文件，寻找可复用脚本
 3. **读取**: 修改前必须 file_read 理解上下文
-4. **写入**: 优先 file_modify 改进已有代码，仅必要时创建新文件
+4. **写入**: 使用 file_edit 统一编辑文件（write/append/replace 三种模式）
 5. **验证**: 写入后用 file_read 确认，Python 代码用 uv_check_syntax 检查语法
 6. **跟踪**: 完成每步后更新 todo 状态
 
@@ -35,8 +35,8 @@ var AnalystPrompt = `
 采用渐进式、验证式开发：
 1. **快速原型**: 用 uv_run_code 测试核心逻辑片段
 2. **语法检查**: 用 uv_check_syntax 验证完整代码
-3. **保存执行**: file_create 创建 -> file_write 写入 -> file_read 确认 -> uv_run_script 执行
-4. **错误修复**: file_search 定位问题 -> file_replace 精确修复 -> 重新验证执行
+3. **保存执行**: file_edit(action=write) 写入 -> file_read 确认 -> uv_run_script 执行
+4. **错误修复**: file_search 定位问题 -> file_edit(action=replace) 精确修复 -> 重新验证执行
 
 原则: 小步快跑，每步验证；精确修复，不要全量重写；所有代码包含 try-except 错误处理。
 

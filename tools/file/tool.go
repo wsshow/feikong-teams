@@ -17,39 +17,18 @@ func (ft *FileTools) GetTools() ([]tool.BaseTool, error) {
 	var tools []tool.BaseTool
 
 	// 文件读取工具
-	fileReadTool, err := utils.InferTool("file_read", "读取文件内容。支持完整读取或部分读取（指定行范围）", ft.FileRead)
+	fileReadTool, err := utils.InferTool("file_read", "读取文件内容。支持完整读取或指定行范围读取，超过200行自动截断", ft.FileRead)
 	if err != nil {
 		return nil, err
 	}
 	tools = append(tools, fileReadTool)
 
-	// 文件写入工具
-	fileWriteTool, err := utils.InferTool("file_write", "写入内容到文件（覆盖模式）。如果文件不存在会创建，如果存在会覆盖全部内容", ft.FileWrite)
+	// 统一文件编辑工具（推荐）
+	fileEditTool, err := utils.InferTool("file_edit", "统一文件编辑工具。支持三种模式: write(创建/覆盖文件)、append(追加内容)、replace(精确查找并替换文本，需唯一匹配)", ft.FileEdit)
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, fileWriteTool)
-
-	// 文件追加工具
-	fileAppendTool, err := utils.InferTool("file_append", "在文件末尾追加内容。如果文件不存在会创建", ft.FileAppend)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileAppendTool)
-
-	// 文件修改工具
-	fileModifyTool, err := utils.InferTool("file_modify", "修改文件中指定行范围的内容。可以替换指定的行", ft.FileModify)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileModifyTool)
-
-	// 文件插入工具
-	fileInsertTool, err := utils.InferTool("file_insert", "在文件的指定行之后插入新内容", ft.FileInsert)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileInsertTool)
+	tools = append(tools, fileEditTool)
 
 	// 文件列表工具
 	fileListTool, err := utils.InferTool("file_list", "列出目录下的文件和文件夹", ft.FileList)
@@ -87,18 +66,11 @@ func (ft *FileTools) GetTools() ([]tool.BaseTool, error) {
 	tools = append(tools, dirDeleteTool)
 
 	// 文件搜索工具
-	fileSearchTool, err := utils.InferTool("file_search", "在文件中搜索指定的文本模式（支持正则表达式）。用于快速定位代码或文本内容", ft.FileSearch)
+	fileSearchTool, err := utils.InferTool("file_search", "在文件中搜索指定的文本。默认纯文本精确匹配，设置 use_regex=true 启用正则表达式", ft.FileSearch)
 	if err != nil {
 		return nil, err
 	}
 	tools = append(tools, fileSearchTool)
-
-	// 文件替换工具
-	fileReplaceTool, err := utils.InferTool("file_replace", "在文件中查找并替换文本（支持正则表达式）。适用于批量修改代码或文本内容", ft.FileReplace)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileReplaceTool)
 
 	return tools, nil
 }
