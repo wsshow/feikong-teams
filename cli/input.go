@@ -66,6 +66,7 @@ type WorkMode string
 
 const (
 	ModeTeam   WorkMode = "team"
+	ModeDeep   WorkMode = "deep"
 	ModeGroup  WorkMode = "group"
 	ModeCustom WorkMode = "custom"
 )
@@ -80,6 +81,8 @@ func (m WorkMode) GetPromptPrefix() string {
 	switch m {
 	case ModeTeam:
 		return "团队模式> "
+	case ModeDeep:
+		return "深度模式> "
 	case ModeGroup:
 		return "多智能体讨论模式> "
 	case ModeCustom:
@@ -94,6 +97,8 @@ func ParseWorkMode(mode string) WorkMode {
 	switch mode {
 	case "team":
 		return ModeTeam
+	case "deep":
+		return ModeDeep
 	case "group":
 		return ModeGroup
 	case "custom":

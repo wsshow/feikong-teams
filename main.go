@@ -42,7 +42,7 @@ func main() {
 	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
 	pflag.BoolVarP(&web, "web", "w", false, "启动Web服务器")
 	pflag.StringVarP(&query, "query", "q", "", "直接查询模式，执行完查询后退出")
-	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 group 或 custom")
+	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 deep 或 group 或 custom")
 	pflag.Parse()
 
 	if checkVersion {
@@ -96,6 +96,8 @@ func main() {
 		r = createModeRunner(ctx, cli.ModeGroup)
 	case cli.ModeCustom:
 		r = createModeRunner(ctx, cli.ModeCustom)
+	case cli.ModeDeep:
+		r = createModeRunner(ctx, cli.ModeDeep)
 	default:
 		pterm.Error.Println("暂不支持该模式：", workMode)
 		return
@@ -146,12 +148,15 @@ func createModeRunner(ctx context.Context, mode cli.WorkMode) *adk.Runner {
 	case cli.ModeTeam:
 		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 		return runner.CreateSupervisorRunner(ctx)
+	case cli.ModeDeep:
+		fmt.Printf("欢迎来到非空小队 - 深度模式: %s\n", version.Get())
+		return runner.CreateDeepAgentsRunner(ctx)
 	case cli.ModeGroup:
 		fmt.Printf("欢迎来到非空小队 - 多智能体讨论模式: %s\n", version.Get())
 		runner.PrintLoopAgentsInfo(ctx)
 		return runner.CreateLoopAgentRunner(ctx)
 	case cli.ModeCustom:
-		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
+		fmt.Printf("欢迎来到非空小队 - 自定义会议模式: %s\n", version.Get())
 		runner.PrintCustomAgentsInfo(ctx)
 		return runner.CreateCustomSupervisorRunner(ctx)
 	default:

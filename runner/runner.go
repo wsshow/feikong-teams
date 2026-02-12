@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents"
 	"fkteams/agents/custom"
+	"fkteams/agents/deep"
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
 	"fkteams/agents/moderator"
@@ -47,6 +48,24 @@ func CreateSupervisorRunner(ctx context.Context) *adk.Runner {
 		Supervisor: leaderAgent,
 		SubAgents:  subAgents,
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           supervisorAgent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+
+	return runner
+}
+
+// CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner
+func CreateDeepAgentsRunner(ctx context.Context) *adk.Runner {
+	subAgents := agents.GetTeamAgents(ctx)
+
+	supervisorAgent, err := deep.NewAgent(ctx, subAgents)
 	if err != nil {
 		log.Fatal(err)
 	}
