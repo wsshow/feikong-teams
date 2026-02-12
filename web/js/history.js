@@ -338,50 +338,108 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, f
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
     const exportFilename = `fkteams_chat_${sessionId}_${timestamp}.html`;
 
-    // 将 AgentMessage 数组渲染为 HTML
+    // 按事件顺序渲染每条 AgentMessage
     let messagesHTML = '';
     if (Array.isArray(agentMessages)) {
         agentMessages.forEach(msg => {
             const agentName = msg.agent_name || 'unknown';
-            const isUser = agentName === 'user' || agentName === 'User';
+            const isUser = agentName === '用户';
             const startTime = msg.start_time ? new Date(msg.start_time).toLocaleString('zh-CN') : '';
 
-            // 提取文本内容
-            let textContent = '';
-            let toolCalls = [];
-            if (msg.events && Array.isArray(msg.events)) {
-                msg.events.forEach(event => {
-                    if (event.type === 'text' && event.content) {
-                        textContent += event.content;
-                    } else if (event.type === 'tool_call' && event.tool_call) {
-                        toolCalls.push(event.tool_call);
-                    }
+            if (!msg.events || msg.events.length === 0) return;
+
+            // 用户消息：直接提取文本
+            if (isUser) {
+                let userContent = '';
+                msg.events.forEach(evt => {
+                    if (evt.type === 'text' && evt.content) userContent += evt.content;
                 });
+                if (!userContent) return;
+                messagesHTML += `
+                    <div class="message user">
+                        <div class="message-header">
+                            <span class="message-name">您</span>
+                            ${startTime ? `<span class="message-time">${startTime}</span>` : ''}
+                        </div>
+                        <div class="message-body user-body">${this.escapeHtml(userContent)}</div>
+                    </div>`;
+                return;
             }
 
-            if (!textContent && toolCalls.length === 0) return;
+            // Agent 消息：按事件顺序逐个渲染，保持 text / tool_call / action 的交错时间线
+            let currentTextBlock = '';
+            const flushText = () => {
+                if (!currentTextBlock) return '';
+                // 直接用 renderMarkdown 预渲染，避免 data 属性的引号转义问题
+                const rendered = this.renderMarkdown(currentTextBlock);
+                const html = `
+                    <div class="message">
+                        <div class="message-header">
+                            <span class="message-name">${this.escapeHtml(agentName)}</span>
+                            ${msg.run_path ? `<span class="agent-tag">${this.escapeHtml(msg.run_path)}</span>` : ''}
+                            ${startTime ? `<span class="message-time">${startTime}</span>` : ''}
+                        </div>
+                        <div class="message-body markdown-body">${rendered}</div>
+                    </div>`;
+                currentTextBlock = '';
+                return html;
+            };
 
-            let toolCallsHTML = '';
-            toolCalls.forEach(tc => {
-                toolCallsHTML += `
-                    <div class="tool-call">
-                        <strong>🔧 ${this.escapeHtml(tc.name || tc.tool_name || 'tool')}</strong>
-                        ${tc.result ? `<div class="tool-result">${this.escapeHtml(typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)).substring(0, 500)}</div>` : ''}
-                    </div>
-                `;
+            msg.events.forEach(evt => {
+                switch (evt.type) {
+                    case 'text':
+                        currentTextBlock += evt.content || '';
+                        break;
+                    case 'tool_call':
+                        // 先输出之前累积的文本
+                        messagesHTML += flushText();
+                        // 渲染工具调用
+                        if (evt.tool_call) {
+                            const tc = evt.tool_call;
+                            let argsDisplay = tc.arguments || '';
+                            try {
+                                argsDisplay = JSON.stringify(JSON.parse(tc.arguments), null, 2);
+                            } catch { /* 保持原样 */ }
+
+                            let resultHTML = '';
+                            if (tc.result) {
+                                let formattedResult = tc.result;
+                                try {
+                                    const parsed = JSON.parse(tc.result);
+                                    formattedResult = JSON.stringify(parsed, null, 2);
+                                } catch { /* 保持原样 */ }
+                                if (formattedResult.length > 2048) {
+                                    formattedResult = formattedResult.substring(0, 2048) + '\n...';
+                                }
+                                resultHTML = `
+                                    <div class="tool-result">
+                                        <div class="tool-result-header">✅ 执行结果</div>
+                                        <pre class="tool-result-content">${this.escapeHtml(formattedResult)}</pre>
+                                    </div>`;
+                            }
+
+                            messagesHTML += `
+                                <div class="tool-call">
+                                    <div class="tool-call-header">🔧 工具调用: <code>${this.escapeHtml(tc.name || 'tool')}</code></div>
+                                    ${argsDisplay ? `<pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>` : ''}
+                                    ${resultHTML}
+                                </div>`;
+                        }
+                        break;
+                    case 'action':
+                        messagesHTML += flushText();
+                        if (evt.action) {
+                            const actionLabel = evt.action.content || evt.action.action_type || 'action';
+                            messagesHTML += `
+                                <div class="action-event">
+                                    <span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(actionLabel)}</span>
+                                </div>`;
+                        }
+                        break;
+                }
             });
-
-            messagesHTML += `
-                <div class="message ${isUser ? 'user' : ''}">
-                    <div class="message-header">
-                        <span class="message-name">${this.escapeHtml(agentName)}</span>
-                        ${msg.run_path ? `<span class="agent-tag">${this.escapeHtml(msg.run_path)}</span>` : ''}
-                        ${startTime ? `<span class="message-time">${startTime}</span>` : ''}
-                    </div>
-                    <div class="message-body">${this.escapeHtml(textContent).replace(/\n/g, '<br>')}</div>
-                    ${toolCallsHTML}
-                </div>
-            `;
+            // 输出尾部未 flush 的文本
+            messagesHTML += flushText();
         });
     }
 
@@ -426,21 +484,54 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, f
         .message.user .message-body {
             background: #5c6bc0; color: white; margin-left: 60px;
         }
-        .tool-call {
-            margin: 8px 0; padding: 10px 12px; border-radius: 6px;
-            background: #e3f2fd; border: 1px solid #42a5f5; font-size: 13px;
-        }
-        .tool-result {
-            margin-top: 6px; padding: 6px 8px; background: #f5f5f5;
-            border-radius: 4px; font-size: 12px; color: #555;
-            white-space: pre-wrap; word-break: break-all;
-        }
-        pre {
+        /* Markdown 渲染样式 */
+        .markdown-body pre {
             background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto;
         }
-        code {
+        .markdown-body code {
+            background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px;
+            font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 0.9em;
+        }
+        .markdown-body pre code {
+            background: none; padding: 0;
+        }
+        .markdown-body table {
+            border-collapse: collapse; width: 100%; margin: 8px 0;
+        }
+        .markdown-body th, .markdown-body td {
+            border: 1px solid #ddd; padding: 6px 10px; text-align: left;
+        }
+        .markdown-body th { background: #f0f0f0; }
+        .markdown-body blockquote {
+            border-left: 3px solid #5c6bc0; padding-left: 12px; color: #666; margin: 8px 0;
+        }
+        .markdown-body ul, .markdown-body ol { padding-left: 20px; }
+        .markdown-body img { max-width: 100%; }
+        .tool-call {
+            margin: 8px 0; padding: 10px 12px; border-radius: 6px;
+            background: #e3f2fd; border: 1px solid #90caf9; font-size: 13px;
+        }
+        .tool-call-header { font-weight: 600; margin-bottom: 4px; }
+        .tool-call-header code {
             background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px;
             font-family: 'SF Mono', Monaco, Consolas, monospace;
+        }
+        .tool-call-args {
+            background: #f5f5f5; padding: 8px; border-radius: 4px; font-size: 12px;
+            overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 0;
+        }
+        .tool-result {
+            margin: 4px 0 8px; padding: 10px 12px; border-radius: 6px;
+            background: #e8f5e9; border: 1px solid #81c784; font-size: 13px;
+        }
+        .tool-result-header { font-weight: 600; margin-bottom: 4px; }
+        .tool-result-content {
+            background: #f5f5f5; padding: 8px; border-radius: 4px; font-size: 12px;
+            overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 0;
+        }
+        .action-event {
+            margin: 6px 0; padding: 6px 10px; border-radius: 4px;
+            background: #fff3e0; border: 1px solid #ffb74d; font-size: 12px; color: #e65100;
         }
     </style>
 </head>
