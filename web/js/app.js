@@ -327,6 +327,9 @@ class FKTeamsChat {
             case 'custom':
                 modeText = '自定义会议模式';
                 break;
+            case 'deep':
+                modeText = '深度模式';
+                break;
         }
         console.log(`已切换到: ${modeText}`);
     }

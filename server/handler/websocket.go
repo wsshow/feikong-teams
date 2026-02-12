@@ -77,6 +77,8 @@ func getOrCreateRunner(ctx context.Context, mode string) *adk.Runner {
 		runner = loopAgentModeWS(ctx)
 	case "custom":
 		runner = customSupervisorModeWS(ctx)
+	case "deep":
+		runner = deepAgentsModeWS(ctx)
 	default:
 		runner = supervisorModeWS(ctx)
 	}
@@ -544,4 +546,9 @@ func loopAgentModeWS(ctx context.Context) *adk.Runner {
 
 func customSupervisorModeWS(ctx context.Context) *adk.Runner {
 	return runner.CreateCustomSupervisorRunner(ctx)
+}
+
+// deepAgentsModeWS WebSocket 版本的 deep agents 模式
+func deepAgentsModeWS(ctx context.Context) *adk.Runner {
+	return runner.CreateDeepAgentsRunner(ctx)
 }
