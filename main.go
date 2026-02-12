@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"fkteams/agents"
 	"fkteams/cli"
 	"fkteams/common"
 	"fkteams/config"
-	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
 	"fkteams/server"
@@ -16,12 +14,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 
-	"github.com/atotto/clipboard"
-	"github.com/c-bata/go-prompt"
 	"github.com/cloudwego/eino/adk"
 	"github.com/joho/godotenv"
 	"github.com/pterm/pterm"
@@ -30,352 +24,6 @@ import (
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
-}
-
-var (
-	inputHistory  []string           // 输入历史记录
-	inputBuffer   *cli.InputBuffer   // 输入缓冲区
-	currentMode   cli.WorkMode       // 当前工作模式
-	queryState    *cli.QueryState    // 查询状态管理
-	queryExecutor *cli.QueryExecutor // 查询执行器
-	currentAgent  string             // 当前智能体名称
-)
-
-func init() {
-	inputBuffer = cli.NewInputBuffer()
-	queryState = cli.NewQueryState()
-}
-
-func handleInput(in string) (finalCmd string) {
-	cmd, needContinue := inputBuffer.HandleInput(in)
-	if needContinue {
-		return ""
-	}
-	return cmd
-}
-
-func changeLivePrefix() (string, bool) {
-	if inputBuffer.IsContinuing() {
-		return "请继续输入: ", true
-	}
-	prefix := currentMode.GetPromptPrefix()
-	if currentAgent != "" {
-		prefix = fmt.Sprintf("%s> ", currentAgent)
-	}
-	return prefix, true
-}
-
-// getWorkspaceDir 获取工作目录路径
-func getWorkspaceDir() string {
-	dir := os.Getenv("FEIKONG_FILE_TOOL_DIR")
-	if dir == "" {
-		dir = "./workspace"
-	}
-	return dir
-}
-
-// listFileSuggestions 根据输入路径列出文件/文件夹补全建议
-func listFileSuggestions(partialPath string) []prompt.Suggest {
-	baseDir := getWorkspaceDir()
-
-	// 确定要列出的目录和过滤前缀
-	listDir := baseDir
-	filterPrefix := partialPath
-
-	if partialPath != "" {
-		// 如果以 / 结尾，直接列出该子目录
-		if strings.HasSuffix(partialPath, "/") {
-			listDir = filepath.Join(baseDir, partialPath)
-			filterPrefix = ""
-		} else {
-			// 提取目录部分和文件名前缀
-			dir := filepath.Dir(partialPath)
-			if dir != "." {
-				listDir = filepath.Join(baseDir, dir)
-			}
-			filterPrefix = filepath.Base(partialPath)
-		}
-	}
-
-	entries, err := os.ReadDir(listDir)
-	if err != nil {
-		return []prompt.Suggest{}
-	}
-
-	// 计算相对路径前缀（用于构建完整路径）
-	relPrefix := ""
-	if partialPath != "" {
-		if strings.HasSuffix(partialPath, "/") {
-			relPrefix = partialPath
-		} else {
-			dir := filepath.Dir(partialPath)
-			if dir != "." {
-				relPrefix = dir + "/"
-			}
-		}
-	}
-
-	var suggests []prompt.Suggest
-	for _, entry := range entries {
-		name := entry.Name()
-		// 跳过隐藏文件
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-
-		// 前缀过滤
-		if filterPrefix != "" && !strings.HasPrefix(strings.ToLower(name), strings.ToLower(filterPrefix)) {
-			continue
-		}
-
-		displayName := relPrefix + name
-		desc := "文件"
-		if entry.IsDir() {
-			displayName += "/"
-			desc = "目录"
-		}
-
-		suggests = append(suggests, prompt.Suggest{
-			Text:        "#" + displayName,
-			Description: desc,
-		})
-	}
-
-	return suggests
-}
-
-func completer(d prompt.Document) []prompt.Suggest {
-	textBefore := d.TextBeforeCursor()
-
-	// 检查是否输入了 # 符号（文件引用）
-	if strings.HasPrefix(textBefore, "#") || strings.Contains(textBefore, " #") {
-		lastHash := strings.LastIndex(textBefore, "#")
-		afterHash := textBefore[lastHash+1:]
-
-		// 如果 # 后面有空格，则不提示
-		if strings.Contains(afterHash, " ") {
-			return []prompt.Suggest{}
-		}
-
-		return listFileSuggestions(afterHash)
-	}
-
-	// 检查是否输入了 @ 符号
-	if strings.HasPrefix(textBefore, "@") || strings.Contains(textBefore, " @") {
-		// 提取 @ 之后的内容
-		lastAt := strings.LastIndex(textBefore, "@")
-		afterAt := textBefore[lastAt+1:]
-
-		// 如果 @ 后面有空格，则不提示
-		if strings.Contains(afterAt, " ") {
-			return []prompt.Suggest{}
-		}
-
-		// 构建智能体建议列表
-		var agentSuggests []prompt.Suggest
-		for _, agent := range agents.GetRegistry() {
-			agentSuggests = append(agentSuggests, prompt.Suggest{
-				Text:        "@" + agent.Name,
-				Description: agent.Description,
-			})
-		}
-
-		// 过滤建议
-		if afterAt == "" {
-			return agentSuggests
-		}
-		return prompt.FilterHasPrefix(agentSuggests, "@"+afterAt, true)
-	}
-
-	if d.GetWordBeforeCursor() == "" {
-		return []prompt.Suggest{}
-	}
-	s := []prompt.Suggest{
-		{Text: "quit", Description: "退出"},
-		{Text: "list_agents", Description: "列出所有可用的智能体"},
-		{Text: "load_chat_history", Description: "加载聊天历史"},
-		{Text: "save_chat_history", Description: "保存聊天历史"},
-		{Text: "clear_chat_history", Description: "清空聊天历史"},
-		{Text: "clear_todo", Description: "清空待办事项"},
-		{Text: "switch_work_mode", Description: "切换工作模式(团队模式/多智能体讨论模式)"},
-		{Text: "save_chat_history_to_html", Description: "保存完整聊天历史到 HTML 文件"},
-		{Text: "save_chat_history_to_markdown", Description: "保存完整聊天历史到 Markdown 文件"},
-		{Text: "help", Description: "帮助信息"},
-	}
-	if d.TextBeforeCursor() == "/" {
-		return s
-	}
-	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
-}
-
-// startSignalHandler 监听系统信号
-func startSignalHandler(rawSignals chan os.Signal, exitSignals chan os.Signal) {
-	go func() {
-		for sig := range rawSignals {
-			if sig == syscall.SIGINT {
-				// 如果查询正在运行，只取消查询，不退出程序
-				if queryState.IsRunning() {
-					cli.HandleCtrlC(queryState)
-					continue
-				}
-			}
-			// 空闲状态或其他信号，发送退出信号
-			select {
-			case exitSignals <- sig:
-			default:
-			}
-		}
-	}()
-}
-
-func handleDirect(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal, query string) {
-	inputHistory = append(inputHistory, query)
-
-	// 自动加载聊天历史
-	if err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile(); err == nil {
-		pterm.Success.Println("[非交互模式] 自动加载聊天历史")
-	}
-
-	// 执行查询（非交互模式也需要键盘监听来检测 Ctrl+C）
-	executor := cli.NewQueryExecutor(r, queryState)
-	if err := executor.Execute(ctx, query, true, nil); err != nil {
-		log.Printf("执行查询失败: %v", err)
-	}
-
-	fmt.Println()
-	// 保存聊天历史
-	pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
-	if err := fkevent.GlobalHistoryRecorder.SaveToDefaultFile(); err != nil {
-		pterm.Error.Printfln("[非交互模式] 保存聊天历史失败: %v", err)
-	} else {
-		pterm.Success.Println("[非交互模式] 成功保存聊天历史到默认文件")
-	}
-
-	// 保存为 HTML 文件
-	htmlFilePath, err := cli.SaveChatHistoryToHTML()
-	if err != nil {
-		pterm.Error.Printfln("[非交互模式] %v", err)
-	} else {
-		pterm.Success.Printfln("[非交互模式] 成功保存聊天历史到网页文件: %s", htmlFilePath)
-	}
-	// 非阻塞发送退出信号
-	select {
-	case exitSignals <- syscall.SIGTERM:
-	default:
-	}
-}
-
-func handleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal) {
-	go func() {
-		// 创建查询执行器
-		executor := cli.NewQueryExecutor(r, queryState)
-
-		// 创建模式切换器
-		modeSwitcher := &interactiveModeSwitcher{ctx: ctx, executor: executor}
-
-		// 创建命令处理器
-		cmdHandler := cli.NewCommandHandler(modeSwitcher)
-
-		pasteKeyBind := prompt.KeyBind{
-			Key: prompt.ControlV,
-			Fn: func(buf *prompt.Buffer) {
-				text, _ := clipboard.ReadAll()
-				buf.InsertText(fmt.Sprintf("%s\n", text), false, true)
-			},
-		}
-
-		p := prompt.New(nil,
-			completer,
-			prompt.OptionTitle("FeiKong Teams"),
-			prompt.OptionPrefixTextColor(prompt.Cyan),
-			prompt.OptionSuggestionTextColor(prompt.White),
-			prompt.OptionSuggestionBGColor(prompt.Black),
-			prompt.OptionDescriptionTextColor(prompt.White),
-			prompt.OptionDescriptionBGColor(prompt.Black),
-			prompt.OptionHistory(inputHistory),
-			prompt.OptionAddKeyBind(pasteKeyBind),
-			prompt.OptionLivePrefix(changeLivePrefix),
-		)
-
-		for {
-			in := p.Input()
-			input := handleInput(in)
-			if inputBuffer.IsContinuing() {
-				continue
-			}
-
-			// 检查是否切换智能体
-			if agentName, query := cli.ExtractAgentMention(input); agentName != "" {
-				agentInfo := agents.GetAgentByName(agentName)
-				if agentInfo == nil {
-					pterm.Error.Printf("未找到智能体: %s\n", agentName)
-					fmt.Println()
-					continue
-				}
-
-				// 创建新的智能体
-				newAgent := agentInfo.Creator(ctx)
-				newRunner := runner.CreateAgentRunner(ctx, newAgent)
-				executor.SetRunner(newRunner)
-				currentAgent = agentName
-				pterm.Success.Printf("已切换到智能体: %s (%s)\n", agentName, agentInfo.Description)
-
-				// 如果有查询内容，则继续执行
-				if query != "" {
-					inputHistory = append(inputHistory, query)
-					if err := executor.Execute(ctx, query, true, nil); err != nil {
-						log.Printf("执行查询失败: %v", err)
-					}
-				}
-				fmt.Printf("\n\n")
-				continue
-			}
-
-			// 处理命令
-			result := cmdHandler.Handle(input)
-			switch result {
-			case cli.ResultExit:
-				exitSignals <- syscall.SIGTERM
-				return
-			case cli.ResultHandled:
-				continue
-			case cli.ResultNotFound:
-				// 不是命令，作为查询处理
-			}
-
-			inputHistory = append(inputHistory, input)
-
-			// 执行查询（交互模式需要键盘监听，因为 go-prompt 会拦截 SIGINT）
-			if err := executor.Execute(ctx, input, true, nil); err != nil {
-				log.Printf("执行查询失败: %v", err)
-			}
-			fmt.Printf("\n\n")
-		}
-	}()
-}
-
-// interactiveModeSwitcher 交互模式切换器
-type interactiveModeSwitcher struct {
-	ctx      context.Context
-	executor *cli.QueryExecutor
-}
-
-// SwitchMode 切换工作模式
-func (s *interactiveModeSwitcher) SwitchMode() (string, error) {
-	var newRunner *adk.Runner
-	switch currentMode {
-	case cli.ModeTeam:
-		newRunner = loopAgentMode(s.ctx)
-		currentMode = cli.ModeGroup
-	case cli.ModeGroup:
-		newRunner = supervisorMode(s.ctx)
-		currentMode = cli.ModeTeam
-	default:
-		return "", fmt.Errorf("未知的当前工作模式: %s", currentMode)
-	}
-	s.executor.SetRunner(newRunner)
-	currentAgent = "" // 切换模式时清空当前智能体
-	return currentMode.String(), nil
 }
 
 func main() {
@@ -398,14 +46,12 @@ func main() {
 	pflag.Parse()
 
 	if checkVersion {
-		info := version.Get()
-		fmt.Printf("fkteams: %s\n", info)
+		fmt.Printf("fkteams: %s\n", version.Get())
 		return
 	}
 
 	if generateEnv {
-		err := common.GenerateExampleEnv(".env.example")
-		if err != nil {
+		if err := common.GenerateExampleEnv(".env.example"); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("成功生成示例.env文件: .env.example")
@@ -413,8 +59,7 @@ func main() {
 	}
 
 	if generateConfig {
-		err := config.GenerateExample()
-		if err != nil {
+		if err := config.GenerateExample(); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("成功生成示例配置文件: config/config.toml")
@@ -422,16 +67,14 @@ func main() {
 	}
 
 	// 加载环境变量
-	err := godotenv.Load()
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
 		fmt.Println("加载 .env 文件失败，请确保已创建该文件")
 		fmt.Println("可以使用 --generate-env 或者 -g 参数生成示例文件")
 		return
 	}
 
 	if checkUpdates {
-		err := update.SelfUpdate("wsshow", "feikong-teams")
-		if err != nil {
+		if err := update.SelfUpdate("wsshow", "feikong-teams"); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -442,77 +85,76 @@ func main() {
 		return
 	}
 
-	var r *adk.Runner
 	ctx, done := context.WithCancel(context.Background())
+	currentMode := cli.ParseWorkMode(workMode)
 
-	currentMode = cli.ParseWorkMode(workMode)
-
+	var r *adk.Runner
 	switch currentMode {
 	case cli.ModeTeam:
-		r = supervisorMode(ctx)
+		r = createModeRunner(ctx, cli.ModeTeam)
 	case cli.ModeGroup:
-		r = loopAgentMode(ctx)
+		r = createModeRunner(ctx, cli.ModeGroup)
 	case cli.ModeCustom:
-		r = customSupervisorMode(ctx)
+		r = createModeRunner(ctx, cli.ModeCustom)
 	default:
 		pterm.Error.Println("暂不支持该模式：", workMode)
 		return
 	}
 
 	defer func() {
-		err = g.Cleaner.ExecuteAndClear()
-		if err != nil {
+		if err := g.Cleaner.ExecuteAndClear(); err != nil {
 			log.Fatalf("清理资源失败: %v", err)
 		}
 	}()
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-
-	// 退出信号 channel
-	exitSignals := make(chan os.Signal, 1)
-
-	// 启动信号处理 goroutine
-	startSignalHandler(signals, exitSignals)
-
+	// 加载输入历史
 	inputHistoryPath := "./history/input_history/fkteams_input_history"
-	inputHistory, err = common.LoadHistory(inputHistoryPath, 100)
+	inputHistory, err := common.LoadHistory(inputHistoryPath, 100)
 	if err != nil {
 		log.Fatalf("加载输入历史失败: %v", err)
 	}
 
+	// 创建交互会话
+	session := cli.NewSession(currentMode, inputHistory, createModeRunner)
+
+	// 信号处理
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	exitSignals := make(chan os.Signal, 1)
+	session.StartSignalHandler(signals, exitSignals)
+
 	if query != "" {
-		handleDirect(ctx, r, exitSignals, query)
+		session.HandleDirect(ctx, r, exitSignals, query)
 	} else {
-		handleInteractive(ctx, r, exitSignals)
+		session.HandleInteractive(ctx, r, exitSignals)
 	}
 
 	sig := <-exitSignals
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
-
 	done()
 
-	err = common.SaveHistory(inputHistoryPath, inputHistory)
-	if err != nil {
+	if err := common.SaveHistory(inputHistoryPath, session.InputHistory); err != nil {
 		log.Fatalf("保存输入历史失败: %v", err)
 	}
 
 	pterm.Success.Println("成功退出")
 }
 
-func supervisorMode(ctx context.Context) *adk.Runner {
-	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
-	return runner.CreateSupervisorRunner(ctx)
-}
-
-func loopAgentMode(ctx context.Context) *adk.Runner {
-	fmt.Printf("欢迎来到非空小队 - 多智能体讨论模式: %s\n", version.Get())
-	runner.PrintLoopAgentsInfo(ctx)
-	return runner.CreateLoopAgentRunner(ctx)
-}
-
-func customSupervisorMode(ctx context.Context) *adk.Runner {
-	fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
-	runner.PrintCustomAgentsInfo(ctx)
-	return runner.CreateCustomSupervisorRunner(ctx)
+// createModeRunner 根据工作模式创建对应的 Runner
+func createModeRunner(ctx context.Context, mode cli.WorkMode) *adk.Runner {
+	switch mode {
+	case cli.ModeTeam:
+		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
+		return runner.CreateSupervisorRunner(ctx)
+	case cli.ModeGroup:
+		fmt.Printf("欢迎来到非空小队 - 多智能体讨论模式: %s\n", version.Get())
+		runner.PrintLoopAgentsInfo(ctx)
+		return runner.CreateLoopAgentRunner(ctx)
+	case cli.ModeCustom:
+		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
+		runner.PrintCustomAgentsInfo(ctx)
+		return runner.CreateCustomSupervisorRunner(ctx)
+	default:
+		return nil
+	}
 }
