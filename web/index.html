@@ -11,7 +11,7 @@
 
 <body>
     <div class="app-container">
-        <button class="sidebar-toggle" id="sidebar-toggle" title="收起/展开">
+        <button class="sidebar-toggle" id="sidebar-toggle" data-tooltip="收起/展开侧边栏">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M15 18l-6-6 6-6" />
             </svg>
@@ -28,11 +28,35 @@
                 </div>
             </div>
 
-            <div class="sidebar-content">
+            <div class="sidebar-top-actions">
+                <button class="sidebar-action-btn new-session-btn" id="new-session-btn" data-tooltip="创建一个全新的对话会话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    <span>新建会话</span>
+                </button>
+                <button class="sidebar-action-btn history-manage-btn" id="history-manage-btn"
+                    data-tooltip="查看、搜索、导出和管理所有历史会话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    <span>管理历史</span>
+                </button>
+            </div>
+
+            <div class="sidebar-sessions" id="sidebar-sessions">
+                <div class="sidebar-session-list" id="sidebar-session-list">
+                    <div class="sidebar-session-empty">暂无会话记录</div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
                 <div class="mode-selector">
                     <label class="mode-label">运行模式</label>
                     <div class="mode-buttons">
-                        <button class="mode-btn active" data-mode="supervisor">
+                        <button class="mode-btn active" data-mode="supervisor" data-tooltip="由主管智能体协调分配任务">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                                 <circle cx="9" cy="7" r="4" />
@@ -41,14 +65,14 @@
                             </svg>
                             <span>Supervisor</span>
                         </button>
-                        <button class="mode-btn" data-mode="roundtable">
+                        <button class="mode-btn" data-mode="roundtable" data-tooltip="多个智能体围绕话题展开自由讨论">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <circle cx="12" cy="12" r="10" />
                                 <circle cx="12" cy="12" r="3" />
                             </svg>
                             <span>圆桌讨论</span>
                         </button>
-                        <button class="mode-btn" data-mode="custom">
+                        <button class="mode-btn" data-mode="custom" data-tooltip="自定义参与的智能体组合">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 20h9" />
                                 <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
@@ -56,7 +80,7 @@
                             </svg>
                             <span>自定义会议</span>
                         </button>
-                        <button class="mode-btn deep-mode-btn" data-mode="deep">
+                        <button class="mode-btn deep-mode-btn" data-mode="deep" data-tooltip="对问题进行深入分析和探索">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <circle cx="12" cy="12" r="3" />
                                 <path
@@ -67,45 +91,18 @@
                     </div>
                 </div>
 
-                <div class="session-section">
-                    <label class="session-label">会话 ID</label>
-                    <input type="text" id="session-id" class="session-input" placeholder="输入会话ID" value="default">
-                </div>
-
                 <div class="status-section">
                     <div class="status-indicator" id="status-indicator">
                         <span class="status-dot disconnected"></span>
                         <span class="status-text">未连接</span>
                     </div>
                 </div>
+
+
             </div>
 
-            <div class="sidebar-footer">
-                <button class="clear-btn" id="clear-chat">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                    <span>清空对话</span>
-                </button>
-                <button class="history-btn" id="history-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    <span>历史记录</span>
-                </button>
-                <button class="export-btn" id="export-html">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14,2 14,8 20,8" />
-                        <line x1="16" y1="13" x2="8" y2="13" />
-                        <line x1="16" y1="17" x2="8" y2="17" />
-                        <polyline points="10,9 9,9 8,9" />
-                    </svg>
-                    <span>导出HTML</span>
-                </button>
-            </div>
+            <!-- 隐藏的 session-id 输入框，保持功能兼容 -->
+            <input type="hidden" id="session-id" value="default">
         </aside>
 
         <main class="main-content" id="main-content">
@@ -190,6 +187,14 @@
                             <line x1="6" y1="6" x2="18" y2="18" />
                         </svg>
                     </button>
+                </div>
+                <div class="history-search-bar">
+                    <svg class="history-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input type="text" class="history-search-input" id="history-search-input" placeholder="搜索历史记录...">
                 </div>
                 <div class="history-modal-body">
                     <div class="history-list" id="history-list">

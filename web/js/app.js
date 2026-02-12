@@ -6,6 +6,8 @@ class FKTeamsChat {
     constructor() {
         this.ws = null;
         this.sessionId = 'default';
+        this._hasLoadedSession = false;
+        this._activeFilename = null;
         this.mode = 'supervisor';
         this.isProcessing = false;
         this.currentMessageElement = null;
@@ -33,7 +35,8 @@ class FKTeamsChat {
         this.bindElements();
         this.bindEvents();
         this.restoreSidebarState();
-        this.loadAgents(); // 加载智能体列表
+        this.initTooltips();
+        this.loadAgents();
         this.connect();
     }
 
@@ -45,9 +48,8 @@ class FKTeamsChat {
         this.cancelBtn = document.getElementById('cancel-btn');
         this.sessionIdInput = document.getElementById('session-id');
         this.statusIndicator = document.getElementById('status-indicator');
-        this.clearBtn = document.getElementById('clear-chat');
-        this.exportBtn = document.getElementById('export-html');
-        this.historyBtn = document.getElementById('history-btn');
+        this.historyManageBtn = document.getElementById('history-manage-btn');
+        this.historySearchInput = document.getElementById('history-search-input');
         this.historyModal = document.getElementById('history-modal');
         this.historyModalClose = document.getElementById('history-modal-close');
         this.historyList = document.getElementById('history-list');
@@ -70,6 +72,8 @@ class FKTeamsChat {
         this.quickNavBars = document.getElementById('quick-nav-bars');
         this.quickNavPanel = document.getElementById('quick-nav-panel');
         this.quickNavPanelList = document.getElementById('quick-nav-panel-list');
+        this.newSessionBtn = document.getElementById('new-session-btn');
+        this.sidebarSessionList = document.getElementById('sidebar-session-list');
     }
 
     bindEvents() {
@@ -85,17 +89,10 @@ class FKTeamsChat {
             if (newSessionId !== this.sessionId) {
                 this.sessionId = newSessionId;
                 this.checkAndLoadSessionHistory(newSessionId);
+                this.updateSidebarSessionActive();
             }
         });
-        this.sessionIdInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.sessionIdInput.blur(); // 失去焦点，触发 change 事件
-            }
-        });
-        this.clearBtn.addEventListener('click', () => this.clearChat());
-        this.exportBtn.addEventListener('click', () => this.exportToHTML());
-        this.historyBtn.addEventListener('click', () => this.showHistoryModal());
+        this.historyManageBtn.addEventListener('click', () => this.showHistoryModal());
         this.historyModalClose.addEventListener('click', () => this.hideHistoryModal());
         // 点击背景关闭弹窗
         this.historyModal.addEventListener('click', (e) => {
@@ -133,6 +130,10 @@ class FKTeamsChat {
         });
         if (this.sidebarToggle) {
             this.sidebarToggle.addEventListener('click', () => this.toggleSidebar());
+        }
+        // 新增会话按钮
+        if (this.newSessionBtn) {
+            this.newSessionBtn.addEventListener('click', () => this.createNewSession());
         }
         // 监听滚动事件
         if (this.mainContent) {
@@ -224,8 +225,8 @@ class FKTeamsChat {
         this.ws.onopen = () => {
             this.updateStatus('connected', '已连接');
             this.reconnectAttempts = 0;
-            // 连接成功后，检查并加载默认会话的历史记录
-            this.checkAndLoadSessionHistory(this.sessionId);
+            // 加载侧边栏历史会话列表
+            this.loadSidebarHistory();
         };
 
         this.ws.onclose = () => {
@@ -435,6 +436,131 @@ class FKTeamsChat {
                 notif.style.top = (20 + idx * 70) + 'px';
             });
         }, 300);
+    }
+
+    // ===== 手绘风格 Tooltip 系统 =====
+    initTooltips() {
+        this._tooltipEl = null;
+        this._tooltipTimer = null;
+
+        // 使用事件委托，监听整个文档
+        document.addEventListener('mouseover', (e) => {
+            const el = e.target;
+            if (!el || typeof el.closest !== 'function') return;
+            const target = el.closest('[data-tooltip]');
+            if (!target) return;
+            if (this._currentTooltipTarget === target) return;
+            this._currentTooltipTarget = target;
+            this._showTooltip(target);
+        });
+
+        document.addEventListener('mouseout', (e) => {
+            const el = e.target;
+            if (!el || typeof el.closest !== 'function') return;
+            const target = el.closest('[data-tooltip]');
+            if (!target) return;
+            // 检查是否移入了子元素
+            const rel = e.relatedTarget;
+            const related = (rel && typeof rel.closest === 'function') ? rel.closest('[data-tooltip]') : null;
+            if (related === target) return;
+            this._currentTooltipTarget = null;
+            this._hideTooltip();
+        });
+    }
+
+    _showTooltip(target) {
+        clearTimeout(this._tooltipTimer);
+
+        // 延迟显示，避免快速划过时闪烁
+        this._tooltipTimer = setTimeout(() => {
+            const text = target.getAttribute('data-tooltip');
+            if (!text) return;
+
+            // 创建或复用 tooltip 元素
+            if (!this._tooltipEl) {
+                this._tooltipEl = document.createElement('div');
+                this._tooltipEl.className = 'sketch-tooltip';
+                this._tooltipEl.innerHTML = '<span class="sketch-tooltip-text"></span><span class="sketch-tooltip-arrow"></span>';
+                document.body.appendChild(this._tooltipEl);
+            }
+
+            const tooltip = this._tooltipEl;
+            tooltip.querySelector('.sketch-tooltip-text').textContent = text;
+            tooltip.classList.remove('visible');
+
+            // 先显示获取尺寸
+            tooltip.style.display = 'block';
+
+            const rect = target.getBoundingClientRect();
+            const tipRect = tooltip.getBoundingClientRect();
+            const arrow = tooltip.querySelector('.sketch-tooltip-arrow');
+            arrow.className = 'sketch-tooltip-arrow';
+
+            // 根据元素位置决定 tooltip 方向
+            const placement = this._getTooltipPlacement(target, rect, tipRect);
+
+            let top, left;
+            switch (placement) {
+                case 'right':
+                    top = rect.top + rect.height / 2 - tipRect.height / 2;
+                    left = rect.right + 8;
+                    arrow.classList.add('arrow-left');
+                    break;
+                case 'left':
+                    top = rect.top + rect.height / 2 - tipRect.height / 2;
+                    left = rect.left - tipRect.width - 8;
+                    arrow.classList.add('arrow-right');
+                    break;
+                case 'top':
+                    top = rect.top - tipRect.height - 8;
+                    left = rect.left + rect.width / 2 - tipRect.width / 2;
+                    arrow.classList.add('arrow-bottom');
+                    break;
+                case 'bottom':
+                    top = rect.bottom + 8;
+                    left = rect.left + rect.width / 2 - tipRect.width / 2;
+                    arrow.classList.add('arrow-top');
+                    break;
+            }
+
+            // 防止超出视口
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            if (left < 4) left = 4;
+            if (left + tipRect.width > vw - 4) left = vw - tipRect.width - 4;
+            if (top < 4) top = 4;
+            if (top + tipRect.height > vh - 4) top = vh - tipRect.height - 4;
+
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+            tooltip.classList.add('visible');
+        }, 200);
+    }
+
+    _hideTooltip() {
+        clearTimeout(this._tooltipTimer);
+        if (this._tooltipEl) {
+            this._tooltipEl.classList.remove('visible');
+        }
+    }
+
+    _getTooltipPlacement(target, rect, tipRect) {
+        // 侧边栏按钮 → 右侧，模式按钮 → 下方，历史记录按钮 → 上方，其他 → 自动
+        if (target.closest('.sidebar-top-actions') || target.classList.contains('sidebar-toggle')) {
+            return 'right';
+        }
+        if (target.closest('.mode-buttons')) {
+            return 'bottom';
+        }
+        if (target.closest('.history-item-actions') || target.closest('.sidebar-session-actions')) {
+            return 'top';
+        }
+        // 自动选择：优先右侧，不够空间时尝试其他方向
+        const vw = window.innerWidth;
+        if (rect.right + tipRect.width + 12 < vw) return 'right';
+        if (rect.left - tipRect.width - 12 > 0) return 'left';
+        if (rect.top - tipRect.height - 12 > 0) return 'top';
+        return 'bottom';
     }
 }
 

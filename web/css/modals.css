@@ -91,6 +91,47 @@
     height: 18px;
 }
 
+/* History Search Bar */
+.history-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    position: relative;
+}
+
+.history-search-icon {
+    position: absolute;
+    left: 30px;
+    width: 16px;
+    height: 16px;
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+
+.history-search-input {
+    width: 100%;
+    padding: 9px 12px 9px 34px;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-primary);
+    font-size: 13px;
+    font-family: var(--font-hand);
+    color: var(--text-primary);
+    outline: none;
+    transition: all var(--transition);
+}
+
+.history-search-input:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(107, 127, 198, 0.1);
+}
+
+.history-search-input::placeholder {
+    color: var(--text-tertiary);
+    font-family: var(--font-hand);
+}
+
 .history-modal-body {
     flex: 1;
     overflow-y: auto;
@@ -195,6 +236,11 @@
 .history-action-btn.delete-btn:hover {
     color: var(--error);
     background: var(--error-light);
+}
+
+.history-action-btn.export-btn:hover {
+    color: var(--success);
+    background: var(--success-light);
 }
 
 .history-action-btn svg {

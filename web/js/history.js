@@ -2,10 +2,182 @@
  * history.js - 历史记录管理
  */
 
-// ===== 历史记录管理 =====
+// ===== 新增会话 =====
+
+FKTeamsChat.prototype.createNewSession = function () {
+    // 生成基于时间戳的会话ID
+    const now = new Date();
+    const ts = now.getFullYear().toString() +
+        (now.getMonth() + 1).toString().padStart(2, '0') +
+        now.getDate().toString().padStart(2, '0') + '_' +
+        now.getHours().toString().padStart(2, '0') +
+        now.getMinutes().toString().padStart(2, '0') +
+        now.getSeconds().toString().padStart(2, '0');
+    const newSessionId = `session_${ts}`;
+
+    this.sessionId = newSessionId;
+    this.sessionIdInput.value = newSessionId;
+    this._hasLoadedSession = true;
+    this.clearChatUI();
+    this.showNotification(`已创建新会话: ${newSessionId}`, 'success');
+
+    // 刷新侧边栏并高亮新会话
+    this.loadSidebarHistory();
+};
+
+// ===== 侧边栏历史会话 =====
+
+FKTeamsChat.prototype.loadSidebarHistory = async function () {
+    if (!this.sidebarSessionList) return;
+
+    try {
+        const response = await fetch('/api/fkteams/history/files');
+        if (!response.ok) {
+            this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">加载失败</div>';
+            return;
+        }
+
+        const result = await response.json();
+        if (result.code !== 0 || !result.data || !result.data.files) {
+            this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">暂无会话记录</div>';
+            return;
+        }
+
+        this.renderSidebarSessions(result.data.files);
+    } catch (error) {
+        console.error('Error loading sidebar history:', error);
+        this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">加载失败</div>';
+    }
+};
+
+FKTeamsChat.prototype.renderSidebarSessions = function (files) {
+    if (!this.sidebarSessionList) return;
+
+    if (!files || files.length === 0) {
+        this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">暂无会话记录</div>';
+        return;
+    }
+
+    // 按修改时间排序（最新的在前）
+    files.sort((a, b) => new Date(b.mod_time) - new Date(a.mod_time));
+
+    this.sidebarSessionList.innerHTML = '';
+
+    files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'sidebar-session-item';
+        item.setAttribute('data-filename', file.filename);
+
+        // 判断是否是当前活动会话（仅在用户明确加载过会话时高亮）
+        if (this._hasLoadedSession) {
+            const standardFilename = `fkteams_chat_history_${this.sessionId}`;
+            const directFilename = this._activeFilename || standardFilename;
+            if (file.filename === standardFilename || file.filename === directFilename) {
+                item.classList.add('active');
+            }
+        }
+
+        item.innerHTML = `
+            <svg class="session-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <div class="sidebar-session-info">
+                <div class="sidebar-session-name">${this.escapeHtml(file.display_name)}</div>
+                <div class="sidebar-session-time">${this.formatTime(file.mod_time)}</div>
+            </div>
+            <div class="sidebar-session-actions">
+                <button class="sidebar-session-action-btn rename-action" data-tooltip="重命名该会话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                </button>
+                <button class="sidebar-session-action-btn delete-action" data-tooltip="删除该会话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+
+        // 点击加载会话
+        item.addEventListener('click', (e) => {
+            // 如果点击的是操作按钮，不加载会话
+            if (e.target.closest('.sidebar-session-action-btn')) return;
+            this.loadSidebarSession(file.filename);
+        });
+
+        // 重命名按钮
+        item.querySelector('.rename-action').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.renameHistoryFile(file.filename);
+        });
+
+        // 删除按钮
+        item.querySelector('.delete-action').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteHistoryFile(file.filename);
+        });
+
+        this.sidebarSessionList.appendChild(item);
+    });
+};
+
+FKTeamsChat.prototype.loadSidebarSession = function (filename) {
+    // 从文件名提取 session ID
+    const prefix = 'fkteams_chat_history_';
+    let sessionId = filename;
+    if (filename.startsWith(prefix)) {
+        sessionId = filename.substring(prefix.length);
+    }
+
+    // 更新 session ID，同时记录当前活动的文件名
+    this.sessionId = sessionId;
+    this._activeFilename = filename;
+    this._hasLoadedSession = true;
+    this.sessionIdInput.value = sessionId;
+
+    // 加载历史文件
+    this.loadHistoryFile(filename);
+
+    // 更新侧边栏高亮
+    this.updateSidebarSessionActive();
+};
+
+FKTeamsChat.prototype.updateSidebarSessionActive = function () {
+    if (!this.sidebarSessionList) return;
+    if (!this._hasLoadedSession) return;
+
+    // 尝试两种匹配方式：带前缀的标准文件名 和 直接文件名
+    const standardFilename = `fkteams_chat_history_${this.sessionId}`;
+    const directFilename = this._activeFilename || standardFilename;
+
+    const items = this.sidebarSessionList.querySelectorAll('.sidebar-session-item');
+    items.forEach(item => {
+        const itemFilename = item.getAttribute('data-filename');
+        if (itemFilename === standardFilename || itemFilename === directFilename) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+};
+
+// ===== 历史记录弹窗管理 =====
 
 FKTeamsChat.prototype.showHistoryModal = async function () {
     this.historyModal.style.display = 'flex';
+    // 清空搜索框
+    if (this.historySearchInput) {
+        this.historySearchInput.value = '';
+        // 绑定搜索事件（防止重复绑定）
+        if (!this._historySearchBound) {
+            this._historySearchBound = true;
+            this.historySearchInput.addEventListener('input', () => {
+                this.filterHistoryList();
+            });
+        }
+    }
     await this.loadHistoryFiles();
 };
 
@@ -26,7 +198,9 @@ FKTeamsChat.prototype.loadHistoryFiles = async function () {
         if (result.code !== 0) {
             throw new Error(result.message || '加载失败');
         }
-        this.renderHistoryList(result.data.files);
+        // 缓存文件列表用于搜索过滤
+        this._historyFiles = result.data.files || [];
+        this.renderHistoryList(this._historyFiles);
     } catch (error) {
         console.error('Error loading history files:', error);
         this.historyList.innerHTML = '<div class="history-error">加载历史文件失败</div>';
@@ -52,17 +226,24 @@ FKTeamsChat.prototype.renderHistoryList = function (files) {
                 </div>
             </div>
             <div class="history-item-actions">
-                <button class="history-action-btn load-btn" title="加载">
+                <button class="history-action-btn load-btn" data-tooltip="加载并切换到该会话">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                        <path d="M5 3l14 9-14 9V3z"/>
                     </svg>
                 </button>
-                <button class="history-action-btn rename-btn" title="重命名">
+                <button class="history-action-btn export-btn" data-tooltip="导出为 HTML 文件">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
+                <button class="history-action-btn rename-btn" data-tooltip="重命名该文件">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                     </svg>
                 </button>
-                <button class="history-action-btn delete-btn" title="删除">
+                <button class="history-action-btn delete-btn" data-tooltip="删除该文件">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -83,6 +264,14 @@ FKTeamsChat.prototype.renderHistoryList = function (files) {
         });
     });
 
+    this.historyList.querySelectorAll('.export-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const item = e.target.closest('.history-item');
+            const filename = item.dataset.filename;
+            this.exportHistoryFile(filename);
+        });
+    });
+
     this.historyList.querySelectorAll('.rename-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const item = e.target.closest('.history-item');
@@ -98,6 +287,189 @@ FKTeamsChat.prototype.renderHistoryList = function (files) {
             this.deleteHistoryFile(filename);
         });
     });
+};
+
+// ===== 历史记录搜索过滤 =====
+FKTeamsChat.prototype.filterHistoryList = function () {
+    const query = (this.historySearchInput?.value || '').trim().toLowerCase();
+    if (!this._historyFiles) return;
+
+    if (!query) {
+        this.renderHistoryList(this._historyFiles);
+        return;
+    }
+
+    const filtered = this._historyFiles.filter(file => {
+        const name = (file.display_name || file.filename || '').toLowerCase();
+        return name.includes(query);
+    });
+
+    this.renderHistoryList(filtered);
+};
+
+// ===== 导出单个历史会话 =====
+FKTeamsChat.prototype.exportHistoryFile = async function (filename) {
+    try {
+        // 从文件名提取会话ID
+        let sessionId = filename;
+        if (sessionId.startsWith('fkteams_chat_history_')) {
+            sessionId = sessionId.substring('fkteams_chat_history_'.length);
+        }
+
+        const response = await fetch(`/api/fkteams/history/files/${encodeURIComponent(filename)}`);
+        if (!response.ok) {
+            throw new Error('无法获取历史文件');
+        }
+
+        const result = await response.json();
+        if (result.code !== 0) {
+            throw new Error(result.message || '获取历史文件失败');
+        }
+
+        const messages = result.data?.messages || [];
+        this.generateExportHTML(sessionId, messages, filename);
+    } catch (error) {
+        console.error('Error exporting history file:', error);
+        this.showNotification('导出失败: ' + error.message, 'error');
+    }
+};
+
+FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, filename) {
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+    const exportFilename = `fkteams_chat_${sessionId}_${timestamp}.html`;
+
+    // 将 AgentMessage 数组渲染为 HTML
+    let messagesHTML = '';
+    if (Array.isArray(agentMessages)) {
+        agentMessages.forEach(msg => {
+            const agentName = msg.agent_name || 'unknown';
+            const isUser = agentName === 'user' || agentName === 'User';
+            const startTime = msg.start_time ? new Date(msg.start_time).toLocaleString('zh-CN') : '';
+
+            // 提取文本内容
+            let textContent = '';
+            let toolCalls = [];
+            if (msg.events && Array.isArray(msg.events)) {
+                msg.events.forEach(event => {
+                    if (event.type === 'text' && event.content) {
+                        textContent += event.content;
+                    } else if (event.type === 'tool_call' && event.tool_call) {
+                        toolCalls.push(event.tool_call);
+                    }
+                });
+            }
+
+            if (!textContent && toolCalls.length === 0) return;
+
+            let toolCallsHTML = '';
+            toolCalls.forEach(tc => {
+                toolCallsHTML += `
+                    <div class="tool-call">
+                        <strong>🔧 ${this.escapeHtml(tc.name || tc.tool_name || 'tool')}</strong>
+                        ${tc.result ? `<div class="tool-result">${this.escapeHtml(typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)).substring(0, 500)}</div>` : ''}
+                    </div>
+                `;
+            });
+
+            messagesHTML += `
+                <div class="message ${isUser ? 'user' : ''}">
+                    <div class="message-header">
+                        <span class="message-name">${this.escapeHtml(agentName)}</span>
+                        ${msg.run_path ? `<span class="agent-tag">${this.escapeHtml(msg.run_path)}</span>` : ''}
+                        ${startTime ? `<span class="message-time">${startTime}</span>` : ''}
+                    </div>
+                    <div class="message-body">${this.escapeHtml(textContent).replace(/\n/g, '<br>')}</div>
+                    ${toolCallsHTML}
+                </div>
+            `;
+        });
+    }
+
+    const htmlTemplate = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>非空小队对话记录 - ${this.escapeHtml(sessionId)}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fafafa;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e5e5e5;
+        }
+        .header h1 { color: #5c6bc0; margin-bottom: 10px; }
+        .header .info { color: #666; font-size: 14px; }
+        .message { margin-bottom: 20px; }
+        .message-header {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+        }
+        .message-name { font-weight: 600; color: #333; }
+        .agent-tag {
+            background: #e8eaf6; color: #5c6bc0;
+            padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 500;
+        }
+        .message-time { color: #999; font-size: 11px; }
+        .message-body {
+            padding: 12px 16px; border-radius: 8px;
+            background: #fff; border: 1px solid #e5e5e5; word-break: break-word;
+        }
+        .message.user .message-body {
+            background: #5c6bc0; color: white; margin-left: 60px;
+        }
+        .tool-call {
+            margin: 8px 0; padding: 10px 12px; border-radius: 6px;
+            background: #e3f2fd; border: 1px solid #42a5f5; font-size: 13px;
+        }
+        .tool-result {
+            margin-top: 6px; padding: 6px 8px; background: #f5f5f5;
+            border-radius: 4px; font-size: 12px; color: #555;
+            white-space: pre-wrap; word-break: break-all;
+        }
+        pre {
+            background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto;
+        }
+        code {
+            background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px;
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>非空小队对话记录</h1>
+        <div class="info">
+            <div>会话ID: ${this.escapeHtml(sessionId)}</div>
+            <div>导出时间: ${new Date().toLocaleString('zh-CN')}</div>
+        </div>
+    </div>
+    <div class="messages">
+        ${messagesHTML}
+    </div>
+</body>
+</html>`;
+
+    // 创建并下载文件
+    const blob = new Blob([htmlTemplate], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    this.showNotification(`对话记录已导出为 ${exportFilename}`, 'success');
 };
 
 FKTeamsChat.prototype.loadHistoryFile = function (filename) {
@@ -182,6 +554,12 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
     if (event.session_id) {
         this.sessionId = event.session_id;
         this.sessionIdInput.value = event.session_id;
+        this._hasLoadedSession = true;
+        // 记录活动文件名（如果事件中包含）
+        if (event.filename) {
+            this._activeFilename = event.filename;
+        }
+        this.loadSidebarHistory();
     }
 
     // 渲染历史消息
@@ -457,7 +835,22 @@ FKTeamsChat.prototype.confirmDelete = async function () {
         }
 
         this.showNotification('删除成功', 'success');
-        await this.loadHistoryFiles(); // 重新加载列表
+
+        // 如果删除的是当前活动会话，切回欢迎页面
+        const standardFilename = `fkteams_chat_history_${this.sessionId}`;
+        if (this._hasLoadedSession && (filename === standardFilename || filename === this._activeFilename)) {
+            this.sessionId = 'default';
+            this.sessionIdInput.value = 'default';
+            this._hasLoadedSession = false;
+            this._activeFilename = null;
+            this.clearChatUI();
+        }
+
+        // 刷新历史弹窗列表（如果弹窗已打开）
+        if (this.historyModal && this.historyModal.style.display !== 'none') {
+            await this.loadHistoryFiles();
+        }
+        await this.loadSidebarHistory();
     } catch (error) {
         console.error('Error deleting file:', error);
         this.showNotification(error.message || '删除失败', 'error');
@@ -516,7 +909,8 @@ FKTeamsChat.prototype.confirmRename = async function () {
 
         this.showNotification('重命名成功', 'success');
         this.hideRenameModal();
-        await this.loadHistoryFiles(); // 重新加载列表
+        await this.loadHistoryFiles();
+        await this.loadSidebarHistory();
     } catch (error) {
         console.error('Error renaming file:', error);
         this.showNotification(error.message || '重命名失败', 'error');

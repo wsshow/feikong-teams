@@ -127,6 +127,8 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
             this.updateSendButtonState();
             this.currentMessageElement = null;
             this.hasToolCallAfterMessage = false;
+            // 刷新侧边栏历史列表
+            this.loadSidebarHistory();
             break;
         case 'cancelled':
             this.handleCancelled(event);
@@ -451,6 +453,8 @@ FKTeamsChat.prototype.clearChat = function () {
     }
 
     this.clearChatUI();
+    // 刷新侧边栏历史
+    this.loadSidebarHistory();
 };
 
 FKTeamsChat.prototype.clearChatUI = function () {
