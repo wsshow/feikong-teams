@@ -22,7 +22,7 @@ func Init() *gin.Engine {
 	r.StaticFS("/static", http.FS(webFS))
 
 	// 首页路由 - 使用嵌入的 index.html
-	r.GET("/", func(c *gin.Context) {
+	serveIndex := func(c *gin.Context) {
 		data, err := webFS.Open("index.html")
 		if err != nil {
 			c.String(http.StatusNotFound, "Page not found")
@@ -30,17 +30,9 @@ func Init() *gin.Engine {
 		}
 		defer data.Close()
 		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
-	})
-
-	r.GET("/chat", func(c *gin.Context) {
-		data, err := webFS.Open("index.html")
-		if err != nil {
-			c.String(http.StatusNotFound, "Page not found")
-			return
-		}
-		defer data.Close()
-		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
-	})
+	}
+	r.GET("/", serveIndex)
+	r.GET("/chat", serveIndex)
 
 	// WebSocket 路由
 	r.GET("/ws", handler.WebSocketHandler())

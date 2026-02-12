@@ -1,30 +1,24 @@
 package handler
 
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Response 统一 API 响应结构
 type Response struct {
 	Code int    `json:"code"`
 	Desc string `json:"message"`
 	Data any    `json:"data"`
 }
 
-var resp Response
-
-func (r Response) Success(data any) Response {
-	return Response{
-		Code: 0,
-		Desc: "success",
-		Data: data,
-	}
+// OK 返回成功响应
+func OK(c *gin.Context, data any) {
+	c.JSON(http.StatusOK, Response{Code: 0, Desc: "success", Data: data})
 }
 
-func (r Response) Failure() Response {
-	return Response{
-		Code: 1,
-		Desc: "failure",
-		Data: nil,
-	}
-}
-
-func (r Response) WithDesc(desc string) Response {
-	r.Desc = desc
-	return r
+// Fail 返回失败响应
+func Fail(c *gin.Context, httpCode int, desc string) {
+	c.JSON(httpCode, Response{Code: 1, Desc: desc})
 }
