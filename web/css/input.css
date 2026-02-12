@@ -1,0 +1,150 @@
+/* input.css - 输入容器、输入框、提示、发送按钮、取消按钮 */
+
+/* ===== Input ===== */
+.input-container {
+    padding: 16px 0 24px;
+    background: var(--bg-primary);
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+}
+
+.input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-sketch);
+    border-radius: 16px;
+    transition: all var(--transition);
+    box-shadow: var(--shadow-sketch);
+    position: relative;
+}
+
+.input-wrapper:focus-within {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(107, 127, 198, 0.12), var(--shadow-sketch);
+}
+
+.input-hints {
+    display: flex;
+    gap: 8px;
+    position: absolute;
+    top: -28px;
+    left: 18px;
+}
+
+.input-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    background: var(--bg-secondary);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px dashed var(--border-color);
+}
+
+.input-hint code {
+    color: var(--accent-primary);
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 11px;
+}
+
+.message-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+    resize: none;
+    max-height: 120px;
+    line-height: 1.6;
+    padding: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.message-input::-webkit-scrollbar {
+    display: none;
+}
+
+.message-input:focus {
+    outline: none;
+}
+
+.message-input::placeholder {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.send-btn {
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-primary);
+    border: 2px solid var(--accent-primary);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all var(--transition);
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    align-self: flex-end;
+    margin-bottom: 2px;
+    box-shadow: var(--shadow-sketch);
+}
+
+.send-btn:hover:not(:disabled) {
+    background: var(--accent-secondary);
+    transform: translateY(-1px);
+    box-shadow: 3px 4px 0px rgba(107, 127, 198, 0.25);
+}
+
+.send-btn:disabled {
+    background: var(--bg-hover);
+    border-color: var(--border-color);
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.send-btn.processing {
+    background: var(--warning);
+    border-color: var(--warning);
+    color: white;
+    cursor: not-allowed;
+}
+
+.cancel-btn {
+    padding: 8px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--error);
+    border: 2px solid var(--error);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all var(--transition);
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    align-self: flex-end;
+    margin-bottom: 2px;
+    box-shadow: var(--shadow-sketch);
+}
+
+.cancel-btn:hover {
+    background: #b55858;
+    transform: translateY(-1px);
+}
+
+.cancel-btn svg {
+    width: 16px;
+    height: 16px;
+}

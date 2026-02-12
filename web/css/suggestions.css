@@ -1,0 +1,191 @@
+/* suggestions.css - Agent建议、文件建议、深度模式指示器、响应式布局 */
+
+/* Agent Suggestions */
+.agent-suggestions {
+    position: fixed;
+    display: none;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-sketch);
+    border-radius: 12px;
+    box-shadow: 3px 4px 0px rgba(60, 50, 30, 0.12);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.agent-suggestion-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all var(--transition);
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.agent-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.agent-suggestion-item:hover,
+.agent-suggestion-item.selected {
+    background: var(--accent-light);
+}
+
+.agent-suggestion-name {
+    font-family: var(--font-hand);
+    font-weight: 600;
+    color: var(--accent-primary);
+    margin-bottom: 4px;
+    font-size: 16px;
+}
+
+.agent-suggestion-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* File Suggestions */
+.file-suggestions {
+    position: fixed;
+    display: none;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-sketch);
+    border-radius: 12px;
+    box-shadow: 3px 4px 0px rgba(60, 50, 30, 0.12);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.file-suggestion-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: all var(--transition);
+    border-bottom: 1px dashed var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.file-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.file-suggestion-item:hover,
+.file-suggestion-item.selected {
+    background: var(--info-light);
+}
+
+.file-suggestion-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.file-suggestion-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.file-suggestion-parent .file-suggestion-icon {
+    color: var(--accent-primary);
+}
+
+.file-suggestion-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-suggestion-name {
+    font-weight: 500;
+    margin-bottom: 2px;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-suggestion-path {
+    font-size: 11px;
+    color: var(--info);
+    font-family: 'SF Mono', Monaco, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-suggestion-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+/* Deep Mode Indicator */
+.deep-mode-indicator {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: linear-gradient(135deg, var(--accent-light), rgba(107, 127, 198, 0.12));
+    border: 2px solid var(--accent-primary);
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--accent-primary);
+    font-weight: 500;
+    animation: deepPulse 3s infinite;
+}
+
+.deep-mode-indicator.active {
+    display: flex;
+}
+
+.deep-mode-indicator svg {
+    width: 14px;
+    height: 14px;
+}
+
+@keyframes deepPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(107, 127, 198, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 0 6px rgba(107, 127, 198, 0);
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 99;
+        transform: translateX(-100%);
+    }
+
+    .sidebar:not(.collapsed) {
+        transform: translateX(0);
+    }
+
+    .sidebar-toggle {
+        left: 0;
+    }
+
+    .chat-container {
+        padding: 0 16px;
+    }
+
+    .input-container {
+        padding: 12px 0 16px;
+    }
+
+    .welcome-tips {
+        flex-direction: column;
+        align-items: center;
+    }
+}
