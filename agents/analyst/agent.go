@@ -3,6 +3,7 @@ package analyst
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/tools/doc"
 	"fkteams/tools/excel"
 	"fkteams/tools/file"
 	"fkteams/tools/script/uv"
@@ -66,17 +67,23 @@ func NewAgent() adk.Agent {
 		log.Fatal("创建uv工具失败:", err)
 	}
 
+	// 初始化文档工具
+	docTools, err := doc.GetTools()
+	if err != nil {
+		log.Fatal("创建文档工具失败:", err)
+	}
+
 	var toolList []tool.BaseTool
 	toolList = append(toolList, todoTools...)
 	toolList = append(toolList, excelTools...)
 	toolList = append(toolList, fileTools...)
 	toolList = append(toolList, uvTools...)
+	toolList = append(toolList, docTools...)
 
 	systemMessages, err := AnalystPromptTemplate.Format(ctx, map[string]any{
-		"current_time": time.Now().Format("2006-01-02 15:04:05"),
-		"os":           runtime.GOOS,
-		"data_dir":     analystSafeDir,
-		"script_dir":   analystSafeDir,
+		"current_time":  time.Now().Format("2006-01-02 15:04:05"),
+		"os":            runtime.GOOS,
+		"workspace_dir": analystSafeDir,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -85,7 +92,7 @@ func NewAgent() adk.Agent {
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小析",
-		Description:   "数据分析专家，擅长使用 Excel 和 Python 脚本从复杂数据中提取有价值的信息。",
+		Description:   "数据分析专家，擅长使用 Excel、Python 脚本和文档处理工具，从复杂数据和文档中提取有价值的信息并提供专业洞察。",
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
