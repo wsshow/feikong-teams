@@ -42,6 +42,10 @@ func printEvent() func(Event) {
 					formatted = formatCommandResult(event.Content)
 				case "file_read", "file_edit", "file_list", "file_create", "file_delete", "dir_create", "dir_delete", "file_search":
 					formatted = formatFileOpResult(event.Content)
+				case "file_patch":
+					formatted = formatFilePatchResult(event.Content)
+				case "file_diff":
+					formatted = formatFileDiffResult(event.Content)
 				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)
 				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
@@ -577,4 +581,107 @@ func formatTime(timeStr string) string {
 		return timeStr
 	}
 	return t.Format("2006-01-02 15:04:05")
+}
+
+// formatFilePatchResult 格式化 file_patch 工具结果
+func formatFilePatchResult(content string) string {
+	var result struct {
+		Message string `json:"message"`
+		Results []struct {
+			Path    string `json:"path"`
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		} `json:"results"`
+		TotalFiles   int    `json:"total_files"`
+		Succeeded    int    `json:"succeeded"`
+		Failed       int    `json:"failed"`
+		ErrorMessage string `json:"error_message"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return ""
+	}
+
+	var output strings.Builder
+
+	// 显示错误信息
+	if result.ErrorMessage != "" {
+		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		return output.String()
+	}
+
+	// 显示总体状态
+	if result.Failed == 0 {
+		output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
+	} else {
+		output.WriteString(fmt.Sprintf("  \033[33m⚠ %s\033[0m\n", result.Message))
+	}
+
+	// 显示每个文件的结果
+	for _, r := range result.Results {
+		if r.Success {
+			output.WriteString(fmt.Sprintf("  │ \033[32m✓\033[0m %s\n", r.Path))
+		} else {
+			output.WriteString(fmt.Sprintf("  │ \033[31m✗\033[0m %s: %s\n", r.Path, r.Error))
+		}
+	}
+
+	return output.String()
+}
+
+// formatFileDiffResult 格式化 file_diff 工具结果
+func formatFileDiffResult(content string) string {
+	var result struct {
+		Diff         string `json:"diff"`
+		Insertions   int    `json:"insertions"`
+		Deletions    int    `json:"deletions"`
+		ErrorMessage string `json:"error_message"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return ""
+	}
+
+	var output strings.Builder
+
+	// 显示错误信息
+	if result.ErrorMessage != "" {
+		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		return output.String()
+	}
+
+	// 无差异
+	if result.Diff == "" {
+		output.WriteString("  \033[32m✓ 文件无变更\033[0m\n")
+		return output.String()
+	}
+
+	// 显示统计
+	var statParts []string
+	if result.Insertions > 0 {
+		statParts = append(statParts, fmt.Sprintf("\033[32m+%d\033[0m", result.Insertions))
+	}
+	if result.Deletions > 0 {
+		statParts = append(statParts, fmt.Sprintf("\033[31m-%d\033[0m", result.Deletions))
+	}
+	output.WriteString(fmt.Sprintf("  变更统计: %s\n\n", strings.Join(statParts, " ")))
+
+	// 语法高亮显示 diff
+	lines := strings.Split(result.Diff, "\n")
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++"):
+			output.WriteString(fmt.Sprintf("  \033[1m%s\033[0m\n", line))
+		case strings.HasPrefix(line, "@@"):
+			output.WriteString(fmt.Sprintf("  \033[36m%s\033[0m\n", line))
+		case strings.HasPrefix(line, "+"):
+			output.WriteString(fmt.Sprintf("  \033[32m%s\033[0m\n", line))
+		case strings.HasPrefix(line, "-"):
+			output.WriteString(fmt.Sprintf("  \033[31m%s\033[0m\n", line))
+		case line != "":
+			output.WriteString(fmt.Sprintf("  %s\n", line))
+		}
+	}
+
+	return output.String()
 }
