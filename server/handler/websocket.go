@@ -122,10 +122,10 @@ func handleClearHistory(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	}
 
 	// 特殊标记：只清空内存中的历史记录，不删除文件
-	// 用于新建会话时清空 GlobalHistoryRecorder 中的残留数据
+	// 用于新建会话时清空所有会话的残留数据
 	if sessionID == "__memory_only__" {
-		fkevent.GlobalHistoryRecorder.Clear()
-		log.Println("cleared in-memory history recorder (new session)")
+		fkevent.GlobalSessionManager.ClearAll()
+		log.Println("[SessionManager] cleared all in-memory session histories (new session)")
 		_ = writeJSON(map[string]interface{}{"type": "history_cleared", "message": "内存历史已清除"})
 		return
 	}
@@ -136,9 +136,9 @@ func handleClearHistory(wsMsg WSMessage, writeJSON func(interface{}) error) {
 		log.Printf("failed to delete history file: %v", err)
 		_ = writeJSON(map[string]interface{}{"type": "error", "error": "清除历史失败"})
 	} else {
-		// 同时清空内存中的历史记录
-		fkevent.GlobalHistoryRecorder.Clear()
-		log.Printf("cleared session history: session=%s", sessionID)
+		// 从 SessionManager 中移除该会话的 recorder
+		fkevent.GlobalSessionManager.Remove(sessionID)
+		log.Printf("[SessionManager] cleared session history: session=%s", sessionID)
 		_ = writeJSON(map[string]interface{}{"type": "history_cleared", "message": "历史记录已清除"})
 	}
 }
@@ -156,27 +156,23 @@ func handleLoadHistory(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	}
 
 	filePath := fmt.Sprintf("%s%s", historyDir, filename)
+	sessionID := extractSessionID(filename)
 
-	// 使用临时 Recorder 读取文件，避免污染全局 GlobalHistoryRecorder 的当前会话数据
-	tempRecorder := fkevent.NewHistoryRecorder()
-	if err := tempRecorder.LoadFromFile(filePath); err != nil {
+	// 使用 SessionManager 加载历史到对应的会话 recorder
+	// LoadForSession 会创建新的 recorder 并替换 map 中已有的
+	recorder, err := fkevent.GlobalSessionManager.LoadForSession(sessionID, filePath)
+	if err != nil {
 		log.Printf("failed to load history file: %v", err)
 		_ = writeJSON(map[string]interface{}{"type": "error", "error": fmt.Sprintf("加载历史失败: %v", err)})
 		return
 	}
 
-	// 同时更新全局 Recorder，因为用户切换到了这个会话，后续发消息需要这个上下文
-	if err := fkevent.GlobalHistoryRecorder.LoadFromFile(filePath); err != nil {
-		log.Printf("warning: failed to update global recorder: %v", err)
-	}
-
-	sessionID := extractSessionID(filename)
-	log.Printf("loaded history file: %s (session=%s)", filename, sessionID)
+	log.Printf("[SessionManager] loaded history file: %s (session=%s)", filename, sessionID)
 	_ = writeJSON(map[string]interface{}{
 		"type":       "history_loaded",
 		"message":    "历史记录已加载",
 		"filename":   filename,
 		"session_id": sessionID,
-		"messages":   tempRecorder.GetMessages(),
+		"messages":   recorder.GetMessages(),
 	})
 }

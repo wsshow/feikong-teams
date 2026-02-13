@@ -123,10 +123,12 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	default:
 	}
 
+	// 获取该会话的 HistoryRecorder（自动从文件加载或创建新的）
+	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+
 	// 构建输入消息（含历史）
-	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
-	inputMessages := buildInputMessages(historyFilePath, wsMsg.Message)
-	fkevent.GlobalHistoryRecorder.RecordUserInput(wsMsg.Message)
+	inputMessages := buildInputMessages(recorder, wsMsg.Message)
+	recorder.RecordUserInput(wsMsg.Message)
 
 	// 获取 runner
 	var r *adk.Runner
@@ -150,9 +152,9 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		}
 	}()
 
-	// 绑定事件回调
+	// 绑定事件回调（使用会话级别的 recorder）
 	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
-		fkevent.GlobalHistoryRecorder.RecordEvent(event)
+		recorder.RecordEvent(event)
 		return writeJSON(convertEventForWS(event))
 	})
 
@@ -162,12 +164,13 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	})
 
 	// 执行 agent runner
+	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
 	iter := r.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
 	for {
 		select {
 		case <-taskCtx.Done():
 			log.Printf("task cancelled: session=%s, saving history...", sessionID)
-			saveHistory(historyFilePath, sessionID)
+			saveHistory(recorder, historyFilePath, sessionID)
 			return
 		default:
 		}
@@ -187,7 +190,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	}
 
 	// 保存聊天历史
-	saveHistory(historyFilePath, sessionID)
+	saveHistory(recorder, historyFilePath, sessionID)
 
 	_ = writeJSON(map[string]interface{}{
 		"type":    "processing_end",
@@ -196,19 +199,11 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 }
 
 // buildInputMessages 构建输入消息（包含历史记录）
-func buildInputMessages(historyFilePath, userInput string) []adk.Message {
+// recorder 是会话级别的 HistoryRecorder，由 GlobalSessionManager 管理，已自动加载历史
+func buildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []adk.Message {
 	var inputMessages []adk.Message
 
-	if err := fkevent.GlobalHistoryRecorder.LoadFromFile(historyFilePath); err == nil {
-		log.Printf("auto-loaded chat history from: %s", historyFilePath)
-	} else {
-		// 文件不存在（新会话）或加载失败时，清空内存中的历史记录
-		// 防止上一个会话的残留数据污染新会话
-		fkevent.GlobalHistoryRecorder.Clear()
-		log.Printf("cleared history recorder for new/missing session: %s", historyFilePath)
-	}
-
-	agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
+	agentMessages := recorder.GetMessages()
 	if len(agentMessages) > 0 {
 		var historyMessage strings.Builder
 		for _, msg := range agentMessages {
@@ -224,8 +219,8 @@ func buildInputMessages(historyFilePath, userInput string) []adk.Message {
 }
 
 // saveHistory 保存聊天历史到文件
-func saveHistory(filePath, sessionID string) {
-	if err := fkevent.GlobalHistoryRecorder.SaveToFile(filePath); err != nil {
+func saveHistory(recorder *fkevent.HistoryRecorder, filePath, sessionID string) {
+	if err := recorder.SaveToFile(filePath); err != nil {
 		log.Printf("failed to save chat history: session=%s, err=%v", sessionID, err)
 	} else {
 		log.Printf("chat history saved: %s", filePath)
