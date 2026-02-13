@@ -5,7 +5,7 @@
 // 加载智能体列表
 FKTeamsChat.prototype.loadAgents = async function () {
     try {
-        const response = await fetch('/api/fkteams/agents');
+        const response = await this.fetchWithAuth('/api/fkteams/agents');
         const result = await response.json();
         if (result.code === 0 && result.data) {
             this.agents = result.data;

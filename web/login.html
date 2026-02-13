@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>非空小队 - 登录</title>
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: auto;
+        }
+
+        .login-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-sketch);
+            border-radius: 16px;
+            box-shadow: var(--shadow-sketch);
+            padding: 48px 40px 40px;
+            width: 90%;
+            max-width: 380px;
+            animation: sketchSlideUp 0.4s ease;
+        }
+
+        @keyframes sketchSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(24px) rotate(-0.5deg);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) rotate(0);
+            }
+        }
+
+        .login-logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .login-logo svg {
+            width: 48px;
+            height: 48px;
+            stroke: var(--accent-primary);
+            margin-bottom: 12px;
+        }
+
+        .login-logo h1 {
+            font-family: var(--font-hand);
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+
+        .login-logo p {
+            font-size: 13px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+
+        .login-field {
+            margin-bottom: 20px;
+        }
+
+        .login-field label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .login-field input {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 14px;
+            font-family: var(--font-body);
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            border: 1.5px solid var(--border-color);
+            border-radius: var(--radius);
+            outline: none;
+            transition: border-color var(--transition), box-shadow var(--transition);
+        }
+
+        .login-field input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(107, 127, 198, 0.12);
+        }
+
+        .login-field input::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 11px 0;
+            font-size: 15px;
+            font-weight: 500;
+            font-family: var(--font-body);
+            color: #fff;
+            background: var(--accent-primary);
+            border: 1.5px solid var(--accent-primary);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background var(--transition), transform 0.1s;
+            margin-top: 8px;
+        }
+
+        .login-btn:hover {
+            background: var(--accent-secondary);
+            border-color: var(--accent-secondary);
+        }
+
+        .login-btn:active {
+            transform: scale(0.98);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .login-error {
+            display: none;
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--error);
+            background: var(--error-light);
+            border: 1px solid var(--error);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .login-error.visible {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 36px 24px 32px;
+                border-radius: 12px;
+            }
+
+            .login-logo h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <div class="login-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+            </svg>
+            <h1>非空小队</h1>
+            <p>多智能体协作系统</p>
+        </div>
+
+        <div class="login-error" id="login-error"></div>
+
+        <form id="login-form" autocomplete="on">
+            <div class="login-field">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" placeholder="请输入用户名" autocomplete="username" required
+                    autofocus>
+            </div>
+            <div class="login-field">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="current-password"
+                    required>
+            </div>
+            <button type="submit" class="login-btn" id="login-btn">登 录</button>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('login-form');
+        const errorEl = document.getElementById('login-error');
+        const btn = document.getElementById('login-btn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.classList.remove('visible');
+            btn.disabled = true;
+            btn.textContent = '登录中...';
+
+            try {
+                const resp = await fetch('/api/fkteams/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        password: document.getElementById('password').value,
+                    }),
+                });
+
+                const data = await resp.json();
+
+                if (resp.ok && data.code === 0) {
+                    const token = data.data.token;
+                    localStorage.setItem('fk_token', token);
+                    document.cookie = `fk_token=${token}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`;
+                    window.location.href = '/';
+                } else {
+                    errorEl.textContent = data.message || '登录失败';
+                    errorEl.classList.add('visible');
+                }
+            } catch (err) {
+                errorEl.textContent = '网络错误，请重试';
+                errorEl.classList.add('visible');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '登 录';
+            }
+        });
+    </script>
+</body>
+
+</html>

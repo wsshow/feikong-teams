@@ -17,11 +17,29 @@ func Init() *gin.Engine {
 		middleware.Cors(),
 	)
 
-	// 使用嵌入的静态文件服务
+	authEnabled := handler.AuthEnabled()
+	if authEnabled {
+		r.Use(middleware.Auth())
+	}
+
 	webFS := web.GetFS()
 	r.StaticFS("/static", http.FS(webFS))
 
-	// 首页路由 - 使用嵌入的 index.html
+	// 登录页（仅启用认证时注册）
+	if authEnabled {
+		serveLogin := func(c *gin.Context) {
+			data, err := webFS.Open("login.html")
+			if err != nil {
+				c.String(http.StatusNotFound, "Page not found")
+				return
+			}
+			defer data.Close()
+			c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+		}
+		r.GET("/login", serveLogin)
+	}
+
+	// 首页
 	serveIndex := func(c *gin.Context) {
 		data, err := webFS.Open("index.html")
 		if err != nil {
@@ -34,11 +52,13 @@ func Init() *gin.Engine {
 	r.GET("/", serveIndex)
 	r.GET("/chat", serveIndex)
 
-	// WebSocket 路由
 	r.GET("/ws", handler.WebSocketHandler())
 
 	apiV1 := r.Group("/api/fkteams")
 	{
+		if authEnabled {
+			apiV1.POST("/login", handler.LoginHandler())
+		}
 		apiV1.GET("/version", handler.VersionHandler())
 
 		// 智能体 API

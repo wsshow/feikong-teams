@@ -45,7 +45,7 @@ FKTeamsChat.prototype.loadSidebarHistory = async function () {
     if (!this.sidebarSessionList) return;
 
     try {
-        const response = await fetch('/api/fkteams/history/files');
+        const response = await this.fetchWithAuth('/api/fkteams/history/files');
         if (!response.ok) {
             this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">加载失败</div>';
             return;
@@ -203,7 +203,7 @@ FKTeamsChat.prototype.loadHistoryFiles = async function () {
     this.historyList.innerHTML = '<div class="history-loading">加载中...</div>';
 
     try {
-        const response = await fetch('/api/fkteams/history/files');
+        const response = await this.fetchWithAuth('/api/fkteams/history/files');
         if (!response.ok) {
             throw new Error('加载失败');
         }
@@ -330,7 +330,7 @@ FKTeamsChat.prototype.exportHistoryFile = async function (filename) {
             sessionId = sessionId.substring('fkteams_chat_history_'.length);
         }
 
-        const response = await fetch(`/api/fkteams/history/files/${encodeURIComponent(filename)}`);
+        const response = await this.fetchWithAuth(`/api/fkteams/history/files/${encodeURIComponent(filename)}`);
         if (!response.ok) {
             throw new Error('无法获取历史文件');
         }
@@ -609,7 +609,7 @@ FKTeamsChat.prototype.checkAndLoadSessionHistory = async function (sessionId) {
         const filename = `fkteams_chat_history_${sessionId}`;
 
         // 检查文件是否存在
-        const response = await fetch('/api/fkteams/history/files');
+        const response = await this.fetchWithAuth('/api/fkteams/history/files');
         if (!response.ok) {
             // 如果无法获取文件列表，只清空界面不删除历史
             this.clearChatUI();
@@ -926,7 +926,7 @@ FKTeamsChat.prototype.confirmDelete = async function () {
     if (!filename) return;
 
     try {
-        const response = await fetch(`/api/fkteams/history/files/${encodeURIComponent(filename)}`, {
+        const response = await this.fetchWithAuth(`/api/fkteams/history/files/${encodeURIComponent(filename)}`, {
             method: 'DELETE'
         });
 
@@ -991,7 +991,7 @@ FKTeamsChat.prototype.confirmRename = async function () {
     }
 
     try {
-        const response = await fetch('/api/fkteams/history/files/rename', {
+        const response = await this.fetchWithAuth('/api/fkteams/history/files/rename', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

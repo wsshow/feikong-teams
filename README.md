@@ -61,6 +61,12 @@ FEIKONG_SSH_VISITOR_ENABLED=true # 设置为 true 启用小访智能体
 FEIKONG_SSH_HOST=ip:port
 FEIKONG_SSH_USERNAME=your_ssh_user
 FEIKONG_SSH_PASSWORD=your_ssh_password
+
+# Web 页面登录认证（可选，设置 ENABLED=true 后启用）
+FEIKONG_LOGIN_ENABLED=true
+FEIKONG_LOGIN_SECRET=your_random_secret_key
+FEIKONG_LOGIN_USERNAME=admin
+FEIKONG_LOGIN_PASSWORD=your_password
 ```
 
 ### 3. 配置圆桌会议成员（可选）
@@ -194,6 +200,7 @@ Web 界面特性：
 - 一键导出对话历史为 HTML 文件
 - 响应式设计，支持移动端访问
 - 可折叠侧边栏和模式切换
+- 可选的登录认证（通过环境变量配置）
 
 #### 命令行模式
 

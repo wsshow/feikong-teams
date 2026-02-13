@@ -31,6 +31,30 @@ class FKTeamsChat {
         this.init();
     }
 
+    // 获取 auth token
+    getToken() {
+        return localStorage.getItem('fk_token') || '';
+    }
+
+    // 带认证的 fetch 封装
+    async fetchWithAuth(url, options = {}) {
+        const token = this.getToken();
+        if (token) {
+            options.headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${token}`,
+            };
+        }
+        const resp = await fetch(url, options);
+        if (resp.status === 401) {
+            localStorage.removeItem('fk_token');
+            document.cookie = 'fk_token=; path=/; max-age=0';
+            window.location.href = '/login';
+            throw new Error('unauthorized');
+        }
+        return resp;
+    }
+
     init() {
         this.bindElements();
         this.bindEvents();
@@ -218,7 +242,9 @@ class FKTeamsChat {
 
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const token = this.getToken();
+        const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+        const wsUrl = `${protocol}//${window.location.host}/ws${tokenParam}`;
 
         this.ws = new WebSocket(wsUrl);
 

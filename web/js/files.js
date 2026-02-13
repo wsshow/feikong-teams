@@ -6,7 +6,7 @@
 FKTeamsChat.prototype.loadFiles = async function (path = '') {
     try {
         const url = path ? `/api/fkteams/files?path=${encodeURIComponent(path)}` : '/api/fkteams/files';
-        const response = await fetch(url);
+        const response = await this.fetchWithAuth(url);
         const result = await response.json();
         if (result.code === 0 && result.data) {
             this.files = result.data;
