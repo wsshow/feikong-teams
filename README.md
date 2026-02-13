@@ -143,7 +143,7 @@ transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 
 #### 内置工具列表
 
-- `file` - 文件读写操作（限制在 workspace 目录）
+- `file` - 文件读写操作（限制在 workspace 目录），支持 unified diff 批量修改
 - `git` - Git 仓库操作
 - `excel` - Excel 文件处理
 - `command` - 命令行执行

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"fkteams/mdiff"
+
 	"github.com/spf13/afero"
 )
 
@@ -1001,4 +1003,156 @@ func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileE
 			ErrorMessage: fmt.Sprintf("unsupported action: %s, use write/append/replace", req.Action),
 		}, nil
 	}
+}
+
+// FilePatchRequest 多文件 patch 请求
+type FilePatchRequest struct {
+	Patch string `json:"patch" jsonschema:"description=标准 unified diff 格式的 patch 内容。支持同时修改多个文件。格式示例:\n--- file.go\n+++ file.go\n@@ -1,3 +1,3 @@\n context\n-old line\n+new line\n context,required"`
+}
+
+// FilePatchResult 单个文件的 patch 结果
+type FilePatchResult struct {
+	Path    string `json:"path" jsonschema:"description=文件路径"`
+	Success bool   `json:"success" jsonschema:"description=是否成功"`
+	Error   string `json:"error,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FilePatchResponse 多文件 patch 响应
+type FilePatchResponse struct {
+	Message      string            `json:"message" jsonschema:"description=操作结果消息"`
+	Results      []FilePatchResult `json:"results,omitempty" jsonschema:"description=每个文件的结果"`
+	TotalFiles   int               `json:"total_files" jsonschema:"description=总文件数"`
+	Succeeded    int               `json:"succeeded" jsonschema:"description=成功数"`
+	Failed       int               `json:"failed" jsonschema:"description=失败数"`
+	ErrorMessage string            `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FilePatch 使用 unified diff 格式批量修改多个文件
+func (ft *FileTools) FilePatch(ctx context.Context, req *FilePatchRequest) (*FilePatchResponse, error) {
+	if req.Patch == "" {
+		return &FilePatchResponse{
+			ErrorMessage: "patch is required",
+		}, nil
+	}
+
+	// 解析 patch
+	mfd, err := mdiff.ParseMultiFileDiff(req.Patch)
+	if err != nil {
+		return &FilePatchResponse{
+			ErrorMessage: fmt.Sprintf("failed to parse patch: %v", err),
+		}, nil
+	}
+
+	if len(mfd.Files) == 0 {
+		return &FilePatchResponse{
+			ErrorMessage: "no file changes found in patch",
+		}, nil
+	}
+
+	// 使用 FileAccessor 适配器
+	accessor := &fsAccessor{ft: ft}
+	result := mdiff.ApplyMultiFileDiff(mfd, accessor)
+
+	// 转换结果
+	resp := &FilePatchResponse{
+		TotalFiles: result.TotalFiles,
+		Succeeded:  result.Succeeded,
+		Failed:     result.Failed,
+	}
+
+	for _, r := range result.Results {
+		resp.Results = append(resp.Results, FilePatchResult{
+			Path:    r.Path,
+			Success: r.Success,
+			Error:   r.Error,
+		})
+	}
+
+	if result.Failed > 0 {
+		resp.Message = fmt.Sprintf("patch 完成: %d/%d 文件成功, %d 文件失败", result.Succeeded, result.TotalFiles, result.Failed)
+	} else {
+		resp.Message = fmt.Sprintf("patch 成功: %d 个文件已更新", result.Succeeded)
+	}
+
+	return resp, nil
+}
+
+// FileDiffRequest 计算文件 diff 请求
+type FileDiffRequest struct {
+	Filepath   string `json:"filepath" jsonschema:"description=文件路径,required"`
+	NewContent string `json:"new_content" jsonschema:"description=新的文件内容,required"`
+}
+
+// FileDiffResponse 文件 diff 响应
+type FileDiffResponse struct {
+	Diff         string `json:"diff" jsonschema:"description=unified diff 格式的差异内容"`
+	Insertions   int    `json:"insertions" jsonschema:"description=新增行数"`
+	Deletions    int    `json:"deletions" jsonschema:"description=删除行数"`
+	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FileDiff 计算文件与新内容之间的 diff
+func (ft *FileTools) FileDiff(ctx context.Context, req *FileDiffRequest) (*FileDiffResponse, error) {
+	if req.Filepath == "" {
+		return &FileDiffResponse{
+			ErrorMessage: "filepath is required",
+		}, nil
+	}
+
+	relPath, err := ft.validatePath(req.Filepath)
+	if err != nil {
+		return &FileDiffResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// 读取原始文件内容（如果文件不存在，视为空文件）
+	oldContent := ""
+	content, err := afero.ReadFile(ft.securedFs, relPath)
+	if err == nil {
+		oldContent = string(content)
+	}
+
+	fd := mdiff.DiffFiles(req.Filepath, oldContent, req.Filepath, req.NewContent, 3)
+	diffText := mdiff.FormatFileDiff(fd)
+
+	stat := mdiff.Stat(&mdiff.MultiFileDiff{Files: []mdiff.FileDiff{*fd}})
+
+	return &FileDiffResponse{
+		Diff:       diffText,
+		Insertions: stat.Insertions,
+		Deletions:  stat.Deletions,
+	}, nil
+}
+
+// fsAccessor 适配 FileTools 到 mdiff.FileAccessor 接口
+type fsAccessor struct {
+	ft *FileTools
+}
+
+func (a *fsAccessor) ReadFile(path string) (string, error) {
+	relPath, err := a.ft.validatePath(path)
+	if err != nil {
+		return "", err
+	}
+	content, err := afero.ReadFile(a.ft.securedFs, relPath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func (a *fsAccessor) WriteFile(path string, content string) error {
+	relPath, err := a.ft.validatePath(path)
+	if err != nil {
+		return err
+	}
+	// 自动创建父目录
+	dir := filepath.Dir(relPath)
+	if dir != "." {
+		if err := a.ft.securedFs.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+	return afero.WriteFile(a.ft.securedFs, relPath, []byte(content), 0644)
 }

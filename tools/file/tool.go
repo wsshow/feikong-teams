@@ -72,5 +72,19 @@ func (ft *FileTools) GetTools() ([]tool.BaseTool, error) {
 	}
 	tools = append(tools, fileSearchTool)
 
+	// 多文件 patch 工具
+	filePatchTool, err := utils.InferTool("file_patch", "使用 unified diff 格式批量修改多个文件。支持模糊匹配，适合精确的代码批量修改。patch 格式: --- file\\n+++ file\\n@@ -start,count +start,count @@\\n context\\n-deleted\\n+inserted", ft.FilePatch)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, filePatchTool)
+
+	// 文件 diff 工具
+	fileDiffTool, err := utils.InferTool("file_diff", "计算文件当前内容与新内容之间的差异，返回 unified diff 格式", ft.FileDiff)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, fileDiffTool)
+
 	return tools, nil
 }
