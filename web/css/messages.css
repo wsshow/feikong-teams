@@ -342,25 +342,6 @@
     border-color: rgba(255, 255, 255, 0.3);
 }
 
-.message-highlight {
-    animation: messageHighlight 2s ease;
-}
-
-@keyframes messageHighlight {
-
-    0%,
-    100% {
-        background: transparent;
-    }
-
-    10%,
-    90% {
-        background: rgba(107, 127, 198, 0.08);
-        box-shadow: 0 0 0 4px rgba(107, 127, 198, 0.12);
-        border-radius: 12px;
-    }
-}
-
 /* Assistant Message */
 .message.assistant .message-body {
     background: var(--bg-secondary);

@@ -65,10 +65,6 @@
     background: var(--accent-light);
 }
 
-.quick-nav-item.active {
-    background: var(--accent-light);
-}
-
 /* 圆点指示器 */
 .quick-nav-dot {
     flex-shrink: 0;
@@ -84,12 +80,6 @@
 .quick-nav-item.active .quick-nav-dot {
     background: var(--accent-primary);
     opacity: 1;
-}
-
-.quick-nav-item.active .quick-nav-dot {
-    width: 7px;
-    height: 7px;
-    box-shadow: 0 0 0 2px rgba(107, 127, 198, 0.15);
 }
 
 /* 问题文本（默认隐藏） */
@@ -308,4 +298,131 @@ pre::-webkit-scrollbar-thumb:hover {
 .main-content {
     scrollbar-width: thin;
     scrollbar-color: rgba(178, 168, 148, 0.25) transparent;
+}
+
+/* ===== Mobile Toolbar ===== */
+.mobile-toolbar {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 8px;
+}
+
+.mobile-tool-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    padding: 0 12px;
+    background: var(--bg-tertiary);
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.mobile-tool-btn:active {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.mobile-tool-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.mobile-nav-btn {
+    margin-left: auto;
+    gap: 4px;
+}
+
+.mobile-nav-btn .nav-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+}
+
+/* Mobile quick nav popup */
+.mobile-nav-popup {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    margin-bottom: 6px;
+    background: var(--bg-secondary);
+    border: 1.5px solid var(--border-sketch);
+    border-radius: 10px;
+    box-shadow: 0 -2px 12px rgba(60, 50, 30, 0.1);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 200px;
+    max-width: calc(100vw - 40px);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 12;
+    animation: mobileNavIn 0.15s ease;
+}
+
+@keyframes mobileNavIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mobile-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.1s ease;
+}
+
+.mobile-nav-item:active {
+    background: var(--accent-light);
+}
+
+.mobile-nav-index {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.mobile-nav-text {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mobile-nav-empty {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
 }

@@ -36,6 +36,7 @@ class FKTeamsChat {
         this.bindEvents();
         this.restoreSidebarState();
         this.initTooltips();
+        this.initMobileToolbar();
         this.loadAgents();
         this.connect();
     }

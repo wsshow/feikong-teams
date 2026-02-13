@@ -174,8 +174,8 @@
 
     .sidebar-toggle {
         left: 0;
-        min-width: 44px;
-        min-height: 44px;
+        width: 20px;
+        height: 36px;
     }
 
     .chat-container {
@@ -184,6 +184,10 @@
 
     .input-container {
         padding: 8px 0 12px;
+        margin-left: -12px;
+        margin-right: -12px;
+        padding-left: 12px;
+        padding-right: 12px;
     }
 
     .input-wrapper {
@@ -204,7 +208,7 @@
         align-items: center;
     }
 
-    /* 快速导航在移动端隐藏（悬浮交互在触屏不可用） */
+    /* 快速导航在移动端隐藏（由移动端工具栏替代） */
     .quick-nav-wrapper {
         display: none !important;
     }
@@ -212,10 +216,16 @@
     /* 回到底部按钮：移动端不需要偏移侧边栏宽度 */
     .scroll-to-bottom {
         transform: translateX(-50%) translateY(0);
+        bottom: 130px;
     }
 
     .scroll-to-bottom:hover {
         transform: translateX(-50%) translateY(-2px);
+    }
+
+    /* 移动端工具栏 */
+    .mobile-toolbar {
+        display: flex;
     }
 
     /* 侧边栏会话操作按钮：移动端始终可见（触屏无 hover） */
