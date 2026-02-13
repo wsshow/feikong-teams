@@ -174,18 +174,63 @@
 
     .sidebar-toggle {
         left: 0;
+        min-width: 44px;
+        min-height: 44px;
     }
 
     .chat-container {
-        padding: 0 16px;
+        padding: 0 12px;
     }
 
     .input-container {
-        padding: 12px 0 16px;
+        padding: 8px 0 12px;
+    }
+
+    .input-wrapper {
+        padding: 10px 12px;
+        gap: 8px;
+    }
+
+    .welcome-message {
+        padding: 40px 16px;
+    }
+
+    .welcome-message h2 {
+        font-size: 24px;
     }
 
     .welcome-tips {
         flex-direction: column;
         align-items: center;
+    }
+
+    /* 快速导航在移动端隐藏（悬浮交互在触屏不可用） */
+    .quick-nav-wrapper {
+        display: none !important;
+    }
+
+    /* 回到底部按钮：移动端不需要偏移侧边栏宽度 */
+    .scroll-to-bottom {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    .scroll-to-bottom:hover {
+        transform: translateX(-50%) translateY(-2px);
+    }
+
+    /* 侧边栏会话操作按钮：移动端始终可见（触屏无 hover） */
+    .sidebar-session-actions {
+        opacity: 1;
+    }
+
+    .sidebar-session-action-btn {
+        min-width: 36px;
+        min-height: 36px;
+    }
+
+    /* 建议弹窗移动端限高 */
+    .agent-suggestions,
+    .file-suggestions {
+        max-height: 200px;
     }
 }

@@ -226,6 +226,11 @@ class FKTeamsChat {
             this.reconnectAttempts = 0;
             // 加载侧边栏历史会话列表
             this.loadSidebarHistory();
+            // 首次连接时自动创建新会话，避免携带残留历史
+            if (!this._initialSessionCreated) {
+                this._initialSessionCreated = true;
+                this.createNewSession(true);
+            }
         };
 
         this.ws.onclose = () => {
@@ -394,6 +399,7 @@ class FKTeamsChat {
             position: fixed;
             top: ${topOffset}px;
             right: 20px;
+            max-width: calc(100vw - 40px);
             background: ${bgColor};
             color: white;
             padding: 12px 20px;
@@ -403,6 +409,8 @@ class FKTeamsChat {
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             animation: slideIn 0.3s ease;
             transition: top 0.3s ease;
+            word-break: break-all;
+            box-sizing: border-box;
         `;
         notification.textContent = message;
 
@@ -442,7 +450,6 @@ class FKTeamsChat {
         this._tooltipEl = null;
         this._tooltipTimer = null;
 
-        // 使用事件委托，监听整个文档
         document.addEventListener('mouseover', (e) => {
             const el = e.target;
             if (!el || typeof el.closest !== 'function') return;
@@ -458,7 +465,6 @@ class FKTeamsChat {
             if (!el || typeof el.closest !== 'function') return;
             const target = el.closest('[data-tooltip]');
             if (!target) return;
-            // 检查是否移入了子元素
             const rel = e.relatedTarget;
             const related = (rel && typeof rel.closest === 'function') ? rel.closest('[data-tooltip]') : null;
             if (related === target) return;
@@ -470,12 +476,10 @@ class FKTeamsChat {
     _showTooltip(target) {
         clearTimeout(this._tooltipTimer);
 
-        // 延迟显示，避免快速划过时闪烁
         this._tooltipTimer = setTimeout(() => {
             const text = target.getAttribute('data-tooltip');
             if (!text) return;
 
-            // 创建或复用 tooltip 元素
             if (!this._tooltipEl) {
                 this._tooltipEl = document.createElement('div');
                 this._tooltipEl.className = 'sketch-tooltip';
@@ -486,8 +490,6 @@ class FKTeamsChat {
             const tooltip = this._tooltipEl;
             tooltip.querySelector('.sketch-tooltip-text').textContent = text;
             tooltip.classList.remove('visible');
-
-            // 先显示获取尺寸
             tooltip.style.display = 'block';
 
             const rect = target.getBoundingClientRect();
@@ -495,7 +497,6 @@ class FKTeamsChat {
             const arrow = tooltip.querySelector('.sketch-tooltip-arrow');
             arrow.className = 'sketch-tooltip-arrow';
 
-            // 根据元素位置决定 tooltip 方向
             const placement = this._getTooltipPlacement(target, rect, tipRect);
 
             let top, left;
@@ -522,7 +523,6 @@ class FKTeamsChat {
                     break;
             }
 
-            // 防止超出视口
             const vw = window.innerWidth;
             const vh = window.innerHeight;
             if (left < 4) left = 4;
@@ -544,17 +544,9 @@ class FKTeamsChat {
     }
 
     _getTooltipPlacement(target, rect, tipRect) {
-        // 侧边栏按钮 → 右侧，模式按钮 → 下方，历史记录按钮 → 上方，其他 → 自动
-        if (target.closest('.sidebar-top-actions') || target.classList.contains('sidebar-toggle')) {
-            return 'right';
-        }
-        if (target.closest('.mode-buttons')) {
-            return 'bottom';
-        }
-        if (target.closest('.history-item-actions') || target.closest('.sidebar-session-actions')) {
+        if (target.closest('.history-item-actions')) {
             return 'top';
         }
-        // 自动选择：优先右侧，不够空间时尝试其他方向
         const vw = window.innerWidth;
         if (rect.right + tipRect.width + 12 < vw) return 'right';
         if (rect.left - tipRect.width - 12 > 0) return 'left';

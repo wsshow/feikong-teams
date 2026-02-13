@@ -334,6 +334,7 @@
     color: var(--text-primary);
     transition: all var(--transition);
     font-family: var(--font-body);
+    box-sizing: border-box;
 }
 
 .rename-input:focus {
@@ -465,6 +466,7 @@
     font-size: 15px;
     margin: 0 0 8px 0;
     line-height: 1.5;
+    word-break: break-all;
 }
 
 .delete-message span {

@@ -134,7 +134,11 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
             this.handleCancelled(event);
             break;
         case 'history_cleared':
-            this.showNotification('历史记录已清除', 'success');
+            if (this._suppressHistoryClearedNotification) {
+                this._suppressHistoryClearedNotification = false;
+            } else {
+                this.showNotification('历史记录已清除', 'success');
+            }
             break;
         case 'history_loaded':
             this.handleHistoryLoaded(event);

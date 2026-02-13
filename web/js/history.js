@@ -4,7 +4,7 @@
 
 // ===== 新增会话 =====
 
-FKTeamsChat.prototype.createNewSession = function () {
+FKTeamsChat.prototype.createNewSession = function (silent) {
     // 生成基于时间戳的会话ID
     const now = new Date();
     const ts = now.getFullYear().toString() +
@@ -23,6 +23,7 @@ FKTeamsChat.prototype.createNewSession = function () {
 
     // 通知后端清空内存中的历史记录，防止新会话携带旧历史
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this._suppressHistoryClearedNotification = true;
         this.ws.send(JSON.stringify({
             type: 'clear_history',
             session_id: '__memory_only__'
@@ -30,7 +31,9 @@ FKTeamsChat.prototype.createNewSession = function () {
     }
 
     this.clearChatUI();
-    this.showNotification(`已创建新会话: ${newSessionId}`, 'success');
+    if (!silent) {
+        this.showNotification(`已创建新会话: ${newSessionId}`, 'success');
+    }
 
     // 刷新侧边栏并高亮新会话
     this.loadSidebarHistory();
@@ -97,12 +100,12 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
                 <div class="sidebar-session-time">${this.formatTime(file.mod_time)}</div>
             </div>
             <div class="sidebar-session-actions">
-                <button class="sidebar-session-action-btn rename-action" data-tooltip="重命名该会话">
+                <button class="sidebar-session-action-btn rename-action">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                     </svg>
                 </button>
-                <button class="sidebar-session-action-btn delete-action" data-tooltip="删除该会话">
+                <button class="sidebar-session-action-btn delete-action">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
