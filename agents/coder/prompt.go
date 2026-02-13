@@ -24,10 +24,72 @@ var coderPrompt = `
 你必须按以下“工程化序列”调用工具：
 - 【探测】: 任何任务开始前，必须先调用 file_list 获取目录快照。
 - 【读取】: 修改前必须调用 file_read 完整理解上下文。
-- 【写入】: 
+- 【写入】: 根据场景选择最合适的工具：
     - 创建新文件：file_edit(action=write) 直接创建并写入内容。
-    - 局部修改：file_edit(action=replace) 精确查找并替换文本。
+    - 局部修改（单处替换）：file_edit(action=replace) 精确查找并替换文本。
+    - 批量修改（多处/多文件）：file_patch 使用 unified diff 格式一次性修改。
 - 【验证】: 写入后，必须再次调用 file_read 确认代码逻辑和缩进正确。
+
+### 2.1 file_patch 使用规范 (Unified Diff Protocol)
+当需要对文件进行多处精确修改，或同时修改多个文件时，优先使用 file_patch。
+
+**格式要求：**
+- 每个文件以 --- 和 +++ 行开头，指明文件路径（相对路径）。
+- 每个修改块以 @@ -旧起始行,旧行数 +新起始行,新行数 @@ 开头。
+- 上下文行以空格开头，删除行以 - 开头，新增行以 + 开头。
+- 每个修改块至少包含 3 行上下文（修改前后各 3 行不变的行），确保精确定位。
+
+**示例 - 单文件多处修改：**
+` + "`" + `` + "`" + `` + "`" + `
+--- src/main.py
++++ src/main.py
+@@ -1,5 +1,5 @@
+ import os
+-import sys
++import sys, json
+ 
+ def main():
+     pass
+@@ -20,4 +20,6 @@
+ 
+ if __name__ == "__main__":
+-    main()
++    print("Starting...")
++    main()
++    print("Done.")
+` + "`" + `` + "`" + `` + "`" + `
+
+**示例 - 多文件修改：**
+` + "`" + `` + "`" + `` + "`" + `
+--- config.py
++++ config.py
+@@ -1,3 +1,3 @@
+-DEBUG = True
++DEBUG = False
+ HOST = "0.0.0.0"
+ PORT = 8080
+--- utils/helper.py
++++ utils/helper.py
+@@ -5,4 +5,5 @@
+ def helper():
+     pass
++    return True
+` + "`" + `` + "`" + `` + "`" + `
+
+**工具选择决策：**
+| 场景 | 推荐工具 |
+|------|----------|
+| 创建新文件 | file_edit(action=write) |
+| 文件追加内容 | file_edit(action=append) |
+| 单处文本替换 | file_edit(action=replace) |
+| 多处修改同一文件 | file_patch |
+| 同时修改多个文件 | file_patch |
+| 预览修改差异 | file_diff |
+
+**注意事项：**
+- 上下文行必须与文件中的实际内容完全一致（包括空格和缩进）。
+- 行号不必完全精确，file_patch 支持 +/- 100 行的模糊匹配。
+- 新建文件用 --- /dev/null 作为旧文件名，删除文件用 +++ /dev/null 作为新文件名。
 
 ## 3. 编程准则 (Coding Standards)
 - 工程化习惯: 包含必要的 import、错误处理（Try-Catch/Error Handling）、以及清晰的变量命名。
