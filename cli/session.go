@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/fkevent"
 	"fkteams/runner"
 	"fmt"
 	"log"
@@ -86,7 +85,9 @@ func (s *Session) StartSignalHandler(rawSignals chan os.Signal, exitSignals chan
 func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal, query string) {
 	s.InputHistory = append(s.InputHistory, query)
 
-	if err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile(); err == nil {
+	recorder := getCliRecorder()
+	historyFile := CLIHistoryDir + "fkteams_chat_history_" + CLISessionID
+	if err := recorder.LoadFromFile(historyFile); err == nil {
 		pterm.Success.Println("[非交互模式] 自动加载聊天历史")
 	}
 
@@ -97,7 +98,7 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 
 	fmt.Println()
 	pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
-	if err := fkevent.GlobalHistoryRecorder.SaveToDefaultFile(); err != nil {
+	if err := recorder.SaveToFile(historyFile); err != nil {
 		pterm.Error.Printfln("[非交互模式] 保存聊天历史失败: %v", err)
 	} else {
 		pterm.Success.Println("[非交互模式] 成功保存聊天历史到默认文件")

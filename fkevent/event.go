@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -24,15 +25,13 @@ func formatRunPath(runPath []adk.RunStep) string {
 	return fmt.Sprintf("%v", runPath)
 }
 
-// callbackKey 用于在 context 中存储回调函数，支持并发安全
 type callbackKey struct{}
 
-// WithCallback 将回调函数绑定到 context，每个 goroutine 可拥有独立的回调
+// WithCallback 将事件回调绑定到 context
 func WithCallback(ctx context.Context, cb func(Event) error) context.Context {
 	return context.WithValue(ctx, callbackKey{}, cb)
 }
 
-// getCallback 从 context 中获取回调函数
 func getCallback(ctx context.Context) func(Event) error {
 	if cb, ok := ctx.Value(callbackKey{}).(func(Event) error); ok {
 		return cb
@@ -101,7 +100,7 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 
 func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
 	toolCallsMap := make(map[int][]*schema.Message)
-	toolCallStarted := make(map[int]bool) // 记录哪些工具调用已经发送了开始提示
+	toolCallStarted := make(map[int]bool)
 
 	for {
 		chunk, err := stream.Recv()
@@ -136,7 +135,6 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 		if len(chunk.ToolCalls) > 0 {
 			for _, tc := range chunk.ToolCalls {
 				if tc.Index != nil {
-					// 如果这是该工具调用的第一个 chunk，立即显示准备提示
 					if !toolCallStarted[*tc.Index] && tc.Function.Name != "" {
 						toolCallStarted[*tc.Index] = true
 						if err := handleEvent(ctx, Event{
@@ -174,8 +172,15 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 		}
 	}
 
-	for _, msgs := range toolCallsMap {
-		concatenatedMsg, err := schema.ConcatMessages(msgs)
+	// 按 index 顺序处理工具调用，确保结果顺序稳定
+	indices := make([]int, 0, len(toolCallsMap))
+	for idx := range toolCallsMap {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+
+	for _, idx := range indices {
+		concatenatedMsg, err := schema.ConcatMessages(toolCallsMap[idx])
 		if err != nil {
 			return err
 		}
@@ -238,11 +243,11 @@ func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 	return nil
 }
 
-// handleEvent 从 context 中获取回调函数，无回调时走默认的记录+打印逻辑
+// handleEvent 分发事件到 context 中的回调，无回调时仅打印
 func handleEvent(ctx context.Context, event Event) error {
 	if cb := getCallback(ctx); cb != nil {
 		return cb(event)
 	}
-	RecordEventWithHistory(event)
+	PrintEvent(event)
 	return nil
 }

@@ -93,10 +93,22 @@ func (e *QueryExecutor) SetRunner(runner *adk.Runner) {
 	e.runner = runner
 }
 
+// CLI 模式会话常量
+const (
+	CLISessionID  = "cli"
+	CLIHistoryDir = "./history/chat_history/"
+)
+
+// getCliRecorder 获取 CLI 模式的历史记录器
+func getCliRecorder() *fkevent.HistoryRecorder {
+	return fkevent.GlobalSessionManager.GetOrCreate(CLISessionID, CLIHistoryDir)
+}
+
 // BuildInputMessages 构建输入消息列表（包含历史对话）
 func BuildInputMessages(input string) []adk.Message {
 	var inputMessages []adk.Message
-	agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()
+	recorder := getCliRecorder()
+	agentMessages := recorder.GetMessages()
 	if len(agentMessages) > 0 {
 		var historyMessage strings.Builder
 		for _, agentMessage := range agentMessages {
@@ -111,10 +123,12 @@ func BuildInputMessages(input string) []adk.Message {
 // Execute 执行查询
 func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMonitor bool, onInterrupt func()) error {
 	inputMessages := BuildInputMessages(input)
-	fkevent.GlobalHistoryRecorder.RecordUserInput(input)
+	recorder := getCliRecorder()
+	recorder.RecordUserInput(input)
 
-	// 创建可取消的 context
+	// 创建可取消的 context，并设置 CLI 事件回调
 	queryCtx, cancelFunc := context.WithCancel(ctx)
+	queryCtx = fkevent.WithCallback(queryCtx, fkevent.CLIEventCallback(recorder))
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
 
@@ -210,7 +224,8 @@ func HandleCtrlC(state *QueryState) {
 
 // SaveChatHistoryToHTML 保存聊天历史到 HTML 文件
 func SaveChatHistoryToHTML() (string, error) {
-	filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
+	recorder := getCliRecorder()
+	filePath, err := recorder.SaveToMarkdownWithTimestamp()
 	if err != nil {
 		return "", fmt.Errorf("保存聊天历史到 Markdown 失败: %w", err)
 	}

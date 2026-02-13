@@ -74,7 +74,9 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "load_chat_history":
-		err := fkevent.GlobalHistoryRecorder.LoadFromDefaultFile()
+		recorder := getCliRecorder()
+		historyFile := CLIHistoryDir + "fkteams_chat_history_" + CLISessionID
+		err := recorder.LoadFromFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("加载聊天历史失败: %v", err)
 		} else {
@@ -83,7 +85,9 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "save_chat_history":
-		err := fkevent.GlobalHistoryRecorder.SaveToDefaultFile()
+		recorder := getCliRecorder()
+		historyFile := CLIHistoryDir + "fkteams_chat_history_" + CLISessionID
+		err := recorder.SaveToFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		} else {
@@ -92,12 +96,13 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "clear_chat_history":
-		fkevent.GlobalHistoryRecorder.Clear()
+		fkevent.GlobalSessionManager.Clear(CLISessionID)
 		pterm.Success.Println("成功清空当前聊天历史")
 		return ResultHandled
 
 	case "save_chat_history_to_markdown":
-		filePath, err := fkevent.GlobalHistoryRecorder.SaveToMarkdownWithTimestamp()
+		recorder := getCliRecorder()
+		filePath, err := recorder.SaveToMarkdownWithTimestamp()
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
 		} else {
