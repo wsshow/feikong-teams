@@ -81,10 +81,17 @@ func Diff(oldLines, newLines []string) []Edit {
 		}
 	} else {
 		midEdits = myersDiff(oldMid, newMid)
-		// 修正偏移量
+		// 修正偏移量（只修正各操作类型的有效字段）
 		for i := range midEdits {
-			midEdits[i].OldPos += prefixLen
-			midEdits[i].NewPos += prefixLen
+			switch midEdits[i].Kind {
+			case OpEqual:
+				midEdits[i].OldPos += prefixLen
+				midEdits[i].NewPos += prefixLen
+			case OpDelete:
+				midEdits[i].OldPos += prefixLen
+			case OpInsert:
+				midEdits[i].NewPos += prefixLen
+			}
 		}
 	}
 
@@ -119,9 +126,10 @@ func myersDiff(oldLines, newLines []string) []Edit {
 	offset := max
 
 	for d := 0; d <= max; d++ {
-		// 只 copy 实际使用的范围 [offset-d, offset+d]
-		snapshot := make([]int, vSize)
-		copy(snapshot, v)
+		// 保存当前步骤的 v 快照用于回溯，只复制实际使用的 [offset-d, offset+d] 范围
+		rangeSize := 2*d + 1
+		snapshot := make([]int, rangeSize)
+		copy(snapshot, v[offset-d:offset+d+1])
 		trace = append(trace, snapshot)
 
 		for k := -d; k <= d; k += 2 {
@@ -150,6 +158,7 @@ func myersDiff(oldLines, newLines []string) []Edit {
 }
 
 // backtrack 从 trace 中回溯出编辑序列
+// trace[d] 存储的是 v[offset-d:offset+d+1] 范围的快照，索引用 k+d 访问
 func backtrack(trace [][]int, oldLines, newLines []string, d, offset int) []Edit {
 	n := len(oldLines)
 	m := len(newLines)
@@ -163,13 +172,13 @@ func backtrack(trace [][]int, oldLines, newLines []string, d, offset int) []Edit
 		k := x - y
 
 		var prevK int
-		if k == -d || (k != d && v[k-1+offset] < v[k+1+offset]) {
+		if k == -d || (k != d && v[k-1+d] < v[k+1+d]) {
 			prevK = k + 1
 		} else {
 			prevK = k - 1
 		}
 
-		prevX := v[prevK+offset]
+		prevX := v[prevK+d]
 		prevY := prevX - prevK
 
 		for x > prevX && y > prevY {

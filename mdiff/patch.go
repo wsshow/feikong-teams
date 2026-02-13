@@ -16,6 +16,9 @@ func (e *ApplyError) Error() string {
 	return fmt.Sprintf("patch %s hunk #%d: %s", e.File, e.HunkIdx+1, e.Message)
 }
 
+// maxFuzz 模糊搜索的最大偏移行数
+const maxFuzz = 100
+
 // ApplyHunks 将一个文件的 hunks 应用到原始行上
 // 支持模糊匹配：当精确行号不匹配时，在附近搜索上下文
 func ApplyHunks(oldLines []string, hunks []Hunk) ([]string, error) {
@@ -55,51 +58,10 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 		startIdx = 0
 	}
 
-	matchPos := -1
-	maxFuzz := 100
-
-	// 先尝试精确位置
-	if matchAt(lines, oldHunkLines, startIdx) {
-		matchPos = startIdx
-	}
-
-	// 模糊搜索：在原始位置附近查找
-	if matchPos < 0 {
-		for offset := 1; offset <= maxFuzz; offset++ {
-			// 向前搜索
-			pos := startIdx - offset
-			if pos >= 0 && matchAt(lines, oldHunkLines, pos) {
-				matchPos = pos
-				break
-			}
-			// 向后搜索
-			pos = startIdx + offset
-			if pos >= 0 && matchAt(lines, oldHunkLines, pos) {
-				matchPos = pos
-				break
-			}
-		}
-	}
-
-	// 宽松匹配：忽略行尾空白差异（处理 LLM 生成的 patch 空白不一致问题）
+	// 先精确匹配，再宽松匹配（忽略行尾空白，处理 LLM 生成的空白差异）
+	matchPos := searchMatch(lines, oldHunkLines, startIdx, matchAt)
 	if matchPos < 0 && len(oldHunkLines) > 0 {
-		if matchAtLoose(lines, oldHunkLines, startIdx) {
-			matchPos = startIdx
-		}
-		if matchPos < 0 {
-			for offset := 1; offset <= maxFuzz; offset++ {
-				pos := startIdx - offset
-				if pos >= 0 && matchAtLoose(lines, oldHunkLines, pos) {
-					matchPos = pos
-					break
-				}
-				pos = startIdx + offset
-				if pos >= 0 && matchAtLoose(lines, oldHunkLines, pos) {
-					matchPos = pos
-					break
-				}
-			}
-		}
+		matchPos = searchMatch(lines, oldHunkLines, startIdx, matchAtLoose)
 	}
 
 	if matchPos < 0 {
@@ -136,6 +98,22 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 	result = append(result, lines[matchPos+len(oldHunkLines):]...)
 
 	return result, nil
+}
+
+// searchMatch 在 startIdx 附近查找匹配位置，先尝试原位，再向前后扩展搜索
+func searchMatch(lines, pattern []string, startIdx int, matcher func([]string, []string, int) bool) int {
+	if matcher(lines, pattern, startIdx) {
+		return startIdx
+	}
+	for offset := 1; offset <= maxFuzz; offset++ {
+		if pos := startIdx - offset; pos >= 0 && matcher(lines, pattern, pos) {
+			return pos
+		}
+		if pos := startIdx + offset; matcher(lines, pattern, pos) {
+			return pos
+		}
+	}
+	return -1
 }
 
 // matchAt 检查 lines[pos:] 是否与 pattern 精确匹配
@@ -191,10 +169,9 @@ func ApplyFileDiff(content string, fd *FileDiff) (string, error) {
 
 // FileAccessor 文件访问接口，用于多文件 patch 操作
 type FileAccessor interface {
-	// ReadFile 读取文件内容
 	ReadFile(path string) (string, error)
-	// WriteFile 写入文件内容
 	WriteFile(path string, content string) error
+	DeleteFile(path string) error
 }
 
 // FileResult 单个文件的 patch 结果
@@ -226,6 +203,24 @@ func ApplyMultiFileDiff(mfd *MultiFileDiff, accessor FileAccessor) *PatchResult 
 		filePath := fd.NewName
 		if filePath == "" || filePath == "/dev/null" {
 			filePath = fd.OldName
+		}
+
+		// 处理文件删除（新文件为 /dev/null）
+		if fd.NewName == "/dev/null" || fd.NewName == "" {
+			if err := accessor.DeleteFile(fd.OldName); err != nil {
+				pr.Results = append(pr.Results, FileResult{
+					Path:  fd.OldName,
+					Error: fmt.Sprintf("failed to delete file: %v", err),
+				})
+				pr.Failed++
+			} else {
+				pr.Results = append(pr.Results, FileResult{
+					Path:    fd.OldName,
+					Success: true,
+				})
+				pr.Succeeded++
+			}
+			continue
 		}
 
 		// 处理新文件创建（旧文件为 /dev/null）
@@ -303,8 +298,8 @@ func splitLines(text string) []string {
 	if text == "" {
 		return nil
 	}
-	// 移除末尾换行后分割
-	text = strings.TrimRight(text, "\n")
+	// 只移除末尾一个换行符（行终止符），保留空行
+	text = strings.TrimSuffix(text, "\n")
 	if text == "" {
 		return nil
 	}

@@ -1062,6 +1062,14 @@ func (m *memAccessor) WriteFile(path string, content string) error {
 	return nil
 }
 
+func (m *memAccessor) DeleteFile(path string) error {
+	if _, ok := m.files[path]; !ok {
+		return &ApplyError{File: path, Message: "file not found"}
+	}
+	delete(m.files, path)
+	return nil
+}
+
 // ============================================================
 // 空行解析 & 宽松匹配测试
 // ============================================================
