@@ -42,7 +42,7 @@ func ApplyHunks(oldLines []string, hunks []Hunk) ([]string, error) {
 // applyOneHunk 应用一个 hunk 到行数组
 func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 	// 提取 hunk 中旧文件的行（Equal + Delete）
-	var oldHunkLines []string
+	oldHunkLines := make([]string, 0, hunk.OldLines)
 	for _, dl := range hunk.Lines {
 		if dl.Kind == OpEqual || dl.Kind == OpDelete {
 			oldHunkLines = append(oldHunkLines, dl.Text)
@@ -56,6 +56,7 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 	}
 
 	matchPos := -1
+	maxFuzz := 100
 
 	// 先尝试精确位置
 	if matchAt(lines, oldHunkLines, startIdx) {
@@ -64,7 +65,6 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 
 	// 模糊搜索：在原始位置附近查找
 	if matchPos < 0 {
-		maxFuzz := 100
 		for offset := 1; offset <= maxFuzz; offset++ {
 			// 向前搜索
 			pos := startIdx - offset
@@ -89,16 +89,18 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 			if len(showLines) > 3 {
 				showLines = showLines[:3]
 			}
-			context = fmt.Sprintf(", expected:\n%s", strings.Join(showLines, "\n"))
+			context = fmt.Sprintf(", expected lines:\n%s", strings.Join(showLines, "\n"))
 		}
+		totalLines := len(lines)
 		return nil, &ApplyError{
 			HunkIdx: hunkIdx,
-			Message: fmt.Sprintf("context mismatch at line %d%s", hunk.OldStart, context),
+			Message: fmt.Sprintf("context mismatch at line %d (file has %d lines, searched +/-%d lines)%s",
+				hunk.OldStart, totalLines, maxFuzz, context),
 		}
 	}
 
 	// 构建新内容
-	var newHunkLines []string
+	newHunkLines := make([]string, 0, hunk.NewLines)
 	for _, dl := range hunk.Lines {
 		if dl.Kind == OpEqual || dl.Kind == OpInsert {
 			newHunkLines = append(newHunkLines, dl.Text)
@@ -106,7 +108,8 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 	}
 
 	// 替换匹配区域
-	var result []string
+	resultLen := len(lines) - len(oldHunkLines) + len(newHunkLines)
+	result := make([]string, 0, resultLen)
 	result = append(result, lines[:matchPos]...)
 	result = append(result, newHunkLines...)
 	result = append(result, lines[matchPos+len(oldHunkLines):]...)

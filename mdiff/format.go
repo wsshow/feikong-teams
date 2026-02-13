@@ -173,10 +173,20 @@ func buildHunks(edits []Edit, contextLines int) []Hunk {
 			}
 		}
 
+		// 转为 1-based；当行数为 0 时（新建/删除文件），起始行号应为 0
+		hunkOldStartFinal := hunkOldStart + 1
+		hunkNewStartFinal := hunkNewStart + 1
+		if oldCount == 0 {
+			hunkOldStartFinal = 0
+		}
+		if newCount == 0 {
+			hunkNewStartFinal = 0
+		}
+
 		hunks = append(hunks, Hunk{
-			OldStart: hunkOldStart + 1, // 转为1-based
+			OldStart: hunkOldStartFinal,
 			OldLines: oldCount,
-			NewStart: hunkNewStart + 1, // 转为1-based
+			NewStart: hunkNewStartFinal,
 			NewLines: newCount,
 			Lines:    lines,
 		})

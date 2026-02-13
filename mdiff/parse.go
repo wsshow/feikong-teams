@@ -112,9 +112,13 @@ func parseFileName(line, prefix string) string {
 	if idx := strings.Index(name, "\t"); idx >= 0 {
 		name = name[:idx]
 	}
-	// 移除 a/ b/ 前缀
-	name = strings.TrimPrefix(name, "a/")
-	name = strings.TrimPrefix(name, "b/")
+	// 根据行类型只移除对应的 git 路径前缀，避免误剥离实际路径
+	switch prefix {
+	case "--- ":
+		name = strings.TrimPrefix(name, "a/")
+	case "+++ ":
+		name = strings.TrimPrefix(name, "b/")
+	}
 	return name
 }
 

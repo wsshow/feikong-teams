@@ -89,7 +89,7 @@ func Diff(oldLines, newLines []string) []Edit {
 	}
 
 	// 组装完整结果：前缀 + 中间 diff + 后缀
-	var edits []Edit
+	edits := make([]Edit, 0, prefixLen+len(midEdits)+suffixLen)
 	for i := 0; i < prefixLen; i++ {
 		edits = append(edits, Edit{Kind: OpEqual, OldPos: i, NewPos: i, Text: oldLines[i]})
 	}
@@ -154,7 +154,7 @@ func backtrack(trace [][]int, oldLines, newLines []string, d, offset int) []Edit
 	n := len(oldLines)
 	m := len(newLines)
 
-	var edits []Edit
+	edits := make([]Edit, 0, n+m)
 	x := n
 	y := m
 
