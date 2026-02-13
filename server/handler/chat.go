@@ -201,6 +201,11 @@ func buildInputMessages(historyFilePath, userInput string) []adk.Message {
 
 	if err := fkevent.GlobalHistoryRecorder.LoadFromFile(historyFilePath); err == nil {
 		log.Printf("auto-loaded chat history from: %s", historyFilePath)
+	} else {
+		// 文件不存在（新会话）或加载失败时，清空内存中的历史记录
+		// 防止上一个会话的残留数据污染新会话
+		fkevent.GlobalHistoryRecorder.Clear()
+		log.Printf("cleared history recorder for new/missing session: %s", historyFilePath)
 	}
 
 	agentMessages := fkevent.GlobalHistoryRecorder.GetMessages()

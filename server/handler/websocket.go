@@ -120,12 +120,24 @@ func handleClearHistory(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	if sessionID == "" {
 		sessionID = "default"
 	}
+
+	// 特殊标记：只清空内存中的历史记录，不删除文件
+	// 用于新建会话时清空 GlobalHistoryRecorder 中的残留数据
+	if sessionID == "__memory_only__" {
+		fkevent.GlobalHistoryRecorder.Clear()
+		log.Println("cleared in-memory history recorder (new session)")
+		_ = writeJSON(map[string]interface{}{"type": "history_cleared", "message": "内存历史已清除"})
+		return
+	}
+
 	filePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
 
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 		log.Printf("failed to delete history file: %v", err)
 		_ = writeJSON(map[string]interface{}{"type": "error", "error": "清除历史失败"})
 	} else {
+		// 同时清空内存中的历史记录
+		fkevent.GlobalHistoryRecorder.Clear()
 		log.Printf("cleared session history: session=%s", sessionID)
 		_ = writeJSON(map[string]interface{}{"type": "history_cleared", "message": "历史记录已清除"})
 	}
@@ -144,10 +156,18 @@ func handleLoadHistory(wsMsg WSMessage, writeJSON func(interface{}) error) {
 	}
 
 	filePath := fmt.Sprintf("%s%s", historyDir, filename)
-	if err := fkevent.GlobalHistoryRecorder.LoadFromFile(filePath); err != nil {
+
+	// 使用临时 Recorder 读取文件，避免污染全局 GlobalHistoryRecorder 的当前会话数据
+	tempRecorder := fkevent.NewHistoryRecorder()
+	if err := tempRecorder.LoadFromFile(filePath); err != nil {
 		log.Printf("failed to load history file: %v", err)
 		_ = writeJSON(map[string]interface{}{"type": "error", "error": fmt.Sprintf("加载历史失败: %v", err)})
 		return
+	}
+
+	// 同时更新全局 Recorder，因为用户切换到了这个会话，后续发消息需要这个上下文
+	if err := fkevent.GlobalHistoryRecorder.LoadFromFile(filePath); err != nil {
+		log.Printf("warning: failed to update global recorder: %v", err)
 	}
 
 	sessionID := extractSessionID(filename)
@@ -157,6 +177,6 @@ func handleLoadHistory(wsMsg WSMessage, writeJSON func(interface{}) error) {
 		"message":    "历史记录已加载",
 		"filename":   filename,
 		"session_id": sessionID,
-		"messages":   fkevent.GlobalHistoryRecorder.GetMessages(),
+		"messages":   tempRecorder.GetMessages(),
 	})
 }

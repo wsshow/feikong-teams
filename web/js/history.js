@@ -18,6 +18,17 @@ FKTeamsChat.prototype.createNewSession = function () {
     this.sessionId = newSessionId;
     this.sessionIdInput.value = newSessionId;
     this._hasLoadedSession = true;
+    this._activeFilename = null; // 重置活动文件名，防止侧边栏高亮错误
+    this.currentAgent = null; // 重置当前智能体，防止新会话继承上一个 @agent
+
+    // 通知后端清空内存中的历史记录，防止新会话携带旧历史
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({
+            type: 'clear_history',
+            session_id: '__memory_only__'
+        }));
+    }
+
     this.clearChatUI();
     this.showNotification(`已创建新会话: ${newSessionId}`, 'success');
 
