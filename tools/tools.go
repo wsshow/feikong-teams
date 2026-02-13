@@ -4,7 +4,9 @@ import (
 	"context"
 	"fkteams/g"
 	"fkteams/tools/command"
+	"fkteams/tools/doc"
 	"fkteams/tools/excel"
+	"fkteams/tools/fetch"
 	"fkteams/tools/file"
 	"fkteams/tools/git"
 	"fkteams/tools/mcp"
@@ -87,6 +89,10 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	case "search":
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err
+	case "fetch":
+		return fetch.GetTools()
+	case "doc":
+		return doc.GetTools()
 	case "uv":
 		uvDir := "./workspace"
 		uvDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
