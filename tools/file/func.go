@@ -1156,3 +1156,11 @@ func (a *fsAccessor) WriteFile(path string, content string) error {
 	}
 	return afero.WriteFile(a.ft.securedFs, relPath, []byte(content), 0644)
 }
+
+func (a *fsAccessor) DeleteFile(path string) error {
+	relPath, err := a.ft.validatePath(path)
+	if err != nil {
+		return err
+	}
+	return a.ft.securedFs.Remove(relPath)
+}
