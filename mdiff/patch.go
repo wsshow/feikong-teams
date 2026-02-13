@@ -81,6 +81,27 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 		}
 	}
 
+	// 宽松匹配：忽略行尾空白差异（处理 LLM 生成的 patch 空白不一致问题）
+	if matchPos < 0 && len(oldHunkLines) > 0 {
+		if matchAtLoose(lines, oldHunkLines, startIdx) {
+			matchPos = startIdx
+		}
+		if matchPos < 0 {
+			for offset := 1; offset <= maxFuzz; offset++ {
+				pos := startIdx - offset
+				if pos >= 0 && matchAtLoose(lines, oldHunkLines, pos) {
+					matchPos = pos
+					break
+				}
+				pos = startIdx + offset
+				if pos >= 0 && matchAtLoose(lines, oldHunkLines, pos) {
+					matchPos = pos
+					break
+				}
+			}
+		}
+	}
+
 	if matchPos < 0 {
 		// 构建错误信息
 		context := ""
@@ -117,13 +138,27 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 	return result, nil
 }
 
-// matchAt 检查 lines[pos:] 是否与 pattern 匹配
+// matchAt 检查 lines[pos:] 是否与 pattern 精确匹配
 func matchAt(lines, pattern []string, pos int) bool {
 	if pos < 0 || pos+len(pattern) > len(lines) {
 		return false
 	}
 	for i, p := range pattern {
 		if lines[pos+i] != p {
+			return false
+		}
+	}
+	return true
+}
+
+// matchAtLoose 检查 lines[pos:] 是否与 pattern 宽松匹配（忽略行尾空白）
+// 用于处理 LLM 生成的 patch 中空白字符微小差异的情况
+func matchAtLoose(lines, pattern []string, pos int) bool {
+	if pos < 0 || pos+len(pattern) > len(lines) {
+		return false
+	}
+	for i, p := range pattern {
+		if strings.TrimRight(lines[pos+i], " \t") != strings.TrimRight(p, " \t") {
 			return false
 		}
 	}

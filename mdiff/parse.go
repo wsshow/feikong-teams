@@ -146,16 +146,25 @@ func parseHunk(lines []string, start int) (*Hunk, int, error) {
 		line := lines[i]
 
 		if len(line) == 0 {
-			// 空行视为上下文行（仅在还有剩余空间时）
+			// 空行处理：根据剩余计数推断类型
 			if oldRemaining > 0 && newRemaining > 0 {
+				// 两侧都有剩余，视为上下文行
 				hunk.Lines = append(hunk.Lines, DiffLine{Kind: OpEqual, Text: ""})
 				oldRemaining--
 				newRemaining--
-				i++
-				continue
+			} else if oldRemaining > 0 {
+				// 只有旧文件剩余，视为删除空行
+				hunk.Lines = append(hunk.Lines, DiffLine{Kind: OpDelete, Text: ""})
+				oldRemaining--
+			} else if newRemaining > 0 {
+				// 只有新文件剩余，视为插入空行
+				hunk.Lines = append(hunk.Lines, DiffLine{Kind: OpInsert, Text: ""})
+				newRemaining--
+			} else {
+				break
 			}
-			// 没有剩余空间，hunk 结束
-			break
+			i++
+			continue
 		}
 
 		prefix := line[0]

@@ -1061,3 +1061,112 @@ func (m *memAccessor) WriteFile(path string, content string) error {
 	m.files[path] = content
 	return nil
 }
+
+// ============================================================
+// 空行解析 & 宽松匹配测试
+// ============================================================
+
+func TestParseHunkWithEmptyContextLine(t *testing.T) {
+	// 模拟 LLM 生成的 diff，空上下文行无前导空格
+	patchText := "--- test.py\n+++ test.py\n@@ -1,5 +1,5 @@\n def func():\n\n     pass\n-    old\n+    new\n"
+	// 第二行是空行（本应是 " " 即空格开头的上下文行，但 LLM 省略了空格）
+
+	fd, err := ParseFileDiff(patchText)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(fd.Hunks) == 0 {
+		t.Fatal("expected at least 1 hunk")
+	}
+
+	// 验证空行被正确解析为上下文行
+	foundEmptyContext := false
+	for _, dl := range fd.Hunks[0].Lines {
+		if dl.Kind == OpEqual && dl.Text == "" {
+			foundEmptyContext = true
+			break
+		}
+	}
+	if !foundEmptyContext {
+		t.Error("expected empty context line to be parsed")
+	}
+}
+
+func TestParseHunkEmptyLineAsDelete(t *testing.T) {
+	// 当只有 oldRemaining > 0 时，空行应被视为删除的空行
+	// @@ -1,4 +1,1 @@ 表示旧文件 4 行变为新文件 1 行
+	// keep (Equal) → oldRem=3,newRem=0
+	// -removed1 (Delete) → oldRem=2
+	// 空行 → 此时只有 oldRem > 0，应视为 Delete
+	// -removed2 (Delete) → oldRem=0
+	patchText := "--- test.py\n+++ test.py\n@@ -1,4 +1,1 @@\n keep\n-removed1\n\n-removed2\n"
+
+	fd, err := ParseFileDiff(patchText)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(fd.Hunks) == 0 {
+		t.Fatal("expected at least 1 hunk")
+	}
+
+	// 验证所有 4 个旧行都被正确消费
+	h := fd.Hunks[0]
+	totalOld := 0
+	for _, dl := range h.Lines {
+		if dl.Kind == OpEqual || dl.Kind == OpDelete {
+			totalOld++
+		}
+	}
+	if totalOld != 4 {
+		t.Errorf("expected 4 old lines consumed, got %d", totalOld)
+	}
+}
+
+func TestApplyWithTrailingWhitespaceDiff(t *testing.T) {
+	// 源文件有行尾空格，但 patch 中的上下文没有（LLM 常见问题）
+	oldContent := "def func():  \n    old_code\n    return\n"
+	// patch 中上下文行没有行尾空格
+	patchText := "--- test.py\n+++ test.py\n@@ -1,3 +1,3 @@\n def func():\n-    old_code\n+    new_code\n     return\n"
+
+	result, err := PatchText(oldContent, patchText)
+	if err != nil {
+		t.Fatalf("patch with trailing whitespace diff failed: %v", err)
+	}
+	if !strings.Contains(result, "new_code") {
+		t.Errorf("expected 'new_code' in result, got %q", result)
+	}
+}
+
+func TestRoundTripWithEmptyLines(t *testing.T) {
+	// Python 风格代码，函数间有空行
+	oldContent := "def func1():\n    pass\n\n\ndef func2():\n    old\n\n\ndef func3():\n    pass\n"
+	newContent := "def func1():\n    pass\n\n\ndef func2():\n    new\n\n\ndef func3():\n    pass\n"
+
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripMultipleEmptyLines(t *testing.T) {
+	// 连续多个空行
+	oldContent := "a\n\n\n\nb\n"
+	newContent := "a\n\n\n\nc\n"
+
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMatchAtLoose(t *testing.T) {
+	// 行尾有空格的情况
+	lines := []string{"hello  ", "world\t", "end"}
+
+	// 精确匹配失败
+	if matchAt(lines, []string{"hello", "world"}, 0) {
+		t.Error("strict match should fail with trailing whitespace")
+	}
+	// 宽松匹配成功
+	if !matchAtLoose(lines, []string{"hello", "world"}, 0) {
+		t.Error("loose match should succeed with trailing whitespace diff")
+	}
+	// 宽松匹配也不应该匹配不同内容
+	if matchAtLoose(lines, []string{"hello", "different"}, 0) {
+		t.Error("loose match should fail for different content")
+	}
+}
