@@ -324,21 +324,23 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    min-width: 14px;
     height: 14px;
+    padding: 0 3px;
     font-size: 9px;
     font-weight: 600;
     line-height: 1;
     color: var(--accent-primary);
     background: var(--accent-light);
     border: 1.5px solid var(--accent-primary);
-    border-radius: 50%;
+    border-radius: 7px;
     text-decoration: none;
     cursor: pointer;
     vertical-align: super;
     margin: 0 1px;
     transition: all var(--transition);
     position: relative;
+    box-sizing: border-box;
 }
 
 a.footnote-cite:hover {
