@@ -38,7 +38,7 @@ func NewBunTools(workDir string) (*BunTools, error) {
 	// 检查 bun 是否已安装
 	bunPath, err := exec.LookPath("bun")
 	if err != nil {
-		return nil, fmt.Errorf("未找到 bun 命令，请先安装 bun: https://bun.sh")
+		return nil, fmt.Errorf("未找到 bun 命令，请先安装 bun: https://bun.sh （可以使用 ./fkteams --init 或 ./fkteams -i 安装）")
 	}
 
 	return &BunTools{

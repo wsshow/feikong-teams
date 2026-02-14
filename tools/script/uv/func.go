@@ -42,7 +42,7 @@ func NewUVTools(workDir string) (*UVTools, error) {
 	// 检查 uv 是否已安装
 	uvPath, err := exec.LookPath("uv")
 	if err != nil {
-		return nil, fmt.Errorf("未找到 uv 命令，请先安装 uv: https://github.com/astral-sh/uv")
+		return nil, fmt.Errorf("未找到 uv 命令，请先安装 uv: https://github.com/astral-sh/uv （可以使用 ./fkteams --init 或 ./fkteams -i 安装）")
 	}
 
 	venvPath := filepath.Join(absPath, ".venv")
