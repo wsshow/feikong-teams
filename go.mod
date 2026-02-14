@@ -10,8 +10,9 @@ require (
 	github.com/c-bata/go-prompt v0.2.6
 	github.com/cloudwego/eino v0.7.29
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
-	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20251223041451-fede3afb5715
 	github.com/cloudwego/eino-ext/components/tool/mcp v0.0.8
+	github.com/corpix/uarand v0.2.0
+	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/gomarkdown/markdown v0.0.0-20250810172220-2e2c11897d1a
@@ -23,6 +24,7 @@ require (
 	github.com/pterm/pterm v0.12.82
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/pflag v1.0.10
+	github.com/wk8/go-ordered-map/v2 v2.1.8
 	github.com/wsshow/dl v1.0.5
 	github.com/wsshow/docreader v1.1.1
 	github.com/wsshow/selfupdate v1.0.0
@@ -51,10 +53,8 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10 // indirect
 	github.com/containerd/console v1.0.5 // indirect
-	github.com/corpix/uarand v0.2.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
@@ -103,7 +103,6 @@ require (
 	github.com/tiendc/go-deepcopy v1.7.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xuri/efp v0.0.1 // indirect

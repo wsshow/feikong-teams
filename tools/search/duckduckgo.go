@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2"
 	"github.com/cloudwego/eino/components/tool"
 )
 
@@ -42,10 +41,10 @@ func NewDuckDuckGoTool(ctx context.Context) (tool.InvokableTool, error) {
 		Transport: transport,
 		Timeout:   time.Second * 30,
 	}
-	tool, err := duckduckgo.NewTextSearchTool(ctx, &duckduckgo.Config{
-		ToolName:   "duckduckgo_search",
+	tool, err := NewTextSearchTool(ctx, &Config{
+		ToolName:   "search",
 		ToolDesc:   "search for information by duckduckgo",
-		Region:     duckduckgo.RegionWT,
+		Region:     RegionWT,
 		MaxResults: 10,
 		HTTPClient: httpClient,
 	})
