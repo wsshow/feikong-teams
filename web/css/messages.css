@@ -317,6 +317,201 @@
     font-weight: 600;
 }
 
+/* Footnotes */
+
+/* 行内脚注引用 - 小圆标 */
+.message-body .footnote-cite {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--accent-primary);
+    background: var(--accent-light);
+    border: 1.5px solid var(--accent-primary);
+    border-radius: 50%;
+    text-decoration: none;
+    cursor: pointer;
+    vertical-align: super;
+    margin: 0 1px;
+    transition: all var(--transition);
+    position: relative;
+}
+
+a.footnote-cite:hover {
+    background: var(--accent-primary);
+    color: white;
+    box-shadow: 0 1px 4px rgba(107, 127, 198, 0.35);
+    border-bottom: none;
+}
+
+/* 自定义快速 tooltip（替代原生 title 的延迟） */
+a.footnote-cite::after {
+    content: attr(data-url);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30, 30, 30, 0.92);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 400;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    white-space: nowrap;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 100;
+    line-height: 1.4;
+}
+
+a.footnote-cite:hover::after {
+    opacity: 1;
+}
+
+/* 来源卡片 */
+.sources-card {
+    margin-top: 16px;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+    animation: sources-fade-in 0.3s ease;
+}
+
+@keyframes sources-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.sources-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition);
+}
+
+.sources-header:hover {
+    background: var(--bg-hover);
+}
+
+.sources-icons {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.source-favicon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-tertiary);
+    background: var(--bg-secondary);
+    object-fit: contain;
+}
+
+.source-icon-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--text-tertiary);
+}
+
+.source-icon-fallback svg {
+    width: 16px;
+    height: 16px;
+}
+
+.sources-count {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.sources-chevron {
+    width: 16px;
+    height: 16px;
+    color: var(--text-tertiary);
+    transition: transform var(--transition);
+    flex-shrink: 0;
+}
+
+.sources-card.expanded .sources-chevron {
+    transform: rotate(180deg);
+}
+
+.sources-list {
+    display: none;
+    border-top: 1px solid var(--border-color);
+    padding: 6px 0;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.sources-card.expanded .sources-list {
+    display: block;
+}
+
+.source-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: background var(--transition);
+    cursor: pointer;
+}
+
+a.source-item:hover {
+    background: var(--bg-hover);
+    color: var(--accent-primary);
+}
+
+.source-item-favicon {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.source-item-icon {
+    display: flex;
+    align-items: center;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+}
+
+.source-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* User Message */
 .message.user {
     justify-content: flex-end;

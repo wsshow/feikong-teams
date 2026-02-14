@@ -700,6 +700,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
                             const bodyEl = currentMessageEl.querySelector('.message-body');
                             if (bodyEl) {
                                 bodyEl.setAttribute('data-raw', currentContent);
+                                bodyEl.setAttribute('data-fn-done', '1');
                                 bodyEl.innerHTML = this.renderMarkdown(currentContent);
                             }
                             break;
@@ -728,6 +729,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
                 const bodyEl = messageEl.querySelector('.message-body');
                 if (bodyEl && msg.content) {
                     bodyEl.setAttribute('data-raw', msg.content);
+                    bodyEl.setAttribute('data-fn-done', '1');
                     bodyEl.innerHTML = this.renderMarkdown(msg.content);
                 }
 

@@ -159,9 +159,17 @@ class FKTeamsChat {
         if (this.newSessionBtn) {
             this.newSessionBtn.addEventListener('click', () => this.createNewSession());
         }
-        // 监听滚动事件
+        // 监听滚动事件（使用 rAF 节流避免高频触发）
         if (this.mainContent) {
-            this.mainContent.addEventListener('scroll', () => this.handleScroll());
+            this._scrollRAF = null;
+            this.mainContent.addEventListener('scroll', () => {
+                if (!this._scrollRAF) {
+                    this._scrollRAF = requestAnimationFrame(() => {
+                        this.handleScroll();
+                        this._scrollRAF = null;
+                    });
+                }
+            });
         }
         // 回到底部按钮
         if (this.scrollToBottomBtn) {
@@ -175,8 +183,10 @@ class FKTeamsChat {
 
         // 如果距离底部超过 100px，认为用户向上滚动了
         if (distanceFromBottom > 100) {
-            this.userScrolledUp = true;
-            this.showScrollToBottomBtn(true);
+            // 仅当有实际消息时才显示回到底部按钮（欢迎页不显示）
+            var hasMessages = this.messagesContainer && this.messagesContainer.querySelector('.message');
+            this.userScrolledUp = !!hasMessages;
+            this.showScrollToBottomBtn(!!hasMessages);
         } else {
             // 用户回到了底部附近
             this.userScrolledUp = false;
@@ -185,22 +195,22 @@ class FKTeamsChat {
     }
 
     showScrollToBottomBtn(show) {
-        if (this.scrollToBottomBtn) {
-            if (show) {
-                this.scrollToBottomBtn.style.display = 'flex';
-                // 触发重排以启动动画
-                this.scrollToBottomBtn.offsetHeight;
-                this.scrollToBottomBtn.style.opacity = '1';
-                this.scrollToBottomBtn.style.transform = 'translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(0)';
-            } else {
-                this.scrollToBottomBtn.style.opacity = '0';
-                this.scrollToBottomBtn.style.transform = 'translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(20px)';
-                setTimeout(() => {
-                    if (this.scrollToBottomBtn.style.opacity === '0') {
-                        this.scrollToBottomBtn.style.display = 'none';
-                    }
-                }, 200); // 等待动画完成
-            }
+        if (!this.scrollToBottomBtn || this._scrollBtnVisible === show) return;
+        this._scrollBtnVisible = show;
+        if (show) {
+            this.scrollToBottomBtn.style.display = 'flex';
+            // 触发重排以启动动画
+            this.scrollToBottomBtn.offsetHeight;
+            this.scrollToBottomBtn.style.opacity = '1';
+            this.scrollToBottomBtn.style.transform = 'translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(0)';
+        } else {
+            this.scrollToBottomBtn.style.opacity = '0';
+            this.scrollToBottomBtn.style.transform = 'translateX(calc(-50% + var(--sidebar-width) / 2)) translateY(20px)';
+            setTimeout(() => {
+                if (this.scrollToBottomBtn.style.opacity === '0') {
+                    this.scrollToBottomBtn.style.display = 'none';
+                }
+            }, 200);
         }
     }
 
@@ -385,9 +395,11 @@ class FKTeamsChat {
 
     escapeHtml(text) {
         if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (!this._escapeDiv) {
+            this._escapeDiv = document.createElement('div');
+        }
+        this._escapeDiv.textContent = text;
+        return this._escapeDiv.innerHTML;
     }
 
     showNotification(message, type = 'info') {

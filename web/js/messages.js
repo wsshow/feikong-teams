@@ -125,6 +125,8 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
             this.isProcessing = false;
             this.updateStatus('connected', '已连接');
             this.updateSendButtonState();
+            // 流式结束后，对所有含 data-raw 的消息做一次脚注最终渲染
+            this._finalizeFootnotes();
             this.currentMessageElement = null;
             this.hasToolCallAfterMessage = false;
             // 刷新侧边栏历史列表
@@ -168,7 +170,6 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
         default:
             console.log('Unknown event:', event);
     }
-    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.trimLeadingWhitespace = function (text) {
@@ -176,21 +177,184 @@ FKTeamsChat.prototype.trimLeadingWhitespace = function (text) {
     return text.replace(/^[\s\n\r\u00A0\u2000-\u200B\uFEFF]+/, '');
 };
 
-// 渲染 Markdown
-FKTeamsChat.prototype.renderMarkdown = function (text) {
+// 渲染 Markdown（streaming 为 true 时跳过脚注处理以提升流式性能）
+FKTeamsChat.prototype.renderMarkdown = function (text, streaming) {
     if (!text) return '';
     try {
         if (typeof marked !== 'undefined') {
-            marked.setOptions({
-                breaks: true,
-                gfm: true
-            });
-            return marked.parse(text);
+            if (!this._markedInstance) {
+                this._markedInstance = new marked.Marked({ breaks: true, gfm: true });
+                // 链接在新标签中打开
+                this._markedInstance.use({
+                    renderer: {
+                        link: function (token) {
+                            var href = token.href || '';
+                            var title = token.title ? ' title="' + token.title + '"' : '';
+                            var text = token.text || href;
+                            if (href.startsWith('#')) {
+                                return '<a href="' + href + '"' + title + '>' + text + '</a>';
+                            }
+                            return '<a href="' + href + '"' + title + ' target="_blank" rel="noopener noreferrer">' + text + '</a>';
+                        }
+                    }
+                });
+            }
+
+            // 流式渲染时跳过脚注处理，仅在最终渲染时处理
+            if (!streaming) {
+                var footnotes = this._extractFootnotes(text);
+                text = footnotes.text;
+                var html = this._markedInstance.parse(text);
+                // 在 marked 解析后替换占位符为真正的脚注链接
+                if (footnotes.orderedNums && footnotes.orderedNums.length > 0) {
+                    html = this._replaceFootnotePlaceholders(html, footnotes.definitions, footnotes.orderedNums);
+                }
+                if (footnotes.items.length > 0) {
+                    html = this._buildSourcesCard(html, footnotes.items);
+                }
+                return html;
+            }
+            return this._markedInstance.parse(text);
         }
     } catch (e) {
         console.error('Markdown parse error:', e);
     }
     return this.escapeHtml(text);
+};
+
+// 从 markdown 文本中提取脚注定义，替换行内引用为占位符，移除定义行
+FKTeamsChat.prototype._extractFootnotes = function (text) {
+    var definitions = {};
+    var orderedNums = [];
+
+    // 提取脚注定义: [^N]: 内容（可能是 URL + 描述，或纯文本，或 markdown 链接）
+    text.replace(/^\[\^(\d+)\]:\s*(.+)$/gm, function (match, num, content) {
+        content = content.trim();
+        var url = '', label = '';
+
+        // 尝试匹配 markdown 链接: [text](url)
+        var mdLink = content.match(/^\[([^\]]*)\]\((https?:\/\/[^)]+)\)(.*)$/);
+        if (mdLink) {
+            url = mdLink[2];
+            label = (mdLink[1] + ' ' + mdLink[3]).trim() || url;
+        } else {
+            // 尝试匹配裸 URL: https://... 可选描述
+            var urlMatch = content.match(/^(https?:\/\/\S+)(?:\s+(.*))?$/);
+            if (urlMatch) {
+                url = urlMatch[1];
+                label = urlMatch[2] || url;
+            } else {
+                label = content;
+            }
+        }
+
+        definitions[num] = { url: url, label: label };
+        if (orderedNums.indexOf(num) === -1) orderedNums.push(num);
+        return match;
+    });
+
+    if (orderedNums.length === 0) {
+        return { text: text, items: [] };
+    }
+
+    // 移除脚注定义行（包括前后可能的空行）
+    text = text.replace(/\n*^\[\^(\d+)\]:\s*(.+)$/gm, '');
+
+    // 将行内引用 [^N] 替换为占位符（marked 会当作普通文本保留）
+    var items = [];
+    orderedNums.forEach(function (num) {
+        items.push(definitions[num]);
+    });
+
+    text = text.replace(/\[\^(\d+)\]/g, function (match, num) {
+        var def = definitions[num];
+        if (!def) return match;
+        var idx = orderedNums.indexOf(num);
+        return '<!--fnref:' + idx + ':' + num + '-->';
+    });
+
+    return { text: text, items: items, definitions: definitions, orderedNums: orderedNums };
+};
+
+// 将占位符替换为真正的脚注链接（在 marked.parse 之后调用）
+FKTeamsChat.prototype._replaceFootnotePlaceholders = function (html, definitions, orderedNums) {
+    return html.replace(/<!--fnref:(\d+):(\d+)-->/g, function (match, idx, num) {
+        var def = definitions[num];
+        if (!def) return match;
+        var displayNum = parseInt(idx, 10) + 1;
+        if (def.url) {
+            return '<a class="footnote-cite" href="' + def.url + '" data-url="' + def.url + '" target="_blank" rel="noopener noreferrer">' + displayNum + '</a>';
+        }
+        return '<span class="footnote-cite">' + displayNum + '</span>';
+    });
+};
+
+// 根据提取的脚注项构建来源卡片，追加到 HTML 末尾
+FKTeamsChat.prototype._buildSourcesCard = function (html, items) {
+    // 收集可用 favicon 的域名
+    var favicons = [];
+    items.forEach(function (item) {
+        if (item.url && /^https?:\/\//.test(item.url)) {
+            try {
+                var domain = new URL(item.url).hostname;
+                if (favicons.indexOf(domain) === -1) favicons.push(domain);
+            } catch (e) { /* ignore */ }
+        }
+    });
+
+    // 构建图标堆叠（最多显示5个）
+    var iconsHtml = '';
+    var showCount = Math.min(favicons.length, 5);
+    if (showCount > 0) {
+        for (var i = 0; i < showCount; i++) {
+            iconsHtml += '<img class="source-favicon" src="https://www.google.com/s2/favicons?domain=' + favicons[i] + '&sz=32" alt="" style="z-index:' + (showCount - i) + ';margin-left:' + (i === 0 ? '0' : '-6px') + ';">';
+        }
+    } else {
+        iconsHtml = '<span class="source-icon-fallback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
+    }
+
+    // 构建来源列表
+    var listHtml = '';
+    items.forEach(function (item, idx) {
+        var favicon = '';
+        if (item.url && /^https?:\/\//.test(item.url)) {
+            try {
+                var d = new URL(item.url).hostname;
+                favicon = '<img class="source-item-favicon" src="https://www.google.com/s2/favicons?domain=' + d + '&sz=16" alt="">';
+            } catch (e) { /* ignore */ }
+        }
+        if (!favicon) {
+            favicon = '<span class="source-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
+        }
+        var linkAttr = item.url ? ' href="' + item.url + '" target="_blank" rel="noopener noreferrer"' : '';
+        var tag = item.url ? 'a' : 'span';
+        listHtml += '<' + tag + ' class="source-item"' + linkAttr + '>' + favicon + '<span class="source-item-label">' + (idx + 1) + '. ' + item.label + '</span></' + tag + '>';
+    });
+
+    var cardHtml = '<div class="sources-card">' +
+        '<div class="sources-header" onclick="this.parentElement.classList.toggle(\'expanded\')">' +
+        '<div class="sources-icons">' + iconsHtml + '</div>' +
+        '<span class="sources-count">' + items.length + ' 个来源</span>' +
+        '<svg class="sources-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>' +
+        '</div>' +
+        '<div class="sources-list">' + listHtml + '</div>' +
+        '</div>';
+
+    return html + cardHtml;
+};
+
+// 流式结束后，对含脚注的消息体做一次最终渲染（仅处理尚未完成脚注渲染的消息）
+FKTeamsChat.prototype._finalizeFootnotes = function () {
+    var bodies = this.messagesContainer.querySelectorAll('.message.assistant .message-body[data-raw]:not([data-fn-done])');
+    for (var i = 0; i < bodies.length; i++) {
+        var body = bodies[i];
+        var raw = body.getAttribute('data-raw');
+        if (raw && /\[\^\d+\]/.test(raw)) {
+            body.innerHTML = this.renderMarkdown(raw, false);
+        }
+        // 标记已完成脚注渲染，后续不再重复处理
+        body.setAttribute('data-fn-done', '1');
+    }
 };
 
 FKTeamsChat.prototype.handleStreamChunk = function (event) {
@@ -221,9 +385,21 @@ FKTeamsChat.prototype.handleStreamChunk = function (event) {
         rawText += newContent;
         bodyEl.setAttribute('data-raw', rawText);
 
-        // 实时渲染 Markdown
-        bodyEl.innerHTML = this.renderMarkdown(rawText);
+        // 流式渲染 Markdown（跳过脚注处理，但剥离脚注定义行避免原文可见）
+        // 1. 剥离完整定义行：[^N]: 内容
+        var streamText = rawText.replace(/\n*^\[\^(\d+)\]:\s*(.+)$/gm, '');
+        // 2. 剥离尾部不完整的定义行（如 [^、[^1、[^1]、[^1]: 等正在输入中的部分）
+        streamText = streamText.replace(/\n\[\^[^\]]*\]?:?\s*$/, '');
+        // 3. 规范化尾部空白，避免换行符差异导致无意义的 DOM 更新
+        streamText = streamText.replace(/\s+$/, '');
+        // 仅当可见内容变化时更新 DOM（避免脚注定义行到达时的无意义重绘）
+        var lastStreamText = bodyEl.getAttribute('data-stream-text') || '';
+        if (streamText !== lastStreamText) {
+            bodyEl.setAttribute('data-stream-text', streamText);
+            bodyEl.innerHTML = this.renderMarkdown(streamText, true);
+        }
     }
+    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleMessage = function (event) {
@@ -247,8 +423,10 @@ FKTeamsChat.prototype.handleMessage = function (event) {
 
         const content = this.trimLeadingWhitespace(event.content);
         bodyEl.setAttribute('data-raw', content);
+        bodyEl.setAttribute('data-fn-done', '1');
         bodyEl.innerHTML = this.renderMarkdown(content);
     }
+    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
@@ -271,6 +449,7 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
         <pre class="tool-call-args">参数准备中...</pre>
     `;
     this.messagesContainer.appendChild(toolCallEl);
+    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleToolCalls = function (event) {
@@ -289,6 +468,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
             }
         }
     }
+    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleToolResult = function (event) {
@@ -319,6 +499,7 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
         <pre class="tool-result-content">${this.escapeHtml(formattedContent)}</pre>
     `;
     this.messagesContainer.appendChild(toolResultEl);
+    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleAction = function (event) {
@@ -350,6 +531,7 @@ FKTeamsChat.prototype.handleAction = function (event) {
     actionEl.className = `action-event ${actionClass}`;
     actionEl.innerHTML = `${actionIcon}<span>[${this.escapeHtml(event.agent_name)}] ${this.escapeHtml(event.content || event.action_type)}</span>`;
     this.messagesContainer.appendChild(actionEl);
+    this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.handleError = function (event) {
@@ -364,6 +546,7 @@ FKTeamsChat.prototype.handleError = function (event) {
         <span>${event.agent_name ? `[${this.escapeHtml(event.agent_name)}] ` : ''}${this.escapeHtml(event.error)}</span>
     `;
     this.messagesContainer.appendChild(errorEl);
+    this.scrollToBottom();
     this.isProcessing = false;
     this.updateStatus('connected', '已连接');
     this.updateSendButtonState();
@@ -478,6 +661,10 @@ FKTeamsChat.prototype.clearChatUI = function () {
     `;
     this.currentMessageElement = null;
     this.hasToolCallAfterMessage = false;
+
+    // 隐藏回到底部按钮（切换到空页面时需要重置）
+    this.showScrollToBottomBtn(false);
+    this.userScrolledUp = false;
 
     // 清空问题导航
     this.clearQuickNav();
