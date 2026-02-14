@@ -8,7 +8,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/atotto/clipboard v0.1.4
 	github.com/c-bata/go-prompt v0.2.6
-	github.com/cloudwego/eino v0.7.29
+	github.com/cloudwego/eino v0.7.33
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
 	github.com/cloudwego/eino-ext/components/tool/mcp v0.0.8
 	github.com/corpix/uarand v0.2.0
