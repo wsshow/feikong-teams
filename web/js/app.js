@@ -272,12 +272,22 @@ class FKTeamsChat {
 
         this.ws.onclose = () => {
             this.updateStatus('disconnected', '连接断开');
+            // 连接断开时重置处理状态，恢复发送按钮
+            if (this.isProcessing) {
+                this.isProcessing = false;
+                this.updateSendButtonState();
+            }
             this.tryReconnect();
         };
 
         this.ws.onerror = (error) => {
             console.error('WebSocket error:', error);
             this.updateStatus('disconnected', '连接错误');
+            // 连接错误时重置处理状态，恢复发送按钮
+            if (this.isProcessing) {
+                this.isProcessing = false;
+                this.updateSendButtonState();
+            }
         };
 
         this.ws.onmessage = (event) => {

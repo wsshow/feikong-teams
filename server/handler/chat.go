@@ -180,6 +180,17 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 			break
 		}
 		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
+			// 检查是否是连接已关闭的错误，避免重复记录
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "closed network connection") ||
+				strings.Contains(errMsg, "broken pipe") ||
+				strings.Contains(errMsg, "connection reset") {
+				// 连接已断开，静默返回
+				log.Printf("connection closed, stopping event processing: session=%s", sessionID)
+				return
+			}
+
+			// 其他错误，尝试发送错误消息（可能失败但不再记录）
 			log.Printf("error processing event: %v", err)
 			_ = writeJSON(map[string]interface{}{
 				"type":  "error",
