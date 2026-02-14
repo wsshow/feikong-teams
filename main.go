@@ -24,7 +24,7 @@ import (
 )
 
 func init() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Llongfile)
 }
 
 func main() {
