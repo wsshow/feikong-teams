@@ -49,6 +49,9 @@ func (m *AgentMessage) GetTextContent() string {
 	return builder.String()
 }
 
+// 错误内容最大长度（rune），超出时保留头尾并截断中间部分
+const maxErrorContentLen = 500
+
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
 	mu               sync.RWMutex
@@ -66,6 +69,17 @@ func NewHistoryRecorder() *HistoryRecorder {
 		currentEvents:    make([]MessageEvent, 0),
 		pendingToolCalls: make(map[string]string),
 	}
+}
+
+// truncateErrorContent 截断过长的错误内容，保留头尾部分
+func truncateErrorContent(s string) string {
+	runes := []rune(s)
+	if len(runes) <= maxErrorContentLen {
+		return s
+	}
+	head := maxErrorContentLen * 2 / 3
+	tail := maxErrorContentLen - head
+	return string(runes[:head]) + "\n...(truncated)...\n" + string(runes[len(runes)-tail:])
 }
 
 // RecordEvent 记录事件
@@ -121,6 +135,23 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				ActionType: event.ActionType,
 				Content:    event.Content,
 			},
+		})
+
+	case "error":
+		if event.AgentName != h.currentAgent && h.currentAgent != "" {
+			h.finalizeCurrentMessage()
+		}
+		if event.AgentName != h.currentAgent {
+			h.currentAgent = event.AgentName
+			h.currentRunPath = event.RunPath
+			h.currentStartTime = time.Now()
+			h.currentEvents = make([]MessageEvent, 0)
+			h.pendingToolCalls = make(map[string]string)
+		}
+
+		h.currentEvents = append(h.currentEvents, MessageEvent{
+			Type:    "error",
+			Content: truncateErrorContent(event.Error),
 		})
 	}
 }
@@ -446,6 +477,9 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 				if event.Action != nil {
 					md.WriteString(fmt.Sprintf("> **⚡ Action**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content))
 				}
+
+			case "error":
+				md.WriteString(fmt.Sprintf("> **❌ 错误**: %s\n\n", event.Content))
 			}
 		}
 
