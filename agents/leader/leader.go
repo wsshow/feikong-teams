@@ -3,12 +3,14 @@ package leader
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/tools/file"
 	"fkteams/tools/todo"
 	"log"
 	"os"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
 
@@ -16,14 +18,14 @@ var globalTodoToolsInstance *todo.TodoTools
 
 func NewAgent(ctx context.Context) adk.Agent {
 
-	todoDir := "./workspace"
+	safeDir := "./workspace"
 	todoDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
 	if todoDirEnv != "" {
-		todoDir = todoDirEnv
+		safeDir = todoDirEnv
 	}
 
 	// 创建 Todo 工具实例
-	todoToolsInstance, err := todo.NewTodoTools(todoDir)
+	todoToolsInstance, err := todo.NewTodoTools(safeDir)
 	if err != nil {
 		log.Fatal("初始化 Todo 工具失败:", err)
 	}
@@ -37,9 +39,24 @@ func NewAgent(ctx context.Context) adk.Agent {
 		log.Fatal("创建 Todo 工具失败:", err)
 	}
 
+	// 初始化文件工具
+	fileToolsInstance, err := file.NewFileTools(safeDir)
+	if err != nil {
+		log.Fatalf("初始化文件工具失败: %v", err)
+	}
+	fileTools, err := fileToolsInstance.GetTools()
+	if err != nil {
+		log.Fatal("创建文件工具失败:", err)
+	}
+
+	var toolList []tool.BaseTool
+	toolList = append(toolList, todoTools...)
+	toolList = append(toolList, fileTools...)
+
 	systemMessages, err := LeaderPromptTemplate.Format(ctx, map[string]any{
-		"current_time": time.Now().Format("2006-01-02 15:04:05"),
-		"team_members": ctx.Value("team_members"),
+		"current_time":  time.Now().Format("2006-01-02 15:04:05"),
+		"team_members":  ctx.Value("team_members"),
+		"workspace_dir": safeDir,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -54,7 +71,7 @@ func NewAgent(ctx context.Context) adk.Agent {
 		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: todoTools,
+				Tools: toolList,
 			},
 		},
 	})
