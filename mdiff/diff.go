@@ -149,7 +149,7 @@ func myersDiff(oldLines, newLines []string) []Edit {
 			v[k+offset] = x
 
 			if x >= n && y >= m {
-				return backtrack(trace, oldLines, newLines, d, offset)
+				return backtrack(trace, oldLines, newLines, d)
 			}
 		}
 	}
@@ -159,7 +159,7 @@ func myersDiff(oldLines, newLines []string) []Edit {
 
 // backtrack 从 trace 中回溯出编辑序列
 // trace[d] 存储的是 v[offset-d:offset+d+1] 范围的快照，索引用 k+d 访问
-func backtrack(trace [][]int, oldLines, newLines []string, d, offset int) []Edit {
+func backtrack(trace [][]int, oldLines, newLines []string, d int) []Edit {
 	n := len(oldLines)
 	m := len(newLines)
 
