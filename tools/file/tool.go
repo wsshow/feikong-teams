@@ -73,7 +73,7 @@ func (ft *FileTools) GetTools() ([]tool.BaseTool, error) {
 	tools = append(tools, fileSearchTool)
 
 	// 多文件 patch 工具
-	filePatchTool, err := utils.InferTool("file_patch", "使用 unified diff 格式批量修改多个文件。支持模糊匹配，适合精确的代码批量修改。patch 格式: --- file\\n+++ file\\n@@ -start,count +start,count @@\\n context\\n-deleted\\n+inserted", ft.FilePatch)
+	filePatchTool, err := utils.InferTool("file_patch", "使用 unified diff 格式批量修改多个文件。支持模糊匹配，适合精确的代码批量修改。注意: 当修改超过文件50%内容或超过10个hunk时，建议使用 file_edit(action=write) 直接重写文件。patch 格式: --- file\n+++ file\n@@ -start,count +start,count @@\n context\n-deleted\n+inserted", ft.FilePatch)
 	if err != nil {
 		return nil, err
 	}

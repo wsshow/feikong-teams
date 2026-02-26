@@ -17,6 +17,23 @@ func (e *ApplyError) Error() string {
 	return fmt.Sprintf("patch %s hunk #%d: %s", e.File, e.HunkIdx+1, e.Message)
 }
 
+// PartialApplyError 表示 patch 部分应用成功
+type PartialApplyError struct {
+	File    string       // 文件名
+	Applied int          // 成功应用的 hunk 数量
+	Total   int          // 总 hunk 数量
+	Errors  []ApplyError // 失败的 hunk 详情
+}
+
+func (e *PartialApplyError) Error() string {
+	msgs := make([]string, 0, len(e.Errors))
+	for i := range e.Errors {
+		msgs = append(msgs, e.Errors[i].Message)
+	}
+	return fmt.Sprintf("partial apply %s: %d/%d hunks applied, failures: %s",
+		e.File, e.Applied, e.Total, strings.Join(msgs, "; "))
+}
+
 // maxFuzz 模糊搜索的最大偏移行数
 const maxFuzz = 100
 
@@ -142,15 +159,37 @@ func applyHunksForward(oldLines []string, hunks []Hunk, loose bool) ([]string, e
 
 // applyHunksFuzzy 模糊逐 hunk 应用（处理行号不准的场景）
 // 从后往前应用，避免行号偏移影响前面的 hunk
+// 采用部分应用模式：跳过无法匹配的 hunk，尽可能多地应用成功的 hunk
 func applyHunksFuzzy(oldLines []string, hunks []Hunk) ([]string, error) {
 	result := make([]string, len(oldLines))
 	copy(result, oldLines)
 
+	var failures []ApplyError
 	for i := len(hunks) - 1; i >= 0; i-- {
-		var err error
-		result, err = applyOneHunk(result, &hunks[i], i)
+		newResult, err := applyOneHunk(result, &hunks[i], i)
 		if err != nil {
-			return nil, err
+			if ae, ok := err.(*ApplyError); ok {
+				failures = append(failures, *ae)
+			} else {
+				failures = append(failures, ApplyError{HunkIdx: i, Message: err.Error()})
+			}
+			continue
+		}
+		result = newResult
+	}
+
+	applied := len(hunks) - len(failures)
+
+	if applied == 0 {
+		// 全部失败，返回第一个（行号最小的）hunk 的错误
+		return nil, &failures[len(failures)-1]
+	}
+
+	if len(failures) > 0 {
+		return result, &PartialApplyError{
+			Applied: applied,
+			Total:   len(hunks),
+			Errors:  failures,
 		}
 	}
 
@@ -178,27 +217,52 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 		startIdx = 0
 	}
 
-	// 先精确匹配，再宽松匹配（忽略行尾空白，处理 LLM 生成的空白差异）
+	// 多级匹配策略：精确 → 宽松(行尾空白) → 归一化(前后空白)
 	matchPos := searchMatch(lines, oldHunkLines, startIdx, matchAt)
 	if matchPos < 0 && len(oldHunkLines) > 0 {
 		matchPos = searchMatch(lines, oldHunkLines, startIdx, matchAtLoose)
 	}
+	if matchPos < 0 && len(oldHunkLines) > 0 {
+		matchPos = searchMatch(lines, oldHunkLines, startIdx, matchAtNormalized)
+	}
 
 	if matchPos < 0 {
-		// 构建错误信息
-		context := ""
+		// 构建增强版错误信息：包含期望内容和实际内容的对比
+		var parts []string
+
+		// 期望的上下文行
 		if len(oldHunkLines) > 0 {
 			showLines := oldHunkLines
 			if len(showLines) > 3 {
 				showLines = showLines[:3]
 			}
-			context = fmt.Sprintf(", expected lines:\n%s", strings.Join(showLines, "\n"))
+			parts = append(parts, fmt.Sprintf("expected lines:\n%s", formatIndented(showLines)))
 		}
+
+		// 文件该位置的实际内容
+		if startIdx >= 0 && startIdx < len(lines) {
+			endIdx := startIdx + len(oldHunkLines)
+			if endIdx > len(lines) {
+				endIdx = len(lines)
+			}
+			actualLines := lines[startIdx:endIdx]
+			if len(actualLines) > 3 {
+				actualLines = actualLines[:3]
+			}
+			if len(actualLines) > 0 {
+				parts = append(parts, fmt.Sprintf("actual lines at %d:\n%s", hunk.OldStart, formatIndented(actualLines)))
+			}
+		}
+
 		totalLines := len(lines)
+		detail := ""
+		if len(parts) > 0 {
+			detail = ", " + strings.Join(parts, ", ")
+		}
 		return nil, &ApplyError{
 			HunkIdx: hunkIdx,
 			Message: fmt.Sprintf("context mismatch at line %d (file has %d lines, searched +/-%d lines)%s",
-				hunk.OldStart, totalLines, maxFuzz, context),
+				hunk.OldStart, totalLines, maxFuzz, detail),
 		}
 	}
 
@@ -218,6 +282,19 @@ func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
 	result = append(result, lines[matchPos+len(oldHunkLines):]...)
 
 	return result, nil
+}
+
+// formatIndented 格式化行列表用于错误信息展示（每行缩进显示）
+func formatIndented(lines []string) string {
+	var sb strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString("            ")
+		sb.WriteString(line)
+	}
+	return sb.String()
 }
 
 // searchMatch 在 startIdx 附近查找匹配位置，先尝试原位，再向前后扩展搜索
@@ -265,6 +342,20 @@ func matchAtLoose(lines, pattern []string, pos int) bool {
 	return true
 }
 
+// matchAtNormalized 归一化匹配（忽略前导和尾部空白）
+// 处理 LLM 缩进不一致的场景（如 tab/space 混用、缩进级别偏差）
+func matchAtNormalized(lines, pattern []string, pos int) bool {
+	if pos < 0 || pos+len(pattern) > len(lines) {
+		return false
+	}
+	for i, p := range pattern {
+		if strings.TrimSpace(lines[pos+i]) != strings.TrimSpace(p) {
+			return false
+		}
+	}
+	return true
+}
+
 // ApplyFileDiff 将单个文件 diff 应用到文本内容
 func ApplyFileDiff(content string, fd *FileDiff) (string, error) {
 	if fd == nil || len(fd.Hunks) == 0 {
@@ -274,6 +365,19 @@ func ApplyFileDiff(content string, fd *FileDiff) (string, error) {
 	lines := splitLines(content)
 	newLines, err := ApplyHunks(lines, fd.Hunks)
 	if err != nil {
+		// 处理部分应用：返回部分修改后的内容 + 错误
+		if pae, ok := err.(*PartialApplyError); ok {
+			pae.File = fd.OldName
+			for i := range pae.Errors {
+				pae.Errors[i].File = fd.OldName
+			}
+			result := strings.Join(newLines, "\n")
+			if len(content) > 0 && content[len(content)-1] == '\n' {
+				result += "\n"
+			}
+			return result, pae
+		}
+
 		if ae, ok := err.(*ApplyError); ok {
 			ae.File = fd.OldName
 		}
@@ -301,6 +405,7 @@ type FileResult struct {
 	Path    string // 文件路径
 	Success bool   // 是否成功
 	Error   string // 错误信息（如果失败）
+	Warning string // 警告信息（如部分应用成功）
 }
 
 // PatchResult 多文件 patch 的总结果
@@ -387,6 +492,30 @@ func ApplyMultiFileDiff(mfd *MultiFileDiff, accessor FileAccessor) *PatchResult 
 		// 应用 diff
 		newContent, err := ApplyFileDiff(content, &fd)
 		if err != nil {
+			// 部分应用成功：写入部分修改后的内容，标记为成功+警告
+			if pae, ok := err.(*PartialApplyError); ok {
+				if writeErr := accessor.WriteFile(filePath, newContent); writeErr != nil {
+					pr.Results = append(pr.Results, FileResult{
+						Path:  filePath,
+						Error: fmt.Sprintf("failed to write partial result: %v", writeErr),
+					})
+					pr.Failed++
+					continue
+				}
+				failedHunks := make([]string, 0, len(pae.Errors))
+				for _, ae := range pae.Errors {
+					failedHunks = append(failedHunks, fmt.Sprintf("hunk #%d", ae.HunkIdx+1))
+				}
+				pr.Results = append(pr.Results, FileResult{
+					Path:    filePath,
+					Success: true,
+					Warning: fmt.Sprintf("partially applied: %d/%d hunks succeeded, failed: %s",
+						pae.Applied, pae.Total, strings.Join(failedHunks, ", ")),
+				})
+				pr.Succeeded++
+				continue
+			}
+
 			pr.Results = append(pr.Results, FileResult{
 				Path:  filePath,
 				Error: fmt.Sprintf("failed to apply patch: %v", err),

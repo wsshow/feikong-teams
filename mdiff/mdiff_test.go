@@ -2476,3 +2476,258 @@ func TestRoundTripPythonLLMStyleDiff(t *testing.T) {
 		t.Errorf("round-trip mismatch:\ngot:  %q\nwant: %q", result, newContent)
 	}
 }
+
+// ============================================================
+// 部分应用与增强匹配测试
+// ============================================================
+
+// TestPartialApplySkipsFailedHunks 验证部分 hunk 失败时其余 hunk 仍然生效
+func TestPartialApplySkipsFailedHunks(t *testing.T) {
+	oldLines := []string{
+		"line1", "line2", "line3", "line4", "line5",
+		"line6", "line7", "line8", "line9", "line10",
+	}
+
+	hunks := []Hunk{
+		// hunk 1: 正确的上下文，应该成功
+		{OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "line1"},
+				{Kind: OpDelete, Text: "line2"},
+				{Kind: OpInsert, Text: "CHANGED_2"},
+				{Kind: OpEqual, Text: "line3"},
+			}},
+		// hunk 2: 错误的上下文，应该失败
+		{OldStart: 5, OldLines: 3, NewStart: 5, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "WRONG_CONTEXT"},
+				{Kind: OpDelete, Text: "line6"},
+				{Kind: OpInsert, Text: "CHANGED_6"},
+				{Kind: OpEqual, Text: "line7"},
+			}},
+		// hunk 3: 正确的上下文，应该成功
+		{OldStart: 8, OldLines: 3, NewStart: 8, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "line8"},
+				{Kind: OpDelete, Text: "line9"},
+				{Kind: OpInsert, Text: "CHANGED_9"},
+				{Kind: OpEqual, Text: "line10"},
+			}},
+	}
+
+	result, err := ApplyHunks(oldLines, hunks)
+	if err == nil {
+		t.Fatal("expected PartialApplyError, got nil")
+	}
+
+	pae, ok := err.(*PartialApplyError)
+	if !ok {
+		t.Fatalf("expected *PartialApplyError, got %T: %v", err, err)
+	}
+
+	if pae.Applied != 2 || pae.Total != 3 {
+		t.Errorf("expected 2/3 applied, got %d/%d", pae.Applied, pae.Total)
+	}
+
+	// 验证成功的 hunk 已经生效
+	if result[1] != "CHANGED_2" {
+		t.Errorf("hunk 1 should have been applied, got line2=%q", result[1])
+	}
+	if result[8] != "CHANGED_9" {
+		t.Errorf("hunk 3 should have been applied, got line9=%q", result[8])
+	}
+	// 验证失败的 hunk 区域保持不变
+	if result[4] != "line5" || result[5] != "line6" {
+		t.Errorf("failed hunk region should be unchanged, got line5=%q line6=%q", result[4], result[5])
+	}
+}
+
+// TestPartialApplyAllFailed 验证全部 hunk 失败时返回 ApplyError
+func TestPartialApplyAllFailed(t *testing.T) {
+	oldLines := []string{"line1", "line2", "line3"}
+
+	hunks := []Hunk{
+		{OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 2,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "WRONG"},
+				{Kind: OpDelete, Text: "ALSO_WRONG"},
+				{Kind: OpInsert, Text: "NEW"},
+			}},
+	}
+
+	_, err := ApplyHunks(oldLines, hunks)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	_, ok := err.(*ApplyError)
+	if !ok {
+		t.Errorf("expected *ApplyError when all hunks fail, got %T", err)
+	}
+}
+
+// TestMatchAtNormalized 验证归一化匹配（忽略前导和尾部空白）
+func TestMatchAtNormalized(t *testing.T) {
+	oldLines := []string{
+		"    function hello() {",
+		"        console.log('hello');",
+		"    }",
+	}
+
+	// LLM 生成的 hunk 使用了不同的缩进
+	hunks := []Hunk{
+		{OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "  function hello() {"},     // 2空格 vs 4空格
+				{Kind: OpDelete, Text: "\tconsole.log('hello');"}, // tab vs 8空格
+				{Kind: OpInsert, Text: "        console.log('hi');"},
+				{Kind: OpEqual, Text: "  }"}, // 2空格 vs 4空格
+			}},
+	}
+
+	result, err := ApplyHunks(oldLines, hunks)
+	if err != nil {
+		t.Fatalf("expected normalized match to succeed, got: %v", err)
+	}
+
+	if result[1] != "        console.log('hi');" {
+		t.Errorf("unexpected result: %q", result[1])
+	}
+}
+
+// TestPartialApplyFileDiff 验证 ApplyFileDiff 的部分应用返回内容
+func TestPartialApplyFileDiff(t *testing.T) {
+	oldContent := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n"
+
+	fd := &FileDiff{
+		OldName: "test.txt",
+		NewName: "test.txt",
+		Hunks: []Hunk{
+			// 正确的 hunk
+			{OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 3,
+				Lines: []DiffLine{
+					{Kind: OpEqual, Text: "line1"},
+					{Kind: OpDelete, Text: "line2"},
+					{Kind: OpInsert, Text: "CHANGED"},
+					{Kind: OpEqual, Text: "line3"},
+				}},
+			// 错误上下文的 hunk
+			{OldStart: 6, OldLines: 3, NewStart: 6, NewLines: 3,
+				Lines: []DiffLine{
+					{Kind: OpEqual, Text: "NONEXISTENT"},
+					{Kind: OpDelete, Text: "line7"},
+					{Kind: OpInsert, Text: "CHANGED7"},
+					{Kind: OpEqual, Text: "line8"},
+				}},
+		},
+	}
+
+	result, err := ApplyFileDiff(oldContent, fd)
+
+	// 应该返回 PartialApplyError
+	if err == nil {
+		t.Fatal("expected PartialApplyError")
+	}
+	pae, ok := err.(*PartialApplyError)
+	if !ok {
+		t.Fatalf("expected *PartialApplyError, got %T: %v", err, err)
+	}
+	if pae.Applied != 1 {
+		t.Errorf("expected 1 applied, got %d", pae.Applied)
+	}
+
+	// 应该返回部分修改后的内容
+	if !strings.Contains(result, "CHANGED") {
+		t.Errorf("partial result should contain successful hunk change, got: %q", result)
+	}
+	// 失败的区域保持不变
+	if !strings.Contains(result, "line7") {
+		t.Errorf("partial result should keep failed hunk region unchanged, got: %q", result)
+	}
+}
+
+// TestErrorDiagnosticContainsActualContent 验证错误信息包含实际文件内容
+func TestErrorDiagnosticContainsActualContent(t *testing.T) {
+	oldLines := []string{"aaa", "bbb", "ccc"}
+
+	hunks := []Hunk{
+		{OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 2,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "xxx"},  // 不匹配
+				{Kind: OpDelete, Text: "yyy"}, // 不匹配
+				{Kind: OpInsert, Text: "new"},
+			}},
+	}
+
+	_, err := ApplyHunks(oldLines, hunks)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	errMsg := err.Error()
+	// 错误信息应包含 expected 和 actual 内容
+	if !strings.Contains(errMsg, "expected lines") {
+		t.Errorf("error should contain expected lines, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "actual lines") {
+		t.Errorf("error should contain actual lines, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "aaa") {
+		t.Errorf("error should show actual content 'aaa', got: %s", errMsg)
+	}
+}
+
+// TestLargeFilePartialApplyScenario 模拟大文件多 hunk 部分失败场景
+func TestLargeFilePartialApplyScenario(t *testing.T) {
+	// 模拟 400 行文件，21 个 hunk
+	var oldLines []string
+	for i := 0; i < 400; i++ {
+		oldLines = append(oldLines, fmt.Sprintf("line%d", i+1))
+	}
+
+	var hunks []Hunk
+	for h := 0; h < 21; h++ {
+		start := h*18 + 1
+		if start+2 > 400 {
+			break
+		}
+		context := fmt.Sprintf("line%d", start)
+		oldLine := fmt.Sprintf("line%d", start+1)
+		endContext := fmt.Sprintf("line%d", start+2)
+
+		// 每第7个 hunk 有错误的上下文
+		if h%7 == 6 {
+			context = "WRONG_CONTEXT"
+		}
+
+		hunks = append(hunks, Hunk{
+			OldStart: start, OldLines: 3, NewStart: start, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: context},
+				{Kind: OpDelete, Text: oldLine},
+				{Kind: OpInsert, Text: fmt.Sprintf("CHANGED_%d", start+1)},
+				{Kind: OpEqual, Text: endContext},
+			},
+		})
+	}
+
+	result, err := ApplyHunks(oldLines, hunks)
+
+	// 应该是部分成功
+	pae, ok := err.(*PartialApplyError)
+	if !ok {
+		t.Fatalf("expected *PartialApplyError, got %T: %v", err, err)
+	}
+
+	// 大部分 hunk 应该成功（21 个中约 3 个失败）
+	if pae.Applied < 15 {
+		t.Errorf("expected most hunks to succeed, only %d/%d applied", pae.Applied, pae.Total)
+	}
+
+	// 验证成功的 hunk 已生效
+	if result[1] != "CHANGED_2" {
+		t.Errorf("first hunk should have been applied, got: %q", result[1])
+	}
+
+	t.Logf("partial apply: %d/%d hunks applied, %d failed", pae.Applied, pae.Total, len(pae.Errors))
+}

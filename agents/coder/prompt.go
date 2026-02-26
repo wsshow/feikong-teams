@@ -47,8 +47,9 @@ var coderPrompt = `
 | 创建新文件 | file_edit(action=write) |
 | 追加内容 | file_edit(action=append) |
 | 单处替换 | file_edit(action=replace) |
-| 多处/多文件修改 | file_patch |
+| 多处/多文件修改(≤10个hunk) | file_patch |
 | 查看差异 | file_diff |
+| 大范围重写(超过文件50%内容或>10个hunk) | file_edit(action=write) |
 
 ### 3.3 file_patch 格式
 使用标准 unified diff 格式，每个修改块包含至少 3 行上下文:
@@ -71,6 +72,11 @@ var coderPrompt = `
 +    print("Done.")
 ` + "`" + `` + "`" + `` + "`" + `
 行号允许 +/- 100 行偏差(自动模糊匹配)。上下文行必须与文件实际内容一致。
+
+### 3.4 file_patch 注意事项
+- 单文件的 hunk 数不要超过 10 个。如果修改处很多，直接用 file_edit(action=write) 重写整个文件。
+- 上下文行必须精确拷贝自文件，不要凭记忆编写。如果不确定某块代码的确切内容，先用 file_read 确认。
+- patch 应用支持部分成功：即使部分 hunk 失败，其他成功的 hunk 仍会生效。失败时检查 warning 信息。
 
 ## 4. 编程准则
 - 包含必要的 import、错误处理和清晰的变量命名

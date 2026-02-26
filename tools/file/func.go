@@ -1015,6 +1015,7 @@ type FilePatchResult struct {
 	Path    string `json:"path" jsonschema:"description=文件路径"`
 	Success bool   `json:"success" jsonschema:"description=是否成功"`
 	Error   string `json:"error,omitempty" jsonschema:"description=错误信息"`
+	Warning string `json:"warning,omitempty" jsonschema:"description=警告信息(如部分hunk应用失败)"`
 }
 
 // FilePatchResponse 多文件 patch 响应
@@ -1060,17 +1061,26 @@ func (ft *FileTools) FilePatch(ctx context.Context, req *FilePatchRequest) (*Fil
 		Failed:     result.Failed,
 	}
 
+	hasWarning := false
 	for _, r := range result.Results {
-		resp.Results = append(resp.Results, FilePatchResult{
+		fpr := FilePatchResult{
 			Path:    r.Path,
 			Success: r.Success,
 			Error:   r.Error,
-		})
+			Warning: r.Warning,
+		}
+		if r.Warning != "" {
+			hasWarning = true
+		}
+		resp.Results = append(resp.Results, fpr)
 	}
 
-	if result.Failed > 0 {
+	switch {
+	case result.Failed > 0:
 		resp.Message = fmt.Sprintf("patch 完成: %d/%d 文件成功, %d 文件失败", result.Succeeded, result.TotalFiles, result.Failed)
-	} else {
+	case hasWarning:
+		resp.Message = fmt.Sprintf("patch 完成: %d 个文件已更新(部分 hunk 应用失败，请检查 warning)", result.Succeeded)
+	default:
 		resp.Message = fmt.Sprintf("patch 成功: %d 个文件已更新", result.Succeeded)
 	}
 
