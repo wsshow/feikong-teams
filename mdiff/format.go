@@ -210,12 +210,14 @@ func FormatFileDiff(fd *FileDiff) string {
 		for _, line := range h.Lines {
 			switch line.Kind {
 			case OpEqual:
-				sb.WriteString(" " + line.Text + "\n")
+				sb.WriteByte(' ')
 			case OpDelete:
-				sb.WriteString("-" + line.Text + "\n")
+				sb.WriteByte('-')
 			case OpInsert:
-				sb.WriteString("+" + line.Text + "\n")
+				sb.WriteByte('+')
 			}
+			sb.WriteString(line.Text)
+			sb.WriteByte('\n')
 		}
 	}
 

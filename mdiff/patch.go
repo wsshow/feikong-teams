@@ -27,8 +27,11 @@ func ApplyHunks(oldLines []string, hunks []Hunk) ([]string, error) {
 		return oldLines, nil
 	}
 
-	// 按 OldStart 排序，确保有序处理
-	sorted := sortHunksByOldStart(hunks)
+	// 按 OldStart 排序，确保有序处理（单 hunk 时跳过排序）
+	sorted := hunks
+	if len(hunks) > 1 {
+		sorted = sortHunksByOldStart(hunks)
+	}
 
 	// 策略1: 精确前向合并（最可靠，适用于标准 diff）
 	if result, err := applyHunksForward(oldLines, sorted, false); err == nil {
@@ -58,7 +61,15 @@ func sortHunksByOldStart(hunks []Hunk) []Hunk {
 // 对于 Equal 行使用原文件内容（保留原始空白），对于 Insert 行使用 hunk 内容
 // loose=true 时使用宽松匹配（忽略行尾空白）
 func applyHunksForward(oldLines []string, hunks []Hunk, loose bool) ([]string, error) {
-	result := make([]string, 0, len(oldLines))
+	// 估算结果容量：原始行数 + 净增加量
+	capacity := len(oldLines)
+	for i := range hunks {
+		capacity += hunks[i].NewLines - hunks[i].OldLines
+	}
+	if capacity < len(oldLines) {
+		capacity = len(oldLines)
+	}
+	result := make([]string, 0, capacity)
 	lastOldEnd := 0 // 上一个 hunk 消费到的位置（0-based）
 
 	for i := range hunks {
@@ -68,29 +79,44 @@ func applyHunksForward(oldLines []string, hunks []Hunk, loose bool) ([]string, e
 			startIdx = 0
 		}
 
-		oldHunkLines := extractOldLines(hunk)
-
-		// 验证上下文匹配
-		if loose {
-			if !matchAtLoose(oldLines, oldHunkLines, startIdx) {
-				return nil, fmt.Errorf("hunk #%d: loose context mismatch at line %d", i+1, hunk.OldStart)
-			}
-		} else {
-			if !matchAt(oldLines, oldHunkLines, startIdx) {
-				return nil, fmt.Errorf("hunk #%d: context mismatch at line %d", i+1, hunk.OldStart)
-			}
-		}
-
 		// 检查 hunk 重叠
 		if startIdx < lastOldEnd {
 			return nil, fmt.Errorf("hunk #%d overlaps with previous hunk (start=%d, prev_end=%d)", i+1, startIdx+1, lastOldEnd)
+		}
+
+		// 内联验证上下文匹配（避免额外分配 extractOldLines）
+		oldCount := 0
+		for _, dl := range hunk.Lines {
+			if dl.Kind == OpEqual || dl.Kind == OpDelete {
+				oldCount++
+			}
+		}
+		if startIdx+oldCount > len(oldLines) {
+			return nil, fmt.Errorf("hunk #%d: out of range (start=%d, old_lines=%d, file_lines=%d)", i+1, hunk.OldStart, oldCount, len(oldLines))
+		}
+		// 验证 hunk 中的旧行与原文件匹配
+		oldIdx := startIdx
+		for _, dl := range hunk.Lines {
+			if dl.Kind != OpEqual && dl.Kind != OpDelete {
+				continue
+			}
+			if loose {
+				if strings.TrimRight(oldLines[oldIdx], " \t") != strings.TrimRight(dl.Text, " \t") {
+					return nil, fmt.Errorf("hunk #%d: loose context mismatch at line %d", i+1, oldIdx+1)
+				}
+			} else {
+				if oldLines[oldIdx] != dl.Text {
+					return nil, fmt.Errorf("hunk #%d: context mismatch at line %d", i+1, oldIdx+1)
+				}
+			}
+			oldIdx++
 		}
 
 		// 拷贝 hunks 之间未变更的行
 		result = append(result, oldLines[lastOldEnd:startIdx]...)
 
 		// 应用 hunk 变更：Equal 行从原文件复制（保留原始空白），Insert 行从 hunk 取
-		oldIdx := startIdx
+		oldIdx = startIdx
 		for _, dl := range hunk.Lines {
 			switch dl.Kind {
 			case OpEqual:
@@ -103,7 +129,7 @@ func applyHunksForward(oldLines []string, hunks []Hunk, loose bool) ([]string, e
 			}
 		}
 
-		lastOldEnd = startIdx + len(oldHunkLines)
+		lastOldEnd = startIdx + oldCount
 	}
 
 	// 拷贝最后一个 hunk 之后的剩余行
@@ -199,11 +225,13 @@ func searchMatch(lines, pattern []string, startIdx int, matcher func([]string, [
 	if matcher(lines, pattern, startIdx) {
 		return startIdx
 	}
+	// 设置搜索上界，避免无效的越界尝试
+	maxPos := len(lines) - len(pattern)
 	for offset := 1; offset <= maxFuzz; offset++ {
 		if pos := startIdx - offset; pos >= 0 && matcher(lines, pattern, pos) {
 			return pos
 		}
-		if pos := startIdx + offset; matcher(lines, pattern, pos) {
+		if pos := startIdx + offset; pos <= maxPos && matcher(lines, pattern, pos) {
 			return pos
 		}
 	}
