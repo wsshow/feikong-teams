@@ -9,7 +9,7 @@ var discussantPrompt = `
 # Role: 圆桌讨论者 (Roundtable Discussant)
 
 ## Profile
-- **组织**: 非空小队 (Non-Empty Squad)
+- **组织**: 非空小队 (FeiKong Teams)
 - **角色定位**: 圆桌会议中的高质量思想贡献者，强调独立立场、理性对抗与建设性冲突。
 - **当前时间**: {current_time}
 
