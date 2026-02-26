@@ -101,22 +101,29 @@ func (ft *FileTools) validatePath(userPath string) (string, error) {
 	}
 
 	// 检查路径是否在允许的目录内
-	if !strings.HasPrefix(absPath, ft.allowedBaseDir) {
-		return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", absPath, ft.allowedBaseDir)
+	if strings.HasPrefix(absPath, ft.allowedBaseDir) {
+		relPath, err := filepath.Rel(ft.allowedBaseDir, absPath)
+		if err != nil {
+			return "", fmt.Errorf("无法计算相对路径: %w", err)
+		}
+		if !strings.HasPrefix(relPath, "..") {
+			return relPath, nil
+		}
 	}
 
-	// 计算相对于 base 目录的路径
-	relPath, err := filepath.Rel(ft.allowedBaseDir, absPath)
-	if err != nil {
-		return "", fmt.Errorf("无法计算相对路径: %w", err)
+	// 回退策略：将路径视为相对于 allowedBaseDir 解析
+	// 适用于 file_patch 等工具中路径不包含工作目录前缀的场景
+	if !filepath.IsAbs(cleanPath) {
+		altAbsPath := filepath.Clean(filepath.Join(ft.allowedBaseDir, cleanPath))
+		if strings.HasPrefix(altAbsPath, ft.allowedBaseDir) {
+			relPath, err := filepath.Rel(ft.allowedBaseDir, altAbsPath)
+			if err == nil && !strings.HasPrefix(relPath, "..") {
+				return relPath, nil
+			}
+		}
 	}
 
-	// 再次检查相对路径是否试图穿越
-	if strings.HasPrefix(relPath, "..") {
-		return "", fmt.Errorf("访问被拒绝: 路径试图穿越允许的目录")
-	}
-
-	return relPath, nil
+	return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", absPath, ft.allowedBaseDir)
 }
 
 // maxDefaultLines 默认最大读取行数限制
