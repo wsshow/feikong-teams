@@ -50,7 +50,7 @@ func (m *AgentMessage) GetTextContent() string {
 }
 
 // 错误内容最大长度（rune），超出时保留头尾并截断中间部分
-const maxErrorContentLen = 500
+const maxErrorContentLen = 1200
 
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
