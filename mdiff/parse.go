@@ -145,6 +145,15 @@ func parseHunk(lines []string, start int) (*Hunk, int, error) {
 	for i < len(lines) && (oldRemaining > 0 || newRemaining > 0) {
 		line := lines[i]
 
+		// 提前终止：检测到下一个文件的分隔符（防止行计数不准确导致越界解析）
+		if strings.HasPrefix(line, "--- ") && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "+++ ") {
+			break
+		}
+		// 提前终止：检测到新的 hunk 头
+		if strings.HasPrefix(line, "@@") {
+			break
+		}
+
 		if len(line) == 0 {
 			// 空行处理：根据剩余计数推断类型
 			if oldRemaining > 0 && newRemaining > 0 {

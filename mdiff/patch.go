@@ -2,6 +2,7 @@ package mdiff
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -20,17 +21,105 @@ func (e *ApplyError) Error() string {
 const maxFuzz = 100
 
 // ApplyHunks 将一个文件的 hunks 应用到原始行上
-// 支持模糊匹配：当精确行号不匹配时，在附近搜索上下文
+// 采用多策略：先尝试精确前向合并，再尝试宽松前向合并，最后回退到模糊逐 hunk 应用
 func ApplyHunks(oldLines []string, hunks []Hunk) ([]string, error) {
 	if len(hunks) == 0 {
 		return oldLines, nil
 	}
 
-	// 复制原始行，避免修改输入
+	// 按 OldStart 排序，确保有序处理
+	sorted := sortHunksByOldStart(hunks)
+
+	// 策略1: 精确前向合并（最可靠，适用于标准 diff）
+	if result, err := applyHunksForward(oldLines, sorted, false); err == nil {
+		return result, nil
+	}
+
+	// 策略2: 宽松前向合并（忽略行尾空白，适用于 LLM 生成的 diff）
+	if result, err := applyHunksForward(oldLines, sorted, true); err == nil {
+		return result, nil
+	}
+
+	// 策略3: 模糊逐 hunk 应用（处理行号偏移严重的情况）
+	return applyHunksFuzzy(oldLines, sorted)
+}
+
+// sortHunksByOldStart 按 OldStart 排序 hunks（不修改原 slice）
+func sortHunksByOldStart(hunks []Hunk) []Hunk {
+	sorted := make([]Hunk, len(hunks))
+	copy(sorted, hunks)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].OldStart < sorted[j].OldStart
+	})
+	return sorted
+}
+
+// applyHunksForward 前向合并策略：按顺序处理每个 hunk，逐段拼接原始行和变更行
+// 对于 Equal 行使用原文件内容（保留原始空白），对于 Insert 行使用 hunk 内容
+// loose=true 时使用宽松匹配（忽略行尾空白）
+func applyHunksForward(oldLines []string, hunks []Hunk, loose bool) ([]string, error) {
+	result := make([]string, 0, len(oldLines))
+	lastOldEnd := 0 // 上一个 hunk 消费到的位置（0-based）
+
+	for i := range hunks {
+		hunk := &hunks[i]
+		startIdx := hunk.OldStart - 1 // 转为 0-based
+		if startIdx < 0 {
+			startIdx = 0
+		}
+
+		oldHunkLines := extractOldLines(hunk)
+
+		// 验证上下文匹配
+		if loose {
+			if !matchAtLoose(oldLines, oldHunkLines, startIdx) {
+				return nil, fmt.Errorf("hunk #%d: loose context mismatch at line %d", i+1, hunk.OldStart)
+			}
+		} else {
+			if !matchAt(oldLines, oldHunkLines, startIdx) {
+				return nil, fmt.Errorf("hunk #%d: context mismatch at line %d", i+1, hunk.OldStart)
+			}
+		}
+
+		// 检查 hunk 重叠
+		if startIdx < lastOldEnd {
+			return nil, fmt.Errorf("hunk #%d overlaps with previous hunk (start=%d, prev_end=%d)", i+1, startIdx+1, lastOldEnd)
+		}
+
+		// 拷贝 hunks 之间未变更的行
+		result = append(result, oldLines[lastOldEnd:startIdx]...)
+
+		// 应用 hunk 变更：Equal 行从原文件复制（保留原始空白），Insert 行从 hunk 取
+		oldIdx := startIdx
+		for _, dl := range hunk.Lines {
+			switch dl.Kind {
+			case OpEqual:
+				result = append(result, oldLines[oldIdx])
+				oldIdx++
+			case OpDelete:
+				oldIdx++
+			case OpInsert:
+				result = append(result, dl.Text)
+			}
+		}
+
+		lastOldEnd = startIdx + len(oldHunkLines)
+	}
+
+	// 拷贝最后一个 hunk 之后的剩余行
+	if lastOldEnd < len(oldLines) {
+		result = append(result, oldLines[lastOldEnd:]...)
+	}
+
+	return result, nil
+}
+
+// applyHunksFuzzy 模糊逐 hunk 应用（处理行号不准的场景）
+// 从后往前应用，避免行号偏移影响前面的 hunk
+func applyHunksFuzzy(oldLines []string, hunks []Hunk) ([]string, error) {
 	result := make([]string, len(oldLines))
 	copy(result, oldLines)
 
-	// 从后往前应用 hunks，避免行号偏移问题
 	for i := len(hunks) - 1; i >= 0; i-- {
 		var err error
 		result, err = applyOneHunk(result, &hunks[i], i)
@@ -42,15 +131,20 @@ func ApplyHunks(oldLines []string, hunks []Hunk) ([]string, error) {
 	return result, nil
 }
 
-// applyOneHunk 应用一个 hunk 到行数组
-func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
-	// 提取 hunk 中旧文件的行（Equal + Delete）
-	oldHunkLines := make([]string, 0, hunk.OldLines)
+// extractOldLines 提取 hunk 中旧文件的行（Equal + Delete）
+func extractOldLines(hunk *Hunk) []string {
+	lines := make([]string, 0, hunk.OldLines)
 	for _, dl := range hunk.Lines {
 		if dl.Kind == OpEqual || dl.Kind == OpDelete {
-			oldHunkLines = append(oldHunkLines, dl.Text)
+			lines = append(lines, dl.Text)
 		}
 	}
+	return lines
+}
+
+// applyOneHunk 应用一个 hunk 到行数组（模糊匹配模式）
+func applyOneHunk(lines []string, hunk *Hunk, hunkIdx int) ([]string, error) {
+	oldHunkLines := extractOldLines(hunk)
 
 	// 尝试精确位置匹配
 	startIdx := hunk.OldStart - 1 // 转为0-based

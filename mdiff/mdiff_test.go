@@ -1178,3 +1178,1301 @@ func TestMatchAtLoose(t *testing.T) {
 		t.Error("loose match should fail for different content")
 	}
 }
+
+// ============================================================
+// 多 hunk 同时修改测试
+// ============================================================
+
+func TestMultiHunkSameFile(t *testing.T) {
+	// 同一文件两处修改，相距较远
+	var oldLines, newLines []string
+	for i := 0; i < 30; i++ {
+		oldLines = append(oldLines, fmt.Sprintf("line%d", i+1))
+		newLines = append(newLines, fmt.Sprintf("line%d", i+1))
+	}
+	newLines[2] = "CHANGED_A"  // 第3行
+	newLines[25] = "CHANGED_B" // 第26行
+
+	oldContent := strings.Join(oldLines, "\n") + "\n"
+	newContent := strings.Join(newLines, "\n") + "\n"
+
+	// 生成 diff，验证产生 2 个 hunk
+	fd := DiffFiles("test.go", oldContent, "test.go", newContent, 3)
+	if len(fd.Hunks) != 2 {
+		t.Fatalf("expected 2 hunks, got %d", len(fd.Hunks))
+	}
+
+	// 往返验证
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMultiHunkThreeChanges(t *testing.T) {
+	// 三处修改
+	var oldLines, newLines []string
+	for i := 0; i < 50; i++ {
+		oldLines = append(oldLines, fmt.Sprintf("line%d", i+1))
+		newLines = append(newLines, fmt.Sprintf("line%d", i+1))
+	}
+	newLines[5] = "CHANGE_1"
+	newLines[25] = "CHANGE_2"
+	newLines[45] = "CHANGE_3"
+
+	oldContent := strings.Join(oldLines, "\n") + "\n"
+	newContent := strings.Join(newLines, "\n") + "\n"
+
+	fd := DiffFiles("test.go", oldContent, "test.go", newContent, 3)
+	if len(fd.Hunks) != 3 {
+		t.Fatalf("expected 3 hunks, got %d", len(fd.Hunks))
+	}
+
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMultiHunkInsertAndDelete(t *testing.T) {
+	// 一处删除、一处插入
+	var oldLines, newLines []string
+	for i := 0; i < 30; i++ {
+		oldLines = append(oldLines, fmt.Sprintf("line%d", i+1))
+	}
+	// 删除第5行，在第25行后插入新行
+	for i := 0; i < 30; i++ {
+		if i == 4 {
+			continue // 删除 line5
+		}
+		newLines = append(newLines, fmt.Sprintf("line%d", i+1))
+		if i == 24 {
+			newLines = append(newLines, "INSERTED_LINE")
+		}
+	}
+
+	oldContent := strings.Join(oldLines, "\n") + "\n"
+	newContent := strings.Join(newLines, "\n") + "\n"
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMultiHunkUnsortedHunks(t *testing.T) {
+	// 验证 ApplyHunks 能处理未排序的 hunks
+	lines := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+
+	// 故意乱序：hunk2 在前，hunk1 在后
+	hunks := []Hunk{
+		{
+			OldStart: 8, OldLines: 1, NewStart: 8, NewLines: 1,
+			Lines: []DiffLine{
+				{Kind: OpDelete, Text: "h"},
+				{Kind: OpInsert, Text: "H"},
+			},
+		},
+		{
+			OldStart: 2, OldLines: 1, NewStart: 2, NewLines: 1,
+			Lines: []DiffLine{
+				{Kind: OpDelete, Text: "b"},
+				{Kind: OpInsert, Text: "B"},
+			},
+		},
+	}
+
+	result, err := ApplyHunks(lines, hunks)
+	if err != nil {
+		t.Fatalf("ApplyHunks failed: %v", err)
+	}
+	expected := []string{"a", "B", "c", "d", "e", "f", "g", "H", "i", "j"}
+	if strings.Join(result, ",") != strings.Join(expected, ",") {
+		t.Errorf("got %v, want %v", result, expected)
+	}
+}
+
+func TestMultiHunkAdjacentChanges(t *testing.T) {
+	// 两个相邻的修改（上下文紧密衔接）
+	oldContent := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n"
+	newContent := "line1\nCHANGED_2\nline3\nline4\nline5\nCHANGED_6\nline7\nline8\n"
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMultiHunkWithLineCountChange(t *testing.T) {
+	// 第一个 hunk 增加行数，第二个 hunk 减少行数
+	var oldLines, newLines []string
+	for i := 0; i < 30; i++ {
+		oldLines = append(oldLines, fmt.Sprintf("line%d", i+1))
+		newLines = append(newLines, fmt.Sprintf("line%d", i+1))
+	}
+	// 在第5行后插入2行（增加）
+	expanded := make([]string, 0)
+	for i, l := range newLines {
+		expanded = append(expanded, l)
+		if i == 4 {
+			expanded = append(expanded, "EXTRA_A", "EXTRA_B")
+		}
+	}
+	// 删除第25行（减少）
+	var finalNew []string
+	for i, l := range expanded {
+		if i == 26 { // 原始第25行，因插入偏移了2行
+			continue
+		}
+		finalNew = append(finalNew, l)
+	}
+
+	oldContent := strings.Join(oldLines, "\n") + "\n"
+	newContent := strings.Join(finalNew, "\n") + "\n"
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMultiHunkFuzzyMatch(t *testing.T) {
+	// 模拟 LLM 生成的 diff，行号有偏移
+	lines := []string{
+		"package main", "", "import \"fmt\"", "",
+		"func hello() {", "\tfmt.Println(\"hello\")", "}",
+		"", "func world() {", "\tfmt.Println(\"world\")", "}",
+	}
+	hunks := []Hunk{
+		{
+			OldStart: 20, // 故意设错行号
+			OldLines: 3,
+			NewStart: 20,
+			NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "func hello() {"},
+				{Kind: OpDelete, Text: "\tfmt.Println(\"hello\")"},
+				{Kind: OpInsert, Text: "\tfmt.Println(\"hi\")"},
+				{Kind: OpEqual, Text: "}"},
+			},
+		},
+		{
+			OldStart: 30, // 故意设错行号
+			OldLines: 3,
+			NewStart: 30,
+			NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "func world() {"},
+				{Kind: OpDelete, Text: "\tfmt.Println(\"world\")"},
+				{Kind: OpInsert, Text: "\tfmt.Println(\"earth\")"},
+				{Kind: OpEqual, Text: "}"},
+			},
+		},
+	}
+
+	result, err := ApplyHunks(lines, hunks)
+	if err != nil {
+		t.Fatalf("fuzzy multi-hunk failed: %v", err)
+	}
+
+	expected := []string{
+		"package main", "", "import \"fmt\"", "",
+		"func hello() {", "\tfmt.Println(\"hi\")", "}",
+		"", "func world() {", "\tfmt.Println(\"earth\")", "}",
+	}
+	if strings.Join(result, "\n") != strings.Join(expected, "\n") {
+		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(result, "\n"), strings.Join(expected, "\n"))
+	}
+}
+
+func TestMultiHunkLooseMatch(t *testing.T) {
+	// 原文件有行尾空格，patch 没有
+	lines := []string{"func a() {  ", "\told  ", "}", "", "func b() {  ", "\told  ", "}"}
+	hunks := []Hunk{
+		{
+			OldStart: 1, OldLines: 3, NewStart: 1, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "func a() {"}, // 没有行尾空格
+				{Kind: OpDelete, Text: "\told"},     // 没有行尾空格
+				{Kind: OpInsert, Text: "\tnew_a"},
+				{Kind: OpEqual, Text: "}"},
+			},
+		},
+		{
+			OldStart: 5, OldLines: 3, NewStart: 5, NewLines: 3,
+			Lines: []DiffLine{
+				{Kind: OpEqual, Text: "func b() {"}, // 没有行尾空格
+				{Kind: OpDelete, Text: "\told"},     // 没有行尾空格
+				{Kind: OpInsert, Text: "\tnew_b"},
+				{Kind: OpEqual, Text: "}"},
+			},
+		},
+	}
+
+	result, err := ApplyHunks(lines, hunks)
+	if err != nil {
+		t.Fatalf("loose multi-hunk failed: %v", err)
+	}
+
+	// Equal 行应保留原文件的空白（含行尾空格）
+	if result[0] != "func a() {  " {
+		t.Errorf("Equal line should preserve original whitespace, got %q", result[0])
+	}
+	if result[1] != "\tnew_a" {
+		t.Errorf("Insert line should use hunk content, got %q", result[1])
+	}
+	if result[4] != "func b() {  " {
+		t.Errorf("Equal line should preserve original whitespace, got %q", result[4])
+	}
+}
+
+func TestApplyMultiFileDiffMultipleChanges(t *testing.T) {
+	// 多文件各有多处修改
+	files := map[string]string{
+		"main.go": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"old1\")\n}\n\nfunc helper() {\n\tfmt.Println(\"old2\")\n}\n",
+		"util.go": "package main\n\nvar x = 1\n\nvar y = 2\n",
+	}
+
+	changes := []FileChange{
+		{
+			Path:       "main.go",
+			OldContent: files["main.go"],
+			NewContent: "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"new1\")\n}\n\nfunc helper() {\n\tfmt.Println(\"new2\")\n}\n",
+		},
+		{
+			Path:       "util.go",
+			OldContent: files["util.go"],
+			NewContent: "package main\n\nvar x = 10\n\nvar y = 20\n",
+		},
+	}
+
+	mfd := DiffMultiFiles(changes, 3)
+	patchStr := FormatMultiFileDiff(mfd)
+
+	parsed, err := ParseMultiFileDiff(patchStr)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	accessor := &memAccessor{files: files}
+	result := ApplyMultiFileDiff(parsed, accessor)
+
+	if result.Failed != 0 {
+		for _, r := range result.Results {
+			if !r.Success {
+				t.Errorf("file %s failed: %s", r.Path, r.Error)
+			}
+		}
+		t.FailNow()
+	}
+
+	if !strings.Contains(accessor.files["main.go"], "new1") || !strings.Contains(accessor.files["main.go"], "new2") {
+		t.Errorf("main.go not properly patched: %s", accessor.files["main.go"])
+	}
+	if !strings.Contains(accessor.files["util.go"], "x = 10") || !strings.Contains(accessor.files["util.go"], "y = 20") {
+		t.Errorf("util.go not properly patched: %s", accessor.files["util.go"])
+	}
+}
+
+func TestParseHunkEarlyTerminateOnFileSeparator(t *testing.T) {
+	// 模拟 hunk 行计数不准确，但遇到下一个文件分隔符时应终止
+	patchText := "--- a.go\n+++ a.go\n@@ -1,5 +1,5 @@\n line1\n-old\n+new\n line3\n--- b.go\n+++ b.go\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n"
+
+	mfd, err := ParseMultiFileDiff(patchText)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(mfd.Files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(mfd.Files))
+	}
+}
+
+func TestSortHunksByOldStart(t *testing.T) {
+	hunks := []Hunk{
+		{OldStart: 20},
+		{OldStart: 5},
+		{OldStart: 10},
+	}
+	sorted := sortHunksByOldStart(hunks)
+	if sorted[0].OldStart != 5 || sorted[1].OldStart != 10 || sorted[2].OldStart != 20 {
+		t.Errorf("hunks not sorted: %d, %d, %d", sorted[0].OldStart, sorted[1].OldStart, sorted[2].OldStart)
+	}
+	// 验证不修改原 slice
+	if hunks[0].OldStart != 20 {
+		t.Error("original slice was modified")
+	}
+}
+
+func TestExtractOldLines(t *testing.T) {
+	hunk := &Hunk{
+		OldLines: 3,
+		Lines: []DiffLine{
+			{Kind: OpEqual, Text: "a"},
+			{Kind: OpDelete, Text: "b"},
+			{Kind: OpInsert, Text: "c"},
+			{Kind: OpEqual, Text: "d"},
+		},
+	}
+	got := extractOldLines(hunk)
+	expected := []string{"a", "b", "d"}
+	if strings.Join(got, ",") != strings.Join(expected, ",") {
+		t.Errorf("got %v, want %v", got, expected)
+	}
+}
+
+func TestRoundTripMultiHunkRealWorld(t *testing.T) {
+	// 模拟真实 Go 文件的多处修改
+	oldContent := `package handler
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func HandleGet(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id", 400)
+		return
+	}
+	data := fetchData(id)
+	fmt.Fprintf(w, "data: %s", data)
+}
+
+func HandlePost(w http.ResponseWriter, r *http.Request) {
+	body := readBody(r)
+	if body == "" {
+		http.Error(w, "empty body", 400)
+		return
+	}
+	saveData(body)
+	w.WriteHeader(201)
+}
+
+func HandleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id", 400)
+		return
+	}
+	deleteData(id)
+	w.WriteHeader(204)
+}
+`
+	newContent := `package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+)
+
+func HandleGet(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	data := fetchData(id)
+	json.NewEncoder(w).Encode(data)
+}
+
+func HandlePost(w http.ResponseWriter, r *http.Request) {
+	body := readBody(r)
+	if body == "" {
+		http.Error(w, "empty body", http.StatusBadRequest)
+		return
+	}
+	saveData(body)
+	w.WriteHeader(http.StatusCreated)
+}
+
+func HandleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	deleteData(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+// ============================================================
+// Python 代码编辑场景测试
+// ============================================================
+
+func TestRoundTripPythonMultiFunctionEdit(t *testing.T) {
+	// Python 文件中同时修改多个函数
+	oldContent := `import os
+import sys
+from typing import List, Optional
+
+
+def read_config(path: str) -> dict:
+    """读取配置文件"""
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def process_data(data: List[dict]) -> List[dict]:
+    """处理数据"""
+    result = []
+    for item in data:
+        if item.get('active'):
+            result.append(item)
+    return result
+
+
+def save_output(data: List[dict], path: str) -> None:
+    """保存输出"""
+    with open(path, 'w') as f:
+        json.dump(data, f)
+
+
+def main():
+    config = read_config('config.json')
+    data = process_data(config['data'])
+    save_output(data, 'output.json')
+    print("Done")
+
+
+if __name__ == '__main__':
+    main()
+`
+	newContent := `import os
+import sys
+import logging
+from typing import List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def read_config(path: str) -> dict:
+    """读取配置文件"""
+    logger.info(f"Reading config from {path}")
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def process_data(data: List[dict], filter_key: str = 'active') -> List[dict]:
+    """处理数据，支持自定义过滤键"""
+    result = []
+    for item in data:
+        if item.get(filter_key):
+            result.append(item)
+    logger.info(f"Processed {len(result)}/{len(data)} items")
+    return result
+
+
+def save_output(data: List[dict], path: str) -> None:
+    """保存输出"""
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+    logger.info(f"Saved {len(data)} items to {path}")
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)
+    config = read_config('config.json')
+    data = process_data(config['data'])
+    save_output(data, 'output.json')
+    logger.info("Done")
+
+
+if __name__ == '__main__':
+    main()
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripPythonClassEdit(t *testing.T) {
+	// Python 类中同时修改多个方法
+	oldContent := `class UserService:
+    def __init__(self, db):
+        self.db = db
+
+    def get_user(self, user_id: int):
+        return self.db.query(User).filter_by(id=user_id).first()
+
+    def create_user(self, name: str, email: str):
+        user = User(name=name, email=email)
+        self.db.add(user)
+        self.db.commit()
+        return user
+
+    def update_user(self, user_id: int, **kwargs):
+        user = self.get_user(user_id)
+        for key, value in kwargs.items():
+            setattr(user, key, value)
+        self.db.commit()
+        return user
+
+    def delete_user(self, user_id: int):
+        user = self.get_user(user_id)
+        self.db.delete(user)
+        self.db.commit()
+`
+	newContent := `class UserService:
+    def __init__(self, db):
+        self.db = db
+        self.cache = {}
+
+    def get_user(self, user_id: int):
+        if user_id in self.cache:
+            return self.cache[user_id]
+        user = self.db.query(User).filter_by(id=user_id).first()
+        if user:
+            self.cache[user_id] = user
+        return user
+
+    def create_user(self, name: str, email: str):
+        user = User(name=name, email=email)
+        self.db.add(user)
+        self.db.commit()
+        self.cache[user.id] = user
+        return user
+
+    def update_user(self, user_id: int, **kwargs):
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+        for key, value in kwargs.items():
+            setattr(user, key, value)
+        self.db.commit()
+        self.cache[user_id] = user
+        return user
+
+    def delete_user(self, user_id: int):
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+        self.db.delete(user)
+        self.db.commit()
+        self.cache.pop(user_id, None)
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripPythonIndentationHeavy(t *testing.T) {
+	// Python 深层缩进和空行较多的场景
+	oldContent := `def complex_handler(request):
+    if request.method == 'POST':
+        data = request.json
+
+        if 'items' in data:
+            for item in data['items']:
+                if item.get('type') == 'A':
+                    process_type_a(item)
+
+                elif item.get('type') == 'B':
+                    process_type_b(item)
+
+                else:
+                    log.warning(f"Unknown type: {item.get('type')}")
+
+        return {'status': 'ok'}
+
+    return {'error': 'method not allowed'}
+`
+	newContent := `def complex_handler(request):
+    if request.method == 'POST':
+        data = request.json
+
+        if 'items' not in data:
+            return {'error': 'items required'}
+
+        results = []
+        for item in data['items']:
+            if item.get('type') == 'A':
+                result = process_type_a(item)
+
+            elif item.get('type') == 'B':
+                result = process_type_b(item)
+
+            else:
+                log.warning(f"Unknown type: {item.get('type')}")
+                continue
+
+            results.append(result)
+
+        return {'status': 'ok', 'results': results}
+
+    return {'error': 'method not allowed'}
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+// ============================================================
+// HTML/CSS/JS/TS 代码编辑场景测试
+// ============================================================
+
+func TestRoundTripHTMLMultiSectionEdit(t *testing.T) {
+	// HTML 文件中同时修改 head 和 body 部分
+	oldContent := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Welcome</h1>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/about">About</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Hello World</h2>
+            <p>This is a simple page.</p>
+        </section>
+
+        <section class="content">
+            <div class="card">
+                <h3>Card Title</h3>
+                <p>Card content here.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2024 My App</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
+`
+	newContent := `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My App - Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+    <header>
+        <h1>Dashboard</h1>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/about">About</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Welcome Back</h2>
+            <p>Here is your dashboard overview.</p>
+        </section>
+
+        <section class="content">
+            <div class="card">
+                <h3>Statistics</h3>
+                <p>Total users: <span id="user-count">0</span></p>
+            </div>
+            <div class="card">
+                <h3>Recent Activity</h3>
+                <ul id="activity-list"></ul>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2025 My App. All rights reserved.</p>
+    </footer>
+
+    <script src="app.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+</html>
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripCSSMultiRuleEdit(t *testing.T) {
+	// CSS 文件中同时修改多个规则
+	oldContent := `:root {
+    --primary: #3498db;
+    --secondary: #2ecc71;
+    --bg: #ffffff;
+    --text: #333333;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.header {
+    background-color: var(--primary);
+    color: white;
+    padding: 10px 20px;
+}
+
+.card {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.btn {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.footer {
+    background-color: #f5f5f5;
+    padding: 20px;
+    text-align: center;
+}
+`
+	newContent := `:root {
+    --primary: #6366f1;
+    --secondary: #10b981;
+    --bg: #f8fafc;
+    --text: #1e293b;
+    --border: #e2e8f0;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.header {
+    background-color: var(--primary);
+    color: white;
+    padding: 12px 24px;
+    box-shadow: var(--shadow);
+}
+
+.card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+
+.btn {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.btn:hover {
+    background-color: #4f46e5;
+}
+
+.footer {
+    background-color: #f1f5f9;
+    padding: 24px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+}
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripJavaScriptMultiFunctionEdit(t *testing.T) {
+	// JavaScript 文件中同时修改多个函数和导入
+	oldContent := `import { useState } from 'react';
+
+function fetchData(url) {
+    return fetch(url)
+        .then(res => res.json())
+        .catch(err => console.error(err));
+}
+
+function formatDate(date) {
+    return date.toLocaleDateString();
+}
+
+function UserList({ users }) {
+    return (
+        <ul>
+            {users.map(user => (
+                <li key={user.id}>{user.name}</li>
+            ))}
+        </ul>
+    );
+}
+
+export default function App() {
+    const [users, setUsers] = useState([]);
+
+    const loadUsers = () => {
+        fetchData('/api/users').then(data => setUsers(data));
+    };
+
+    return (
+        <div>
+            <h1>User Management</h1>
+            <button onClick={loadUsers}>Load Users</button>
+            <UserList users={users} />
+        </div>
+    );
+}
+`
+	newContent := `import { useState, useEffect, useCallback } from 'react';
+
+async function fetchData(url, options = {}) {
+    try {
+        const res = await fetch(url, options);
+        if (!res.ok) throw new Error(` + "`HTTP ${res.status}`" + `);
+        return await res.json();
+    } catch (err) {
+        console.error('Fetch error:', err);
+        throw err;
+    }
+}
+
+function formatDate(date, locale = 'zh-CN') {
+    return new Intl.DateTimeFormat(locale, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    }).format(date);
+}
+
+function UserList({ users, onSelect }) {
+    if (users.length === 0) {
+        return <p>No users found.</p>;
+    }
+    return (
+        <ul>
+            {users.map(user => (
+                <li key={user.id} onClick={() => onSelect(user)}>
+                    {user.name} - {formatDate(new Date(user.createdAt))}
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+export default function App() {
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const loadUsers = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await fetchData('/api/users');
+            setUsers(data);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadUsers();
+    }, [loadUsers]);
+
+    return (
+        <div>
+            <h1>User Management</h1>
+            {error && <p style={{ color: 'red' }}>{error}</p>}
+            <button onClick={loadUsers} disabled={loading}>
+                {loading ? 'Loading...' : 'Refresh'}
+            </button>
+            <UserList users={users} onSelect={u => console.log(u)} />
+        </div>
+    );
+}
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripTypeScriptMultiEdit(t *testing.T) {
+	// TypeScript 接口和实现同时修改
+	oldContent := `interface User {
+    id: number;
+    name: string;
+    email: string;
+}
+
+interface ApiResponse<T> {
+    data: T;
+    status: number;
+}
+
+class UserRepository {
+    private baseUrl: string;
+
+    constructor(baseUrl: string) {
+        this.baseUrl = baseUrl;
+    }
+
+    async getUser(id: number): Promise<User> {
+        const res = await fetch(` + "`${this.baseUrl}/users/${id}`" + `);
+        const json: ApiResponse<User> = await res.json();
+        return json.data;
+    }
+
+    async listUsers(): Promise<User[]> {
+        const res = await fetch(` + "`${this.baseUrl}/users`" + `);
+        const json: ApiResponse<User[]> = await res.json();
+        return json.data;
+    }
+
+    async createUser(user: Omit<User, 'id'>): Promise<User> {
+        const res = await fetch(` + "`${this.baseUrl}/users`" + `, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(user),
+        });
+        const json: ApiResponse<User> = await res.json();
+        return json.data;
+    }
+}
+
+export { UserRepository };
+export type { User, ApiResponse };
+`
+	newContent := `interface User {
+    id: number;
+    name: string;
+    email: string;
+    role: 'admin' | 'user' | 'guest';
+    createdAt: string;
+}
+
+interface PaginatedResponse<T> {
+    data: T[];
+    total: number;
+    page: number;
+    pageSize: number;
+}
+
+interface ApiResponse<T> {
+    data: T;
+    status: number;
+    message?: string;
+}
+
+class UserRepository {
+    private baseUrl: string;
+    private token: string | null;
+
+    constructor(baseUrl: string, token?: string) {
+        this.baseUrl = baseUrl;
+        this.token = token ?? null;
+    }
+
+    private getHeaders(): HeadersInit {
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        if (this.token) {
+            headers['Authorization'] = ` + "`Bearer ${this.token}`" + `;
+        }
+        return headers;
+    }
+
+    async getUser(id: number): Promise<User> {
+        const res = await fetch(` + "`${this.baseUrl}/users/${id}`" + `, {
+            headers: this.getHeaders(),
+        });
+        if (!res.ok) throw new Error(` + "`Failed to get user: ${res.status}`" + `);
+        const json: ApiResponse<User> = await res.json();
+        return json.data;
+    }
+
+    async listUsers(page = 1, pageSize = 20): Promise<PaginatedResponse<User>> {
+        const url = ` + "`${this.baseUrl}/users?page=${page}&pageSize=${pageSize}`" + `;
+        const res = await fetch(url, {
+            headers: this.getHeaders(),
+        });
+        if (!res.ok) throw new Error(` + "`Failed to list users: ${res.status}`" + `);
+        return await res.json();
+    }
+
+    async createUser(user: Omit<User, 'id' | 'createdAt'>): Promise<User> {
+        const res = await fetch(` + "`${this.baseUrl}/users`" + `, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify(user),
+        });
+        if (!res.ok) throw new Error(` + "`Failed to create user: ${res.status}`" + `);
+        const json: ApiResponse<User> = await res.json();
+        return json.data;
+    }
+
+    async deleteUser(id: number): Promise<void> {
+        const res = await fetch(` + "`${this.baseUrl}/users/${id}`" + `, {
+            method: 'DELETE',
+            headers: this.getHeaders(),
+        });
+        if (!res.ok) throw new Error(` + "`Failed to delete user: ${res.status}`" + `);
+    }
+}
+
+export { UserRepository };
+export type { User, ApiResponse, PaginatedResponse };
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestRoundTripVueComponentEdit(t *testing.T) {
+	// Vue/Svelte 风格的单文件组件，同时修改 template/script/style
+	oldContent := `<template>
+  <div class="todo-app">
+    <h1>Todo List</h1>
+    <input v-model="newTodo" @keyup.enter="addTodo" placeholder="Add a todo">
+    <ul>
+      <li v-for="todo in todos" :key="todo.id">
+        {{ todo.text }}
+        <button @click="removeTodo(todo.id)">Delete</button>
+      </li>
+    </ul>
+  </div>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      newTodo: '',
+      todos: [],
+    };
+  },
+  methods: {
+    addTodo() {
+      if (this.newTodo.trim()) {
+        this.todos.push({ id: Date.now(), text: this.newTodo });
+        this.newTodo = '';
+      }
+    },
+    removeTodo(id) {
+      this.todos = this.todos.filter(t => t.id !== id);
+    },
+  },
+};
+</script>
+
+<style scoped>
+.todo-app {
+  max-width: 500px;
+  margin: 0 auto;
+}
+input {
+  width: 100%;
+  padding: 8px;
+}
+li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+</style>
+`
+	newContent := `<template>
+  <div class="todo-app">
+    <h1>{{ title }}</h1>
+    <div class="input-group">
+      <input v-model="newTodo" @keyup.enter="addTodo" placeholder="What needs to be done?">
+      <button @click="addTodo" :disabled="!newTodo.trim()">Add</button>
+    </div>
+    <div class="filters">
+      <button v-for="f in filters" :key="f" @click="filter = f" :class="{ active: filter === f }">
+        {{ f }}
+      </button>
+    </div>
+    <ul>
+      <li v-for="todo in filteredTodos" :key="todo.id" :class="{ done: todo.done }">
+        <input type="checkbox" v-model="todo.done">
+        <span>{{ todo.text }}</span>
+        <button @click="removeTodo(todo.id)">Delete</button>
+      </li>
+    </ul>
+    <p class="stats">{{ remaining }} items left</p>
+  </div>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      title: 'Todo List',
+      newTodo: '',
+      todos: [],
+      filter: 'All',
+      filters: ['All', 'Active', 'Done'],
+    };
+  },
+  computed: {
+    filteredTodos() {
+      if (this.filter === 'Active') return this.todos.filter(t => !t.done);
+      if (this.filter === 'Done') return this.todos.filter(t => t.done);
+      return this.todos;
+    },
+    remaining() {
+      return this.todos.filter(t => !t.done).length;
+    },
+  },
+  methods: {
+    addTodo() {
+      const text = this.newTodo.trim();
+      if (text) {
+        this.todos.push({ id: Date.now(), text, done: false });
+        this.newTodo = '';
+      }
+    },
+    removeTodo(id) {
+      this.todos = this.todos.filter(t => t.id !== id);
+    },
+  },
+};
+</script>
+
+<style scoped>
+.todo-app {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.input-group {
+  display: flex;
+  gap: 8px;
+}
+input[type="text"] {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.filters {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0;
+}
+.filters button.active {
+  font-weight: bold;
+  text-decoration: underline;
+}
+li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+li.done span {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.stats {
+  color: #888;
+  font-size: 14px;
+}
+</style>
+`
+	roundTripTest(t, oldContent, newContent)
+}
+
+func TestMultiFilePythonAndHTML(t *testing.T) {
+	// 同时修改 Python 后端和 HTML 模板
+	files := map[string]string{
+		"app.py":               "from flask import Flask, render_template\n\napp = Flask(__name__)\n\n@app.route('/')\ndef index():\n    return render_template('index.html', title='Home')\n\n@app.route('/about')\ndef about():\n    return render_template('about.html', title='About')\n",
+		"templates/index.html": "<h1>{{ title }}</h1>\n<p>Welcome to our site.</p>\n<a href=\"/about\">About</a>\n",
+	}
+
+	changes := []FileChange{
+		{
+			Path:       "app.py",
+			OldContent: files["app.py"],
+			NewContent: "from flask import Flask, render_template, jsonify\n\napp = Flask(__name__)\n\n@app.route('/')\ndef index():\n    return render_template('index.html', title='Home', version='2.0')\n\n@app.route('/about')\ndef about():\n    return render_template('about.html', title='About')\n\n@app.route('/api/health')\ndef health():\n    return jsonify({'status': 'ok'})\n",
+		},
+		{
+			Path:       "templates/index.html",
+			OldContent: files["templates/index.html"],
+			NewContent: "<h1>{{ title }}</h1>\n<p>Welcome to our site. Version {{ version }}.</p>\n<nav>\n    <a href=\"/about\">About</a>\n    <a href=\"/api/health\">Health</a>\n</nav>\n",
+		},
+	}
+
+	mfd := DiffMultiFiles(changes, 3)
+	patchStr := FormatMultiFileDiff(mfd)
+
+	parsed, err := ParseMultiFileDiff(patchStr)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	accessor := &memAccessor{files: files}
+	result := ApplyMultiFileDiff(parsed, accessor)
+
+	if result.Failed != 0 {
+		for _, r := range result.Results {
+			if !r.Success {
+				t.Errorf("file %s failed: %s", r.Path, r.Error)
+			}
+		}
+		t.FailNow()
+	}
+
+	if !strings.Contains(accessor.files["app.py"], "jsonify") {
+		t.Error("app.py should contain jsonify import")
+	}
+	if !strings.Contains(accessor.files["app.py"], "health") {
+		t.Error("app.py should contain health endpoint")
+	}
+	if !strings.Contains(accessor.files["templates/index.html"], "Version {{ version }}") {
+		t.Error("index.html should contain version variable")
+	}
+	if !strings.Contains(accessor.files["templates/index.html"], "Health") {
+		t.Error("index.html should contain Health link")
+	}
+}
+
+func TestRoundTripPythonLLMStyleDiff(t *testing.T) {
+	// 模拟 LLM 生成的 Python 文件 diff，验证行尾空白宽松匹配
+	oldContent := "def greet(name):  \n    msg = f\"Hello, {name}!\"  \n    print(msg)  \n    return msg  \n"
+	// LLM 修改时可能不保留行尾空格
+	newContent := "def greet(name):\n    msg = f\"Hi, {name}!\"\n    print(msg)\n    return msg\n"
+
+	fd := DiffFiles("app.py", oldContent, "app.py", newContent, 3)
+	patchStr := FormatFileDiff(fd)
+
+	parsed, err := ParseFileDiff(patchStr)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := ApplyFileDiff(oldContent, parsed)
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if result != newContent {
+		t.Errorf("round-trip mismatch:\ngot:  %q\nwant: %q", result, newContent)
+	}
+}
