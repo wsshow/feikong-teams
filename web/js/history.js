@@ -669,7 +669,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
 
     // 渲染历史消息
     if (event.messages && event.messages.length > 0) {
-        event.messages.forEach(msg => {
+        event.messages.forEach((msg, index) => {
             // 检查是否是用户消息
             if (msg.agent_name === '用户') {
                 // 渲染用户消息
@@ -744,6 +744,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
                 }
             }
         });
+
         this.showNotification(`已加载 ${event.messages.length} 条历史消息`, 'success');
     } else {
         this.showNotification('历史记录为空', 'info');
@@ -865,6 +866,50 @@ FKTeamsChat.prototype.renderHistoryActions = function (actions, agentName) {
 };
 
 FKTeamsChat.prototype.renderSingleAction = function (action, agentName) {
+    const compressIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;">
+        <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+        <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>`;
+
+    // 上下文压缩开始（历史记录中一般不会出现，但做兼容）
+    if (action.action_type === 'context_compress_start') {
+        const el = document.createElement('div');
+        el.className = 'action-event context-compress';
+        el.innerHTML = `${compressIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>`;
+        this.messagesContainer.appendChild(el);
+        return;
+    }
+
+    // 上下文压缩完成：可展开的摘要卡片
+    if (action.action_type === 'context_compress') {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'action-event context-compress';
+        if (action.detail) {
+            cardEl.style.cursor = 'pointer';
+            cardEl.style.flexWrap = 'wrap';
+            const toggleIcon = `<svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;transition:transform 0.2s;margin-left:auto;">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>`;
+            cardEl.innerHTML = `${compressIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>${toggleIcon}
+                <div class="compress-detail" style="display:none;width:100%;margin-top:8px;padding:10px;background:var(--bg-primary);border-radius:6px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--text-primary);max-height:300px;overflow-y:auto;">${this.escapeHtml(action.detail)}</div>`;
+            cardEl.addEventListener('click', function () {
+                const detail = cardEl.querySelector('.compress-detail');
+                const toggle = cardEl.querySelector('.toggle-icon');
+                if (detail.style.display === 'none') {
+                    detail.style.display = 'block';
+                    toggle.style.transform = 'rotate(180deg)';
+                } else {
+                    detail.style.display = 'none';
+                    toggle.style.transform = 'rotate(0deg)';
+                }
+            });
+        } else {
+            cardEl.innerHTML = `${compressIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>`;
+        }
+        this.messagesContainer.appendChild(cardEl);
+        return;
+    }
+
     let actionClass = '';
     let actionIcon = '';
 

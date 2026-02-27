@@ -314,6 +314,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 		AgentName:  "系统",
 		ActionType: "context_compress",
 		Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
+		Detail:     msg.Content,
 	})
 
 	// Build new state: prepend summary message, keep recent messages

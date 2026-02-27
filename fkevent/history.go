@@ -19,13 +19,12 @@ type ToolCallRecord struct {
 type ActionRecord struct {
 	ActionType string `json:"action_type"`
 	Content    string `json:"content"`
+	Detail     string `json:"detail,omitempty"`
 }
 
-// HistoryData 持久化数据结构，包含消息和上下文压缩摘要
+// HistoryData 持久化数据结构
 type HistoryData struct {
-	Messages        []AgentMessage `json:"messages"`
-	Summary         string         `json:"summary,omitempty"`
-	SummarizedCount int            `json:"summarized_count,omitempty"`
+	Messages []AgentMessage `json:"messages"`
 }
 
 // MessageEvent 单个消息事件，Type: "text" | "tool_call" | "action"
@@ -143,6 +142,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			Action: &ActionRecord{
 				ActionType: event.ActionType,
 				Content:    event.Content,
+				Detail:     event.Detail,
 			},
 		})
 
@@ -328,6 +328,30 @@ func (h *HistoryRecorder) GetSummary() (string, int) {
 	return h.summary, h.summarizedCount
 }
 
+// reconstructSummaryFromEvents 从事件流中重建上下文压缩摘要状态（需在持锁状态下调用）
+func (h *HistoryRecorder) reconstructSummaryFromEvents() {
+	h.summary = ""
+	h.summarizedCount = 0
+
+	// 从后向前查找最后一个 context_compress 事件
+	for i := len(h.messages) - 1; i >= 0; i-- {
+		for _, evt := range h.messages[i].Events {
+			if evt.Type == "action" && evt.Action != nil &&
+				evt.Action.ActionType == "context_compress" && evt.Action.Detail != "" {
+				h.summary = evt.Action.Detail
+				// 向前查找该事件所属执行轮次的用户输入
+				for j := i - 1; j >= 0; j-- {
+					if h.messages[j].AgentName == "用户" {
+						h.summarizedCount = j
+						return
+					}
+				}
+				h.summarizedCount = 0
+				return
+			}
+		}
+	}
+}
 func (h *HistoryRecorder) GetAgentNames() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -368,22 +392,20 @@ func (h *HistoryRecorder) SaveToFile(filePath string) error {
 			Events:    h.currentEvents,
 		}
 		tempMessages = append(tempMessages, msg)
-		return saveMessagesToFile(tempMessages, h.summary, h.summarizedCount, filePath)
+		return saveMessagesToFile(tempMessages, filePath)
 	}
 
-	return saveMessagesToFile(h.messages, h.summary, h.summarizedCount, filePath)
+	return saveMessagesToFile(h.messages, filePath)
 }
 
-func saveMessagesToFile(messages []AgentMessage, summary string, summarizedCount int, filePath string) error {
+func saveMessagesToFile(messages []AgentMessage, filePath string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create dir %s: %w", dir, err)
 	}
 
 	histData := HistoryData{
-		Messages:        messages,
-		Summary:         summary,
-		SummarizedCount: summarizedCount,
+		Messages: messages,
 	}
 	data, err := json.MarshalIndent(histData, "", "  ")
 	if err != nil {
@@ -411,8 +433,9 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 		return fmt.Errorf("unmarshal: %w", err)
 	}
 	h.messages = histData.Messages
-	h.summary = histData.Summary
-	h.summarizedCount = histData.SummarizedCount
+
+	// 从事件流中重建上下文压缩摘要状态
+	h.reconstructSummaryFromEvents()
 
 	// 替换当前数据
 	h.currentAgent = ""

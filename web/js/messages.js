@@ -506,20 +506,62 @@ FKTeamsChat.prototype.handleAction = function (event) {
     let actionClass = '';
     let actionIcon = '';
 
+    const compressIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+        <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>`;
+
+    // 上下文压缩开始：创建带 ID 的临时卡片
+    if (event.action_type === 'context_compress_start') {
+        const startEl = document.createElement('div');
+        startEl.className = 'action-event context-compress';
+        startEl.id = 'context-compress-pending';
+        startEl.innerHTML = `${compressIcon}<span>[${this.escapeHtml(event.agent_name)}] ${this.escapeHtml(event.content || event.action_type)}</span>`;
+        this.messagesContainer.appendChild(startEl);
+        this.scrollToBottom();
+        return;
+    }
+
+    // 上下文压缩完成：替换临时卡片为可展开的最终卡片
+    if (event.action_type === 'context_compress') {
+        const pendingEl = document.getElementById('context-compress-pending');
+        if (pendingEl) pendingEl.remove();
+
+        const cardEl = document.createElement('div');
+        cardEl.className = 'action-event context-compress';
+        if (event.detail) {
+            cardEl.style.cursor = 'pointer';
+            cardEl.style.flexWrap = 'wrap';
+            const toggleIcon = `<svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;transition:transform 0.2s;margin-left:auto;">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>`;
+            cardEl.innerHTML = `${compressIcon}<span>[${this.escapeHtml(event.agent_name)}] ${this.escapeHtml(event.content || event.action_type)}</span>${toggleIcon}
+                <div class="compress-detail" style="display:none;width:100%;margin-top:8px;padding:10px;background:var(--bg-primary);border-radius:6px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--text-primary);max-height:300px;overflow-y:auto;">${this.escapeHtml(event.detail)}</div>`;
+            cardEl.addEventListener('click', function () {
+                const detail = cardEl.querySelector('.compress-detail');
+                const toggle = cardEl.querySelector('.toggle-icon');
+                if (detail.style.display === 'none') {
+                    detail.style.display = 'block';
+                    toggle.style.transform = 'rotate(180deg)';
+                } else {
+                    detail.style.display = 'none';
+                    toggle.style.transform = 'rotate(0deg)';
+                }
+            });
+        } else {
+            cardEl.innerHTML = `${compressIcon}<span>[${this.escapeHtml(event.agent_name)}] ${this.escapeHtml(event.content || event.action_type)}</span>`;
+        }
+        this.messagesContainer.appendChild(cardEl);
+        this.scrollToBottom();
+        return;
+    }
+
     switch (event.action_type) {
         case 'transfer':
             actionClass = 'transfer';
             actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
                 <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-            </svg>`;
-            break;
-        case 'context_compress_start':
-        case 'context_compress':
-            actionClass = 'context-compress';
-            actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
-                <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
             </svg>`;
             break;
         case 'exit':

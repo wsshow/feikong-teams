@@ -288,6 +288,9 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 	if event.ActionType != "" {
 		result["action_type"] = event.ActionType
 	}
+	if event.Detail != "" {
+		result["detail"] = event.Detail
+	}
 	if event.Error != "" {
 		result["error"] = event.Error
 	}
