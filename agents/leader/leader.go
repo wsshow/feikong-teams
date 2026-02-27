@@ -3,15 +3,15 @@ package leader
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/agents/leader/skills"
+	"fkteams/agents/leader/summary"
 	"fkteams/tools/file"
 	"fkteams/tools/todo"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/adk/middlewares/skill"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
@@ -56,16 +56,17 @@ func NewAgent(ctx context.Context) adk.Agent {
 	toolList = append(toolList, fileTools...)
 
 	// 加载技能
-	skillsDirPath := filepath.Join(safeDir, "skills")
-	localBackend, err := skill.NewLocalBackend(&skill.LocalBackendConfig{
-		BaseDir: skillsDirPath,
-	})
+	skillsMiddleware, err := skills.New(ctx, safeDir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	skillsMiddleware, err := skill.New(ctx, &skill.Config{
-		Backend:    localBackend,
-		UseChinese: true,
+
+	// 上下文压缩
+	summaryMiddleware, err := summary.New(ctx, &summary.Config{
+		Model:                      common.NewChatModel(),
+		SystemPrompt:               summary.PromptOfSummary,
+		MaxTokensBeforeSummary:     128 * 1024,
+		MaxTokensForRecentMessages: 64 * 1024,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -87,7 +88,7 @@ func NewAgent(ctx context.Context) adk.Agent {
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
-		Middlewares:   []adk.AgentMiddleware{skillsMiddleware},
+		Middlewares:   []adk.AgentMiddleware{skillsMiddleware, summaryMiddleware},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,
