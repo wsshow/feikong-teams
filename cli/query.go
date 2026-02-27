@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fkteams/agents/leader/summary"
 	"fkteams/fkevent"
 	"fkteams/report"
 	"fmt"
@@ -104,18 +105,36 @@ func getCliRecorder() *fkevent.HistoryRecorder {
 	return fkevent.GlobalSessionManager.GetOrCreate(CLISessionID, CLIHistoryDir)
 }
 
-// BuildInputMessages 构建输入消息列表（包含历史对话）
+// BuildInputMessages 构建输入消息列表（包含历史对话，支持上下文压缩摘要）
 func BuildInputMessages(input string) []adk.Message {
 	var inputMessages []adk.Message
 	recorder := getCliRecorder()
 	agentMessages := recorder.GetMessages()
-	if len(agentMessages) > 0 {
+	summaryText, summarizedCount := recorder.GetSummary()
+
+	if summaryText != "" && summarizedCount > 0 {
+		var historyMessage strings.Builder
+		historyMessage.WriteString("## 对话历史摘要\n")
+		historyMessage.WriteString(summaryText)
+
+		if summarizedCount < len(agentMessages) {
+			historyMessage.WriteString("\n\n## 最近的对话记录\n")
+			for _, msg := range agentMessages[summarizedCount:] {
+				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())
+			}
+		}
+
+		inputMessages = append(inputMessages, schema.SystemMessage(
+			fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
+		))
+	} else if len(agentMessages) > 0 {
 		var historyMessage strings.Builder
 		for _, agentMessage := range agentMessages {
 			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.GetTextContent())
 		}
 		inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
 	}
+
 	inputMessages = append(inputMessages, schema.UserMessage(input))
 	return inputMessages
 }
@@ -124,11 +143,18 @@ func BuildInputMessages(input string) []adk.Message {
 func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMonitor bool, onInterrupt func()) error {
 	inputMessages := BuildInputMessages(input)
 	recorder := getCliRecorder()
+	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(input)
 
 	// 创建可取消的 context，并设置 CLI 事件回调
 	queryCtx, cancelFunc := context.WithCancel(ctx)
 	queryCtx = fkevent.WithCallback(queryCtx, fkevent.CLIEventCallback(recorder))
+
+	// 设置摘要持久化回调
+	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {
+		recorder.SetSummary(summaryText, countBeforeRun)
+	})
+
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
 

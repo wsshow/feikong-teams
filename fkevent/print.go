@@ -82,9 +82,16 @@ func printEvent() func(Event) {
 			fmt.Println()
 
 		case "action":
-			fmt.Printf("\n\033[1;34m▸ [%s] 动作: %s\033[0m\n", event.AgentName, event.ActionType)
-			if event.Content != "" {
-				fmt.Printf("  详情: %s\n", event.Content)
+			switch event.ActionType {
+			case "context_compress_start":
+				fmt.Printf("\n\033[1;33m~ [%s] %s\033[0m", event.AgentName, event.Content)
+			case "context_compress":
+				fmt.Printf("\n\033[1;33m\u2713 [%s] %s\033[0m\n", event.AgentName, event.Content)
+			default:
+				fmt.Printf("\n\033[1;34m▸ [%s] 动作: %s\033[0m\n", event.AgentName, event.ActionType)
+				if event.Content != "" {
+					fmt.Printf("  详情: %s\n", event.Content)
+				}
 			}
 
 		case "error":

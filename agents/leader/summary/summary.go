@@ -2,6 +2,7 @@ package summary
 
 import (
 	"context"
+	"fkteams/fkevent"
 	"fmt"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const DefaultMaxTokensBeforeSummary = 128 * 1024
+const DefaultMaxTokensBeforeSummary = 80 * 1024
 const DefaultMaxTokensForRecentMessages = 25 * 1024 // 20% of DefaultMaxTokensBeforeSummary
 const PromptOfSummary = `<role>
 Conversation Summarization Assistant for Multi-turn LLM Agent
@@ -73,6 +74,16 @@ allowing the agent to continue reasoning seamlessly without re-accessing the raw
 </messages>`
 
 type TokenCounter func(ctx context.Context, msgs []adk.Message) (tokenNum []int64, err error)
+
+// SummaryPersistCallback 摘要持久化回调
+type SummaryPersistCallback func(summaryText string)
+
+type summaryPersistCallbackKey struct{}
+
+// WithSummaryPersistCallback 设置摘要持久化回调到 context
+func WithSummaryPersistCallback(ctx context.Context, cb SummaryPersistCallback) context.Context {
+	return context.WithValue(ctx, summaryPersistCallbackKey{}, cb)
+}
 
 type Config struct {
 	MaxTokensBeforeSummary     int
@@ -267,6 +278,14 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	olderText := joinBlocks(olderBlocks)
 	recentText := joinBlocks(recentBlocks)
 
+	// 通知上下文压缩开始
+	_ = fkevent.DispatchEvent(ctx, fkevent.Event{
+		Type:       "action",
+		AgentName:  "系统",
+		ActionType: "context_compress_start",
+		Content:    "对话上下文压缩中...",
+	})
+
 	msg, err := s.summarizer.Invoke(ctx, map[string]any{
 		"system_prompt":    joinBlocks([]block{systemBlock}),
 		"user_messages":    joinBlocks([]block{userBlock}),
@@ -283,6 +302,19 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	summaryMsg.Extra = map[string]any{
 		summaryMessageFlag: true,
 	}
+
+	// 持久化摘要
+	if cb, ok := ctx.Value(summaryPersistCallbackKey{}).(SummaryPersistCallback); ok {
+		cb(msg.Content)
+	}
+
+	// 通知上下文压缩已触发
+	_ = fkevent.DispatchEvent(ctx, fkevent.Event{
+		Type:       "action",
+		AgentName:  "系统",
+		ActionType: "context_compress",
+		Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
+	})
 
 	// Build new state: prepend summary message, keep recent messages
 	newMessages := make([]*schema.Message, 0, len(messages))

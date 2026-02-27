@@ -723,6 +723,12 @@ a.source-item:hover {
     color: var(--error);
 }
 
+.action-event.context-compress {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
 .action-event.agent-switch {
     background: var(--accent-light);
     border-color: var(--accent-primary);

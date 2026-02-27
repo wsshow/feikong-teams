@@ -86,8 +86,8 @@ func LoadHistoryFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		var messages []fkevent.AgentMessage
-		if err := json.Unmarshal(data, &messages); err != nil {
+		var histData fkevent.HistoryData
+		if err := json.Unmarshal(data, &histData); err != nil {
 			Fail(c, http.StatusInternalServerError, "failed to parse file")
 			return
 		}
@@ -95,7 +95,7 @@ func LoadHistoryFileHandler() gin.HandlerFunc {
 		OK(c, gin.H{
 			"filename":   filename,
 			"session_id": extractSessionID(filename),
-			"messages":   messages,
+			"messages":   histData.Messages,
 		})
 	}
 }

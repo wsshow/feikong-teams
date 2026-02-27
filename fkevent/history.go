@@ -21,6 +21,13 @@ type ActionRecord struct {
 	Content    string `json:"content"`
 }
 
+// HistoryData 持久化数据结构，包含消息和上下文压缩摘要
+type HistoryData struct {
+	Messages        []AgentMessage `json:"messages"`
+	Summary         string         `json:"summary,omitempty"`
+	SummarizedCount int            `json:"summarized_count,omitempty"`
+}
+
 // MessageEvent 单个消息事件，Type: "text" | "tool_call" | "action"
 type MessageEvent struct {
 	Type     string          `json:"type"`
@@ -61,6 +68,8 @@ type HistoryRecorder struct {
 	currentStartTime time.Time
 	currentEvents    []MessageEvent
 	pendingToolCalls map[string]string // toolName -> arguments
+	summary          string            // 上下文压缩摘要
+	summarizedCount  int               // 已被摘要覆盖的消息数量
 }
 
 func NewHistoryRecorder() *HistoryRecorder {
@@ -300,6 +309,23 @@ func (h *HistoryRecorder) Clear() {
 	h.currentAgent = ""
 	h.currentRunPath = ""
 	h.pendingToolCalls = make(map[string]string)
+	h.summary = ""
+	h.summarizedCount = 0
+}
+
+// SetSummary 设置上下文压缩摘要
+func (h *HistoryRecorder) SetSummary(text string, count int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.summary = text
+	h.summarizedCount = count
+}
+
+// GetSummary 获取上下文压缩摘要和已覆盖的消息数量
+func (h *HistoryRecorder) GetSummary() (string, int) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.summary, h.summarizedCount
 }
 
 func (h *HistoryRecorder) GetAgentNames() []string {
@@ -342,19 +368,24 @@ func (h *HistoryRecorder) SaveToFile(filePath string) error {
 			Events:    h.currentEvents,
 		}
 		tempMessages = append(tempMessages, msg)
-		return saveMessagesToFile(tempMessages, filePath)
+		return saveMessagesToFile(tempMessages, h.summary, h.summarizedCount, filePath)
 	}
 
-	return saveMessagesToFile(h.messages, filePath)
+	return saveMessagesToFile(h.messages, h.summary, h.summarizedCount, filePath)
 }
 
-func saveMessagesToFile(messages []AgentMessage, filePath string) error {
+func saveMessagesToFile(messages []AgentMessage, summary string, summarizedCount int, filePath string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create dir %s: %w", dir, err)
 	}
 
-	data, err := json.MarshalIndent(messages, "", "  ")
+	histData := HistoryData{
+		Messages:        messages,
+		Summary:         summary,
+		SummarizedCount: summarizedCount,
+	}
+	data, err := json.MarshalIndent(histData, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
@@ -375,13 +406,15 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 		return fmt.Errorf("read file: %w", err)
 	}
 
-	var messages []AgentMessage
-	if err := json.Unmarshal(data, &messages); err != nil {
+	var histData HistoryData
+	if err := json.Unmarshal(data, &histData); err != nil {
 		return fmt.Errorf("unmarshal: %w", err)
 	}
+	h.messages = histData.Messages
+	h.summary = histData.Summary
+	h.summarizedCount = histData.SummarizedCount
 
 	// 替换当前数据
-	h.messages = messages
 	h.currentAgent = ""
 	h.currentEvents = make([]MessageEvent, 0)
 	h.currentRunPath = ""

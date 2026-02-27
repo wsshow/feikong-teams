@@ -65,8 +65,8 @@ func NewAgent(ctx context.Context) adk.Agent {
 	summaryMiddleware, err := summary.New(ctx, &summary.Config{
 		Model:                      common.NewChatModel(),
 		SystemPrompt:               summary.PromptOfSummary,
-		MaxTokensBeforeSummary:     128 * 1024,
-		MaxTokensForRecentMessages: 64 * 1024,
+		MaxTokensBeforeSummary:     80 * 1024,
+		MaxTokensForRecentMessages: 25 * 1024,
 	})
 	if err != nil {
 		log.Fatal(err)

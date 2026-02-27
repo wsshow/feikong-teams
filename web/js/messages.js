@@ -514,6 +514,14 @@ FKTeamsChat.prototype.handleAction = function (event) {
                 <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
             </svg>`;
             break;
+        case 'context_compress_start':
+        case 'context_compress':
+            actionClass = 'context-compress';
+            actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+                <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>`;
+            break;
         case 'exit':
             actionClass = 'exit';
             actionIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

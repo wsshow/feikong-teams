@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fkteams/agents"
+	"fkteams/agents/leader/summary"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
@@ -128,6 +129,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 
 	// 构建输入消息（含历史）
 	inputMessages := buildInputMessages(recorder, wsMsg.Message)
+	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(wsMsg.Message)
 
 	// 获取 runner
@@ -156,6 +158,11 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
 		recorder.RecordEvent(event)
 		return writeJSON(convertEventForWS(event))
+	})
+
+	// 设置摘要持久化回调
+	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
+		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
 	_ = writeJSON(map[string]interface{}{
@@ -209,13 +216,30 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	})
 }
 
-// buildInputMessages 构建输入消息（包含历史记录）
+// buildInputMessages 构建输入消息（包含历史记录，支持上下文压缩摘要）
 // recorder 是会话级别的 HistoryRecorder，由 GlobalSessionManager 管理，已自动加载历史
 func buildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []adk.Message {
 	var inputMessages []adk.Message
 
 	agentMessages := recorder.GetMessages()
-	if len(agentMessages) > 0 {
+	summaryText, summarizedCount := recorder.GetSummary()
+
+	if summaryText != "" && summarizedCount > 0 {
+		var historyMessage strings.Builder
+		historyMessage.WriteString("## 对话历史摘要\n")
+		historyMessage.WriteString(summaryText)
+
+		if summarizedCount < len(agentMessages) {
+			historyMessage.WriteString("\n\n## 最近的对话记录\n")
+			for _, msg := range agentMessages[summarizedCount:] {
+				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())
+			}
+		}
+
+		inputMessages = append(inputMessages, schema.SystemMessage(
+			fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
+		))
+	} else if len(agentMessages) > 0 {
 		var historyMessage strings.Builder
 		for _, msg := range agentMessages {
 			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())

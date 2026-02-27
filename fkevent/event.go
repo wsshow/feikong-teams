@@ -251,3 +251,8 @@ func handleEvent(ctx context.Context, event Event) error {
 	PrintEvent(event)
 	return nil
 }
+
+// DispatchEvent 向 context 中的回调分发事件
+func DispatchEvent(ctx context.Context, event Event) error {
+	return handleEvent(ctx, event)
+}
