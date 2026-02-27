@@ -7,9 +7,11 @@ import (
 	"fkteams/tools/todo"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/middlewares/skill"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
@@ -53,6 +55,22 @@ func NewAgent(ctx context.Context) adk.Agent {
 	toolList = append(toolList, todoTools...)
 	toolList = append(toolList, fileTools...)
 
+	// 加载技能
+	skillsDirPath := filepath.Join(safeDir, "skills")
+	localBackend, err := skill.NewLocalBackend(&skill.LocalBackendConfig{
+		BaseDir: skillsDirPath,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	skillsMiddleware, err := skill.New(ctx, &skill.Config{
+		Backend:    localBackend,
+		UseChinese: true,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	systemMessages, err := LeaderPromptTemplate.Format(ctx, map[string]any{
 		"current_time":  time.Now().Format("2006-01-02 15:04:05"),
 		"team_members":  ctx.Value("team_members"),
@@ -69,6 +87,7 @@ func NewAgent(ctx context.Context) adk.Agent {
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
+		Middlewares:   []adk.AgentMiddleware{skillsMiddleware},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,
