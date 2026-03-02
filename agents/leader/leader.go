@@ -5,6 +5,7 @@ import (
 	"fkteams/agents/common"
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/tools/file"
 	"fkteams/tools/todo"
 	"log"
@@ -91,7 +92,8 @@ func NewAgent(ctx context.Context) adk.Agent {
 		Middlewares:   []adk.AgentMiddleware{skillsMiddleware, summaryMiddleware},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: toolList,
+				Tools:               toolList,
+				ToolCallMiddlewares: []compose.ToolMiddleware{warperror.New(nil)},
 			},
 		},
 	})
