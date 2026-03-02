@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -100,9 +101,17 @@ const (
 	CLIHistoryDir = "./history/chat_history/"
 )
 
+// activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
+var activeSessionID = CLISessionID
+
+// NewDirectSessionID 生成基于时间戳的唯一会话 ID
+func NewDirectSessionID() string {
+	return time.Now().Format("20060102_150405")
+}
+
 // getCliRecorder 获取 CLI 模式的历史记录器
 func getCliRecorder() *fkevent.HistoryRecorder {
-	return fkevent.GlobalSessionManager.GetOrCreate(CLISessionID, CLIHistoryDir)
+	return fkevent.GlobalSessionManager.GetOrCreate(activeSessionID, CLIHistoryDir)
 }
 
 // BuildInputMessages 构建输入消息列表（包含历史对话，支持上下文压缩摘要）

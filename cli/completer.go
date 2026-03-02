@@ -138,8 +138,9 @@ func Completer(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{
 		{Text: "quit", Description: "退出"},
 		{Text: "list_agents", Description: "列出所有可用的智能体"},
-		{Text: "load_chat_history", Description: "加载聊天历史"},
-		{Text: "save_chat_history", Description: "保存聊天历史"},
+		{Text: "list_chat_history", Description: "列出所有可用的聊天历史会话"},
+		{Text: "load_chat_history", Description: "加载指定的聊天历史会话"},
+		{Text: "save_chat_history", Description: "保存聊天历史到当前会话文件"},
 		{Text: "clear_chat_history", Description: "清空聊天历史"},
 		{Text: "clear_todo", Description: "清空待办事项"},
 		{Text: "switch_work_mode", Description: "切换工作模式(团队/深度/讨论/自定义)"},

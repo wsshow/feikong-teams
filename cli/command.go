@@ -4,6 +4,8 @@ import (
 	"fkteams/agents"
 	"fkteams/agents/leader"
 	"fkteams/fkevent"
+	"os"
+	"strings"
 
 	"github.com/pterm/pterm"
 )
@@ -57,8 +59,9 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("  #文件路径                        快速引用工作目录中的文件或文件夹")
 		pterm.Println()
 		pterm.Println("聊天历史管理:")
-		pterm.Println("  load_chat_history               从默认文件加载聊天历史")
-		pterm.Println("  save_chat_history               保存聊天历史到默认文件")
+		pterm.Println("  list_chat_history                        列出所有可用的聊天历史会话")
+		pterm.Println("  load_chat_history <session_id>            加载指定的聊天历史会话")
+		pterm.Println("  save_chat_history                        保存聊天历史到当前会话文件")
 		pterm.Println("  clear_chat_history              清空当前聊天历史")
 		pterm.Println("  save_chat_history_to_markdown   导出聊天历史为 Markdown 文件")
 		pterm.Println("  save_chat_history_to_html       导出聊天历史为 HTML 文件")
@@ -73,30 +76,23 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("  直接输入问题                     与智能体团队对话")
 		return ResultHandled
 
-	case "load_chat_history":
-		recorder := getCliRecorder()
-		historyFile := CLIHistoryDir + "fkteams_chat_history_" + CLISessionID
-		err := recorder.LoadFromFile(historyFile)
-		if err != nil {
-			pterm.Error.Printfln("加载聊天历史失败: %v", err)
-		} else {
-			pterm.Success.Println("成功加载聊天历史")
-		}
+	case "list_chat_history":
+		listChatHistoryFiles()
 		return ResultHandled
 
 	case "save_chat_history":
 		recorder := getCliRecorder()
-		historyFile := CLIHistoryDir + "fkteams_chat_history_" + CLISessionID
+		historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
 		err := recorder.SaveToFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		} else {
-			pterm.Success.Println("成功保存聊天历史")
+			pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
 		}
 		return ResultHandled
 
 	case "clear_chat_history":
-		fkevent.GlobalSessionManager.Clear(CLISessionID)
+		fkevent.GlobalSessionManager.Clear(activeSessionID)
 		pterm.Success.Println("成功清空当前聊天历史")
 		return ResultHandled
 
@@ -146,7 +142,76 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	default:
+		// 支持 load_chat_history <session_id> 格式
+		if strings.HasPrefix(input, "load_chat_history ") {
+			sessionID := strings.TrimSpace(strings.TrimPrefix(input, "load_chat_history "))
+			if sessionID != "" {
+				loadChatHistory(sessionID)
+				return ResultHandled
+			}
+		}
 		return ResultNotFound
+	}
+}
+
+// listChatHistoryFiles 列出所有可用的聊天历史文件
+func listChatHistoryFiles() {
+	entries, err := os.ReadDir(CLIHistoryDir)
+	if err != nil {
+		pterm.Error.Printfln("读取历史目录失败: %v", err)
+		return
+	}
+
+	pterm.Println()
+	pterm.Println("=== 可用的聊天历史会话 ===")
+	pterm.Println()
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "fkteams_chat_history_") {
+			continue
+		}
+		sessionID := strings.TrimPrefix(name, "fkteams_chat_history_")
+		info, _ := entry.Info()
+		if info != nil {
+			pterm.Printf("  %s  (%s, %d bytes)\n", sessionID, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
+		} else {
+			pterm.Printf("  %s\n", sessionID)
+		}
+		count++
+	}
+
+	if count == 0 {
+		pterm.Info.Println("暂无聊天历史文件")
+	} else {
+		pterm.Println()
+		pterm.Printf("共 %d 个会话，使用 load_chat_history <session_id> 加载\n", count)
+	}
+	pterm.Println()
+}
+
+// loadChatHistory 加载指定 session ID 的聊天历史
+func loadChatHistory(sessionID string) {
+	historyFile := CLIHistoryDir + "fkteams_chat_history_" + sessionID
+	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
+		pterm.Error.Printfln("历史文件不存在: %s", historyFile)
+		pterm.Info.Println("使用 list_chat_history 查看可用的会话")
+		return
+	}
+
+	// 更新当前活跃会话 ID
+	activeSessionID = sessionID
+
+	recorder := getCliRecorder()
+	err := recorder.LoadFromFile(historyFile)
+	if err != nil {
+		pterm.Error.Printfln("加载聊天历史失败: %v", err)
+	} else {
+		pterm.Success.Printfln("成功加载聊天历史，当前会话 ID: %s", sessionID)
 	}
 }
 
