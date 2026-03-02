@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -20,6 +21,14 @@ func defaultErrorHandler(ctx context.Context, in *compose.ToolInput, err error) 
 type Config struct {
 	// Handler 自定义错误处理函数，为空时使用默认处理
 	Handler ErrorHandler
+}
+
+// NewAgentMiddleware 创建 ADK AgentMiddleware，通过 WrapToolCall 拦截工具调用错误
+// 将错误转换为成功的工具输出返回给 LLM，避免中断 Agent 流程
+func NewAgentMiddleware(cfg *Config) adk.AgentMiddleware {
+	return adk.AgentMiddleware{
+		WrapToolCall: New(cfg),
+	}
 }
 
 // New 创建工具错误处理中间件

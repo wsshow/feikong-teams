@@ -73,6 +73,9 @@ func NewAgent(ctx context.Context) adk.Agent {
 		log.Fatal(err)
 	}
 
+	// 工具错误处理中间件
+	warperrorMiddleware := warperror.NewAgentMiddleware(nil)
+
 	systemMessages, err := LeaderPromptTemplate.Format(ctx, map[string]any{
 		"current_time":  time.Now().Format("2006-01-02 15:04:05"),
 		"team_members":  ctx.Value("team_members"),
@@ -89,11 +92,14 @@ func NewAgent(ctx context.Context) adk.Agent {
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
-		Middlewares:   []adk.AgentMiddleware{skillsMiddleware, summaryMiddleware},
+		Middlewares: []adk.AgentMiddleware{
+			skillsMiddleware,
+			summaryMiddleware,
+			warperrorMiddleware,
+		},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools:               toolList,
-				ToolCallMiddlewares: []compose.ToolMiddleware{warperror.New(nil)},
+				Tools: toolList,
 			},
 		},
 	})
