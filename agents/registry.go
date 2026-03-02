@@ -5,14 +5,18 @@ import (
 	"fkteams/agents/analyst"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
+	"fkteams/agents/custom"
 	"fkteams/agents/searcher"
 	"fkteams/agents/storyteller"
 	"fkteams/agents/summarizer"
 	"fkteams/agents/visitor"
+	"fkteams/config"
+	"fmt"
 	"os"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/pterm/pterm"
 )
 
 // AgentInfo 智能体信息
@@ -74,7 +78,62 @@ func initRegistry() {
 				}(agent),
 			})
 		}
+
+		// 加载配置文件中的自定义智能体
+		loadCustomAgents(ctx)
 	})
+}
+
+// loadCustomAgents 从配置文件加载自定义智能体并添加到注册表
+func loadCustomAgents(_ context.Context) {
+	cfg, err := config.Get()
+	if err != nil {
+		return // 配置文件不存在或解析失败，跳过
+	}
+
+	if len(cfg.Custom.Agents) == 0 {
+		return
+	}
+
+	// 构建已有名称集合用于冲突检测
+	existingNames := make(map[string]bool, len(Registry))
+	for _, info := range Registry {
+		existingNames[info.Name] = true
+	}
+
+	for _, agentCfg := range cfg.Custom.Agents {
+		if agentCfg.Name == "" {
+			continue
+		}
+
+		if existingNames[agentCfg.Name] {
+			pterm.Warning.Printfln("自定义智能体 \"%s\" 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
+		}
+
+		agent := custom.NewAgent(custom.Config{
+			Name:         agentCfg.Name,
+			Description:  agentCfg.Desc,
+			SystemPrompt: agentCfg.SystemPrompt,
+			Model: custom.Model{
+				Name:    agentCfg.ModelName,
+				APIKey:  agentCfg.APIKey,
+				BaseURL: agentCfg.BaseURL,
+			},
+			ToolNames: agentCfg.Tools,
+		})
+
+		Registry = append(Registry, AgentInfo{
+			Name:        agentCfg.Name,
+			Description: agentCfg.Desc,
+			Creator: func(cachedAgent adk.Agent) func(ctx context.Context) adk.Agent {
+				return func(ctx context.Context) adk.Agent {
+					return cachedAgent
+				}
+			}(agent),
+		})
+
+		fmt.Printf("[tips] 加载自定义智能体: %s (%s)\n", agentCfg.Name, agentCfg.Desc)
+	}
 }
 
 // GetRegistry 获取智能体注册表
