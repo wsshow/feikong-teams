@@ -15,7 +15,7 @@ type Info struct {
 }
 
 func (info Info) String() string {
-	return fmt.Sprintf("Version:%s BuildDate:%s", info.Version, info.BuildTime)
+	return fmt.Sprintf("%s (%s)", info.Version, info.BuildTime)
 }
 
 func Get() Info {
