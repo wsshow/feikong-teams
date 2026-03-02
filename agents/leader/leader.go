@@ -3,8 +3,8 @@ package leader
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/agents/leader/skills"
-	"fkteams/agents/leader/summary"
+	"fkteams/agents/middlewares/skills"
+	"fkteams/agents/middlewares/summary"
 	"fkteams/tools/file"
 	"fkteams/tools/todo"
 	"log"

@@ -2,7 +2,7 @@ package cli
 
 import (
 	"context"
-	"fkteams/agents/leader/summary"
+	"fkteams/agents/middlewares/summary"
 	"fkteams/fkevent"
 	"fkteams/report"
 	"fmt"
