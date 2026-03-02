@@ -23,7 +23,7 @@ require (
 	github.com/pkg/sftp v1.13.10
 	github.com/pterm/pterm v0.12.82
 	github.com/spf13/afero v1.15.0
-	github.com/spf13/pflag v1.0.10
+	github.com/urfave/cli/v3 v3.7.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	github.com/wsshow/dl v1.0.5
 	github.com/wsshow/docreader v1.1.1
