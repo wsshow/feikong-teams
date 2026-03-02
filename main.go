@@ -35,8 +35,10 @@ func main() {
 		generateConfig bool
 		initEnv        bool
 		web            bool
+		historyList    bool
 		workMode       string
 		query          string
+		resumeSession  string
 	)
 	pflag.BoolVarP(&checkUpdates, "update", "u", false, "检查更新并退出")
 	pflag.BoolVarP(&checkVersion, "version", "v", false, "显示版本信息并退出")
@@ -44,7 +46,9 @@ func main() {
 	pflag.BoolVarP(&generateConfig, "generate-config", "c", false, "生成示例配置文件并退出")
 	pflag.BoolVarP(&initEnv, "init", "i", false, "初始化运行环境（安装/升级 uv 等依赖）")
 	pflag.BoolVarP(&web, "web", "w", false, "启动Web服务器")
+	pflag.BoolVarP(&historyList, "history-list", "l", false, "列出所有可用的聊天历史会话并退出")
 	pflag.StringVarP(&query, "query", "q", "", "直接查询模式，执行完查询后退出")
+	pflag.StringVarP(&resumeSession, "resume", "r", "", "恢复指定的聊天历史会话")
 	pflag.StringVarP(&workMode, "work-mode", "m", "team", "工作模式: team 或 deep 或 group 或 custom")
 	pflag.Parse()
 
@@ -88,6 +92,11 @@ func main() {
 		return
 	}
 
+	if historyList {
+		cli.ListChatHistoryFiles()
+		return
+	}
+
 	if web {
 		server.Run()
 		return
@@ -126,6 +135,11 @@ func main() {
 
 	// 创建交互会话
 	session := cli.NewSession(currentMode, inputHistory, createModeRunner)
+
+	// 设置恢复会话
+	if resumeSession != "" {
+		cli.SetResumeSessionID(resumeSession)
+	}
 
 	// 信号处理
 	signals := make(chan os.Signal, 1)

@@ -77,7 +77,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "list_chat_history":
-		listChatHistoryFiles()
+		ListChatHistoryFiles(true)
 		return ResultHandled
 
 	case "save_chat_history":
@@ -154,8 +154,8 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 	}
 }
 
-// listChatHistoryFiles 列出所有可用的聊天历史文件
-func listChatHistoryFiles() {
+// ListChatHistoryFiles 列出所有可用的聊天历史文件，interactive 表示是否在交互模式中调用
+func ListChatHistoryFiles(interactive ...bool) {
 	entries, err := os.ReadDir(CLIHistoryDir)
 	if err != nil {
 		pterm.Error.Printfln("读取历史目录失败: %v", err)
@@ -189,7 +189,11 @@ func listChatHistoryFiles() {
 		pterm.Info.Println("暂无聊天历史文件")
 	} else {
 		pterm.Println()
-		pterm.Printf("共 %d 个会话，使用 load_chat_history <session_id> 加载\n", count)
+		if len(interactive) > 0 && interactive[0] {
+			pterm.Printf("共 %d 个会话，使用 load_chat_history <session_id> 加载\n", count)
+		} else {
+			pterm.Printf("共 %d 个会话，使用 -r <session_id> 恢复会话\n", count)
+		}
 	}
 	pterm.Println()
 }

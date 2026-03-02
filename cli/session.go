@@ -85,9 +85,14 @@ func (s *Session) StartSignalHandler(rawSignals chan os.Signal, exitSignals chan
 func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal, query string) {
 	s.InputHistory = append(s.InputHistory, query)
 
-	// 每次非交互模式执行时创建新的会话 ID
-	activeSessionID = NewDirectSessionID()
-	pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
+	if resumeSessionID != "" {
+		// 恢复指定会话
+		activeSessionID = resumeSessionID
+		pterm.Info.Printf("[非交互模式] 恢复会话: %s\n", activeSessionID)
+	} else {
+		activeSessionID = NewDirectSessionID()
+		pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
+	}
 
 	recorder := getCliRecorder()
 	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
@@ -120,9 +125,14 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 
 // HandleInteractive 交互模式：启动 REPL 循环
 func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal) {
-	// 每次启动交互模式时创建新的会话 ID
-	activeSessionID = NewDirectSessionID()
-	pterm.Info.Printf("会话 ID: %s\n", activeSessionID)
+	if resumeSessionID != "" {
+		// 恢复指定会话
+		activeSessionID = resumeSessionID
+		pterm.Info.Printf("恢复会话: %s\n", activeSessionID)
+	} else {
+		activeSessionID = NewDirectSessionID()
+		pterm.Info.Printf("会话 ID: %s\n", activeSessionID)
+	}
 
 	go func() {
 		executor := NewQueryExecutor(r, s.queryState)

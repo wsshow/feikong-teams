@@ -104,9 +104,17 @@ const (
 // activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
 var activeSessionID = CLISessionID
 
+// resumeSessionID 恢复会话的 ID，由 -r 参数设置
+var resumeSessionID string
+
 // NewDirectSessionID 生成基于时间戳的唯一会话 ID
 func NewDirectSessionID() string {
 	return time.Now().Format("20060102_150405")
+}
+
+// SetResumeSessionID 设置要恢复的会话 ID
+func SetResumeSessionID(sessionID string) {
+	resumeSessionID = sessionID
 }
 
 // getCliRecorder 获取 CLI 模式的历史记录器
