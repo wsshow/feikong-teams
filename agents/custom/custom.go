@@ -3,6 +3,7 @@ package custom
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/tools"
 	"log"
 	"time"
@@ -60,7 +61,8 @@ func NewAgent(cfg Config) adk.Agent {
 		MaxIterations: common.MaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: toolList,
+				Tools:               toolList,
+				ToolCallMiddlewares: []compose.ToolMiddleware{warperror.New(nil)},
 			},
 		},
 	})
