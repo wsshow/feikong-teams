@@ -46,6 +46,8 @@ func printEvent() func(Event) {
 					formatted = formatSSHResult(event.Content, lastToolName)
 				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
 					formatted = formatTodoResult(event.Content, lastToolName)
+				case "schedule_add", "schedule_list", "schedule_cancel":
+					formatted = formatSchedulerResult(event.Content, lastToolName)
 				}
 
 				if formatted != "" {
@@ -616,6 +618,103 @@ func formatFileDiffResult(content string) string {
 			output.WriteString(fmt.Sprintf("  \033[31m%s\033[0m\n", line))
 		case line != "":
 			output.WriteString(fmt.Sprintf("  %s\n", line))
+		}
+	}
+
+	return output.String()
+}
+
+// formatSchedulerResult 格式化定时任务工具结果
+func formatSchedulerResult(content string, toolName string) string {
+	var output strings.Builder
+
+	switch toolName {
+	case "schedule_add":
+		var result struct {
+			Success      bool   `json:"success"`
+			Message      string `json:"message"`
+			ErrorMessage string `json:"error_message"`
+			Task         *struct {
+				ID        string `json:"id"`
+				Task      string `json:"task"`
+				CronExpr  string `json:"cron_expr"`
+				OneTime   bool   `json:"one_time"`
+				NextRunAt string `json:"next_run_at"`
+				Status    string `json:"status"`
+			} `json:"task"`
+		}
+		if err := json.Unmarshal([]byte(content), &result); err != nil {
+			return ""
+		}
+		if result.ErrorMessage != "" {
+			output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		} else if result.Task != nil {
+			output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
+			output.WriteString(fmt.Sprintf("  \033[90mID: %s\033[0m\n", result.Task.ID))
+			output.WriteString(fmt.Sprintf("  📋 任务: %s\n", result.Task.Task))
+			if result.Task.CronExpr != "" {
+				output.WriteString(fmt.Sprintf("  🔄 Cron: %s\n", result.Task.CronExpr))
+			}
+			output.WriteString(fmt.Sprintf("  ⏰ 下次执行: %s\n", formatTime(result.Task.NextRunAt)))
+		}
+
+	case "schedule_list":
+		var result struct {
+			Success      bool   `json:"success"`
+			TotalCount   int    `json:"total_count"`
+			ErrorMessage string `json:"error_message"`
+			Tasks        []struct {
+				ID        string `json:"id"`
+				Task      string `json:"task"`
+				CronExpr  string `json:"cron_expr"`
+				OneTime   bool   `json:"one_time"`
+				NextRunAt string `json:"next_run_at"`
+				Status    string `json:"status"`
+				LastRunAt string `json:"last_run_at"`
+				Result    string `json:"result"`
+			} `json:"tasks"`
+		}
+		if err := json.Unmarshal([]byte(content), &result); err != nil {
+			return ""
+		}
+		if result.ErrorMessage != "" {
+			output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		} else {
+			output.WriteString(fmt.Sprintf("  \033[32m✓ 共 %d 个定时任务\033[0m\n", result.TotalCount))
+			for i, t := range result.Tasks {
+				statusIcon := "⏳"
+				switch t.Status {
+				case "completed":
+					statusIcon = "✅"
+				case "running":
+					statusIcon = "🔄"
+				case "failed":
+					statusIcon = "❌"
+				case "cancelled":
+					statusIcon = "🚫"
+				}
+				output.WriteString(fmt.Sprintf("\n  %s \033[1m%d. %s\033[0m\n", statusIcon, i+1, t.Task))
+				output.WriteString(fmt.Sprintf("     \033[90mID: %s | 状态: %s\033[0m\n", t.ID, t.Status))
+				if t.CronExpr != "" {
+					output.WriteString(fmt.Sprintf("     🔄 Cron: %s\n", t.CronExpr))
+				}
+				output.WriteString(fmt.Sprintf("     ⏰ 下次执行: %s\n", formatTime(t.NextRunAt)))
+			}
+		}
+
+	case "schedule_cancel":
+		var result struct {
+			Success      bool   `json:"success"`
+			Message      string `json:"message"`
+			ErrorMessage string `json:"error_message"`
+		}
+		if err := json.Unmarshal([]byte(content), &result); err != nil {
+			return ""
+		}
+		if result.ErrorMessage != "" {
+			output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		} else {
+			output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
 		}
 	}
 

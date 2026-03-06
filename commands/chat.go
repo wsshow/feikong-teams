@@ -6,6 +6,7 @@ import (
 	"fkteams/common"
 	"fkteams/g"
 	"fkteams/runner"
+	"fkteams/tools/scheduler"
 	"fkteams/version"
 	"fmt"
 	"log"
@@ -52,6 +53,20 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 			log.Fatalf("清理资源失败: %v", err)
 		}
 	}()
+
+	// 启动定时任务调度器
+	if s := scheduler.Global(); s != nil {
+		outputDir := "./history/scheduled_tasks/"
+		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
+			return runner.CreateSupervisorRunner(ctx)
+		}, outputDir)
+		s.SetExecutor(executor)
+		s.Start()
+		g.Cleaner.Add(func() error {
+			s.Stop()
+			return nil
+		})
+	}
 
 	// 加载输入历史
 	inputHistoryPath := "./history/input_history/fkteams_input_history"

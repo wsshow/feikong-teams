@@ -7,6 +7,7 @@ import (
 	"fkteams/agents/middlewares/summary"
 	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/tools/file"
+	"fkteams/tools/scheduler"
 	"fkteams/tools/todo"
 	"log"
 	"os"
@@ -52,9 +53,20 @@ func NewAgent(ctx context.Context) adk.Agent {
 		log.Fatal("创建文件工具失败:", err)
 	}
 
+	// 初始化定时任务调度器
+	schedulerInstance, err := scheduler.InitGlobal(safeDir)
+	if err != nil {
+		log.Fatalf("初始化定时任务调度器失败: %v", err)
+	}
+	schedulerTools, err := schedulerInstance.GetTools()
+	if err != nil {
+		log.Fatal("创建定时任务工具失败:", err)
+	}
+
 	var toolList []tool.BaseTool
 	toolList = append(toolList, todoTools...)
 	toolList = append(toolList, fileTools...)
+	toolList = append(toolList, schedulerTools...)
 
 	// 加载技能
 	skillsMiddleware, err := skills.New(ctx, safeDir)

@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fkteams/agents"
 	"fkteams/agents/leader"
 	"fkteams/fkevent"
+	"fkteams/tools/scheduler"
 	"os"
 	"strings"
 
@@ -68,6 +70,8 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println()
 		pterm.Println("任务管理:")
 		pterm.Println("  clear_todo                      清空所有待办事项")
+		pterm.Println("  list_schedule                   列出所有定时任务")
+		pterm.Println("  cancel_schedule <id>            取消指定的定时任务")
 		pterm.Println()
 		pterm.Println("模式切换:")
 		pterm.Println("  switch_work_mode               切换当前工作模式")
@@ -141,6 +145,21 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		ListAvailableAgents()
 		return ResultHandled
 
+	case "list_schedule":
+		s := scheduler.Global()
+		if s == nil {
+			pterm.Error.Println("定时任务调度器未初始化")
+			return ResultHandled
+		}
+		tasks, err := s.GetTasks("")
+		if err != nil {
+			pterm.Error.Printfln("获取定时任务列表失败: %v", err)
+			return ResultHandled
+		}
+		pterm.Println()
+		pterm.Println(scheduler.FormatTasksForDisplay(tasks))
+		return ResultHandled
+
 	default:
 		// 支持 load_chat_history <session_id> 格式
 		if strings.HasPrefix(input, "load_chat_history ") {
@@ -150,6 +169,27 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 				return ResultHandled
 			}
 		}
+
+		// 支持 cancel_schedule <task_id> 格式
+		if strings.HasPrefix(input, "cancel_schedule ") {
+			taskID := strings.TrimSpace(strings.TrimPrefix(input, "cancel_schedule "))
+			if taskID != "" {
+				s := scheduler.Global()
+				if s == nil {
+					pterm.Error.Println("定时任务调度器未初始化")
+					return ResultHandled
+				}
+				ctx := context.Background()
+				resp, _ := s.ScheduleCancel(ctx, &scheduler.ScheduleCancelRequest{TaskID: taskID})
+				if resp.ErrorMessage != "" {
+					pterm.Error.Println(resp.ErrorMessage)
+				} else {
+					pterm.Success.Println(resp.Message)
+				}
+				return ResultHandled
+			}
+		}
+
 		return ResultNotFound
 	}
 }

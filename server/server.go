@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fkteams/config"
+	"fkteams/runner"
 	"fkteams/server/handler"
 	"fkteams/server/router"
+	"fkteams/tools/scheduler"
 	"fkteams/version"
 	"fmt"
 	"log"
@@ -14,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,12 +50,31 @@ func Run() {
 	fmt.Printf("当前服务运行在端口 [%s]\n", srv.Addr)
 	fmt.Printf("前端页面地址: http://localhost%s\n", srv.Addr)
 
+	// 初始化并启动定时任务调度器
+	safeDir := "./workspace"
+	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
+		safeDir = d
+	}
+	if s, err := scheduler.InitGlobal(safeDir); err != nil {
+		log.Printf("初始化定时任务调度器失败: %v", err)
+	} else {
+		outputDir := "./history/scheduled_tasks/"
+		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
+			return runner.CreateSupervisorRunner(ctx)
+		}, outputDir)
+		s.SetExecutor(executor)
+		s.Start()
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	if s := scheduler.Global(); s != nil {
+		s.Stop()
+	}
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal(err)
 	}
