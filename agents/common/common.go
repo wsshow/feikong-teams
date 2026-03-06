@@ -12,12 +12,10 @@ import (
 const MaxIterations = 60
 
 func NewChatModel() model.ToolCallingChatModel {
-	maxTokens := 8192
 	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
-		APIKey:    os.Getenv("FEIKONG_OPENAI_API_KEY"),
-		BaseURL:   os.Getenv("FEIKONG_OPENAI_BASE_URL"),
-		Model:     os.Getenv("FEIKONG_OPENAI_MODEL"),
-		MaxTokens: &maxTokens,
+		APIKey:  os.Getenv("FEIKONG_OPENAI_API_KEY"),
+		BaseURL: os.Getenv("FEIKONG_OPENAI_BASE_URL"),
+		Model:   os.Getenv("FEIKONG_OPENAI_MODEL"),
 	})
 	if err != nil {
 		log.Fatal(err)
