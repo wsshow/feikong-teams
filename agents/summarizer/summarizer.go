@@ -26,7 +26,8 @@ func NewAgent() adk.Agent {
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
-			MaxRetries: common.MaxRetries,
+			MaxRetries:  common.MaxRetries,
+			IsRetryAble: common.IsRetryAble,
 		},
 	})
 	if err != nil {

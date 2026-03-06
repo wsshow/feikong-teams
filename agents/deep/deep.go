@@ -31,7 +31,8 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 		SubAgents:    subAgents,
 		MaxIteration: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
-			MaxRetries: common.MaxRetries,
+			MaxRetries:  common.MaxRetries,
+			IsRetryAble: common.IsRetryAble,
 		},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{

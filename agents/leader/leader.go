@@ -105,7 +105,8 @@ func NewAgent(ctx context.Context) adk.Agent {
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
-			MaxRetries: common.MaxRetries,
+			MaxRetries:  common.MaxRetries,
+			IsRetryAble: common.IsRetryAble,
 		},
 		Middlewares: []adk.AgentMiddleware{
 			skillsMiddleware,
