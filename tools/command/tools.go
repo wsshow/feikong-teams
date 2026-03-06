@@ -10,7 +10,7 @@ func GetTools() ([]tool.BaseTool, error) {
 	var tools []tool.BaseTool
 
 	// 执行命令工具
-	executeTool, err := utils.InferTool("execute_command", "执行 shell 命令。会根据操作系统自动选择合适的 shell（Windows 使用 cmd，macOS/Linux 使用 bash）。命令执行前会进行安全检查，拒绝执行危险命令。支持设置超时时间（默认30秒，最大300秒）", ExecuteCommand)
+	executeTool, err := utils.InferTool("execute_command", "执行命令。会根据操作系统自动选择合适的 shell（Windows 使用 PowerShell，macOS/Linux 使用 bash）。命令执行前会进行安全检查，拒绝执行危险命令。支持设置超时时间（默认30秒，最大300秒）", ExecuteCommand)
 	if err != nil {
 		return nil, err
 	}

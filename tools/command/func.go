@@ -1,8 +1,10 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -31,6 +33,7 @@ type CommandDangerousLevel struct {
 
 // 危险命令黑名单
 var dangerousCommands = map[string]CommandDangerousLevel{
+	// Unix/Linux 危险命令
 	"rm -rf /":        {Level: SecurityLevelDangerous, Description: "删除根目录", Reasons: []string{"会导致系统完全崩溃"}},
 	"rm -rf /*":       {Level: SecurityLevelDangerous, Description: "删除根目录下所有内容", Reasons: []string{"会导致系统完全崩溃"}},
 	"mkfs":            {Level: SecurityLevelDangerous, Description: "格式化文件系统", Reasons: []string{"会清除磁盘上的所有数据"}},
@@ -41,6 +44,13 @@ var dangerousCommands = map[string]CommandDangerousLevel{
 	"mv /":            {Level: SecurityLevelDangerous, Description: "移动根目录", Reasons: []string{"会破坏系统结构"}},
 	"kill -9 -1":      {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
 	"killall9":        {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
+	// Windows/PowerShell 危险命令
+	"remove-item -recurse -force c:\\": {Level: SecurityLevelDangerous, Description: "递归删除系统盘", Reasons: []string{"会导致系统完全崩溃"}},
+	"format-volume":                    {Level: SecurityLevelDangerous, Description: "格式化卷", Reasons: []string{"会清除磁盘上的所有数据"}},
+	"clear-disk":                       {Level: SecurityLevelDangerous, Description: "清除磁盘", Reasons: []string{"会永久性擦除数据"}},
+	"stop-process -id 0":               {Level: SecurityLevelDangerous, Description: "终止系统关键进程", Reasons: []string{"会导致系统崩溃"}},
+	"stop-computer":                    {Level: SecurityLevelDangerous, Description: "关闭计算机", Reasons: []string{"会立即关机"}},
+	"restart-computer":                 {Level: SecurityLevelDangerous, Description: "重启计算机", Reasons: []string{"会立即重启"}},
 }
 
 // 需要特别审查的命令模式
@@ -50,6 +60,7 @@ var riskyCommandPatterns = []struct {
 	Description string
 	Reason      string
 }{
+	// Unix/Linux 风险模式
 	{"rm -rf", SecurityLevelDangerous, "强制递归删除", "可能意外删除重要文件"},
 	{"dd if=", SecurityLevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
 	{"mv /", SecurityLevelDangerous, "移动根目录", "会破坏系统结构"},
@@ -61,6 +72,16 @@ var riskyCommandPatterns = []struct {
 	{"kill -9", SecurityLevelModerate, "强制终止进程", "可能导致数据丢失"},
 	{"killall", SecurityLevelModerate, "终止进程组", "可能导致服务中断"},
 	{"pkill", SecurityLevelModerate, "终止进程", "可能导致服务中断"},
+	// Windows/PowerShell 风险模式
+	{"remove-item -recurse -force", SecurityLevelDangerous, "PowerShell 强制递归删除", "可能意外删除重要文件"},
+	{"remove-item -recurse", SecurityLevelModerate, "PowerShell 递归删除", "可能意外删除重要文件"},
+	{"format-volume", SecurityLevelDangerous, "PowerShell 格式化卷", "会清除磁盘数据"},
+	{"clear-disk", SecurityLevelDangerous, "PowerShell 清除磁盘", "会永久擦除数据"},
+	{"stop-process", SecurityLevelModerate, "PowerShell 终止进程", "可能导致服务中断"},
+	{"invoke-webrequest", SecurityLevelModerate, "PowerShell 下载文件", "可能下载恶意内容"},
+	{"invoke-restmethod", SecurityLevelModerate, "PowerShell 调用远程接口", "可能泄露数据或下载恶意内容"},
+	{"set-executionpolicy unrestricted", SecurityLevelDangerous, "PowerShell 解除脚本执行限制", "严重安全风险"},
+	{"new-psdrive", SecurityLevelModerate, "PowerShell 映射网络驱动器", "可能连接不可信网络资源"},
 }
 
 // 命令执行历史记录
@@ -162,8 +183,10 @@ func ExecuteCommand(ctx context.Context, req *ExecuteCommandRequest) (*ExecuteCo
 
 	switch osType {
 	case "windows":
-		shell = "cmd"
-		shellArgs = []string{"/c", req.Command}
+		shell = "powershell"
+		// 设置 UTF-8 编码确保中文等多字节字符正确输出
+		utf8Prefix := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
+		shellArgs = []string{"-NoProfile", "-NonInteractive", "-Command", utf8Prefix + req.Command}
 	case "darwin", "linux":
 		shell = "/bin/bash"
 		shellArgs = []string{"-c", req.Command}
@@ -224,31 +247,23 @@ func runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) (stdout, stderr
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	// 使用新的 context 重建命令，保留进程组设置
+	newCmd := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	newCmd.SysProcAttr = cmd.SysProcAttr
+	newCmd.Dir = cmd.Dir
+	newCmd.Env = cmd.Env
 
-	// 获取输出
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", "", -1
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return "", "", -1
-	}
+	// 使用 bytes.Buffer 捕获完整输出
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutBuf.Grow(64 * 1024)
+	stderrBuf.Grow(64 * 1024)
 
-	// 启动命令
-	if err := cmd.Start(); err != nil {
-		return "", "", -1
-	}
+	// 限制输出大小为 1MB
+	newCmd.Stdout = &limitedWriter{w: &stdoutBuf, limit: 1024 * 1024}
+	newCmd.Stderr = &limitedWriter{w: &stderrBuf, limit: 1024 * 1024}
 
-	// 读取输出
-	stdoutBytes := make([]byte, 1024*1024) // 限制输出为 1MB
-	stderrBytes := make([]byte, 1024*1024)
-	n1, _ := stdoutPipe.Read(stdoutBytes)
-	n2, _ := stderrPipe.Read(stderrBytes)
-
-	// 等待命令完成
-	err = cmd.Wait()
+	// 执行命令并等待完成
+	err := newCmd.Run()
 
 	exitCode = 0
 	if err != nil {
@@ -259,7 +274,26 @@ func runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) (stdout, stderr
 		}
 	}
 
-	return string(stdoutBytes[:n1]), string(stderrBytes[:n2]), exitCode
+	return stdoutBuf.String(), stderrBuf.String(), exitCode
+}
+
+// limitedWriter 限制写入大小的 Writer
+type limitedWriter struct {
+	w       io.Writer
+	limit   int
+	written int
+}
+
+func (lw *limitedWriter) Write(p []byte) (n int, err error) {
+	if lw.written >= lw.limit {
+		return len(p), nil // 丢弃超出部分但不报错
+	}
+	if lw.written+len(p) > lw.limit {
+		p = p[:lw.limit-lw.written]
+	}
+	n, err = lw.w.Write(p)
+	lw.written += n
+	return n, err
 }
 
 // getSecurityLevelName 获取安全级别名称
@@ -307,7 +341,7 @@ func GetSystemInfo(ctx context.Context, req *GetSystemInfoRequest) (*GetSystemIn
 	// 设置 shell
 	switch runtime.GOOS {
 	case "windows":
-		response.Shell = "cmd.exe (Windows Command Prompt)"
+		response.Shell = "powershell (Windows PowerShell)"
 	case "darwin":
 		response.Shell = "/bin/bash (Bash) or /bin/zsh (Z shell)"
 	case "linux":
