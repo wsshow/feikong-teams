@@ -72,6 +72,10 @@ func Init() *gin.Engine {
 		apiV1.GET("/history/files/:filename", handler.LoadHistoryFileHandler())
 		apiV1.DELETE("/history/files/:filename", handler.DeleteHistoryFileHandler())
 		apiV1.POST("/history/files/rename", handler.RenameHistoryFileHandler())
+
+		// 定时任务管理 API
+		apiV1.GET("/schedules", handler.GetScheduleTasksHandler())
+		apiV1.POST("/schedules/:id/cancel", handler.CancelScheduleTaskHandler())
 	}
 	return r
 }

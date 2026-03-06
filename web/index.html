@@ -1,244 +1,430 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>非空小队</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
-</head>
+  </head>
 
-<body>
+  <body>
     <div class="app-container">
-        <button class="sidebar-toggle" id="sidebar-toggle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M15 18l-6-6 6-6" />
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      </button>
+
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <svg
+              class="logo-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
             </svg>
-        </button>
-
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 6v6l4 2" />
-                    </svg>
-                    <span class="logo-text">非空小队</span>
-                </div>
-            </div>
-
-            <div class="sidebar-top-actions">
-                <button class="sidebar-action-btn new-session-btn" id="new-session-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    <span>新建会话</span>
-                </button>
-                <button class="sidebar-action-btn history-manage-btn" id="history-manage-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    <span>管理历史</span>
-                </button>
-            </div>
-
-            <div class="sidebar-sessions" id="sidebar-sessions">
-                <div class="sidebar-session-list" id="sidebar-session-list">
-                    <div class="sidebar-session-empty">暂无会话记录</div>
-                </div>
-            </div>
-
-            <div class="sidebar-footer">
-                <div class="mode-selector">
-                    <label class="mode-label">运行模式</label>
-                    <div class="mode-buttons">
-                        <button class="mode-btn active" data-mode="supervisor">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                <circle cx="9" cy="7" r="4" />
-                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                            <span>团队模式</span>
-                        </button>
-                        <button class="mode-btn" data-mode="roundtable">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10" />
-                                <circle cx="12" cy="12" r="3" />
-                            </svg>
-                            <span>圆桌讨论</span>
-                        </button>
-                        <button class="mode-btn" data-mode="custom">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 20h9" />
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                                <path d="M15 5l3 3" />
-                            </svg>
-                            <span>自定义会议</span>
-                        </button>
-                        <button class="mode-btn deep-mode-btn" data-mode="deep">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="3" />
-                                <path
-                                    d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-                            </svg>
-                            <span>深度模式</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="status-section">
-                    <div class="status-indicator" id="status-indicator">
-                        <span class="status-dot disconnected"></span>
-                        <span class="status-text">未连接</span>
-                    </div>
-                </div>
-
-
-            </div>
-
-            <!-- 隐藏的 session-id 输入框，保持功能兼容 -->
-            <input type="hidden" id="session-id" value="default">
-        </aside>
-
-        <main class="main-content" id="main-content">
-            <div class="chat-container">
-                <div class="messages-wrapper" id="messages-wrapper">
-                    <div class="messages" id="messages">
-                        <div class="welcome-message">
-                            <div class="welcome-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                                    <path d="M2 17l10 5 10-5" />
-                                    <path d="M2 12l10 5 10-5" />
-                                </svg>
-                            </div>
-                            <h2>非空小队</h2>
-                            <p>多智能体协作系统，开始您的对话</p>
-                            <div class="welcome-tips">
-                                <span class="welcome-tip">输入 <code>@</code> 指定智能体</span>
-                                <span class="welcome-tip">输入 <code>#</code> 引用文件</span>
-                                <span class="welcome-tip">试试 <code>深度模式</code> 深入探索</span>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- 加载历史记录的loading效果 -->
-                    <div class="chat-loading" id="chat-loading" style="display: none;">
-                        <div class="chat-loading-content">
-                            <div class="chat-loading-spinner"></div>
-                            <p class="chat-loading-text">正在加载历史记录...</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 问题导航（一体化：收缩为圆点，展开显示文本） -->
-                <div class="quick-nav-wrapper" id="quick-nav-wrapper" style="display: none;">
-                    <div class="quick-nav-list" id="quick-nav-list">
-                        <div class="quick-nav-empty">暂无问题</div>
-                    </div>
-                </div>
-
-                <!-- 回到底部按钮 -->
-                <button class="scroll-to-bottom" id="scroll-to-bottom" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 5v14M5 12l7 7 7-7" />
-                    </svg>
-                    <span>回到底部</span>
-                </button>
-
-                <div class="input-container">
-                    <div class="input-wrapper">
-                        <textarea id="message-input" class="message-input" placeholder="请输入消息..." rows="1"></textarea>
-                        <button class="cancel-btn" id="cancel-btn" style="display: none;">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="15" y1="9" x2="9" y2="15" />
-                                <line x1="9" y1="9" x2="15" y2="15" />
-                            </svg>
-                            <span>取消</span>
-                        </button>
-                        <button class="send-btn" id="send-btn" disabled>发送</button>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-        <!-- 历史记录弹窗 -->
-        <div class="history-modal" id="history-modal" style="display: none;">
-            <div class="history-modal-content">
-                <div class="history-modal-header">
-                    <h3>历史记录</h3>
-                    <button class="history-modal-close" id="history-modal-close">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
-                </div>
-                <div class="history-search-bar">
-                    <svg class="history-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2">
-                        <circle cx="11" cy="11" r="8" />
-                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                    </svg>
-                    <input type="text" class="history-search-input" id="history-search-input" placeholder="搜索历史记录...">
-                </div>
-                <div class="history-modal-body">
-                    <div class="history-list" id="history-list">
-                        <div class="history-loading">加载中...</div>
-                    </div>
-                </div>
-            </div>
+            <span class="logo-text">非空小队</span>
+          </div>
         </div>
 
-        <!-- 重命名弹窗 -->
-        <div class="rename-modal" id="rename-modal" style="display: none;">
-            <div class="rename-modal-content">
-                <div class="rename-modal-header">
-                    <h3>重命名文件</h3>
-                    <button class="rename-modal-close" id="rename-modal-close">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
-                </div>
-                <div class="rename-modal-body">
-                    <label class="rename-label">新文件名</label>
-                    <input type="text" class="rename-input" id="rename-input" placeholder="请输入新文件名">
-                </div>
-                <div class="rename-modal-footer">
-                    <button class="rename-cancel-btn" id="rename-cancel-btn">取消</button>
-                    <button class="rename-confirm-btn" id="rename-confirm-btn">确定</button>
-                </div>
-            </div>
+        <div class="sidebar-top-actions">
+          <button
+            class="sidebar-action-btn new-session-btn"
+            id="new-session-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>新建会话</span>
+          </button>
+          <button
+            class="sidebar-action-btn history-manage-btn"
+            id="history-manage-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span>管理历史</span>
+          </button>
+          <button
+            class="sidebar-action-btn schedule-manage-btn"
+            id="schedule-manage-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span>定时任务</span>
+          </button>
         </div>
 
-        <!-- 删除确认弹窗 -->
-        <div class="delete-modal" id="delete-modal" style="display: none;">
-            <div class="delete-modal-content">
-                <div class="delete-modal-header">
-                    <h3>确认删除</h3>
-                    <button class="delete-modal-close" id="delete-modal-close">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
-                </div>
-                <div class="delete-modal-body">
-                    <p class="delete-message">确定要删除 "<span id="delete-filename"></span>" 吗？</p>
-                    <p class="delete-warning">此操作不可恢复！</p>
-                </div>
-                <div class="delete-modal-footer">
-                    <button class="delete-cancel-btn" id="delete-cancel-btn">取消</button>
-                    <button class="delete-confirm-btn" id="delete-confirm-btn">删除</button>
-                </div>
-            </div>
+        <div class="sidebar-sessions" id="sidebar-sessions">
+          <div class="sidebar-session-list" id="sidebar-session-list">
+            <div class="sidebar-session-empty">暂无会话记录</div>
+          </div>
         </div>
+
+        <div class="sidebar-footer">
+          <div class="mode-selector">
+            <label class="mode-label">运行模式</label>
+            <div class="mode-buttons">
+              <button class="mode-btn active" data-mode="supervisor">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                <span>团队模式</span>
+              </button>
+              <button class="mode-btn" data-mode="roundtable">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span>圆桌讨论</span>
+              </button>
+              <button class="mode-btn" data-mode="custom">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M12 20h9" />
+                  <path
+                    d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
+                  />
+                  <path d="M15 5l3 3" />
+                </svg>
+                <span>自定义会议</span>
+              </button>
+              <button class="mode-btn deep-mode-btn" data-mode="deep">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path
+                    d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"
+                  />
+                </svg>
+                <span>深度模式</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="status-section">
+            <div class="status-indicator" id="status-indicator">
+              <span class="status-dot disconnected"></span>
+              <span class="status-text">未连接</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 隐藏的 session-id 输入框，保持功能兼容 -->
+        <input type="hidden" id="session-id" value="default" />
+      </aside>
+
+      <main class="main-content" id="main-content">
+        <div class="chat-container">
+          <div class="messages-wrapper" id="messages-wrapper">
+            <div class="messages" id="messages">
+              <div class="welcome-message">
+                <div class="welcome-icon">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  >
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <h2>非空小队</h2>
+                <p>多智能体协作系统，开始您的对话</p>
+                <div class="welcome-tips">
+                  <span class="welcome-tip"
+                    >输入 <code>@</code> 指定智能体</span
+                  >
+                  <span class="welcome-tip">输入 <code>#</code> 引用文件</span>
+                  <span class="welcome-tip"
+                    >试试 <code>深度模式</code> 深入探索</span
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- 加载历史记录的loading效果 -->
+            <div class="chat-loading" id="chat-loading" style="display: none">
+              <div class="chat-loading-content">
+                <div class="chat-loading-spinner"></div>
+                <p class="chat-loading-text">正在加载历史记录...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 问题导航（一体化：收缩为圆点，展开显示文本） -->
+          <div
+            class="quick-nav-wrapper"
+            id="quick-nav-wrapper"
+            style="display: none"
+          >
+            <div class="quick-nav-list" id="quick-nav-list">
+              <div class="quick-nav-empty">暂无问题</div>
+            </div>
+          </div>
+
+          <!-- 回到底部按钮 -->
+          <button
+            class="scroll-to-bottom"
+            id="scroll-to-bottom"
+            style="display: none"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M12 5v14M5 12l7 7 7-7" />
+            </svg>
+            <span>回到底部</span>
+          </button>
+
+          <div class="input-container">
+            <div class="input-wrapper">
+              <textarea
+                id="message-input"
+                class="message-input"
+                placeholder="请输入消息..."
+                rows="1"
+              ></textarea>
+              <button class="cancel-btn" id="cancel-btn" style="display: none">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+                <span>取消</span>
+              </button>
+              <button class="send-btn" id="send-btn" disabled>发送</button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- 历史记录弹窗 -->
+      <div class="history-modal" id="history-modal" style="display: none">
+        <div class="history-modal-content">
+          <div class="history-modal-header">
+            <h3>历史记录</h3>
+            <button class="history-modal-close" id="history-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="history-search-bar">
+            <svg
+              class="history-search-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              class="history-search-input"
+              id="history-search-input"
+              placeholder="搜索历史记录..."
+            />
+          </div>
+          <div class="history-modal-body">
+            <div class="history-list" id="history-list">
+              <div class="history-loading">加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 重命名弹窗 -->
+      <div class="rename-modal" id="rename-modal" style="display: none">
+        <div class="rename-modal-content">
+          <div class="rename-modal-header">
+            <h3>重命名文件</h3>
+            <button class="rename-modal-close" id="rename-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="rename-modal-body">
+            <label class="rename-label">新文件名</label>
+            <input
+              type="text"
+              class="rename-input"
+              id="rename-input"
+              placeholder="请输入新文件名"
+            />
+          </div>
+          <div class="rename-modal-footer">
+            <button class="rename-cancel-btn" id="rename-cancel-btn">
+              取消
+            </button>
+            <button class="rename-confirm-btn" id="rename-confirm-btn">
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 删除确认弹窗 -->
+      <div class="delete-modal" id="delete-modal" style="display: none">
+        <div class="delete-modal-content">
+          <div class="delete-modal-header">
+            <h3>确认删除</h3>
+            <button class="delete-modal-close" id="delete-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="delete-modal-body">
+            <p class="delete-message">
+              确定要删除 "<span id="delete-filename"></span>" 吗？
+            </p>
+            <p class="delete-warning">此操作不可恢复！</p>
+          </div>
+          <div class="delete-modal-footer">
+            <button class="delete-cancel-btn" id="delete-cancel-btn">
+              取消
+            </button>
+            <button class="delete-confirm-btn" id="delete-confirm-btn">
+              删除
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 定时任务弹窗 -->
+      <div class="schedule-modal" id="schedule-modal" style="display: none">
+        <div class="schedule-modal-content">
+          <div class="schedule-modal-header">
+            <h3>定时任务</h3>
+            <div class="schedule-header-actions">
+              <select class="schedule-filter" id="schedule-filter">
+                <option value="">全部</option>
+                <option value="pending">等待中</option>
+                <option value="running">执行中</option>
+                <option value="completed">已完成</option>
+                <option value="failed">已失败</option>
+                <option value="cancelled">已取消</option>
+              </select>
+              <button
+                class="schedule-refresh-btn"
+                id="schedule-refresh-btn"
+                title="刷新"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+              </button>
+              <button class="schedule-modal-close" id="schedule-modal-close">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="schedule-modal-body">
+            <div class="schedule-list" id="schedule-list">
+              <div class="schedule-loading">加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="/static/js/app.js"></script>
@@ -247,6 +433,6 @@
     <script src="/static/js/navigation.js"></script>
     <script src="/static/js/agents.js"></script>
     <script src="/static/js/files.js"></script>
-</body>
-
+    <script src="/static/js/schedule.js"></script>
+  </body>
 </html>
