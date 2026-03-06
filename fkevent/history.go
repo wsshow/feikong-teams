@@ -58,6 +58,12 @@ func (m *AgentMessage) GetTextContent() string {
 // 错误内容最大长度（rune），超出时保留头尾并截断中间部分
 const maxErrorContentLen = 1200
 
+// pendingToolCall 待匹配的工具调用
+type pendingToolCall struct {
+	Name      string
+	Arguments string
+}
+
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
 	mu               sync.RWMutex
@@ -66,16 +72,15 @@ type HistoryRecorder struct {
 	currentRunPath   string
 	currentStartTime time.Time
 	currentEvents    []MessageEvent
-	pendingToolCalls map[string]string // toolName -> arguments
+	pendingToolCalls []pendingToolCall // FIFO 队列，支持同名工具并发调用
 	summary          string            // 上下文压缩摘要
 	summarizedCount  int               // 已被摘要覆盖的消息数量
 }
 
 func NewHistoryRecorder() *HistoryRecorder {
 	return &HistoryRecorder{
-		messages:         make([]AgentMessage, 0),
-		currentEvents:    make([]MessageEvent, 0),
-		pendingToolCalls: make(map[string]string),
+		messages:      make([]AgentMessage, 0),
+		currentEvents: make([]MessageEvent, 0),
 	}
 }
 
@@ -97,16 +102,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	switch event.Type {
 	case "stream_chunk":
-		if event.AgentName != h.currentAgent && h.currentAgent != "" {
-			h.finalizeCurrentMessage()
-		}
-		if event.AgentName != h.currentAgent {
-			h.currentAgent = event.AgentName
-			h.currentRunPath = event.RunPath
-			h.currentStartTime = time.Now()
-			h.currentEvents = make([]MessageEvent, 0)
-			h.pendingToolCalls = make(map[string]string)
-		}
+		h.ensureAgentContext(event)
 		// 合并连续文本事件
 		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == "text" {
 			h.currentEvents[n-1].Content += event.Content
@@ -117,23 +113,48 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			})
 		}
 
-	case "tool_calls_preparing", "tool_calls":
+	case "tool_calls_preparing":
+		h.ensureAgentContext(event)
 		for _, tc := range event.ToolCalls {
-			h.pendingToolCalls[tc.Function.Name] = tc.Function.Arguments
+			if tc.Function.Name != "" {
+				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
+					Name: tc.Function.Name,
+				})
+			}
+		}
+
+	case "tool_calls":
+		h.ensureAgentContext(event)
+		// tool_calls 事件带有完整参数，更新对应的 pending 记录
+		for _, tc := range event.ToolCalls {
+			updated := false
+			for i := range h.pendingToolCalls {
+				if h.pendingToolCalls[i].Name == tc.Function.Name && h.pendingToolCalls[i].Arguments == "" {
+					h.pendingToolCalls[i].Arguments = tc.Function.Arguments
+					updated = true
+					break
+				}
+			}
+			if !updated {
+				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
+					Name:      tc.Function.Name,
+					Arguments: tc.Function.Arguments,
+				})
+			}
 		}
 
 	case "tool_result", "tool_result_chunk":
-		for toolName, args := range h.pendingToolCalls {
+		if len(h.pendingToolCalls) > 0 {
+			tc := h.pendingToolCalls[0]
+			h.pendingToolCalls = h.pendingToolCalls[1:]
 			h.currentEvents = append(h.currentEvents, MessageEvent{
 				Type: "tool_call",
 				ToolCall: &ToolCallRecord{
-					Name:      toolName,
-					Arguments: args,
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
 					Result:    event.Content,
 				},
 			})
-			delete(h.pendingToolCalls, toolName)
-			break
 		}
 
 	case "action":
@@ -147,21 +168,25 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		})
 
 	case "error":
-		if event.AgentName != h.currentAgent && h.currentAgent != "" {
-			h.finalizeCurrentMessage()
-		}
-		if event.AgentName != h.currentAgent {
-			h.currentAgent = event.AgentName
-			h.currentRunPath = event.RunPath
-			h.currentStartTime = time.Now()
-			h.currentEvents = make([]MessageEvent, 0)
-			h.pendingToolCalls = make(map[string]string)
-		}
-
+		h.ensureAgentContext(event)
 		h.currentEvents = append(h.currentEvents, MessageEvent{
 			Type:    "error",
 			Content: truncateErrorContent(event.Error),
 		})
+	}
+}
+
+// ensureAgentContext 确保当前 agent 上下文已初始化，处理 agent 切换
+func (h *HistoryRecorder) ensureAgentContext(event Event) {
+	if event.AgentName != h.currentAgent && h.currentAgent != "" {
+		h.finalizeCurrentMessage()
+	}
+	if event.AgentName != h.currentAgent {
+		h.currentAgent = event.AgentName
+		h.currentRunPath = event.RunPath
+		h.currentStartTime = time.Now()
+		h.currentEvents = make([]MessageEvent, 0)
+		h.pendingToolCalls = nil
 	}
 }
 
@@ -206,7 +231,7 @@ func (h *HistoryRecorder) FinalizeCurrent() {
 	h.finalizeCurrentMessage()
 	h.currentAgent = ""
 	h.currentEvents = make([]MessageEvent, 0)
-	h.pendingToolCalls = make(map[string]string)
+	h.pendingToolCalls = nil
 }
 
 func (h *HistoryRecorder) GetMessages() []AgentMessage {
@@ -308,7 +333,7 @@ func (h *HistoryRecorder) Clear() {
 	h.currentEvents = make([]MessageEvent, 0)
 	h.currentAgent = ""
 	h.currentRunPath = ""
-	h.pendingToolCalls = make(map[string]string)
+	h.pendingToolCalls = nil
 	h.summary = ""
 	h.summarizedCount = 0
 }
@@ -441,7 +466,7 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	h.currentAgent = ""
 	h.currentEvents = make([]MessageEvent, 0)
 	h.currentRunPath = ""
-	h.pendingToolCalls = make(map[string]string)
+	h.pendingToolCalls = nil
 
 	return nil
 }
