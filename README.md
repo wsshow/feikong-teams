@@ -329,7 +329,7 @@ list_schedule
 cancel_schedule <task_id>
 ```
 
-- 定时任务在后台静默执行，执行结果保存在 `history/scheduled_tasks/` 目录
+- 定时任务在后台静默执行，执行结果保存在 `result/scheduled_tasks/` 目录
 - 支持标准 cron 表达式（重复任务）和一次性定时任务
 - 终端模式下使用 `list_schedule` 命令查看任务状态
 - 定时任务配置存储在 workspace 同级目录的 `scheduled_tasks.json` 文件中
