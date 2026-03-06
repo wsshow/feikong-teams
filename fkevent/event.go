@@ -173,24 +173,28 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 		}
 	}
 
-	// 按 index 顺序处理工具调用，确保结果顺序稳定
+	// 按 index 顺序处理工具调用，合并为单次事件
 	indices := make([]int, 0, len(toolCallsMap))
 	for idx := range toolCallsMap {
 		indices = append(indices, idx)
 	}
 	sort.Ints(indices)
 
+	var allToolCalls []schema.ToolCall
 	for _, idx := range indices {
 		concatenatedMsg, err := schema.ConcatMessages(toolCallsMap[idx])
 		if err != nil {
 			return err
 		}
+		allToolCalls = append(allToolCalls, concatenatedMsg.ToolCalls...)
+	}
 
+	if len(allToolCalls) > 0 {
 		if err := handleEvent(ctx, Event{
 			Type:      "tool_calls",
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
-			ToolCalls: concatenatedMsg.ToolCalls,
+			ToolCalls: allToolCalls,
 		}); err != nil {
 			return err
 		}
