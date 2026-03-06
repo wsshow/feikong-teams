@@ -801,11 +801,11 @@ func formatSchedulerResult(content string, toolName string) string {
 		} else if result.Task != nil {
 			output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
 			output.WriteString(fmt.Sprintf("  \033[90mID: %s\033[0m\n", result.Task.ID))
-			output.WriteString(fmt.Sprintf("  📋 任务: %s\n", result.Task.Task))
+			output.WriteString(fmt.Sprintf("  任务: %s\n", result.Task.Task))
 			if result.Task.CronExpr != "" {
-				output.WriteString(fmt.Sprintf("  🔄 Cron: %s\n", result.Task.CronExpr))
+				output.WriteString(fmt.Sprintf("  Cron: %s\n", result.Task.CronExpr))
 			}
-			output.WriteString(fmt.Sprintf("  ⏰ 下次执行: %s\n", formatTime(result.Task.NextRunAt)))
+			output.WriteString(fmt.Sprintf("  下次执行: %s\n", formatTime(result.Task.NextRunAt)))
 		}
 
 	case "schedule_list":
@@ -832,23 +832,25 @@ func formatSchedulerResult(content string, toolName string) string {
 		} else {
 			output.WriteString(fmt.Sprintf("  \033[32m✓ 共 %d 个定时任务\033[0m\n", result.TotalCount))
 			for i, t := range result.Tasks {
-				statusIcon := "⏳"
+				var statusIcon string
 				switch t.Status {
 				case "completed":
-					statusIcon = "✅"
+					statusIcon = "[完成]"
 				case "running":
-					statusIcon = "🔄"
+					statusIcon = "[运行]"
 				case "failed":
-					statusIcon = "❌"
+					statusIcon = "[失败]"
 				case "cancelled":
-					statusIcon = "🚫"
+					statusIcon = "[取消]"
+				default:
+					statusIcon = "[等待]"
 				}
 				output.WriteString(fmt.Sprintf("\n  %s \033[1m%d. %s\033[0m\n", statusIcon, i+1, t.Task))
 				output.WriteString(fmt.Sprintf("     \033[90mID: %s | 状态: %s\033[0m\n", t.ID, t.Status))
 				if t.CronExpr != "" {
-					output.WriteString(fmt.Sprintf("     🔄 Cron: %s\n", t.CronExpr))
+					output.WriteString(fmt.Sprintf("     Cron: %s\n", t.CronExpr))
 				}
-				output.WriteString(fmt.Sprintf("     ⏰ 下次执行: %s\n", formatTime(t.NextRunAt)))
+				output.WriteString(fmt.Sprintf("     下次执行: %s\n", formatTime(t.NextRunAt)))
 			}
 		}
 
