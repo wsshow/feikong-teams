@@ -169,9 +169,13 @@ func formatSearchResults(content string) string {
 // formatCommandResult 格式化命令执行结果
 func formatCommandResult(content string) string {
 	var result struct {
-		Output       string `json:"output"`
-		ExitCode     int    `json:"exit_code"`
-		ErrorMessage string `json:"error_message"`
+		Stdout         string `json:"stdout"`
+		Stderr         string `json:"stderr"`
+		ExitCode       int    `json:"exit_code"`
+		ExecutionTime  string `json:"execution_time"`
+		SecurityLevel  string `json:"security_level"`
+		WarningMessage string `json:"warning_message"`
+		ErrorMessage   string `json:"error_message"`
 	}
 
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
@@ -180,25 +184,39 @@ func formatCommandResult(content string) string {
 
 	var output strings.Builder
 
-	if result.ExitCode == 0 {
-		output.WriteString("  \033[32m✓ 执行成功\033[0m (退出码: 0)\n\n")
-	} else {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ 执行失败\033[0m (退出码: %d)\n\n", result.ExitCode))
+	if result.ErrorMessage != "" {
+		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		return output.String()
 	}
 
-	if result.Output != "" {
-		output.WriteString("  \033[1m输出:\033[0m\n")
-		lines := strings.Split(result.Output, "\n")
+	if result.ExitCode == 0 {
+		output.WriteString(fmt.Sprintf("  \033[32m✓ 执行成功\033[0m (退出码: 0, 耗时: %s)\n", result.ExecutionTime))
+	} else {
+		output.WriteString(fmt.Sprintf("  \033[31m✗ 执行失败\033[0m (退出码: %d, 耗时: %s)\n", result.ExitCode, result.ExecutionTime))
+	}
+
+	if result.WarningMessage != "" {
+		output.WriteString(fmt.Sprintf("  \033[33m⚠ %s\033[0m\n", result.WarningMessage))
+	}
+
+	if result.Stdout != "" {
+		output.WriteString("\n")
+		lines := strings.Split(result.Stdout, "\n")
 		for _, line := range lines {
 			if line != "" {
 				output.WriteString(fmt.Sprintf("  │ %s\n", line))
 			}
 		}
-		output.WriteString("\n")
 	}
 
-	if result.ErrorMessage != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m错误: %s\033[0m\n", result.ErrorMessage))
+	if result.Stderr != "" {
+		output.WriteString("\n  \033[31m标准错误:\033[0m\n")
+		lines := strings.Split(result.Stderr, "\n")
+		for _, line := range lines {
+			if line != "" {
+				output.WriteString(fmt.Sprintf("  │ %s\n", line))
+			}
+		}
 	}
 
 	return output.String()
