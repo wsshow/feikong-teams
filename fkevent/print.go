@@ -624,6 +624,156 @@ func formatFileDiffResult(content string) string {
 	return output.String()
 }
 
+// NewMarkdownCollector 创建将事件格式化为 Markdown 的收集器，供后台任务使用
+// 返回：callback（用于 WithCallback），getResult（获取完整结果）
+func NewMarkdownCollector() (callback func(Event) error, getResult func() string) {
+	var buf strings.Builder
+	lastAgent := ""
+	lastToolName := ""
+	inStream := false
+
+	flushStream := func() {
+		if inStream {
+			buf.WriteString("\n")
+			inStream = false
+		}
+	}
+
+	callback = func(event Event) error {
+		switch event.Type {
+		case "stream_chunk":
+			if lastAgent != event.AgentName {
+				flushStream()
+				lastAgent = event.AgentName
+				buf.WriteString(fmt.Sprintf("\n\n**[%s]**\n\n", event.AgentName))
+			}
+			buf.WriteString(event.Content)
+			inStream = true
+
+		case "message":
+			if event.Content != "" {
+				flushStream()
+				if lastAgent != event.AgentName {
+					lastAgent = event.AgentName
+					buf.WriteString(fmt.Sprintf("\n\n**[%s]**\n\n", event.AgentName))
+				}
+				buf.WriteString(event.Content)
+			}
+
+		case "tool_calls_preparing":
+			for _, tc := range event.ToolCalls {
+				if tc.Function.Name != "" {
+					lastToolName = tc.Function.Name
+				}
+			}
+
+		case "tool_calls":
+			flushStream()
+			for i, tc := range event.ToolCalls {
+				if i == len(event.ToolCalls)-1 {
+					lastToolName = tc.Function.Name
+				}
+				args := truncateString(tc.Function.Arguments, 100)
+				if args != "" {
+					buf.WriteString(fmt.Sprintf("\n\n> **[%s]** 调用工具: `%s`\n> 参数: `%s`", event.AgentName, tc.Function.Name, args))
+				} else {
+					buf.WriteString(fmt.Sprintf("\n\n> **[%s]** 调用工具: `%s`", event.AgentName, tc.Function.Name))
+				}
+			}
+			lastAgent = ""
+
+		case "tool_result":
+			if event.Content != "" {
+				if formatted := formatToolResultMarkdown(event.Content, lastToolName); formatted != "" {
+					buf.WriteString(formatted)
+				}
+			}
+			lastAgent = ""
+
+		case "action":
+			switch event.ActionType {
+			case "transfer":
+				flushStream()
+				buf.WriteString(fmt.Sprintf("\n\n> **[%s]** → %s", event.AgentName, event.Content))
+				lastAgent = ""
+			case "context_compress_start", "context_compress":
+				// 跳过上下文压缩提示
+			}
+
+		case "error":
+			flushStream()
+			buf.WriteString(fmt.Sprintf("\n\n**错误 [%s]**: %s", event.AgentName, event.Error))
+		}
+		return nil
+	}
+
+	getResult = func() string {
+		if inStream {
+			buf.WriteString("\n")
+		}
+		return strings.TrimSpace(buf.String())
+	}
+
+	return
+}
+
+// formatToolResultMarkdown 将工具结果格式化为 Markdown 简洁摘要
+func formatToolResultMarkdown(content string, toolName string) string {
+	switch toolName {
+	case "duckduckgo_search":
+		return formatSearchResultMarkdown(content)
+	default:
+		var raw struct {
+			Message      string `json:"message"`
+			ErrorMessage string `json:"error_message"`
+		}
+		if err := json.Unmarshal([]byte(content), &raw); err == nil {
+			if raw.ErrorMessage != "" {
+				return fmt.Sprintf("\n\n> ✗ %s", raw.ErrorMessage)
+			}
+			if raw.Message != "" {
+				return fmt.Sprintf("\n\n> ✓ %s", raw.Message)
+			}
+		}
+		return ""
+	}
+}
+
+// formatSearchResultMarkdown 将搜索结果格式化为 Markdown
+func formatSearchResultMarkdown(content string) string {
+	var result struct {
+		Message string `json:"message"`
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Summary string `json:"summary"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return ""
+	}
+
+	var output strings.Builder
+	if result.Message != "" {
+		output.WriteString(fmt.Sprintf("\n\n> ✓ %s", result.Message))
+	}
+	for i, r := range result.Results {
+		if i >= 5 {
+			output.WriteString(fmt.Sprintf("\n>\n> _...还有 %d 条结果_", len(result.Results)-5))
+			break
+		}
+		output.WriteString(fmt.Sprintf("\n>\n> %d. **%s**", i+1, r.Title))
+		if r.URL != "" {
+			output.WriteString(fmt.Sprintf(" <%s>", r.URL))
+		}
+		if r.Summary != "" {
+			summary := truncateString(strings.ReplaceAll(r.Summary, "\n", " "), 100)
+			output.WriteString(fmt.Sprintf("\n>    %s", summary))
+		}
+	}
+	return output.String()
+}
+
 // formatSchedulerResult 格式化定时任务工具结果
 func formatSchedulerResult(content string, toolName string) string {
 	var output strings.Builder

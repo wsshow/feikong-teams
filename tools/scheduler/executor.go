@@ -2,10 +2,10 @@ package scheduler
 
 import (
 	"context"
+	"fkteams/fkevent"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -38,10 +38,12 @@ func (e *BackgroundExecutor) Execute(task string) (string, error) {
 		return "", fmt.Errorf("failed to create runner")
 	}
 
+	callback, getResult := fkevent.NewMarkdownCollector()
+	ctx = fkevent.WithCallback(ctx, callback)
+
 	inputMessages := []adk.Message{schema.UserMessage(task)}
 	iter := r.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams_scheduler"))
 
-	var result strings.Builder
 	for {
 		event, ok := iter.Next()
 		if !ok {
@@ -52,24 +54,10 @@ func (e *BackgroundExecutor) Execute(task string) (string, error) {
 			e.writeResult(task, errMsg)
 			return "", event.Err
 		}
-		// 收集文本输出
-		if event.Output != nil && event.Output.MessageOutput != nil {
-			if msg := event.Output.MessageOutput.Message; msg != nil {
-				result.WriteString(msg.Content)
-			}
-			if stream := event.Output.MessageOutput.MessageStream; stream != nil {
-				for {
-					chunk, err := stream.Recv()
-					if err != nil {
-						break
-					}
-					result.WriteString(chunk.Content)
-				}
-			}
-		}
+		_ = fkevent.ProcessAgentEvent(ctx, event)
 	}
 
-	output := result.String()
+	output := getResult()
 	e.writeResult(task, output)
 	return output, nil
 }
