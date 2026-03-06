@@ -58,7 +58,7 @@ func Run() {
 	if s, err := scheduler.InitGlobal(safeDir); err != nil {
 		log.Printf("初始化定时任务调度器失败: %v", err)
 	} else {
-		outputDir := "./history/scheduled_tasks/"
+		outputDir := "./result/scheduled_tasks/"
 		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
 			return runner.CreateBackgroundTaskRunner(ctx)
 		}, outputDir)

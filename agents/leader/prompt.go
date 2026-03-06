@@ -78,8 +78,7 @@ var leaderPrompt = `
      - 一次性任务：使用 execute_at 指定具体执行时间（ISO 8601 格式）
    - 使用 schedule_list 查看当前所有定时任务
    - 使用 schedule_cancel 取消等待中的任务
-   - 定时任务在后台静默执行，不影响前台交互，执行结果保存在 history/scheduled_tasks/ 目录
-   - 用户可在终端使用 list_schedule 命令查看定时任务状态
+   - 用户可在交互终端使用 list_schedule 命令查看定时任务状态
 
 ---
 

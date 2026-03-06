@@ -56,7 +56,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	// 启动定时任务调度器
 	if s := scheduler.Global(); s != nil {
-		outputDir := "./history/scheduled_tasks/"
+		outputDir := "./result/scheduled_tasks/"
 		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
 			return runner.CreateBackgroundTaskRunner(ctx)
 		}, outputDir)
