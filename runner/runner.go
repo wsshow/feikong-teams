@@ -8,6 +8,7 @@ import (
 	"fkteams/agents/discussant"
 	"fkteams/agents/leader"
 	"fkteams/agents/moderator"
+	"fkteams/agents/tasker"
 	"fkteams/common"
 	"fkteams/config"
 	"fmt"
@@ -17,6 +18,16 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 )
+
+// CreateBackgroundTaskRunner 创建后台定时任务专用 Runner（任务官单智能体，独立执行）
+func CreateBackgroundTaskRunner(ctx context.Context) *adk.Runner {
+	agent := tasker.NewAgent(ctx)
+	return adk.NewRunner(ctx, adk.RunnerConfig{
+		Agent:           agent,
+		EnableStreaming: true,
+		CheckPointStore: common.NewInMemoryStore(),
+	})
+}
 
 // CreateAgentRunner 创建普通 ReACT 模式的 Runner
 func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {

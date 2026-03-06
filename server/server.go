@@ -60,7 +60,7 @@ func Run() {
 	} else {
 		outputDir := "./history/scheduled_tasks/"
 		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
-			return runner.CreateSupervisorRunner(ctx)
+			return runner.CreateBackgroundTaskRunner(ctx)
 		}, outputDir)
 		s.SetExecutor(executor)
 		s.Start()
