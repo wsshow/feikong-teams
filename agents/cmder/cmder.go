@@ -42,6 +42,9 @@ func NewAgent() adk.Agent {
 		Instruction:   instruction,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
+		ModelRetryConfig: &adk.ModelRetryConfig{
+			MaxRetries: common.MaxRetries,
+		},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: cliTools,

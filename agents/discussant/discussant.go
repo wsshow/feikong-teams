@@ -26,6 +26,9 @@ func NewAgent(member config.TeamMember) adk.Agent {
 		Instruction:   instruction,
 		Model:         common.NewChatModelWithConfig(member.ModelName, member.BaseURL, member.APIKey),
 		MaxIterations: common.MaxIterations,
+		ModelRetryConfig: &adk.ModelRetryConfig{
+			MaxRetries: common.MaxRetries,
+		},
 	})
 	if err != nil {
 		log.Fatal(err)

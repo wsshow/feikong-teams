@@ -30,6 +30,9 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 		ChatModel:    common.NewChatModel(),
 		SubAgents:    subAgents,
 		MaxIteration: common.MaxIterations,
+		ModelRetryConfig: &adk.ModelRetryConfig{
+			MaxRetries: common.MaxRetries,
+		},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,

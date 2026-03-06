@@ -9,7 +9,10 @@ import (
 	"github.com/cloudwego/eino/components/model"
 )
 
-const MaxIterations = 60
+const (
+	MaxIterations = 60
+	MaxRetries    = 3
+)
 
 func NewChatModel() model.ToolCallingChatModel {
 	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
