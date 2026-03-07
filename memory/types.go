@@ -6,10 +6,21 @@ import "time"
 type MemoryType string
 
 const (
-	Preference MemoryType = "preference" // 用户偏好和习惯
-	Lesson     MemoryType = "lesson"     // 错误教训和避坑记录
-	Decision   MemoryType = "decision"   // 重要决策和结论
+	Preference MemoryType = "preference" // 用户偏好、习惯、喜好厌恶
+	Fact       MemoryType = "fact"       // 个人信息、身份背景、客观事实
+	Lesson     MemoryType = "lesson"     // 错误教训、避坑记录
+	Decision   MemoryType = "decision"   // 重要决策、确定方案
+	Insight    MemoryType = "insight"    // 观点看法、认知原则
 )
+
+// AllMemoryTypes 所有合法记忆类型
+var AllMemoryTypes = map[MemoryType]bool{
+	Preference: true,
+	Fact:       true,
+	Lesson:     true,
+	Decision:   true,
+	Insight:    true,
+}
 
 // MemoryEntry 单条记忆
 type MemoryEntry struct {
