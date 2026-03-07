@@ -46,6 +46,11 @@ func IsRetryAble(ctx context.Context, err error) bool {
 		return false
 	}
 
+	// context 已被取消或超时，不应重试
+	if ctx.Err() != nil {
+		return false
+	}
+
 	// 网络错误（超时、连接中断等）
 	var netErr net.Error
 	if errors.As(err, &netErr) {
