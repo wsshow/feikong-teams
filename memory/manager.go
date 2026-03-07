@@ -34,14 +34,12 @@ func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
 
 // ExtractAndStore 提取记忆并存储（设计为异步调用，由调用方 go 启动）
 func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
-	fmt.Printf("[memory] extracting from %d messages, session=%s\n", len(messages), sessionID)
 	entries, err := Extract(ctx, messages, sessionID, m.llm)
 	if err != nil {
 		fmt.Printf("[memory] warn: extract failed: %v\n", err)
 		return
 	}
 	if len(entries) == 0 {
-		fmt.Printf("[memory] no entries extracted\n")
 		return
 	}
 

@@ -100,19 +100,14 @@ type extractedEntry struct {
 func Extract(ctx context.Context, messages []Message, sessionID string, llmClient LLMClient) ([]MemoryEntry, error) {
 	conversation := formatConversation(messages)
 	if conversation == "" {
-		fmt.Printf("[memory] conversation too short (%d chars), skipping extraction\n", utf8.RuneCountInString(conversation))
 		return nil, nil
 	}
 
-	fmt.Printf("[memory] formatted conversation: %d chars, calling LLM...\n", utf8.RuneCountInString(conversation))
 	prompt := fmt.Sprintf(extractPrompt, conversation)
-	start := time.Now()
 	result, err := llmClient.Complete(ctx, prompt)
 	if err != nil {
-		fmt.Printf("[memory] LLM call failed after %s: %v\n", time.Since(start).Round(time.Millisecond), err)
 		return nil, fmt.Errorf("llm complete failed: %w", err)
 	}
-	fmt.Printf("[memory] LLM call completed in %s\n", time.Since(start).Round(time.Millisecond))
 
 	result = strings.TrimSpace(result)
 	// 清理可能的 markdown 代码块包裹
