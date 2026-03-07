@@ -62,6 +62,7 @@ func Run() {
 	// 初始化全局记忆管理器
 	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
 		g.MemManager = memory.NewManager(safeDir, memory.NewLLMClient(common.NewChatModel()))
+		log.Println("全局长期记忆已启用")
 	}
 
 	if s, err := scheduler.InitGlobal(safeDir); err != nil {

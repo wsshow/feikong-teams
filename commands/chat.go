@@ -63,6 +63,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	}
 	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
 		g.MemManager = memory.NewManager(workspaceDir, memory.NewLLMClient(common.NewChatModel()))
+		pterm.Info.Println("全局长期记忆已启用")
 	}
 
 	// 启动定时任务调度器

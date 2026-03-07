@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -81,6 +82,7 @@ type extractedEntry struct {
 func Extract(ctx context.Context, messages []Message, sessionID string, llmClient LLMClient) ([]MemoryEntry, error) {
 	conversation := formatConversation(messages)
 	if conversation == "" {
+		log.Printf("[memory] conversation too short, skipping extraction")
 		return nil, nil
 	}
 

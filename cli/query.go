@@ -304,11 +304,12 @@ func SaveChatHistoryToHTML() (string, error) {
 
 // convertRecorderMessages 将 HistoryRecorder 的消息转为 memory.Message
 func convertRecorderMessages(recorder *fkevent.HistoryRecorder) []memory.Message {
+	recorder.FinalizeCurrent()
 	agentMessages := recorder.GetMessages()
 	var msgs []memory.Message
 	for _, am := range agentMessages {
 		role := "assistant"
-		if am.AgentName == "user" {
+		if am.AgentName == "用户" || am.AgentName == "user" {
 			role = "user"
 		}
 		content := am.GetTextContent()
