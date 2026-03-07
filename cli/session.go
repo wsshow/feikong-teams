@@ -159,7 +159,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				pterm.FgGray.Println("▼ " + s.inputBuffer.AccumulatedText())
 			}
 
-			in, trigger, err := tui.ReadLine(prefix)
+			in, trigger, err := tui.ReadLine(prefix, s.InputHistory)
 			if err != nil {
 				if errors.Is(err, tui.ErrInterrupted) {
 					s.inputBuffer.Reset()
@@ -168,6 +168,11 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				}
 				exitSignals <- syscall.SIGTERM
 				return
+			}
+
+			// 回显用户输入
+			if trigger == "" && in != "" {
+				pterm.FgGray.Printfln("%s%s", prefix, in)
 			}
 
 			// 触发字符立即响应（@/#/）
