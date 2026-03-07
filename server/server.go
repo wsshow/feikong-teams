@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"fkteams/agents/common"
 	"fkteams/config"
+	"fkteams/g"
+	"fkteams/memory"
 	"fkteams/runner"
 	"fkteams/server/handler"
 	"fkteams/server/router"
@@ -55,6 +58,12 @@ func Run() {
 	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
 		safeDir = d
 	}
+
+	// 初始化全局记忆管理器
+	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
+		g.MemManager = memory.NewManager(safeDir, memory.NewLLMClient(common.NewChatModel()))
+	}
+
 	if s, err := scheduler.InitGlobal(safeDir); err != nil {
 		log.Printf("初始化定时任务调度器失败: %v", err)
 	} else {

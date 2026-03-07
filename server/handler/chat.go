@@ -7,11 +7,13 @@ import (
 
 	"fkteams/fkevent"
 	"fkteams/g"
+	"fkteams/memory"
 	"fkteams/runner"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -211,6 +213,18 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	// 保存聊天历史
 	saveHistory(recorder, historyFilePath, sessionID)
 
+	// 异步提取记忆
+	if g.MemManager != nil {
+		msgs := convertRecorderToMemoryMessages(recorder)
+		if len(msgs) > 0 {
+			go func() {
+				memCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				g.MemManager.ExtractAndStore(memCtx, msgs, sessionID)
+			}()
+		}
+	}
+
 	_ = writeJSON(map[string]interface{}{
 		"type":    "processing_end",
 		"message": "处理完成",
@@ -221,6 +235,14 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 // recorder 是会话级别的 HistoryRecorder，由 GlobalSessionManager 管理，已自动加载历史
 func buildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []adk.Message {
 	var inputMessages []adk.Message
+
+	// 注入长期记忆上下文
+	if g.MemManager != nil {
+		memories := g.MemManager.Search(userInput, 5)
+		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
+			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
+		}
+	}
 
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
@@ -296,4 +318,21 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 		result["error"] = event.Error
 	}
 	return result
+}
+
+// convertRecorderToMemoryMessages 将 HistoryRecorder 的消息转为 memory.Message
+func convertRecorderToMemoryMessages(recorder *fkevent.HistoryRecorder) []memory.Message {
+	agentMessages := recorder.GetMessages()
+	var msgs []memory.Message
+	for _, am := range agentMessages {
+		role := "assistant"
+		if am.AgentName == "user" {
+			role = "user"
+		}
+		content := am.GetTextContent()
+		if content != "" {
+			msgs = append(msgs, memory.Message{Role: role, Content: content})
+		}
+	}
+	return msgs
 }

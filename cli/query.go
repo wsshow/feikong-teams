@@ -4,6 +4,8 @@ import (
 	"context"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/fkevent"
+	"fkteams/g"
+	"fkteams/memory"
 	"fkteams/report"
 	"fmt"
 	"log"
@@ -125,6 +127,15 @@ func getCliRecorder() *fkevent.HistoryRecorder {
 // BuildInputMessages 构建输入消息列表（包含历史对话，支持上下文压缩摘要）
 func BuildInputMessages(input string) []adk.Message {
 	var inputMessages []adk.Message
+
+	// 注入长期记忆上下文
+	if g.MemManager != nil {
+		memories := g.MemManager.Search(input, 5)
+		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
+			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
+		}
+	}
+
 	recorder := getCliRecorder()
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
@@ -185,6 +196,18 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMo
 			stopKeyboardMonitor()
 		}
 		e.state.EndQuery()
+
+		// 异步提取记忆
+		if g.MemManager != nil {
+			msgs := convertRecorderMessages(recorder)
+			if len(msgs) > 0 {
+				go func() {
+					memCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+					defer cancel()
+					g.MemManager.ExtractAndStore(memCtx, msgs, activeSessionID)
+				}()
+			}
+		}
 	}()
 
 	iter := e.runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
@@ -277,4 +300,21 @@ func SaveChatHistoryToHTML() (string, error) {
 		return "", fmt.Errorf("转换聊天历史到 HTML 失败: %w", err)
 	}
 	return htmlFilePath, nil
+}
+
+// convertRecorderMessages 将 HistoryRecorder 的消息转为 memory.Message
+func convertRecorderMessages(recorder *fkevent.HistoryRecorder) []memory.Message {
+	agentMessages := recorder.GetMessages()
+	var msgs []memory.Message
+	for _, am := range agentMessages {
+		role := "assistant"
+		if am.AgentName == "user" {
+			role = "user"
+		}
+		content := am.GetTextContent()
+		if content != "" {
+			msgs = append(msgs, memory.Message{Role: role, Content: content})
+		}
+	}
+	return msgs
 }

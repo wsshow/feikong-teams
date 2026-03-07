@@ -56,6 +56,9 @@ FEIKONG_CMDER_ENABLED = true
 # 数据分析师
 FEIKONG_ANALYST_ENABLED = false
 
+# 全局长期记忆
+FEIKONG_MEMORY_ENABLED = false
+
 # SSH 访问者智能体配置（可选）
 FEIKONG_SSH_VISITOR_ENABLED=true # 设置为 true 启用小访智能体
 FEIKONG_SSH_HOST=ip:port
@@ -715,6 +718,34 @@ system_prompt = """你是一个数据分析专家...
 能力：数据清洗、统计分析、数据可视化、报告生成"""
 tools = ["command", "mcp-postgres", "mcp-filesystem"]
 ```
+
+## 长期记忆
+
+fkteams 内置了全局长期记忆模块，能够跨会话自动记住用户偏好、踩坑教训和重要决策，在后续对话中自动召回相关记忆，避免重复犯错和重复沟通。
+
+### 工作原理
+
+1. **自动提取**：每次对话结束后，系统在后台异步调用 LLM 从对话中提取三类记忆：
+   - **用户偏好**（preference）：技术选型、代码风格、工具习惯等
+   - **避坑记录**（lesson）：排查过的错误、需要避免的做法
+   - **重要决策**（decision）：确定的技术方案、架构结论
+2. **智能去重**：提取的记忆会与已有记忆自动去重（基于摘要包含关系和标签重叠度）
+3. **BM25 检索**：用户每次提问时，系统基于 BM25 算法从记忆库中召回最相关的条目
+4. **上下文注入**：召回的记忆以结构化格式注入到 Agent 的系统提示词中
+
+### 存储位置
+
+记忆数据持久化在 `{FEIKONG_WORKSPACE_DIR}/memory/index.json`，格式为 JSON，可直接查看和手动编辑。
+
+### 使用说明
+
+在 `.env` 文件中设置以下环境变量来启用长期记忆功能：
+
+```env
+FEIKONG_MEMORY_ENABLED = true
+```
+
+启用后，CLI 模式和 Web 模式均自动工作，无需额外配置。
 
 ## 安全说明
 

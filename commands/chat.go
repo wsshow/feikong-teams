@@ -2,9 +2,11 @@ package commands
 
 import (
 	"context"
+	"fkteams/agents/common"
 	"fkteams/cli"
-	"fkteams/common"
+	commonPkg "fkteams/common"
 	"fkteams/g"
+	"fkteams/memory"
 	"fkteams/runner"
 	"fkteams/tools/scheduler"
 	"fkteams/version"
@@ -54,6 +56,15 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		}
 	}()
 
+	// 初始化全局记忆管理器
+	workspaceDir := "./workspace"
+	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
+		workspaceDir = d
+	}
+	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
+		g.MemManager = memory.NewManager(workspaceDir, memory.NewLLMClient(common.NewChatModel()))
+	}
+
 	// 启动定时任务调度器
 	if s := scheduler.Global(); s != nil {
 		outputDir := "./result/scheduled_tasks/"
@@ -70,7 +81,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	// 加载输入历史
 	inputHistoryPath := "./history/input_history/fkteams_input_history"
-	inputHistory, err := common.LoadHistory(inputHistoryPath, 100)
+	inputHistory, err := commonPkg.LoadHistory(inputHistoryPath, 100)
 	if err != nil {
 		log.Fatalf("加载输入历史失败: %v", err)
 	}
@@ -100,7 +111,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
 	done()
 
-	if err := common.SaveHistory(inputHistoryPath, session.InputHistory); err != nil {
+	if err := commonPkg.SaveHistory(inputHistoryPath, session.InputHistory); err != nil {
 		log.Fatalf("保存输入历史失败: %v", err)
 	}
 
