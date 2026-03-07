@@ -93,7 +93,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		cli.SetResumeSessionID(resumeSession)
 	}
 
-	// 信号处理：SIGINT 由 Session 内部处理（huh 捕获输入时、信号处理器捕获查询时）
+	// 信号处理：SIGINT 由 Session 内部处理（bubbletea 捕获输入时、信号处理器捕获查询时）
 	exitSignals := make(chan os.Signal, 1)
 	session.StartSignalHandler(exitSignals)
 

@@ -1,33 +1,126 @@
 package cli
 
 import (
-	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
-	"github.com/charmbracelet/huh"
+	"fkteams/agents"
+	"fkteams/tui"
 )
 
-// ErrInterrupted 用户中断输入（Ctrl+C）
-var ErrInterrupted = errors.New("user interrupted")
-
-// ReadInput 使用 huh 读取单行用户输入
-// prompt 为行首提示符，suggestFn 提供自动补全候选项（可为 nil）
-func ReadInput(prompt string, suggestFn func() []string) (string, error) {
-	var input string
-
-	field := huh.NewInput().
-		Prompt(prompt).
-		Value(&input)
-
-	if suggestFn != nil {
-		field = field.SuggestionsFunc(suggestFn, nil)
+// SelectAgent 以可过滤的列表形式选择智能体
+func SelectAgent() (string, error) {
+	registry := agents.GetRegistry()
+	if len(registry) == 0 {
+		return "", fmt.Errorf("无可用的智能体")
 	}
 
-	if err := field.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return "", ErrInterrupted
+	var items []tui.SelectItem
+	for _, a := range registry {
+		items = append(items, tui.SelectItem{
+			Label: fmt.Sprintf("%s - %s", a.Name, a.Description),
+			Value: a.Name,
+		})
+	}
+	return tui.SelectFromList("选择智能体", items)
+}
+
+// SelectFile 以可过滤的列表形式选择工作目录下的文件，支持目录导航
+func SelectFile(baseDir string) (string, error) {
+	currentDir := baseDir
+
+	for {
+		entries, err := os.ReadDir(currentDir)
+		if err != nil {
+			return "", err
 		}
-		return "", err
-	}
 
-	return input, nil
+		var items []tui.SelectItem
+
+		if rel, _ := filepath.Rel(baseDir, currentDir); rel != "." {
+			items = append(items, tui.SelectItem{Label: "← 返回上级目录", Value: ".."})
+		}
+
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, ".") {
+				continue
+			}
+			label := name
+			if entry.IsDir() {
+				label += "/"
+			}
+			items = append(items, tui.SelectItem{Label: label, Value: name})
+		}
+
+		if len(items) == 0 {
+			return "", fmt.Errorf("目录为空: %s", currentDir)
+		}
+
+		displayDir, _ := filepath.Rel(baseDir, currentDir)
+		if displayDir == "." {
+			displayDir = "工作目录"
+		}
+
+		selected, selectErr := tui.SelectFromList("选择文件 ["+displayDir+"]", items, 15)
+		if selectErr != nil {
+			return "", selectErr
+		}
+
+		if selected == ".." {
+			currentDir = filepath.Dir(currentDir)
+			continue
+		}
+
+		fullPath := filepath.Join(currentDir, selected)
+		info, statErr := os.Stat(fullPath)
+		if statErr != nil {
+			return "", statErr
+		}
+
+		if info.IsDir() {
+			currentDir = fullPath
+			continue
+		}
+
+		result, _ := filepath.Rel(baseDir, fullPath)
+		return filepath.ToSlash(result), nil
+	}
+}
+
+// CommandInfo 命令信息
+type CommandInfo struct {
+	Name string
+	Desc string
+}
+
+// allCommands 所有可用的交互式命令
+var allCommands = []CommandInfo{
+	{"help", "帮助信息"},
+	{"list_agents", "列出所有可用的智能体"},
+	{"list_chat_history", "列出所有聊天历史会话"},
+	{"load_chat_history", "加载指定的聊天历史会话"},
+	{"save_chat_history", "保存聊天历史到当前会话文件"},
+	{"clear_chat_history", "清空当前聊天历史"},
+	{"switch_work_mode", "切换工作模式(团队/深度/讨论/自定义)"},
+	{"save_chat_history_to_html", "导出聊天历史为 HTML 文件"},
+	{"save_chat_history_to_markdown", "导出聊天历史为 Markdown 文件"},
+	{"clear_todo", "清空所有待办事项"},
+	{"list_schedule", "列出所有定时任务"},
+	{"cancel_schedule", "取消指定的定时任务"},
+	{"quit", "退出程序"},
+}
+
+// SelectCommand 以可过滤的列表形式选择命令
+func SelectCommand() (string, error) {
+	var items []tui.SelectItem
+	for _, c := range allCommands {
+		items = append(items, tui.SelectItem{
+			Label: fmt.Sprintf("%s - %s", c.Name, c.Desc),
+			Value: c.Name,
+		})
+	}
+	return tui.SelectFromList("选择命令", items)
 }

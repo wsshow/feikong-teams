@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fkteams/agents"
 	"fkteams/runner"
+	"fkteams/tui"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
@@ -74,7 +76,6 @@ func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
 				if s.queryState.IsRunning() {
 					HandleCtrlC(s.queryState)
 				}
-				// huh 在 raw 模式下已捕获 Ctrl+C，此处只处理查询期间的信号
 			default:
 				select {
 				case exitSignals <- sig:
@@ -137,25 +138,30 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				pterm.Error.Printfln("交互循环异常: %v", r)
+				select {
+				case exitSignals <- syscall.SIGTERM:
+				default:
+				}
+			}
+		}()
+
 		executor := NewQueryExecutor(r, s.queryState)
 		modeSwitcher := &sessionModeSwitcher{session: s, ctx: ctx, executor: executor}
 		cmdHandler := NewCommandHandler(modeSwitcher)
 
-		suggestions := BuildSuggestions()
-		suggestFn := func() []string { return suggestions }
-
 		for {
 			prefix := s.currentPrefix()
 
-			// 续行模式不显示补全
-			var fn func() []string
-			if !s.inputBuffer.IsContinuing() {
-				fn = suggestFn
+			if s.inputBuffer.IsContinuing() {
+				pterm.FgGray.Println("▼ " + s.inputBuffer.AccumulatedText())
 			}
 
-			in, err := ReadInput(prefix, fn)
+			in, trigger, err := tui.ReadLine(prefix)
 			if err != nil {
-				if errors.Is(err, ErrInterrupted) {
+				if errors.Is(err, tui.ErrInterrupted) {
 					s.inputBuffer.Reset()
 					fmt.Println()
 					continue
@@ -164,29 +170,82 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				return
 			}
 
+			// 触发字符立即响应（@/#/）
+			switch trigger {
+			case "@":
+				agentName, selectErr := SelectAgent()
+				if selectErr != nil {
+					if !errors.Is(selectErr, tui.ErrInterrupted) {
+						pterm.Error.Printf("选择智能体失败: %v\n", selectErr)
+					}
+					continue
+				}
+				s.switchAgent(ctx, executor, agentName)
+				continue
+			case "#":
+				var files []string
+				for {
+					filePath, selectErr := SelectFile(GetWorkspaceDir())
+					if selectErr != nil {
+						if !errors.Is(selectErr, tui.ErrInterrupted) {
+							pterm.Error.Printf("选择文件失败: %v\n", selectErr)
+						}
+						break
+					}
+					files = append(files, "#"+filePath)
+					pterm.FgGray.Println("已选择: " + strings.Join(files, " "))
+
+					query, nextTrigger, queryErr := tui.ReadLine("输入查询 (# 继续添加文件 | 回车发送): ")
+					if queryErr != nil {
+						if !errors.Is(queryErr, tui.ErrInterrupted) {
+							pterm.Error.Printf("读取查询失败: %v\n", queryErr)
+						}
+						files = nil
+						break
+					}
+					if nextTrigger == "#" {
+						continue
+					}
+					// 构建最终输入
+					fileRefs := strings.Join(files, " ")
+					var finalInput string
+					if query == "" {
+						finalInput = fileRefs
+					} else {
+						finalInput = query + " " + fileRefs
+					}
+					s.InputHistory = append(s.InputHistory, finalInput)
+					if err := executor.Execute(ctx, finalInput); err != nil {
+						log.Printf("执行查询失败: %v", err)
+					}
+					fmt.Printf("\n\n")
+					break
+				}
+				continue
+			case "/":
+				cmd, selectErr := SelectCommand()
+				if selectErr != nil {
+					if !errors.Is(selectErr, tui.ErrInterrupted) {
+						pterm.Error.Printf("选择命令失败: %v\n", selectErr)
+					}
+					continue
+				}
+				result := cmdHandler.Handle(cmd)
+				if result == ResultExit {
+					exitSignals <- syscall.SIGTERM
+					return
+				}
+				continue
+			}
+
 			input := s.handleInput(in)
 			if s.inputBuffer.IsContinuing() {
 				continue
 			}
 
-			// 检查是否切换智能体
+			// 检查是否切换智能体（@智能体名 查询内容）
 			if agentName, query := ExtractAgentMention(input); agentName != "" {
-				agentInfo := agents.GetAgentByName(agentName)
-				if agentInfo == nil {
-					pterm.Error.Printf("未找到智能体: %s\n", agentName)
-					fmt.Println()
-					continue
-				}
-
-				newAgent := agentInfo.Creator(ctx)
-				newRunner := runner.CreateAgentRunner(ctx, newAgent)
-				executor.SetRunner(newRunner)
-				s.currentAgent = agentName
-				pterm.Success.Printf("已切换到智能体: %s (%s)\n", agentName, agentInfo.Description)
-
-				// 刷新补全候选（智能体切换后可能变化）
-				suggestions = BuildSuggestions()
-
+				s.switchAgent(ctx, executor, agentName)
 				if query != "" {
 					s.InputHistory = append(s.InputHistory, query)
 					if err := executor.Execute(ctx, query); err != nil {
@@ -216,6 +275,22 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 			fmt.Printf("\n\n")
 		}
 	}()
+}
+
+// switchAgent 切换到指定智能体
+func (s *Session) switchAgent(ctx context.Context, executor *QueryExecutor, agentName string) {
+	agentInfo := agents.GetAgentByName(agentName)
+	if agentInfo == nil {
+		pterm.Error.Printf("未找到智能体: %s\n", agentName)
+		fmt.Println()
+		return
+	}
+
+	newAgent := agentInfo.Creator(ctx)
+	newRunner := runner.CreateAgentRunner(ctx, newAgent)
+	executor.SetRunner(newRunner)
+	s.currentAgent = agentName
+	pterm.Success.Printf("已切换到智能体: %s (%s)\n", agentName, agentInfo.Description)
 }
 
 // sessionModeSwitcher 模式切换器

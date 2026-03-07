@@ -42,6 +42,11 @@ func (b *InputBuffer) IsContinuing() bool {
 	return b.isContinuing
 }
 
+// AccumulatedText 返回已输入的所有续行内容
+func (b *InputBuffer) AccumulatedText() string {
+	return strings.Join(b.lines, "\n")
+}
+
 // Reset 重置缓冲区
 func (b *InputBuffer) Reset() {
 	b.lines = []string{}
