@@ -211,6 +211,35 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 					if nextTrigger == "#" {
 						continue
 					}
+					// 如果触发了 @ 或 /，放弃已选文件，直接处理触发
+					if nextTrigger == "@" || nextTrigger == "/" {
+						pterm.FgGray.Println("已取消文件引用")
+						switch nextTrigger {
+						case "@":
+							agentName, selectErr := SelectAgent()
+							if selectErr != nil {
+								if !errors.Is(selectErr, tui.ErrInterrupted) {
+									pterm.Error.Printf("选择智能体失败: %v\n", selectErr)
+								}
+							} else {
+								s.switchAgent(ctx, executor, agentName)
+							}
+						case "/":
+							cmd, selectErr := SelectCommand()
+							if selectErr != nil {
+								if !errors.Is(selectErr, tui.ErrInterrupted) {
+									pterm.Error.Printf("选择命令失败: %v\n", selectErr)
+								}
+							} else {
+								result := cmdHandler.Handle(cmd)
+								if result == ResultExit {
+									exitSignals <- syscall.SIGTERM
+									return
+								}
+							}
+						}
+						break
+					}
 					// 构建最终输入
 					fileRefs := strings.Join(files, " ")
 					var finalInput string
@@ -219,6 +248,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 					} else {
 						finalInput = query + " " + fileRefs
 					}
+					pterm.FgGray.Printfln("> %s", finalInput)
 					s.InputHistory = append(s.InputHistory, finalInput)
 					if err := executor.Execute(ctx, finalInput); err != nil {
 						log.Printf("执行查询失败: %v", err)
