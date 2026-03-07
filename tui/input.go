@@ -12,8 +12,14 @@ import (
 // ErrInterrupted 用户中断输入（Ctrl+C / Esc）
 var ErrInterrupted = errors.New("user interrupted")
 
-// triggerChars 触发立即选择的字符
-var triggerChars = map[string]bool{"@": true, "#": true, "/": true}
+// triggerChars 触发立即选择的字符（仅在空输入时触发）
+var triggerChars = map[string]bool{"@": true, "/": true}
+
+// ReadLineOpts ReadLine 选项
+type ReadLineOpts struct {
+	History      []string // 输入历史
+	InitialValue string   // 初始值
+}
 
 // inputModel bubbletea 模型：行输入 + 触发字符检测 + 历史导航
 type inputModel struct {
@@ -26,13 +32,23 @@ type inputModel struct {
 	savedInput   string   // 按上键前暂存的当前输入
 }
 
-func newInputModel(prompt string, history []string) inputModel {
+func newInputModel(prompt string, opts *ReadLineOpts) inputModel {
 	ti := textinput.New()
 	ti.Prompt = prompt
 	ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	ti.Placeholder = "@ agent | # file | / cmd"
 	ti.Width = 80
 	ti.Focus()
+
+	var history []string
+	if opts != nil {
+		history = opts.History
+		if opts.InitialValue != "" {
+			ti.SetValue(opts.InitialValue)
+			ti.CursorEnd()
+		}
+	}
+
 	return inputModel{
 		textInput:    ti,
 		history:      history,
@@ -75,10 +91,16 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case tea.KeyRunes:
-			// 空输入时检测触发字符，立即响应
-			if m.textInput.Value() == "" && len(msg.Runes) == 1 {
+			if len(msg.Runes) == 1 {
 				ch := string(msg.Runes[0])
-				if triggerChars[ch] {
+				// # 在任意位置触发文件选择
+				if ch == "#" {
+					m.text = m.textInput.Value()
+					m.trigger = "#"
+					return m, tea.Quit
+				}
+				// @、/ 仅在空输入时触发
+				if m.textInput.Value() == "" && triggerChars[ch] {
 					m.trigger = ch
 					return m, tea.Quit
 				}
@@ -94,13 +116,14 @@ func (m inputModel) View() string { return m.textInput.View() }
 
 // ReadLine 读取一行输入，同时检测触发字符（@/#/）
 // trigger 为触发字符，空串表示普通输入
-// 可选传入历史记录列表，支持上下键导航
-func ReadLine(prompt string, history ...[]string) (text string, trigger string, err error) {
-	var hist []string
-	if len(history) > 0 {
-		hist = history[0]
+// # 在任意输入位置都可触发文件选择，触发时 text 返回已输入的内容
+// @ 和 / 仅在空输入时触发
+func ReadLine(prompt string, opts ...*ReadLineOpts) (text string, trigger string, err error) {
+	var o *ReadLineOpts
+	if len(opts) > 0 {
+		o = opts[0]
 	}
-	p := tea.NewProgram(newInputModel(prompt, hist))
+	p := tea.NewProgram(newInputModel(prompt, o))
 	final, runErr := p.Run()
 	if runErr != nil {
 		return "", "", runErr

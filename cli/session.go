@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
@@ -159,15 +158,56 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				pterm.FgGray.Println("▼ " + s.inputBuffer.AccumulatedText())
 			}
 
-			in, trigger, err := tui.ReadLine(prefix, s.InputHistory)
-			if err != nil {
-				if errors.Is(err, tui.ErrInterrupted) {
-					s.inputBuffer.Reset()
-					fmt.Println()
-					continue
+			// readInput 循环读取输入，处理 # 内联文件引用
+			var in string
+			var trigger string
+			inputText := "" // 累积的输入文本（含 #path 引用）
+		readInput:
+			for {
+				opts := &tui.ReadLineOpts{
+					History:      s.InputHistory,
+					InitialValue: inputText,
 				}
-				exitSignals <- syscall.SIGTERM
-				return
+				var err error
+				in, trigger, err = tui.ReadLine(prefix, opts)
+				if err != nil {
+					if errors.Is(err, tui.ErrInterrupted) {
+						s.inputBuffer.Reset()
+						fmt.Println()
+						break readInput
+					}
+					exitSignals <- syscall.SIGTERM
+					return
+				}
+
+				if trigger == "#" {
+					// # 触发文件/目录选择，选中后插入到文本中继续输入
+					filePath, selectErr := SelectFileOrDir(GetWorkspaceDir())
+					if selectErr != nil {
+						if !errors.Is(selectErr, tui.ErrInterrupted) {
+							pterm.Error.Printf("选择文件失败: %v\n", selectErr)
+						}
+						// 选择取消，保留已输入的文本继续
+						inputText = in
+						continue readInput
+					}
+					// 将 #path 插入到文本中
+					if in != "" {
+						inputText = in + " #" + filePath + " "
+					} else {
+						inputText = "#" + filePath + " "
+					}
+					pterm.FgGray.Println("已引用: " + filePath)
+					continue readInput
+				}
+
+				// 非 # 触发，跳出循环
+				break readInput
+			}
+
+			// 如果是中断后 continue 的情况
+			if trigger == "" && in == "" && inputText == "" {
+				continue
 			}
 
 			// 回显用户输入
@@ -175,7 +215,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				pterm.FgGray.Printfln("%s%s", prefix, in)
 			}
 
-			// 触发字符立即响应（@/#/）
+			// 触发字符立即响应（@/）
 			switch trigger {
 			case "@":
 				agentName, selectErr := SelectAgent()
@@ -186,76 +226,6 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 					continue
 				}
 				s.switchAgent(ctx, executor, agentName)
-				continue
-			case "#":
-				var files []string
-				for {
-					filePath, selectErr := SelectFile(GetWorkspaceDir())
-					if selectErr != nil {
-						if !errors.Is(selectErr, tui.ErrInterrupted) {
-							pterm.Error.Printf("选择文件失败: %v\n", selectErr)
-						}
-						break
-					}
-					files = append(files, "#"+filePath)
-					pterm.FgGray.Println("已选择: " + strings.Join(files, " "))
-
-					query, nextTrigger, queryErr := tui.ReadLine("输入查询 (# 继续添加文件 | 回车发送): ")
-					if queryErr != nil {
-						if !errors.Is(queryErr, tui.ErrInterrupted) {
-							pterm.Error.Printf("读取查询失败: %v\n", queryErr)
-						}
-						files = nil
-						break
-					}
-					if nextTrigger == "#" {
-						continue
-					}
-					// 如果触发了 @ 或 /，放弃已选文件，直接处理触发
-					if nextTrigger == "@" || nextTrigger == "/" {
-						pterm.FgGray.Println("已取消文件引用")
-						switch nextTrigger {
-						case "@":
-							agentName, selectErr := SelectAgent()
-							if selectErr != nil {
-								if !errors.Is(selectErr, tui.ErrInterrupted) {
-									pterm.Error.Printf("选择智能体失败: %v\n", selectErr)
-								}
-							} else {
-								s.switchAgent(ctx, executor, agentName)
-							}
-						case "/":
-							cmd, selectErr := SelectCommand()
-							if selectErr != nil {
-								if !errors.Is(selectErr, tui.ErrInterrupted) {
-									pterm.Error.Printf("选择命令失败: %v\n", selectErr)
-								}
-							} else {
-								result := cmdHandler.Handle(cmd)
-								if result == ResultExit {
-									exitSignals <- syscall.SIGTERM
-									return
-								}
-							}
-						}
-						break
-					}
-					// 构建最终输入
-					fileRefs := strings.Join(files, " ")
-					var finalInput string
-					if query == "" {
-						finalInput = fileRefs
-					} else {
-						finalInput = query + " " + fileRefs
-					}
-					pterm.FgGray.Printfln("> %s", finalInput)
-					s.InputHistory = append(s.InputHistory, finalInput)
-					if err := executor.Execute(ctx, finalInput); err != nil {
-						log.Printf("执行查询失败: %v", err)
-					}
-					fmt.Printf("\n\n")
-					break
-				}
 				continue
 			case "/":
 				cmd, selectErr := SelectCommand()

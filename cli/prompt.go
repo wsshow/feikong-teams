@@ -27,8 +27,9 @@ func SelectAgent() (string, error) {
 	return tui.SelectFromList("选择智能体", items)
 }
 
-// SelectFile 以可过滤的列表形式选择工作目录下的文件，支持目录导航
-func SelectFile(baseDir string) (string, error) {
+// SelectFileOrDir 以可过滤的列表形式选择工作目录下的文件或目录
+// 进入目录后可选择 "✓ 选择当前目录" 来选中该目录
+func SelectFileOrDir(baseDir string) (string, error) {
 	currentDir := baseDir
 
 	for {
@@ -41,6 +42,7 @@ func SelectFile(baseDir string) (string, error) {
 
 		if rel, _ := filepath.Rel(baseDir, currentDir); rel != "." {
 			items = append(items, tui.SelectItem{Label: "← 返回上级目录", Value: ".."})
+			items = append(items, tui.SelectItem{Label: "✓ 选择当前目录", Value: "."})
 		}
 
 		for _, entry := range entries {
@@ -64,7 +66,7 @@ func SelectFile(baseDir string) (string, error) {
 			displayDir = "工作目录"
 		}
 
-		selected, selectErr := tui.SelectFromList("选择文件 ["+displayDir+"]", items, 15)
+		selected, selectErr := tui.SelectFromList("选择文件/目录 ["+displayDir+"]", items, 15)
 		if selectErr != nil {
 			return "", selectErr
 		}
@@ -72,6 +74,11 @@ func SelectFile(baseDir string) (string, error) {
 		if selected == ".." {
 			currentDir = filepath.Dir(currentDir)
 			continue
+		}
+
+		if selected == "." {
+			result, _ := filepath.Rel(baseDir, currentDir)
+			return filepath.ToSlash(result), nil
 		}
 
 		fullPath := filepath.Join(currentDir, selected)
