@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/joho/godotenv"
@@ -95,11 +93,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		cli.SetResumeSessionID(resumeSession)
 	}
 
-	// 信号处理
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	// 信号处理：SIGINT 由 Session 内部处理（huh 捕获输入时、信号处理器捕获查询时）
 	exitSignals := make(chan os.Signal, 1)
-	session.StartSignalHandler(signals, exitSignals)
+	session.StartSignalHandler(exitSignals)
 
 	query := cmd.String("query")
 	if query != "" {

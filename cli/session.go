@@ -2,15 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fkteams/agents"
 	"fkteams/runner"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"syscall"
 
-	"github.com/atotto/clipboard"
-	"github.com/c-bata/go-prompt"
 	"github.com/cloudwego/eino/adk"
 	"github.com/pterm/pterm"
 )
@@ -52,30 +52,34 @@ func (s *Session) handleInput(in string) string {
 	return cmd
 }
 
-func (s *Session) changeLivePrefix() (string, bool) {
+// currentPrefix 返回当前提示符前缀
+func (s *Session) currentPrefix() string {
 	if s.inputBuffer.IsContinuing() {
-		return "请继续输入: ", true
+		return "请继续输入: "
 	}
-	prefix := s.CurrentMode.GetPromptPrefix()
 	if s.currentAgent != "" {
-		prefix = fmt.Sprintf("%s> ", s.currentAgent)
+		return fmt.Sprintf("%s> ", s.currentAgent)
 	}
-	return prefix, true
+	return s.CurrentMode.GetPromptPrefix()
 }
 
-// StartSignalHandler 监听系统信号
-func (s *Session) StartSignalHandler(rawSignals chan os.Signal, exitSignals chan os.Signal) {
+// StartSignalHandler 监听系统信号（SIGINT 在查询运行时中断查询，否则忽略；其他信号转发为退出信号）
+func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
-		for sig := range rawSignals {
-			if sig == syscall.SIGINT {
+		for sig := range sigChan {
+			switch sig {
+			case syscall.SIGINT, os.Interrupt:
 				if s.queryState.IsRunning() {
 					HandleCtrlC(s.queryState)
-					continue
 				}
-			}
-			select {
-			case exitSignals <- sig:
+				// huh 在 raw 模式下已捕获 Ctrl+C，此处只处理查询期间的信号
 			default:
+				select {
+				case exitSignals <- sig:
+				default:
+				}
 			}
 		}
 	}()
@@ -86,7 +90,6 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 	s.InputHistory = append(s.InputHistory, query)
 
 	if resumeSessionID != "" {
-		// 恢复指定会话
 		activeSessionID = resumeSessionID
 		pterm.Info.Printf("[非交互模式] 恢复会话: %s\n", activeSessionID)
 	} else {
@@ -98,7 +101,7 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
 
 	executor := NewQueryExecutor(r, s.queryState)
-	if err := executor.Execute(ctx, query, true, nil); err != nil {
+	if err := executor.Execute(ctx, query); err != nil {
 		log.Printf("执行查询失败: %v", err)
 	}
 
@@ -126,7 +129,6 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 // HandleInteractive 交互模式：启动 REPL 循环
 func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal) {
 	if resumeSessionID != "" {
-		// 恢复指定会话
 		activeSessionID = resumeSessionID
 		pterm.Info.Printf("恢复会话: %s\n", activeSessionID)
 	} else {
@@ -136,33 +138,32 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 
 	go func() {
 		executor := NewQueryExecutor(r, s.queryState)
-
 		modeSwitcher := &sessionModeSwitcher{session: s, ctx: ctx, executor: executor}
 		cmdHandler := NewCommandHandler(modeSwitcher)
 
-		pasteKeyBind := prompt.KeyBind{
-			Key: prompt.ControlV,
-			Fn: func(buf *prompt.Buffer) {
-				text, _ := clipboard.ReadAll()
-				buf.InsertText(fmt.Sprintf("%s\n", text), false, true)
-			},
-		}
-
-		p := prompt.New(nil,
-			Completer,
-			prompt.OptionTitle("FeiKong Teams"),
-			prompt.OptionPrefixTextColor(prompt.Cyan),
-			prompt.OptionSuggestionTextColor(prompt.White),
-			prompt.OptionSuggestionBGColor(prompt.Black),
-			prompt.OptionDescriptionTextColor(prompt.White),
-			prompt.OptionDescriptionBGColor(prompt.Black),
-			prompt.OptionHistory(s.InputHistory),
-			prompt.OptionAddKeyBind(pasteKeyBind),
-			prompt.OptionLivePrefix(s.changeLivePrefix),
-		)
+		suggestions := BuildSuggestions()
+		suggestFn := func() []string { return suggestions }
 
 		for {
-			in := p.Input()
+			prefix := s.currentPrefix()
+
+			// 续行模式不显示补全
+			var fn func() []string
+			if !s.inputBuffer.IsContinuing() {
+				fn = suggestFn
+			}
+
+			in, err := ReadInput(prefix, fn)
+			if err != nil {
+				if errors.Is(err, ErrInterrupted) {
+					s.inputBuffer.Reset()
+					fmt.Println()
+					continue
+				}
+				exitSignals <- syscall.SIGTERM
+				return
+			}
+
 			input := s.handleInput(in)
 			if s.inputBuffer.IsContinuing() {
 				continue
@@ -183,9 +184,12 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				s.currentAgent = agentName
 				pterm.Success.Printf("已切换到智能体: %s (%s)\n", agentName, agentInfo.Description)
 
+				// 刷新补全候选（智能体切换后可能变化）
+				suggestions = BuildSuggestions()
+
 				if query != "" {
 					s.InputHistory = append(s.InputHistory, query)
-					if err := executor.Execute(ctx, query, true, nil); err != nil {
+					if err := executor.Execute(ctx, query); err != nil {
 						log.Printf("执行查询失败: %v", err)
 					}
 				}
@@ -206,7 +210,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 
 			s.InputHistory = append(s.InputHistory, input)
 
-			if err := executor.Execute(ctx, input, true, nil); err != nil {
+			if err := executor.Execute(ctx, input); err != nil {
 				log.Printf("执行查询失败: %v", err)
 			}
 			fmt.Printf("\n\n")

@@ -777,7 +777,7 @@ make build
 
 ## 致谢
 
-- [go-prompt](https://github.com/c-bata/go-prompt) - 交互式命令行提示库
+- [huh](https://github.com/charmbracelet/huh) - 交互式终端表单与输入库
 - [Pterm](https://github.com/pterm/pterm) - 美观的终端 UI 库
 - [Cloudwego Eino](https://github.com/cloudwego/eino) - 强大的 AI 编程框架
 - [MCP Go](https://github.com/mark3labs/mcp-go) - Go 语言的 MCP 协议实现

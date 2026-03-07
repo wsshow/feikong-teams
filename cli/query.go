@@ -168,7 +168,7 @@ func BuildInputMessages(input string) []adk.Message {
 }
 
 // Execute 执行查询
-func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMonitor bool, onInterrupt func()) error {
+func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	inputMessages := BuildInputMessages(input)
 	recorder := getCliRecorder()
 	countBeforeRun := recorder.GetMessageCount()
@@ -186,15 +186,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMo
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
 
-	// 启动键盘监听
-	var stopKeyboardMonitor func()
-	if useKeyboardMonitor {
-		stopKeyboardMonitor = StartKeyboardMonitor(e.state)
-	}
 	defer func() {
-		if stopKeyboardMonitor != nil {
-			stopKeyboardMonitor()
-		}
 		e.state.EndQuery()
 
 		// 异步提取记忆
@@ -236,17 +228,11 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMo
 		select {
 		case <-queryCtx.Done():
 			pterm.Warning.Println("查询已中断")
-			if onInterrupt != nil {
-				onInterrupt()
-			}
 			return nil
 		case result, ok := <-eventChan:
 			select {
 			case <-queryCtx.Done():
 				pterm.Warning.Println("查询已中断")
-				if onInterrupt != nil {
-					onInterrupt()
-				}
 				return nil
 			default:
 			}
@@ -264,9 +250,6 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string, useKeyboardMo
 		}
 	}
 }
-
-// StartKeyboardMonitor 在查询期间监听 Ctrl+C
-// 平台特定实现在 query_unix.go 和 query_windows.go 中
 
 // HandleCtrlC 处理 Ctrl+C 事件，只中断查询，不退出程序
 func HandleCtrlC(state *QueryState) {
