@@ -50,14 +50,15 @@ func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 		})
 	}
 
-	if event.Output != nil && event.Output.MessageOutput != nil {
-		if err := handleMessageOutput(ctx, event); err != nil {
+	// 先处理动作（如 transfer），再处理输出（如工具结果），保证显示顺序正确
+	if event.Action != nil {
+		if err := handleAction(ctx, event); err != nil {
 			return err
 		}
 	}
 
-	if event.Action != nil {
-		if err := handleAction(ctx, event); err != nil {
+	if event.Output != nil && event.Output.MessageOutput != nil {
+		if err := handleMessageOutput(ctx, event); err != nil {
 			return err
 		}
 	}
