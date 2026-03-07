@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -71,17 +71,17 @@ func (m selectModel) Init() tea.Cmd { return nil }
 
 func (m selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
 			if len(m.matches) > 0 {
 				m.selected = m.items[m.matches[m.cursor]].Value
 			}
 			return m, tea.Quit
-		case tea.KeyEsc, tea.KeyCtrlC:
+		case "esc", "ctrl+c":
 			m.aborted = true
 			return m, tea.Quit
-		case tea.KeyUp:
+		case "up":
 			if m.cursor > 0 {
 				m.cursor--
 			} else if len(m.matches) > 0 {
@@ -89,7 +89,7 @@ func (m selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.adjustOffset()
 			return m, nil
-		case tea.KeyDown:
+		case "down":
 			if m.cursor < len(m.matches)-1 {
 				m.cursor++
 			} else {
@@ -97,18 +97,19 @@ func (m selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.adjustOffset()
 			return m, nil
-		case tea.KeyBackspace:
+		case "backspace":
 			if len(m.filter) > 0 {
-				// 处理多字节字符
 				runes := []rune(m.filter)
 				m.filter = string(runes[:len(runes)-1])
 				m.updateMatches()
 			}
 			return m, nil
-		case tea.KeyRunes:
-			m.filter += string(msg.Runes)
-			m.updateMatches()
-			return m, nil
+		default:
+			if msg.Text != "" {
+				m.filter += msg.Text
+				m.updateMatches()
+				return m, nil
+			}
 		}
 	}
 	return m, nil
@@ -122,7 +123,7 @@ var (
 	selectDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
-func (m selectModel) View() string {
+func (m selectModel) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString(selectTitleStyle.Render("? "+m.title) + "\n")
@@ -152,7 +153,7 @@ func (m selectModel) View() string {
 	}
 
 	b.WriteString(selectDimStyle.Render("  ↑↓ 移动 | Enter 选择 | Esc 返回 | 输入过滤") + "\n")
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // SelectFromList 显示可过滤的选择列表，返回选中项的 Value
