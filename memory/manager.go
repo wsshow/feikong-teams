@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,14 +34,14 @@ func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
 
 // ExtractAndStore 提取记忆并存储（设计为异步调用，由调用方 go 启动）
 func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
-	log.Printf("[memory] extracting from %d messages, session=%s", len(messages), sessionID)
+	fmt.Printf("[memory] extracting from %d messages, session=%s\n", len(messages), sessionID)
 	entries, err := Extract(ctx, messages, sessionID, m.llm)
 	if err != nil {
-		log.Printf("[memory] warn: extract failed: %v", err)
+		fmt.Printf("[memory] warn: extract failed: %v\n", err)
 		return
 	}
 	if len(entries) == 0 {
-		log.Printf("[memory] no entries extracted")
+		fmt.Printf("[memory] no entries extracted\n")
 		return
 	}
 
@@ -60,9 +59,9 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	if added > 0 {
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Printf("[memory] warn: save failed: %v", err)
+			fmt.Printf("[memory] warn: save failed: %v\n", err)
 		} else {
-			log.Printf("[memory] saved %d new entries to %s", added, m.storePath)
+			fmt.Printf("[memory] saved %d new entries to %s\n", added, m.storePath)
 		}
 	}
 }
@@ -106,7 +105,7 @@ func (m *Manager) updateHitStats(ids []string) {
 	}
 
 	if err := m.save(); err != nil {
-		log.Printf("[memory] warn: save hit stats failed: %v", err)
+		fmt.Printf("[memory] warn: save hit stats failed: %v\n", err)
 	}
 }
 
@@ -158,7 +157,7 @@ func (m *Manager) load() {
 		return
 	}
 	if err := json.Unmarshal(data, &m.store); err != nil {
-		log.Printf("[memory] warn: failed to parse store file: %v", err)
+		fmt.Printf("[memory] warn: failed to parse store file: %v\n", err)
 		m.store = MemoryStore{Version: "1", Entries: []MemoryEntry{}}
 	}
 }
