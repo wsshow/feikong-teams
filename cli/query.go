@@ -204,6 +204,10 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	iter := e.runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
 
+	// 显示加载动画
+	fmt.Println()
+	spinner, _ := pterm.DefaultSpinner.Start("思考中...")
+
 	// 使用 channel 接收事件
 	eventChan := make(chan struct {
 		event *adk.AgentEvent
@@ -224,12 +228,15 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}
 	}()
 
+	startTime := time.Now()
 	for {
 		select {
 		case <-queryCtx.Done():
+			spinner.Stop()
 			pterm.Warning.Println("查询已中断")
 			return nil
 		case result, ok := <-eventChan:
+			spinner.Stop()
 			select {
 			case <-queryCtx.Done():
 				pterm.Warning.Println("查询已中断")
@@ -238,9 +245,13 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			}
 
 			if !ok {
+				elapsed := time.Since(startTime).Round(time.Millisecond)
+				fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
 				return nil
 			}
 			if !result.ok {
+				elapsed := time.Since(startTime).Round(time.Millisecond)
+				fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
 				return nil
 			}
 			if err := fkevent.ProcessAgentEvent(queryCtx, result.event); err != nil {
