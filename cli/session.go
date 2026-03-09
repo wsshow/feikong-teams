@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
@@ -211,17 +210,6 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				continue
 			}
 
-			// 回显用户输入
-			if trigger == "" && in != "" {
-				fmt.Println()
-				if strings.Contains(in, "\n") {
-					pterm.FgGray.Println("用户：↓")
-					pterm.FgGray.Println(in)
-				} else {
-					pterm.FgGray.Printfln("用户：%s", in)
-				}
-			}
-
 			// 触发字符立即响应（@/）
 			switch trigger {
 			case "@":
@@ -253,6 +241,12 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 			input := s.handleInput(in)
 			if s.inputBuffer.IsContinuing() {
 				continue
+			}
+
+			// 回显用户输入
+			if input != "" {
+				fmt.Printf("\n\033[1;90m╭─ [用户]\033[0m\n")
+				fmt.Printf("\033[1;90m╰─▶ %s\033[0m\n", input)
 			}
 
 			// 检查是否切换智能体（@智能体名 查询内容）
