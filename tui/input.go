@@ -78,7 +78,7 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.text = expandPastes(strings.TrimSpace(m.textInput.Value()), m.pastes)
 			return m, tea.Quit
-		case "ctrl+c":
+		case "ctrl+c", "esc":
 			m.aborted = true
 			return m, tea.Quit
 		case "ctrl+v":

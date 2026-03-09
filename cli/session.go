@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
@@ -22,7 +23,6 @@ type ModeRunnerCreator func(ctx context.Context, mode WorkMode) *adk.Runner
 // Session 交互会话，封装 CLI 交互的全部状态
 type Session struct {
 	InputHistory     []string
-	inputBuffer      *InputBuffer
 	CurrentMode      WorkMode
 	queryState       *QueryState
 	currentAgent     string
@@ -33,7 +33,6 @@ type Session struct {
 func NewSession(mode WorkMode, inputHistory []string, createModeRunner ModeRunnerCreator) *Session {
 	return &Session{
 		InputHistory:     inputHistory,
-		inputBuffer:      NewInputBuffer(),
 		CurrentMode:      mode,
 		queryState:       NewQueryState(),
 		createModeRunner: createModeRunner,
@@ -45,19 +44,8 @@ func (s *Session) GetQueryState() *QueryState {
 	return s.queryState
 }
 
-func (s *Session) handleInput(in string) string {
-	cmd, needContinue := s.inputBuffer.HandleInput(in)
-	if needContinue {
-		return ""
-	}
-	return cmd
-}
-
 // currentPrefix 返回当前提示符前缀
 func (s *Session) currentPrefix() string {
-	if s.inputBuffer.IsContinuing() {
-		return "请继续输入: "
-	}
 	if s.currentAgent != "" {
 		return fmt.Sprintf("%s> ", s.currentAgent)
 	}
@@ -154,10 +142,6 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 		for {
 			prefix := s.currentPrefix()
 
-			if s.inputBuffer.IsContinuing() {
-				pterm.FgGray.Println("▼ " + s.inputBuffer.AccumulatedText())
-			}
-
 			// readInput 循环读取输入，处理 # 内联文件引用
 			var in string
 			var trigger string
@@ -172,7 +156,6 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				in, trigger, err = tui.ReadLine(prefix, opts)
 				if err != nil {
 					if errors.Is(err, tui.ErrInterrupted) {
-						s.inputBuffer.Reset()
 						fmt.Println()
 						break readInput
 					}
@@ -238,9 +221,20 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 				continue
 			}
 
-			input := s.handleInput(in)
-			if s.inputBuffer.IsContinuing() {
-				continue
+			// 如果输入以 \ 结尾，打开 textarea 多行编辑器
+			input := strings.TrimSpace(in)
+			if before, ok := strings.CutSuffix(input, "\\"); ok {
+				multiText, multiErr := tui.ReadMultiLine(strings.TrimSpace(before))
+				if multiErr != nil {
+					if !errors.Is(multiErr, tui.ErrInterrupted) {
+						pterm.Error.Printf("多行输入失败: %v\n", multiErr)
+					}
+					continue
+				}
+				input = strings.TrimSpace(multiText)
+				if input == "" {
+					continue
+				}
 			}
 
 			// 回显用户输入
