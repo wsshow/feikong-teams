@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
@@ -212,7 +213,13 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 
 			// 回显用户输入
 			if trigger == "" && in != "" {
-				pterm.FgGray.Printfln("%s%s", prefix, in)
+				fmt.Println()
+				if strings.Contains(in, "\n") {
+					pterm.FgGray.Println("用户：↓")
+					pterm.FgGray.Println(in)
+				} else {
+					pterm.FgGray.Printfln("用户：%s", in)
+				}
 			}
 
 			// 触发字符立即响应（@/）

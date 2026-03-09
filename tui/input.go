@@ -130,7 +130,9 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // insertPaste 在当前光标位置插入多行粘贴内容的占位符，维护 pastes 顺序。
 func (m inputModel) insertPaste(content string) inputModel {
-	lines := strings.FieldsFunc(content, func(r rune) bool { return r == '\n' || r == '\r' })
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\r", "\n")
+	lines := strings.Split(content, "\n")
 	placeholder := fmt.Sprintf("[粘贴%d行内容]", max(len(lines), 2))
 
 	pos := m.textInput.Position()
@@ -195,6 +197,11 @@ func expandPastes(text string, pastes []string) string {
 }
 
 func (m inputModel) View() tea.View {
+	// 提交或取消后返回空视图，清除屏幕上的输入行
+	if m.text != "" || m.trigger != "" || m.aborted {
+		return tea.NewView("")
+	}
+
 	viewStr := m.textInput.View()
 	if len(m.pastes) == 0 {
 		return tea.NewView(viewStr)
