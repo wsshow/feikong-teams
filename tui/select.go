@@ -124,6 +124,11 @@ var (
 )
 
 func (m selectModel) View() tea.View {
+	// 选择完成或取消后返回空视图，清除屏幕上的选择菜单
+	if m.selected != "" || m.aborted {
+		return tea.NewView("")
+	}
+
 	var b strings.Builder
 
 	b.WriteString(selectTitleStyle.Render("? "+m.title) + "\n")
