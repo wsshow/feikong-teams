@@ -36,6 +36,10 @@ func (m textareaModel) Init() tea.Cmd {
 
 func (m textareaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.textarea.SetWidth(msg.Width - 2)
+		m.textarea.SetHeight(msg.Height - 3)
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":
