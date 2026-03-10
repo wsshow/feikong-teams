@@ -17,6 +17,9 @@ const (
 	defaultMinScore     = 1.0
 	defaultEvictionDays = 30
 
+	// 小规模全量注入阈值：条目数 ≤ 此值时直接返回全部记忆，不依赖 BM25 搜索
+	fullInjectThreshold = 20
+
 	// 提取触发条件
 	minNewUserMessages = 2   // 新增至少 2 条用户消息才触发提取
 	minNewContentLen   = 300 // 新增消息总字符数至少 300
@@ -128,9 +131,26 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	}
 }
 
-// Search 检索记忆，过滤低分结果
+// Search 检索记忆
+// 当条目总数 ≤ fullInjectThreshold 时直接返回全部，否则走 BM25 搜索并过滤低分结果
 func (m *Manager) Search(query string, topK int) []MemoryEntry {
 	m.mu.RLock()
+
+	// 小规模全量注入：条目少时直接返回全部，避免纯词法搜索遗漏语义关联
+	if len(m.entries) <= fullInjectThreshold {
+		result := make([]MemoryEntry, len(m.entries))
+		copy(result, m.entries)
+		hitIDs := make([]string, len(result))
+		for i := range result {
+			hitIDs[i] = result[i].ID
+		}
+		m.mu.RUnlock()
+		if len(hitIDs) > 0 {
+			go m.updateHitStats(hitIDs)
+		}
+		return result
+	}
+
 	results := m.bm25.Search(query, m.entries, topK)
 
 	// 过滤低于最低分数阈值的结果
