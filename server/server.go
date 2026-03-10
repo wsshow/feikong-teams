@@ -85,6 +85,10 @@ func Run() {
 	if s := scheduler.Global(); s != nil {
 		s.Stop()
 	}
+	// 等待异步记忆提取完成
+	if g.MemManager != nil {
+		g.MemManager.Wait()
+	}
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal(err)
 	}

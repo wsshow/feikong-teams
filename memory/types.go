@@ -34,9 +34,3 @@ type MemoryEntry struct {
 	HitCount  int        `json:"hit_count"`
 	LastHitAt *time.Time `json:"last_hit_at,omitempty"`
 }
-
-// MemoryStore 记忆持久化存储
-type MemoryStore struct {
-	Version string        `json:"version"`
-	Entries []MemoryEntry `json:"entries"`
-}

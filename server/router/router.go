@@ -76,6 +76,11 @@ func Init() *gin.Engine {
 		// 定时任务管理 API
 		apiV1.GET("/schedules", handler.GetScheduleTasksHandler())
 		apiV1.POST("/schedules/:id/cancel", handler.CancelScheduleTaskHandler())
+
+		// 长期记忆管理 API
+		apiV1.GET("/memory", handler.GetMemoryListHandler())
+		apiV1.DELETE("/memory", handler.DeleteMemoryHandler())
+		apiV1.POST("/memory/clear", handler.ClearMemoryHandler())
 	}
 	return r
 }

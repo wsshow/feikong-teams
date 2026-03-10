@@ -213,7 +213,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	// 保存聊天历史
 	saveHistory(recorder, historyFilePath, sessionID)
 
-	// 异步提取记忆
+	// 异步提取记忆（Manager 内部跟踪提取偏移量，避免重复提取）
 	if g.MemManager != nil {
 		msgs := convertRecorderToMemoryMessages(recorder)
 		if len(msgs) > 0 {

@@ -5,6 +5,7 @@ import (
 	"fkteams/agents"
 	"fkteams/agents/leader"
 	"fkteams/fkevent"
+	"fkteams/g"
 	"fkteams/tools/scheduler"
 	"os"
 	"strings"
@@ -76,6 +77,11 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("模式切换:")
 		pterm.Println("  switch_work_mode               切换当前工作模式")
 		pterm.Println()
+		pterm.Println("长期记忆管理:")
+		pterm.Println("  list_memory                    列出所有长期记忆条目")
+		pterm.Println("  delete_memory <摘要>           删除指定摘要的记忆条目")
+		pterm.Println("  clear_memory                   清空所有长期记忆")
+		pterm.Println()
 		pterm.Println("其他操作:")
 		pterm.Println("  直接输入问题                     与智能体团队对话")
 		return ResultHandled
@@ -145,6 +151,14 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		ListAvailableAgents()
 		return ResultHandled
 
+	case "list_memory":
+		handleListMemory()
+		return ResultHandled
+
+	case "clear_memory":
+		handleClearMemory()
+		return ResultHandled
+
 	case "list_schedule":
 		s := scheduler.Global()
 		if s == nil {
@@ -186,6 +200,15 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 				} else {
 					pterm.Success.Println(resp.Message)
 				}
+				return ResultHandled
+			}
+		}
+
+		// 支持 delete_memory <summary> 格式
+		if strings.HasPrefix(input, "delete_memory ") {
+			summary := strings.TrimSpace(strings.TrimPrefix(input, "delete_memory "))
+			if summary != "" {
+				handleDeleteMemory(summary)
 				return ResultHandled
 			}
 		}
@@ -275,4 +298,76 @@ func ListAvailableAgents() {
 
 	pterm.Println("提示: 输入 @ 后会自动提示可用的智能体")
 	pterm.Println()
+}
+
+// handleListMemory 列出所有长期记忆条目
+func handleListMemory() {
+	if g.MemManager == nil {
+		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		return
+	}
+
+	entries := g.MemManager.List()
+	if len(entries) == 0 {
+		pterm.Info.Println("暂无长期记忆条目")
+		return
+	}
+
+	pterm.Println()
+	pterm.Println("=== 长期记忆列表 ===")
+	pterm.Println()
+
+	typeEmoji := map[string]string{
+		"preference": "💡", "fact": "📌", "lesson": "⚠️",
+		"decision": "✅", "insight": "🔍",
+	}
+
+	for i, e := range entries {
+		emoji := typeEmoji[string(e.Type)]
+		if emoji == "" {
+			emoji = "📝"
+		}
+		pterm.Printf("  %d. %s [%s] %s\n", i+1, emoji, e.Type, e.Summary)
+		pterm.Printf("     %s\n", e.Detail)
+		pterm.Printf("     标签: %s | 命中: %d 次 | 创建: %s\n",
+			strings.Join(e.Tags, ", "), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04"))
+		pterm.Println()
+	}
+
+	pterm.Printf("共 %d 条记忆\n", len(entries))
+	pterm.Printf("使用 delete_memory <摘要> 删除指定条目，或 clear_memory 清空全部\n")
+	pterm.Println()
+}
+
+// handleDeleteMemory 删除指定摘要的记忆条目
+func handleDeleteMemory(summary string) {
+	if g.MemManager == nil {
+		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		return
+	}
+
+	deleted := g.MemManager.Delete(summary)
+	if deleted > 0 {
+		pterm.Success.Printfln("成功删除 %d 条记忆: %s", deleted, summary)
+	} else {
+		pterm.Warning.Printfln("未找到匹配的记忆条目: %s", summary)
+		pterm.Info.Println("使用 list_memory 查看所有记忆条目")
+	}
+}
+
+// handleClearMemory 清空所有长期记忆
+func handleClearMemory() {
+	if g.MemManager == nil {
+		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		return
+	}
+
+	count := g.MemManager.Count()
+	if count == 0 {
+		pterm.Info.Println("当前没有记忆条目")
+		return
+	}
+
+	g.MemManager.Clear()
+	pterm.Success.Printfln("成功清空 %d 条长期记忆", count)
 }

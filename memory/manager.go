@@ -2,30 +2,48 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"os"
+	"log"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+)
+
+const (
+	defaultMaxEntries   = 500
+	defaultMinScore     = 1.0
+	defaultEvictionDays = 30
 )
 
 // Manager 记忆管理器
 type Manager struct {
 	mu        sync.RWMutex
 	storePath string
-	store     MemoryStore
+	entries   []MemoryEntry
 	bm25      *BM25
 	llm       LLMClient
+
+	maxEntries   int
+	minScore     float64
+	evictionDays int
+
+	wg               sync.WaitGroup
+	extractedOffsets map[string]int
+	dirty            bool
 }
 
 // NewManager 创建记忆管理器
 func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
 	m := &Manager{
-		storePath: filepath.Join(workspaceDir, "memory", "index.json"),
-		bm25:      &BM25{},
-		llm:       llmClient,
+		storePath:        filepath.Join(workspaceDir, "memory", "memory.md"),
+		bm25:             &BM25{},
+		llm:              llmClient,
+		maxEntries:       defaultMaxEntries,
+		minScore:         defaultMinScore,
+		evictionDays:     defaultEvictionDays,
+		extractedOffsets: make(map[string]int),
 	}
 	m.load()
 	m.rebuildIndex()
@@ -34,11 +52,30 @@ func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
 
 // ExtractAndStore 提取记忆并存储（设计为异步调用，由调用方 go 启动）
 func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
-	entries, err := Extract(ctx, messages, sessionID, m.llm)
-	if err != nil {
-		fmt.Printf("[memory] warn: extract failed: %v\n", err)
+	m.wg.Add(1)
+	defer m.wg.Done()
+
+	// 去重提取：只提取新增消息
+	m.mu.RLock()
+	offset := m.extractedOffsets[sessionID]
+	m.mu.RUnlock()
+
+	if offset >= len(messages) {
 		return
 	}
+	newMessages := messages[offset:]
+
+	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
+	if err != nil {
+		log.Printf("[memory] warn: extract failed: %v\n", err)
+		return
+	}
+
+	// 更新偏移量
+	m.mu.Lock()
+	m.extractedOffsets[sessionID] = len(messages)
+	m.mu.Unlock()
+
 	if len(entries) == 0 {
 		return
 	}
@@ -46,31 +83,53 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	added := 0
+	added, updated := 0, 0
 	for _, entry := range entries {
-		if !m.isDuplicate(entry) {
-			m.store.Entries = append(m.store.Entries, entry)
+		action, idx := m.checkDuplicate(entry)
+		switch action {
+		case actionAdd:
+			m.entries = append(m.entries, entry)
 			added++
+		case actionUpdate:
+			// 保留旧条目的命中统计
+			entry.HitCount = m.entries[idx].HitCount
+			entry.LastHitAt = m.entries[idx].LastHitAt
+			m.entries[idx] = entry
+			updated++
+		case actionSkip:
+			// 完全重复，跳过
 		}
 	}
 
-	if added > 0 {
+	if added > 0 || updated > 0 {
+		// 容量淘汰
+		m.evictIfNeeded()
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			fmt.Printf("[memory] warn: save failed: %v\n", err)
+			log.Printf("[memory] warn: save failed: %v\n", err)
 		} else {
-			fmt.Printf("[memory] saved %d new entries to %s\n", added, m.storePath)
+			log.Printf("[memory] saved to %s (added: %d, updated: %d, total: %d)\n",
+				m.storePath, added, updated, len(m.entries))
 		}
 	}
 }
 
-// Search 检索记忆
+// Search 检索记忆，过滤低分结果
 func (m *Manager) Search(query string, topK int) []MemoryEntry {
 	m.mu.RLock()
-	results := m.bm25.Search(query, m.store.Entries, topK)
-	entries := make([]MemoryEntry, len(results))
-	hitIDs := make([]string, len(results))
-	for i, r := range results {
+	results := m.bm25.Search(query, m.entries, topK)
+
+	// 过滤低于最低分数阈值的结果
+	var filtered []SearchResult
+	for _, r := range results {
+		if r.Score >= m.minScore {
+			filtered = append(filtered, r)
+		}
+	}
+
+	entries := make([]MemoryEntry, len(filtered))
+	hitIDs := make([]string, len(filtered))
+	for i, r := range filtered {
 		entries[i] = *r.Entry
 		hitIDs[i] = r.Entry.ID
 	}
@@ -84,6 +143,74 @@ func (m *Manager) Search(query string, topK int) []MemoryEntry {
 	return entries
 }
 
+// Wait 等待所有异步提取任务完成（用于优雅退出）
+func (m *Manager) Wait() {
+	m.wg.Wait()
+	// 退出前写入脏数据
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.dirty {
+		if err := m.save(); err != nil {
+			log.Printf("[memory] warn: final save failed: %v\n", err)
+		}
+		m.dirty = false
+	}
+}
+
+// List 列出所有记忆条目
+func (m *Manager) List() []MemoryEntry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]MemoryEntry, len(m.entries))
+	copy(result, m.entries)
+	return result
+}
+
+// Delete 删除指定摘要的记忆条目，返回删除数量
+func (m *Manager) Delete(summary string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	summary = strings.TrimSpace(summary)
+	original := len(m.entries)
+	filtered := m.entries[:0]
+	for _, e := range m.entries {
+		if e.Summary != summary {
+			filtered = append(filtered, e)
+		}
+	}
+	m.entries = filtered
+	deleted := original - len(m.entries)
+
+	if deleted > 0 {
+		m.rebuildIndex()
+		if err := m.save(); err != nil {
+			log.Printf("[memory] warn: save after delete failed: %v\n", err)
+		}
+	}
+	return deleted
+}
+
+// Clear 清空所有记忆
+func (m *Manager) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.entries = []MemoryEntry{}
+	m.extractedOffsets = make(map[string]int)
+	m.rebuildIndex()
+	if err := m.save(); err != nil {
+		log.Printf("[memory] warn: save after clear failed: %v\n", err)
+	}
+}
+
+// Count 返回当前记忆条目数
+func (m *Manager) Count() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.entries)
+}
+
 // updateHitStats 更新命中统计
 func (m *Manager) updateHitStats(ids []string) {
 	m.mu.Lock()
@@ -95,28 +222,50 @@ func (m *Manager) updateHitStats(ids []string) {
 		hitSet[id] = true
 	}
 
-	for i := range m.store.Entries {
-		if hitSet[m.store.Entries[i].ID] {
-			m.store.Entries[i].HitCount++
-			m.store.Entries[i].LastHitAt = &now
+	for i := range m.entries {
+		if hitSet[m.entries[i].ID] {
+			m.entries[i].HitCount++
+			m.entries[i].LastHitAt = &now
+			m.dirty = true
 		}
-	}
-
-	if err := m.save(); err != nil {
-		fmt.Printf("[memory] warn: save hit stats failed: %v\n", err)
 	}
 }
 
-// isDuplicate 判断新条目是否与已有条目重复（需在锁内调用）
-func (m *Manager) isDuplicate(entry MemoryEntry) bool {
-	for _, existing := range m.store.Entries {
+type duplicateAction int
+
+const (
+	actionAdd    duplicateAction = iota // 新条目，直接添加
+	actionUpdate                        // 同类型近似条目，更新内容
+	actionSkip                          // 完全重复，跳过
+)
+
+// checkDuplicate 判断新条目与已有条目的关系
+func (m *Manager) checkDuplicate(entry MemoryEntry) (duplicateAction, int) {
+	for i, existing := range m.entries {
 		if existing.Type != entry.Type {
 			continue
 		}
-		// Summary 包含关系
-		if strings.Contains(existing.Summary, entry.Summary) || strings.Contains(entry.Summary, existing.Summary) {
-			return true
+
+		// Summary 完全相同 → 跳过
+		if existing.Summary == entry.Summary {
+			return actionSkip, i
 		}
+
+		// Summary 包含关系，但需要长度比例限制（避免 "喜欢" 包含 "不喜欢" 的误判）
+		shorter, longer := existing.Summary, entry.Summary
+		if utf8.RuneCountInString(shorter) > utf8.RuneCountInString(longer) {
+			shorter, longer = longer, shorter
+		}
+		shortLen := utf8.RuneCountInString(shorter)
+		longLen := utf8.RuneCountInString(longer)
+		if shortLen > 0 && longLen > 0 && strings.Contains(longer, shorter) {
+			ratio := float64(shortLen) / float64(longLen)
+			if ratio > 0.7 {
+				// 高相似度包含关系 → 用较新的条目更新
+				return actionUpdate, i
+			}
+		}
+
 		// Tags 重叠比例超过 2/3
 		if len(entry.Tags) > 0 && len(existing.Tags) > 0 {
 			overlap := 0
@@ -134,41 +283,100 @@ func (m *Manager) isDuplicate(entry MemoryEntry) bool {
 				minLen = len(existing.Tags)
 			}
 			if float64(overlap)/float64(minLen) > 2.0/3.0 {
-				return true
+				// 高标签重叠 → 用较新的条目更新
+				return actionUpdate, i
 			}
 		}
 	}
-	return false
+	return actionAdd, -1
 }
 
-// rebuildIndex 重建 BM25 索引（需在锁内调用）
-func (m *Manager) rebuildIndex() {
-	m.bm25 = &BM25{}
-	m.bm25.Build(m.store.Entries)
-}
-
-// load 从文件加载
-func (m *Manager) load() {
-	data, err := os.ReadFile(m.storePath)
-	if err != nil {
-		m.store = MemoryStore{Version: "1", Entries: []MemoryEntry{}}
+// evictIfNeeded 容量淘汰：超过上限时移除低价值条目
+func (m *Manager) evictIfNeeded() {
+	if len(m.entries) <= m.maxEntries {
 		return
 	}
-	if err := json.Unmarshal(data, &m.store); err != nil {
-		fmt.Printf("[memory] warn: failed to parse store file: %v\n", err)
-		m.store = MemoryStore{Version: "1", Entries: []MemoryEntry{}}
+
+	now := time.Now()
+	evictionThreshold := now.AddDate(0, 0, -m.evictionDays)
+
+	// 计算每个条目的价值分数
+	type scored struct {
+		index int
+		score float64
+	}
+	scores := make([]scored, len(m.entries))
+	for i, e := range m.entries {
+		// 价值 = hitCount * 时间衰减因子
+		daysSinceCreation := now.Sub(e.CreatedAt).Hours() / 24
+		if daysSinceCreation < 1 {
+			daysSinceCreation = 1
+		}
+		recencyBonus := 1.0
+		if e.LastHitAt != nil {
+			daysSinceHit := now.Sub(*e.LastHitAt).Hours() / 24
+			if daysSinceHit < 7 {
+				recencyBonus = 2.0
+			}
+		}
+		score := (float64(e.HitCount) + 1) * recencyBonus / daysSinceCreation
+		scores[i] = scored{index: i, score: score}
+	}
+
+	// 按价值排序（低价值在前）
+	sort.Slice(scores, func(i, j int) bool { return scores[i].score < scores[j].score })
+
+	// 优先淘汰：从未命中 + 超过 evictionDays 的条目
+	toRemove := make(map[int]bool)
+	for _, s := range scores {
+		if len(m.entries)-len(toRemove) <= m.maxEntries {
+			break
+		}
+		e := m.entries[s.index]
+		if e.HitCount == 0 && e.CreatedAt.Before(evictionThreshold) {
+			toRemove[s.index] = true
+		}
+	}
+
+	// 如果还需要淘汰更多，按价值分数从低到高移除
+	for _, s := range scores {
+		if len(m.entries)-len(toRemove) <= m.maxEntries {
+			break
+		}
+		if !toRemove[s.index] {
+			toRemove[s.index] = true
+		}
+	}
+
+	if len(toRemove) > 0 {
+		filtered := make([]MemoryEntry, 0, len(m.entries)-len(toRemove))
+		for i, e := range m.entries {
+			if !toRemove[i] {
+				filtered = append(filtered, e)
+			}
+		}
+		m.entries = filtered
+		log.Printf("[memory] evicted %d entries, %d remaining\n", len(toRemove), len(m.entries))
 	}
 }
 
-// save 保存到文件（需在锁内调用）
-func (m *Manager) save() error {
-	dir := filepath.Dir(m.storePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-	data, err := json.MarshalIndent(m.store, "", "  ")
+// rebuildIndex 重建 BM25 索引
+func (m *Manager) rebuildIndex() {
+	m.bm25 = &BM25{}
+	m.bm25.Build(m.entries)
+}
+
+func (m *Manager) load() {
+	entries, err := loadMarkdown(m.storePath)
 	if err != nil {
-		return fmt.Errorf("failed to marshal store: %w", err)
+		m.entries = []MemoryEntry{}
+		return
 	}
-	return os.WriteFile(m.storePath, data, 0644)
+	m.entries = entries
+}
+
+// save 保存到 markdown 文件（需在锁内调用）
+func (m *Manager) save() error {
+	m.dirty = false
+	return saveMarkdown(m.storePath, m.entries)
 }

@@ -189,7 +189,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	defer func() {
 		e.state.EndQuery()
 
-		// 异步提取记忆
+		// 异步提取记忆（Manager 内部跟踪提取偏移量，避免重复提取）
 		if g.MemManager != nil {
 			msgs := convertRecorderMessages(recorder)
 			if len(msgs) > 0 {

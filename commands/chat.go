@@ -62,6 +62,11 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
 		g.MemManager = memory.NewManager(workspaceDir, memory.NewLLMClient(common.NewChatModel()))
 		pterm.Info.Println("全局长期记忆已启用")
+		// 注册优雅退出：等待异步记忆提取完成
+		g.Cleaner.AddNamed("memory", func() error {
+			g.MemManager.Wait()
+			return nil
+		})
 	}
 
 	// 启动定时任务调度器
