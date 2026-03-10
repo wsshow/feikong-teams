@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fkteams/fkevent"
 	"log"
 	"path/filepath"
 	"sort"
@@ -276,6 +277,48 @@ func (m *Manager) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.entries)
+}
+
+// ConvertRecorderMessages 将 HistoryRecorder 的消息转为 memory.Message
+func ConvertRecorderMessages(recorder *fkevent.HistoryRecorder) []Message {
+	recorder.FinalizeCurrent()
+	agentMessages := recorder.GetMessages()
+	var msgs []Message
+	for _, am := range agentMessages {
+		role := "assistant"
+		if am.AgentName == "用户" || am.AgentName == "user" {
+			role = "user"
+		}
+		content := am.GetTextContent()
+		if content != "" {
+			msgs = append(msgs, Message{Role: role, Content: content})
+		}
+	}
+	return msgs
+}
+
+// ExtractFromRecorder 异步从 HistoryRecorder 提取记忆
+func (m *Manager) ExtractFromRecorder(recorder *fkevent.HistoryRecorder, sessionID string) {
+	msgs := ConvertRecorderMessages(recorder)
+	if len(msgs) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		m.ExtractAndStore(ctx, msgs, sessionID)
+	}()
+}
+
+// FlushFromRecorder 退出前强制从 HistoryRecorder 提取剩余记忆
+func (m *Manager) FlushFromRecorder(recorder *fkevent.HistoryRecorder, sessionID string) {
+	msgs := ConvertRecorderMessages(recorder)
+	if len(msgs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	m.FlushExtract(ctx, msgs, sessionID)
 }
 
 // shouldExtract 智能判断是否需要触发 LLM 提取

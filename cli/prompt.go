@@ -117,6 +117,9 @@ var allCommands = []CommandInfo{
 	{"clear_todo", "清空所有待办事项"},
 	{"list_schedule", "列出所有定时任务"},
 	{"cancel_schedule", "取消指定的定时任务"},
+	{"list_memory", "列出所有长期记忆条目"},
+	{"delete_memory", "删除指定摘要的记忆条目"},
+	{"clear_memory", "清空所有长期记忆"},
 	{"quit", "退出程序"},
 }
 

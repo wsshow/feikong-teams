@@ -189,16 +189,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	defer func() {
 		e.state.EndQuery()
 
-		// 异步提取记忆（Manager 内部跟踪提取偏移量，避免重复提取）
+		// 异步提取记忆
 		if g.MemManager != nil {
-			msgs := convertRecorderMessages(recorder)
-			if len(msgs) > 0 {
-				go func() {
-					memCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-					defer cancel()
-					g.MemManager.ExtractAndStore(memCtx, msgs, activeSessionID)
-				}()
-			}
+			g.MemManager.ExtractFromRecorder(recorder, activeSessionID)
 		}
 	}()
 
@@ -296,35 +289,11 @@ func SaveChatHistoryToHTML() (string, error) {
 	return htmlFilePath, nil
 }
 
-// convertRecorderMessages 将 HistoryRecorder 的消息转为 memory.Message
-func convertRecorderMessages(recorder *fkevent.HistoryRecorder) []memory.Message {
-	recorder.FinalizeCurrent()
-	agentMessages := recorder.GetMessages()
-	var msgs []memory.Message
-	for _, am := range agentMessages {
-		role := "assistant"
-		if am.AgentName == "用户" || am.AgentName == "user" {
-			role = "user"
-		}
-		content := am.GetTextContent()
-		if content != "" {
-			msgs = append(msgs, memory.Message{Role: role, Content: content})
-		}
-	}
-	return msgs
-}
-
 // FlushSessionMemory 退出前强制提取当前会话的剩余记忆
 func FlushSessionMemory() {
 	if g.MemManager == nil {
 		return
 	}
 	recorder := getCliRecorder()
-	msgs := convertRecorderMessages(recorder)
-	if len(msgs) == 0 {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	g.MemManager.FlushExtract(ctx, msgs, activeSessionID)
+	g.MemManager.FlushFromRecorder(recorder, activeSessionID)
 }

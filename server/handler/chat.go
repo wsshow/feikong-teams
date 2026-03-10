@@ -13,7 +13,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -213,16 +212,9 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	// 保存聊天历史
 	saveHistory(recorder, historyFilePath, sessionID)
 
-	// 异步提取记忆（Manager 内部跟踪提取偏移量，避免重复提取）
+	// 异步提取记忆
 	if g.MemManager != nil {
-		msgs := convertRecorderToMemoryMessages(recorder)
-		if len(msgs) > 0 {
-			go func() {
-				memCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				defer cancel()
-				g.MemManager.ExtractAndStore(memCtx, msgs, sessionID)
-			}()
-		}
+		g.MemManager.ExtractFromRecorder(recorder, sessionID)
 	}
 
 	_ = writeJSON(map[string]interface{}{
@@ -318,22 +310,4 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 		result["error"] = event.Error
 	}
 	return result
-}
-
-// convertRecorderToMemoryMessages 将 HistoryRecorder 的消息转为 memory.Message
-func convertRecorderToMemoryMessages(recorder *fkevent.HistoryRecorder) []memory.Message {
-	recorder.FinalizeCurrent()
-	agentMessages := recorder.GetMessages()
-	var msgs []memory.Message
-	for _, am := range agentMessages {
-		role := "assistant"
-		if am.AgentName == "用户" || am.AgentName == "user" {
-			role = "user"
-		}
-		content := am.GetTextContent()
-		if content != "" {
-			msgs = append(msgs, memory.Message{Role: role, Content: content})
-		}
-	}
-	return msgs
 }
