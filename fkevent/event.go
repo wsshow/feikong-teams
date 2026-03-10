@@ -104,39 +104,64 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 	toolCallsMap := make(map[int][]*schema.Message)
 	toolCallStarted := make(map[int]bool)
 
-	for {
-		chunk, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return handleEvent(ctx, Event{
-				Type:      "error",
-				AgentName: event.AgentName,
-				RunPath:   formatRunPath(event.RunPath),
-				Error:     fmt.Sprintf("stream error: %v", err),
-			})
-		}
+	type recvResult struct {
+		chunk *schema.Message
+		err   error
+	}
+	recvCh := make(chan recvResult, 1)
 
-		if chunk.Content != "" {
-			eventType := "stream_chunk"
-			if chunk.Role == schema.Tool {
-				eventType = "tool_result_chunk"
-			}
-
-			if err := handleEvent(ctx, Event{
-				Type:      eventType,
-				AgentName: event.AgentName,
-				RunPath:   formatRunPath(event.RunPath),
-				Content:   chunk.Content,
-			}); err != nil {
-				return err
+	go func() {
+		defer close(recvCh)
+		for {
+			chunk, err := stream.Recv()
+			recvCh <- recvResult{chunk, err}
+			if err != nil {
+				return
 			}
 		}
+	}()
 
-		if len(chunk.ToolCalls) > 0 {
-			for _, tc := range chunk.ToolCalls {
-				if tc.Index != nil {
+	cancelled := false
+	for !cancelled {
+		select {
+		case <-ctx.Done():
+			stream.Close()
+			cancelled = true
+		case r, ok := <-recvCh:
+			if !ok || errors.Is(r.err, io.EOF) {
+				cancelled = true
+				break
+			}
+			if r.err != nil {
+				return handleEvent(ctx, Event{
+					Type:      "error",
+					AgentName: event.AgentName,
+					RunPath:   formatRunPath(event.RunPath),
+					Error:     fmt.Sprintf("stream error: %v", r.err),
+				})
+			}
+
+			chunk := r.chunk
+			if chunk.Content != "" {
+				eventType := "stream_chunk"
+				if chunk.Role == schema.Tool {
+					eventType = "tool_result_chunk"
+				}
+				if err := handleEvent(ctx, Event{
+					Type:      eventType,
+					AgentName: event.AgentName,
+					RunPath:   formatRunPath(event.RunPath),
+					Content:   chunk.Content,
+				}); err != nil {
+					return err
+				}
+			}
+
+			if len(chunk.ToolCalls) > 0 {
+				for _, tc := range chunk.ToolCalls {
+					if tc.Index == nil {
+						continue
+					}
 					if !toolCallStarted[*tc.Index] && tc.Function.Name != "" {
 						toolCallStarted[*tc.Index] = true
 						if err := handleEvent(ctx, Event{
@@ -144,17 +169,12 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 							AgentName: event.AgentName,
 							RunPath:   formatRunPath(event.RunPath),
 							ToolCalls: []schema.ToolCall{
-								{
-									Function: schema.FunctionCall{
-										Name: tc.Function.Name,
-									},
-								},
+								{Function: schema.FunctionCall{Name: tc.Function.Name}},
 							},
 						}); err != nil {
 							return err
 						}
 					}
-
 					toolCallsMap[*tc.Index] = append(toolCallsMap[*tc.Index], &schema.Message{
 						Role: chunk.Role,
 						ToolCalls: []schema.ToolCall{
@@ -174,7 +194,12 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 		}
 	}
 
-	// 按 index 顺序处理工具调用，合并为单次事件
+	// context 取消时跳过后续处理
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	// 按 index 顺序处理工具调用
 	indices := make([]int, 0, len(toolCallsMap))
 	for idx := range toolCallsMap {
 		indices = append(indices, idx)

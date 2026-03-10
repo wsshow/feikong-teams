@@ -2,17 +2,14 @@ package commands
 
 import (
 	"context"
-	"fkteams/agents/common"
 	"fkteams/cli"
 	commonPkg "fkteams/common"
-	"fkteams/g"
-	"fkteams/memory"
+	"fkteams/lifecycle"
 	"fkteams/runner"
-	"fkteams/tools/scheduler"
 	"fkteams/version"
 	"fmt"
 	"log"
-	"os"
+	"syscall"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/joho/godotenv"
@@ -28,99 +25,77 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		return nil
 	}
 
-	appCtx, done := context.WithCancel(ctx)
 	workMode := cmd.String("mode")
 	currentMode := cli.ParseWorkMode(workMode)
+	query := cmd.String("query")
+	resumeSession := cmd.String("resume")
+
+	// 创建应用实例（CLI 模式排除 SIGINT，由 Session 处理）
+	app := lifecycle.New(
+		lifecycle.WithExitSignals(syscall.SIGTERM, syscall.SIGHUP),
+	)
+	cfg := app.Config()
+
+	var inputHistory []string
+	app.OnInit(func(ctx context.Context) error {
+		var err error
+		inputHistory, err = commonPkg.LoadHistory(cfg.InputHistoryPath, 100)
+		if err != nil {
+			return fmt.Errorf("加载输入历史失败: %w", err)
+		}
+		return nil
+	})
 
 	var r *adk.Runner
-	switch currentMode {
-	case cli.ModeTeam:
-		r = createModeRunner(appCtx, cli.ModeTeam)
-	case cli.ModeGroup:
-		r = createModeRunner(appCtx, cli.ModeGroup)
-	case cli.ModeCustom:
-		r = createModeRunner(appCtx, cli.ModeCustom)
-	case cli.ModeDeep:
-		r = createModeRunner(appCtx, cli.ModeDeep)
-	default:
-		pterm.Error.Println("暂不支持该模式：", workMode)
-		done()
+	app.OnSetup(func(ctx context.Context) error {
+		r = createModeRunner(ctx, currentMode)
+		if r == nil {
+			return fmt.Errorf("暂不支持该模式: %s", workMode)
+		}
 		return nil
+	})
+
+	if cfg.MemoryEnabled {
+		app.RegisterService(lifecycle.NewMemoryService(cfg.WorkspaceDir))
+		pterm.Info.Println("全局长期记忆已启用")
+	}
+	if cfg.SchedulerEnabled {
+		app.RegisterService(lifecycle.NewSchedulerService(cfg.WorkspaceDir, cfg.SchedulerOutputDir))
 	}
 
-	// 初始化全局记忆管理器
-	workspaceDir := "./workspace"
-	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
-		workspaceDir = d
-	}
-	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
-		g.MemManager = memory.NewManager(workspaceDir, memory.NewLLMClient(common.NewChatModel()))
-		pterm.Info.Println("全局长期记忆已启用")
-		g.Cleaner.AddNamed("memory", func() error {
+	app.OnReady(func(ctx context.Context) error {
+		session := cli.NewSession(currentMode, inputHistory, createModeRunner)
+		if resumeSession != "" {
+			cli.SetResumeSessionID(resumeSession)
+		}
+		session.StartSignalHandler(app.ExitCh())
+
+		if query != "" {
+			session.HandleDirect(ctx, r, app.ExitCh(), query)
+		} else {
+			session.HandleInteractive(ctx, r, app.ExitCh())
+		}
+		return nil
+	})
+
+	if cfg.MemoryEnabled {
+		app.OnPreStop(func(ctx context.Context) error {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
 			cli.FlushSessionMemory()
-			g.MemManager.Wait()
-			pterm.Success.Println("记忆提取完成")
 			return nil
 		})
 	}
 
-	// 启动定时任务调度器
-	if s := scheduler.Global(); s != nil {
-		outputDir := "./result/scheduled_tasks/"
-		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
-			return runner.CreateBackgroundTaskRunner(ctx)
-		}, outputDir)
-		s.SetExecutor(executor)
-		s.Start()
-		g.Cleaner.Add(func() error {
-			s.Stop()
-			return nil
-		})
-	}
+	app.OnCleanup(func(ctx context.Context) error {
+		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, inputHistory); err != nil {
+			log.Printf("保存输入历史失败: %v", err)
+		}
+		pterm.Success.Println("成功退出")
+		return nil
+	})
 
-	// 加载输入历史
-	inputHistoryPath := "./history/input_history/fkteams_input_history"
-	inputHistory, err := commonPkg.LoadHistory(inputHistoryPath, 100)
-	if err != nil {
-		log.Fatalf("加载输入历史失败: %v", err)
-	}
-
-	// 创建交互会话
-	session := cli.NewSession(currentMode, inputHistory, createModeRunner)
-
-	// 设置恢复会话
-	if resumeSession := cmd.String("resume"); resumeSession != "" {
-		cli.SetResumeSessionID(resumeSession)
-	}
-
-	// 信号处理：SIGINT 由 Session 内部处理（bubbletea 捕获输入时、信号处理器捕获查询时）
-	exitSignals := make(chan os.Signal, 1)
-	session.StartSignalHandler(exitSignals)
-
-	query := cmd.String("query")
-	if query != "" {
-		session.HandleDirect(appCtx, r, exitSignals, query)
-	} else {
-		session.HandleInteractive(appCtx, r, exitSignals)
-	}
-
-	sig := <-exitSignals
-	fmt.Println()
-	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理以及记忆提取...", sig)
-	done()
-
-	// 执行资源清理（包括记忆提取）
-	if err := g.Cleaner.ExecuteAndClear(); err != nil {
-		log.Printf("清理资源失败: %v", err)
-	}
-
-	if err := commonPkg.SaveHistory(inputHistoryPath, session.InputHistory); err != nil {
-		log.Fatalf("保存输入历史失败: %v", err)
-	}
-
-	pterm.Success.Println("成功退出")
-	return nil
+	// 运行应用生命周期
+	return app.Run(ctx)
 }
 
 // createModeRunner 根据工作模式创建对应的 Runner

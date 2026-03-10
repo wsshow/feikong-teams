@@ -4,10 +4,9 @@ import (
 	"context"
 	"fkteams/agents"
 	"fkteams/agents/middlewares/summary"
-
+	"fkteams/chatutil"
 	"fkteams/fkevent"
 	"fkteams/g"
-	"fkteams/memory"
 	"fkteams/runner"
 	"fmt"
 	"log"
@@ -15,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 )
 
 // Runner 缓存管理（按模式缓存）
@@ -130,7 +128,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 
 	// 构建输入消息（含历史）
-	inputMessages := buildInputMessages(recorder, wsMsg.Message)
+	inputMessages := chatutil.BuildInputMessages(recorder, wsMsg.Message)
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(wsMsg.Message)
 
@@ -221,51 +219,6 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		"type":    "processing_end",
 		"message": "处理完成",
 	})
-}
-
-// buildInputMessages 构建输入消息（包含历史记录，支持上下文压缩摘要）
-// recorder 是会话级别的 HistoryRecorder，由 GlobalSessionManager 管理，已自动加载历史
-func buildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []adk.Message {
-	var inputMessages []adk.Message
-
-	// 注入长期记忆上下文
-	if g.MemManager != nil {
-		memories := g.MemManager.Search(userInput, 5)
-		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
-		}
-	}
-
-	agentMessages := recorder.GetMessages()
-	summaryText, summarizedCount := recorder.GetSummary()
-
-	if summaryText != "" && summarizedCount > 0 {
-		var historyMessage strings.Builder
-		historyMessage.WriteString("## 对话历史摘要\n")
-		historyMessage.WriteString(summaryText)
-
-		if summarizedCount < len(agentMessages) {
-			historyMessage.WriteString("\n\n## 最近的对话记录\n")
-			for _, msg := range agentMessages[summarizedCount:] {
-				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())
-			}
-		}
-
-		inputMessages = append(inputMessages, schema.SystemMessage(
-			fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
-		))
-	} else if len(agentMessages) > 0 {
-		var historyMessage strings.Builder
-		for _, msg := range agentMessages {
-			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())
-		}
-		inputMessages = append(inputMessages, schema.SystemMessage(
-			fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
-		))
-	}
-
-	inputMessages = append(inputMessages, schema.UserMessage(userInput))
-	return inputMessages
 }
 
 // saveHistory 保存聊天历史到文件

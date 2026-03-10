@@ -2,97 +2,121 @@ package server
 
 import (
 	"context"
-	"fkteams/agents/common"
 	"fkteams/config"
-	"fkteams/g"
-	"fkteams/memory"
-	"fkteams/runner"
+	"fkteams/lifecycle"
 	"fkteams/server/handler"
 	"fkteams/server/router"
-	"fkteams/tools/scheduler"
 	"fkteams/version"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
-	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 )
 
+// httpService HTTP 服务，实现 lifecycle.Service 接口
+type httpService struct {
+	port     int
+	logLevel string
+	server   *http.Server
+}
+
+func newHttpService(port int, logLevel string) *httpService {
+	return &httpService{
+		port:     port,
+		logLevel: logLevel,
+	}
+}
+
+func (s *httpService) Name() string { return "http" }
+
+func (s *httpService) Start(ctx context.Context) error {
+	if s.logLevel != "debug" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	port := s.port
+	if port <= 0 {
+		port = 23456
+	}
+
+	s.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: router.Init(),
+	}
+	s.server.RegisterOnShutdown(handler.CloseAllWebSockets)
+
+	go func() {
+		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[http] server error: %v", err)
+		}
+	}()
+
+	log.Printf("[http] 服务运行在端口 %s", s.server.Addr)
+	return nil
+}
+
+func (s *httpService) Stop(ctx context.Context) error {
+	if s.server == nil {
+		return nil
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	log.Println("[http] 正在关闭 HTTP 服务...")
+	if err := s.server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("http shutdown error: %w", err)
+	}
+	log.Println("[http] HTTP 服务已关闭")
+	return nil
+}
+
+func (s *httpService) Addr() string {
+	if s.server != nil {
+		return s.server.Addr
+	}
+	return ""
+}
+
+// Run 启动 Web 服务器模式
 func Run() {
 	cfg, err := config.Get()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-	if cfg.Server.LogLevel != "debug" {
-		gin.SetMode(gin.ReleaseMode)
+
+	app := lifecycle.New()
+	appCfg := app.Config()
+
+	if appCfg.MemoryEnabled {
+		app.RegisterService(lifecycle.NewMemoryService(appCfg.WorkspaceDir))
+	}
+	if appCfg.SchedulerEnabled {
+		app.RegisterService(lifecycle.NewSchedulerService(appCfg.WorkspaceDir, appCfg.SchedulerOutputDir))
 	}
 
-	port := cfg.Server.Port
-	if port <= 0 {
-		port = 23456
-	}
+	httpSvc := newHttpService(cfg.Server.Port, cfg.Server.LogLevel)
+	app.RegisterService(httpSvc)
 
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: router.Init(),
-	}
-	srv.RegisterOnShutdown(handler.CloseAllWebSockets)
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+	app.OnReady(func(ctx context.Context) error {
+		addr := httpSvc.Addr()
+		fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
+		fmt.Printf("当前服务运行在端口 [%s]\n", addr)
+		fmt.Printf("前端页面地址: http://localhost%s\n", addr)
+		if appCfg.MemoryEnabled {
+			fmt.Println("全局长期记忆已启用")
 		}
-	}()
+		return nil
+	})
 
-	fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
-	fmt.Printf("当前服务运行在端口 [%s]\n", srv.Addr)
-	fmt.Printf("前端页面地址: http://localhost%s\n", srv.Addr)
+	app.OnCleanup(func(ctx context.Context) error {
+		fmt.Printf("服务安全退出\n")
+		return nil
+	})
 
-	// 初始化并启动定时任务调度器
-	safeDir := "./workspace"
-	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
-		safeDir = d
+	if err := app.Run(context.Background()); err != nil {
+		log.Fatalf("application error: %v", err)
 	}
-
-	// 初始化全局记忆管理器
-	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
-		g.MemManager = memory.NewManager(safeDir, memory.NewLLMClient(common.NewChatModel()))
-		log.Println("全局长期记忆已启用")
-	}
-
-	if s, err := scheduler.InitGlobal(safeDir); err != nil {
-		log.Printf("初始化定时任务调度器失败: %v", err)
-	} else {
-		outputDir := "./result/scheduled_tasks/"
-		executor := scheduler.NewBackgroundExecutor(func(ctx context.Context) *adk.Runner {
-			return runner.CreateBackgroundTaskRunner(ctx)
-		}, outputDir)
-		s.SetExecutor(executor)
-		s.Start()
-	}
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if s := scheduler.Global(); s != nil {
-		s.Stop()
-	}
-	// 等待异步记忆提取完成
-	if g.MemManager != nil {
-		fmt.Println("正在等待记忆提取完成...")
-		g.MemManager.Wait()
-		fmt.Println("记忆提取完成")
-	}
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("服务安全退出 %s\n", srv.Addr)
 }

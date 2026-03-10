@@ -3,19 +3,17 @@ package cli
 import (
 	"context"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/chatutil"
 	"fkteams/fkevent"
 	"fkteams/g"
-	"fkteams/memory"
 	"fkteams/report"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/schema"
 	"github.com/pterm/pterm"
 )
 
@@ -126,45 +124,8 @@ func getCliRecorder() *fkevent.HistoryRecorder {
 
 // BuildInputMessages 构建输入消息列表（包含历史对话，支持上下文压缩摘要）
 func BuildInputMessages(input string) []adk.Message {
-	var inputMessages []adk.Message
-
-	// 注入长期记忆上下文
-	if g.MemManager != nil {
-		memories := g.MemManager.Search(input, 5)
-		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
-		}
-	}
-
 	recorder := getCliRecorder()
-	agentMessages := recorder.GetMessages()
-	summaryText, summarizedCount := recorder.GetSummary()
-
-	if summaryText != "" && summarizedCount > 0 {
-		var historyMessage strings.Builder
-		historyMessage.WriteString("## 对话历史摘要\n")
-		historyMessage.WriteString(summaryText)
-
-		if summarizedCount < len(agentMessages) {
-			historyMessage.WriteString("\n\n## 最近的对话记录\n")
-			for _, msg := range agentMessages[summarizedCount:] {
-				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())
-			}
-		}
-
-		inputMessages = append(inputMessages, schema.SystemMessage(
-			fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
-		))
-	} else if len(agentMessages) > 0 {
-		var historyMessage strings.Builder
-		for _, agentMessage := range agentMessages {
-			fmt.Fprintf(&historyMessage, "%s: %s\n", agentMessage.AgentName, agentMessage.GetTextContent())
-		}
-		inputMessages = append(inputMessages, schema.SystemMessage(fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String())))
-	}
-
-	inputMessages = append(inputMessages, schema.UserMessage(input))
-	return inputMessages
+	return chatutil.BuildInputMessages(recorder, input)
 }
 
 // Execute 执行查询
