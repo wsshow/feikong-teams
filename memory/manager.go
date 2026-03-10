@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 	"fkteams/fkevent"
-	"log"
+	"fkteams/log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -84,7 +84,7 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 
 	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
 	if err != nil {
-		log.Printf("[memory] warn: extract failed: %v\n", err)
+		log.Warnf("[memory] warn: extract failed: %v\n", err)
 		return
 	}
 
@@ -123,9 +123,9 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 		m.evictIfNeeded()
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Printf("[memory] warn: save failed: %v\n", err)
+			log.Warnf("[memory] warn: save failed: %v\n", err)
 		} else {
-			log.Printf("[memory] saved to %s (added: %d, updated: %d, total: %d)\n",
+			log.Infof("[memory] saved to %s (added: %d, updated: %d, total: %d)\n",
 				m.storeDir, added, updated, len(m.entries))
 		}
 	}
@@ -184,7 +184,7 @@ func (m *Manager) Wait() {
 	defer m.mu.Unlock()
 	if m.dirty {
 		if err := m.save(); err != nil {
-			log.Printf("[memory] warn: final save failed: %v\n", err)
+			log.Warnf("[memory] warn: final save failed: %v\n", err)
 		}
 		m.dirty = false
 	}
@@ -212,7 +212,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 
 	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
 	if err != nil {
-		log.Printf("[memory] warn: flush extract failed: %v\n", err)
+		log.Warnf("[memory] warn: flush extract failed: %v\n", err)
 		return
 	}
 
@@ -238,7 +238,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 		m.evictIfNeeded()
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Printf("[memory] warn: flush save failed: %v\n", err)
+			log.Warnf("[memory] warn: flush save failed: %v\n", err)
 		}
 	}
 	m.mu.Unlock()
@@ -272,7 +272,7 @@ func (m *Manager) Delete(summary string) int {
 	if deleted > 0 {
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Printf("[memory] warn: save after delete failed: %v\n", err)
+			log.Warnf("[memory] warn: save after delete failed: %v\n", err)
 		}
 	}
 	return deleted
@@ -288,7 +288,7 @@ func (m *Manager) Clear() {
 	m.lastExtractTime = make(map[string]time.Time)
 	m.rebuildIndex()
 	if err := m.save(); err != nil {
-		log.Printf("[memory] warn: save after clear failed: %v\n", err)
+		log.Warnf("[memory] warn: save after clear failed: %v\n", err)
 	}
 }
 
