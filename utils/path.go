@@ -23,3 +23,7 @@ func EnsureDir(path string) error {
 	}
 	return err
 }
+
+func NotExistToMkdir(path string) error {
+	return EnsureDir(path)
+}
