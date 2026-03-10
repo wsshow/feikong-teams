@@ -158,9 +158,9 @@ func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
 		entries = append(entries, *current)
 	}
 
-	// 为条目生成 ID
+	// 生成唯一 ID（同类型同秒的条目通过索引区分）
 	for i := range entries {
-		entries[i].ID = fmt.Sprintf("%s_%d", entries[i].Type, entries[i].CreatedAt.UnixNano())
+		entries[i].ID = fmt.Sprintf("%s_%d_%d", entries[i].Type, entries[i].CreatedAt.Unix(), i)
 	}
 
 	return entries, scanner.Err()
