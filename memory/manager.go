@@ -84,7 +84,7 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 
 	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
 	if err != nil {
-		log.Warnf("[memory] warn: extract failed: %v\n", err)
+		log.Warnf("[memory] warn: extract failed: %v", err)
 		return
 	}
 
@@ -123,9 +123,9 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 		m.evictIfNeeded()
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: save failed: %v\n", err)
+			log.Warnf("[memory] warn: save failed: %v", err)
 		} else {
-			log.Infof("[memory] saved to %s (added: %d, updated: %d, total: %d)\n",
+			log.Infof("[memory] saved to %s (added: %d, updated: %d, total: %d)",
 				m.storeDir, added, updated, len(m.entries))
 		}
 	}
@@ -184,7 +184,7 @@ func (m *Manager) Wait() {
 	defer m.mu.Unlock()
 	if m.dirty {
 		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: final save failed: %v\n", err)
+			log.Warnf("[memory] warn: final save failed: %v", err)
 		}
 		m.dirty = false
 	}
@@ -212,7 +212,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 
 	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
 	if err != nil {
-		log.Warnf("[memory] warn: flush extract failed: %v\n", err)
+		log.Warnf("[memory] warn: flush extract failed: %v", err)
 		return
 	}
 
@@ -238,7 +238,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 		m.evictIfNeeded()
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: flush save failed: %v\n", err)
+			log.Warnf("[memory] warn: flush save failed: %v", err)
 		}
 	}
 	m.mu.Unlock()
@@ -272,7 +272,7 @@ func (m *Manager) Delete(summary string) int {
 	if deleted > 0 {
 		m.rebuildIndex()
 		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: save after delete failed: %v\n", err)
+			log.Warnf("[memory] warn: save after delete failed: %v", err)
 		}
 	}
 	return deleted
@@ -288,7 +288,7 @@ func (m *Manager) Clear() {
 	m.lastExtractTime = make(map[string]time.Time)
 	m.rebuildIndex()
 	if err := m.save(); err != nil {
-		log.Warnf("[memory] warn: save after clear failed: %v\n", err)
+		log.Warnf("[memory] warn: save after clear failed: %v", err)
 	}
 }
 
@@ -506,7 +506,7 @@ func (m *Manager) evictIfNeeded() {
 			}
 		}
 		m.entries = filtered
-		log.Printf("[memory] evicted %d entries, %d remaining\n", len(toRemove), len(m.entries))
+		log.Printf("[memory] evicted %d entries, %d remaining", len(toRemove), len(m.entries))
 	}
 }
 

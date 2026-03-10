@@ -2,7 +2,6 @@ package log
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -33,14 +32,14 @@ func logger() *zap.SugaredLogger {
 			MessageKey:     "msg",
 			StacktraceKey:  "stacktrace",
 			LineEnding:     zapcore.DefaultLineEnding,
-			EncodeLevel:    zapcore.CapitalColorLevelEncoder,
+			EncodeLevel:    zapcore.CapitalLevelEncoder,
 			EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000"),
 			EncodeDuration: zapcore.SecondsDurationEncoder,
 			EncodeCaller:   zapcore.ShortCallerEncoder,
 		}
 		core := zapcore.NewCore(
 			zapcore.NewConsoleEncoder(encoderConfig),
-			zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(hook)),
+			zapcore.AddSync(hook),
 			level,
 		)
 		sugar = zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1)).Sugar()
