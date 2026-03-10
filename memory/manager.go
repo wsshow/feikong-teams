@@ -416,6 +416,11 @@ func (m *Manager) checkDuplicate(entry MemoryEntry) (duplicateAction, int) {
 			}
 		}
 
+		// 字符级 Jaccard 相似度检查（捕捉同义表达或轻微变体）
+		if jaccardRunes(existing.Summary, entry.Summary) > 0.6 {
+			return actionUpdate, i
+		}
+
 		// Tags 重叠比例超过 2/3
 		if len(entry.Tags) > 0 && len(existing.Tags) > 0 {
 			overlap := 0
@@ -439,6 +444,32 @@ func (m *Manager) checkDuplicate(entry MemoryEntry) (duplicateAction, int) {
 		}
 	}
 	return actionAdd, -1
+}
+
+// jaccardRunes 计算两个字符串的字符级 Jaccard 相似度
+func jaccardRunes(a, b string) float64 {
+	setA := make(map[rune]struct{})
+	for _, r := range a {
+		setA[r] = struct{}{}
+	}
+	setB := make(map[rune]struct{})
+	for _, r := range b {
+		setB[r] = struct{}{}
+	}
+	if len(setA) == 0 && len(setB) == 0 {
+		return 1.0
+	}
+	intersection := 0
+	for r := range setA {
+		if _, ok := setB[r]; ok {
+			intersection++
+		}
+	}
+	union := len(setA) + len(setB) - intersection
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
 }
 
 // evictIfNeeded 容量淘汰：超过上限时移除低价值条目
