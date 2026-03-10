@@ -6,7 +6,10 @@ import (
 	"fkteams/agents/leader"
 	"fkteams/fkevent"
 	"fkteams/g"
+	"fkteams/memory"
 	"fkteams/tools/scheduler"
+	"fkteams/tui"
+	"fmt"
 	"os"
 	"strings"
 
@@ -62,9 +65,9 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("  #文件路径                        快速引用工作目录中的文件或文件夹")
 		pterm.Println()
 		pterm.Println("聊天历史管理:")
-		pterm.Println("  list_chat_history                        列出所有可用的聊天历史会话")
-		pterm.Println("  load_chat_history <session_id>            加载指定的聊天历史会话")
-		pterm.Println("  save_chat_history                        保存聊天历史到当前会话文件")
+		pterm.Println("  list_chat_history               列出所有可用的聊天历史会话")
+		pterm.Println("  load_chat_history               选择并加载聊天历史会话")
+		pterm.Println("  save_chat_history               保存聊天历史到当前会话文件")
 		pterm.Println("  clear_chat_history              清空当前聊天历史")
 		pterm.Println("  save_chat_history_to_markdown   导出聊天历史为 Markdown 文件")
 		pterm.Println("  save_chat_history_to_html       导出聊天历史为 HTML 文件")
@@ -72,14 +75,14 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("任务管理:")
 		pterm.Println("  clear_todo                      清空所有待办事项")
 		pterm.Println("  list_schedule                   列出所有定时任务")
-		pterm.Println("  cancel_schedule <id>            取消指定的定时任务")
+		pterm.Println("  cancel_schedule                 选择并取消定时任务")
 		pterm.Println()
 		pterm.Println("模式切换:")
 		pterm.Println("  switch_work_mode               切换当前工作模式")
 		pterm.Println()
 		pterm.Println("长期记忆管理:")
 		pterm.Println("  list_memory                    列出所有长期记忆条目")
-		pterm.Println("  delete_memory <摘要>           删除指定摘要的记忆条目")
+		pterm.Println("  delete_memory                  选择并删除记忆条目")
 		pterm.Println("  clear_memory                   清空所有长期记忆")
 		pterm.Println()
 		pterm.Println("其他操作:")
@@ -155,8 +158,20 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		handleListMemory()
 		return ResultHandled
 
+	case "delete_memory":
+		handleDeleteMemory()
+		return ResultHandled
+
 	case "clear_memory":
 		handleClearMemory()
+		return ResultHandled
+
+	case "cancel_schedule":
+		handleCancelSchedule()
+		return ResultHandled
+
+	case "load_chat_history":
+		handleLoadChatHistory()
 		return ResultHandled
 
 	case "list_schedule":
@@ -175,44 +190,6 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	default:
-		// 支持 load_chat_history <session_id> 格式
-		if strings.HasPrefix(input, "load_chat_history ") {
-			sessionID := strings.TrimSpace(strings.TrimPrefix(input, "load_chat_history "))
-			if sessionID != "" {
-				loadChatHistory(sessionID)
-				return ResultHandled
-			}
-		}
-
-		// 支持 cancel_schedule <task_id> 格式
-		if strings.HasPrefix(input, "cancel_schedule ") {
-			taskID := strings.TrimSpace(strings.TrimPrefix(input, "cancel_schedule "))
-			if taskID != "" {
-				s := scheduler.Global()
-				if s == nil {
-					pterm.Error.Println("定时任务调度器未初始化")
-					return ResultHandled
-				}
-				ctx := context.Background()
-				resp, _ := s.ScheduleCancel(ctx, &scheduler.ScheduleCancelRequest{TaskID: taskID})
-				if resp.ErrorMessage != "" {
-					pterm.Error.Println(resp.ErrorMessage)
-				} else {
-					pterm.Success.Println(resp.Message)
-				}
-				return ResultHandled
-			}
-		}
-
-		// 支持 delete_memory <summary> 格式
-		if strings.HasPrefix(input, "delete_memory ") {
-			summary := strings.TrimSpace(strings.TrimPrefix(input, "delete_memory "))
-			if summary != "" {
-				handleDeleteMemory(summary)
-				return ResultHandled
-			}
-		}
-
 		return ResultNotFound
 	}
 }
@@ -317,6 +294,127 @@ func handleListMemory() {
 	pterm.Println("=== 长期记忆列表 ===")
 	pterm.Println()
 
+	printMemoryEntries(entries)
+
+	pterm.Printf("共 %d 条记忆\n", len(entries))
+	pterm.Printf("使用 delete_memory 选择删除条目，或 clear_memory 清空全部\n")
+	pterm.Println()
+}
+
+// handleDeleteMemory 交互式选择并删除记忆条目
+func handleDeleteMemory() {
+	if g.MemManager == nil {
+		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		return
+	}
+
+	entries := g.MemManager.List()
+	if len(entries) == 0 {
+		pterm.Info.Println("暂无记忆条目可删除")
+		return
+	}
+
+	var items []tui.SelectItem
+	for _, e := range entries {
+		items = append(items, tui.SelectItem{
+			Label: fmt.Sprintf("[%s] %s - %s", e.Type, e.Summary, e.Detail),
+			Value: e.Summary,
+		})
+	}
+
+	selected, err := tui.SelectFromList("选择要删除的记忆", items)
+	if err != nil {
+		pterm.Warning.Println("已取消删除操作")
+		return
+	}
+
+	deleted := g.MemManager.Delete(selected)
+	if deleted > 0 {
+		pterm.Success.Printfln("成功删除 %d 条记忆: %s", deleted, selected)
+	} else {
+		pterm.Warning.Printfln("未找到匹配的记忆条目: %s", selected)
+	}
+}
+
+// handleCancelSchedule 交互式选择并取消定时任务
+func handleCancelSchedule() {
+	s := scheduler.Global()
+	if s == nil {
+		pterm.Error.Println("定时任务调度器未初始化")
+		return
+	}
+
+	tasks, err := s.GetTasks("pending")
+	if err != nil {
+		pterm.Error.Printfln("获取定时任务列表失败: %v", err)
+		return
+	}
+
+	if len(tasks) == 0 {
+		pterm.Info.Println("暂无可取消的定时任务")
+		return
+	}
+
+	var items []tui.SelectItem
+	for _, t := range tasks {
+		items = append(items, tui.SelectItem{
+			Label: fmt.Sprintf("%s - %s (下次: %s)", t.ID, t.Task, t.NextRunAt.Format("2006-01-02 15:04")),
+			Value: t.ID,
+		})
+	}
+
+	selected, err := tui.SelectFromList("选择要取消的定时任务", items)
+	if err != nil {
+		pterm.Warning.Println("已取消操作")
+		return
+	}
+
+	ctx := context.Background()
+	resp, _ := s.ScheduleCancel(ctx, &scheduler.ScheduleCancelRequest{TaskID: selected})
+	if resp.ErrorMessage != "" {
+		pterm.Error.Println(resp.ErrorMessage)
+	} else {
+		pterm.Success.Println(resp.Message)
+	}
+}
+
+// handleLoadChatHistory 交互式选择并加载聊天历史
+func handleLoadChatHistory() {
+	historyEntries, err := os.ReadDir(CLIHistoryDir)
+	if err != nil {
+		pterm.Error.Printfln("读取历史目录失败: %v", err)
+		return
+	}
+
+	var items []tui.SelectItem
+	for _, entry := range historyEntries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "fkteams_chat_history_") {
+			continue
+		}
+		sessionID := strings.TrimPrefix(entry.Name(), "fkteams_chat_history_")
+		label := sessionID
+		if info, _ := entry.Info(); info != nil {
+			label = fmt.Sprintf("%s (%s, %d bytes)", sessionID, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
+		}
+		items = append(items, tui.SelectItem{Label: label, Value: sessionID})
+	}
+
+	if len(items) == 0 {
+		pterm.Info.Println("暂无聊天历史文件")
+		return
+	}
+
+	selected, err := tui.SelectFromList("选择要加载的聊天历史", items)
+	if err != nil {
+		pterm.Warning.Println("已取消加载操作")
+		return
+	}
+
+	loadChatHistory(selected)
+}
+
+// printMemoryEntries 打印记忆条目列表
+func printMemoryEntries(entries []memory.MemoryEntry) {
 	typeEmoji := map[string]string{
 		"preference": "💡", "fact": "📌", "lesson": "⚠️",
 		"decision": "✅", "insight": "🔍",
@@ -332,26 +430,6 @@ func handleListMemory() {
 		pterm.Printf("     标签: %s | 命中: %d 次 | 创建: %s\n",
 			strings.Join(e.Tags, ", "), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04"))
 		pterm.Println()
-	}
-
-	pterm.Printf("共 %d 条记忆\n", len(entries))
-	pterm.Printf("使用 delete_memory <摘要> 删除指定条目，或 clear_memory 清空全部\n")
-	pterm.Println()
-}
-
-// handleDeleteMemory 删除指定摘要的记忆条目
-func handleDeleteMemory(summary string) {
-	if g.MemManager == nil {
-		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
-		return
-	}
-
-	deleted := g.MemManager.Delete(summary)
-	if deleted > 0 {
-		pterm.Success.Printfln("成功删除 %d 条记忆: %s", deleted, summary)
-	} else {
-		pterm.Warning.Printfln("未找到匹配的记忆条目: %s", summary)
-		pterm.Info.Println("使用 list_memory 查看所有记忆条目")
 	}
 }
 
