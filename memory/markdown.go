@@ -12,22 +12,54 @@ import (
 
 const timeLayout = "2006-01-02 15:04:05"
 
-// saveMarkdown 将记忆条目保存为 Markdown 格式
-func saveMarkdown(path string, entries []MemoryEntry) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+// memoryTypeFile 记忆类型到文件名和标题的映射
+var memoryTypeFile = []struct {
+	Type  MemoryType
+	File  string
+	Title string
+}{
+	{Preference, "preference.md", "💡 用户偏好"},
+	{Fact, "fact.md", "📌 个人信息"},
+	{Lesson, "lesson.md", "⚠️ 避坑记录"},
+	{Decision, "decision.md", "✅ 已确定方案"},
+	{Insight, "insight.md", "🔍 认知洞察"},
+}
+
+// saveAllMarkdown 按类型保存到多个 Markdown 文件
+func saveAllMarkdown(dir string, entries []MemoryEntry) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
+	// 按类型分组
+	grouped := make(map[MemoryType][]MemoryEntry)
+	for _, e := range entries {
+		grouped[e.Type] = append(grouped[e.Type], e)
+	}
+
+	for _, tf := range memoryTypeFile {
+		path := filepath.Join(dir, tf.File)
+		items := grouped[tf.Type]
+		if len(items) == 0 {
+			os.Remove(path)
+			continue
+		}
+		if err := writeMarkdownFile(path, tf.Title, items); err != nil {
+			return fmt.Errorf("failed to save %s: %w", tf.File, err)
+		}
+	}
+	return nil
+}
+
+// writeMarkdownFile 写入单个类型的 Markdown 文件
+func writeMarkdownFile(path, title string, entries []MemoryEntry) error {
 	var sb strings.Builder
-	sb.WriteString("# 长期记忆\n\n")
+	fmt.Fprintf(&sb, "# %s\n\n", title)
 
 	for _, e := range entries {
 		sb.WriteString("## ")
 		sb.WriteString(e.Summary)
 		sb.WriteString("\n\n")
-		sb.WriteString("- 类型: ")
-		sb.WriteString(string(e.Type))
-		sb.WriteString("\n")
 		sb.WriteString("- 详情: ")
 		sb.WriteString(e.Detail)
 		sb.WriteString("\n")
@@ -49,8 +81,22 @@ func saveMarkdown(path string, entries []MemoryEntry) error {
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
-// loadMarkdown 从 Markdown 文件加载记忆条目
-func loadMarkdown(path string) ([]MemoryEntry, error) {
+// loadAllMarkdown 从目录加载所有类型的 Markdown 文件
+func loadAllMarkdown(dir string) []MemoryEntry {
+	var all []MemoryEntry
+	for _, tf := range memoryTypeFile {
+		path := filepath.Join(dir, tf.File)
+		entries, err := loadMarkdownFile(path, tf.Type)
+		if err != nil {
+			continue
+		}
+		all = append(all, entries...)
+	}
+	return all
+}
+
+// loadMarkdownFile 从单个 Markdown 文件加载记忆条目
+func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -64,14 +110,13 @@ func loadMarkdown(path string) ([]MemoryEntry, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// 新条目：以 "## " 开头
 		if strings.HasPrefix(line, "## ") {
 			if current != nil {
 				entries = append(entries, *current)
 			}
-			summary := strings.TrimPrefix(line, "## ")
 			current = &MemoryEntry{
-				Summary: strings.TrimSpace(summary),
+				Summary: strings.TrimSpace(strings.TrimPrefix(line, "## ")),
+				Type:    memType,
 			}
 			continue
 		}
@@ -80,10 +125,7 @@ func loadMarkdown(path string) ([]MemoryEntry, error) {
 			continue
 		}
 
-		// 解析元数据行
-		if strings.HasPrefix(line, "- 类型: ") {
-			current.Type = MemoryType(strings.TrimPrefix(line, "- 类型: "))
-		} else if strings.HasPrefix(line, "- 详情: ") {
+		if strings.HasPrefix(line, "- 详情: ") {
 			current.Detail = strings.TrimPrefix(line, "- 详情: ")
 		} else if strings.HasPrefix(line, "- 标签: ") {
 			tagsStr := strings.TrimPrefix(line, "- 标签: ")
@@ -95,13 +137,11 @@ func loadMarkdown(path string) ([]MemoryEntry, error) {
 				current.Tags = tags
 			}
 		} else if strings.HasPrefix(line, "- 创建: ") {
-			timeStr := strings.TrimPrefix(line, "- 创建: ")
-			if t, err := time.Parse(timeLayout, timeStr); err == nil {
+			if t, err := time.Parse(timeLayout, strings.TrimPrefix(line, "- 创建: ")); err == nil {
 				current.CreatedAt = t
 			}
 		} else if strings.HasPrefix(line, "- 命中: ") {
 			hitStr := strings.TrimPrefix(line, "- 命中: ")
-			// 可能包含 "| 最后命中: ..."
 			parts := strings.SplitN(hitStr, " | 最后命中: ", 2)
 			if count, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil {
 				current.HitCount = count
@@ -114,25 +154,14 @@ func loadMarkdown(path string) ([]MemoryEntry, error) {
 		}
 	}
 
-	// 最后一个条目
 	if current != nil {
 		entries = append(entries, *current)
 	}
 
-	// 为没有 ID 的条目生成 ID
+	// 为条目生成 ID
 	for i := range entries {
-		if entries[i].ID == "" {
-			entries[i].ID = generateID(entries[i])
-		}
-		if !AllMemoryTypes[entries[i].Type] {
-			entries[i].Type = Fact
-		}
+		entries[i].ID = fmt.Sprintf("%s_%d", entries[i].Type, entries[i].CreatedAt.UnixNano())
 	}
 
 	return entries, scanner.Err()
-}
-
-// generateID 根据条目内容生成确定性 ID
-func generateID(entry MemoryEntry) string {
-	return fmt.Sprintf("%s_%d", entry.Type, entry.CreatedAt.UnixNano())
 }

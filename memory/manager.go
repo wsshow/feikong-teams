@@ -19,11 +19,11 @@ const (
 
 // Manager 记忆管理器
 type Manager struct {
-	mu        sync.RWMutex
-	storePath string
-	entries   []MemoryEntry
-	bm25      *BM25
-	llm       LLMClient
+	mu       sync.RWMutex
+	storeDir string
+	entries  []MemoryEntry
+	bm25     *BM25
+	llm      LLMClient
 
 	maxEntries   int
 	minScore     float64
@@ -37,7 +37,7 @@ type Manager struct {
 // NewManager 创建记忆管理器
 func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
 	m := &Manager{
-		storePath:        filepath.Join(workspaceDir, "memory", "memory.md"),
+		storeDir:         filepath.Join(workspaceDir, "memory"),
 		bm25:             &BM25{},
 		llm:              llmClient,
 		maxEntries:       defaultMaxEntries,
@@ -109,7 +109,7 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 			log.Printf("[memory] warn: save failed: %v\n", err)
 		} else {
 			log.Printf("[memory] saved to %s (added: %d, updated: %d, total: %d)\n",
-				m.storePath, added, updated, len(m.entries))
+				m.storeDir, added, updated, len(m.entries))
 		}
 	}
 }
@@ -367,16 +367,11 @@ func (m *Manager) rebuildIndex() {
 }
 
 func (m *Manager) load() {
-	entries, err := loadMarkdown(m.storePath)
-	if err != nil {
-		m.entries = []MemoryEntry{}
-		return
-	}
-	m.entries = entries
+	m.entries = loadAllMarkdown(m.storeDir)
 }
 
-// save 保存到 markdown 文件（需在锁内调用）
+// save 保存到 Markdown 文件
 func (m *Manager) save() error {
 	m.dirty = false
-	return saveMarkdown(m.storePath, m.entries)
+	return saveAllMarkdown(m.storeDir, m.entries)
 }
