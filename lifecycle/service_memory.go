@@ -20,14 +20,17 @@ func NewMemoryService(workspaceDir string) *MemoryService {
 	}
 }
 
+// Name 返回服务名称
 func (s *MemoryService) Name() string { return "memory" }
 
+// Start 初始化并启动长期记忆服务
 func (s *MemoryService) Start(ctx context.Context) error {
 	g.MemManager = memory.NewManager(s.workspaceDir, memory.NewLLMClient(common.NewChatModel()))
 	log.Println("[memory] 长期记忆服务已启动")
 	return nil
 }
 
+// Stop 等待记忆提取完成后停止服务
 func (s *MemoryService) Stop(ctx context.Context) error {
 	if g.MemManager != nil {
 		log.Println("[memory] 正在等待记忆提取完成...")

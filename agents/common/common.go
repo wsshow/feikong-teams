@@ -1,3 +1,4 @@
+// Package common 提供智能体共用的模型创建和重试判断等基础功能
 package common
 
 import (
@@ -13,10 +14,13 @@ import (
 )
 
 const (
+	// MaxIterations 智能体最大迭代次数
 	MaxIterations = 60
-	MaxRetries    = 3
+	// MaxRetries 最大重试次数
+	MaxRetries = 3
 )
 
+// NewChatModel 使用环境变量配置创建聊天模型
 func NewChatModel() model.ToolCallingChatModel {
 	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  os.Getenv("FEIKONG_OPENAI_API_KEY"),
@@ -29,6 +33,7 @@ func NewChatModel() model.ToolCallingChatModel {
 	return cm
 }
 
+// NewChatModelWithConfig 使用指定配置创建聊天模型
 func NewChatModelWithConfig(modelName, baseURL, apiKey string) model.ToolCallingChatModel {
 	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  apiKey,
@@ -41,6 +46,7 @@ func NewChatModelWithConfig(modelName, baseURL, apiKey string) model.ToolCalling
 	return cm
 }
 
+// IsRetryAble 判断错误是否可重试（网络错误、限流等）
 func IsRetryAble(ctx context.Context, err error) bool {
 	if err == nil {
 		return false

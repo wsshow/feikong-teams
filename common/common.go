@@ -1,9 +1,11 @@
+// Package common 提供各模块共用的工具函数和数据结构
 package common
 
 import (
 	"os"
 )
 
+// GenerateExampleEnv 生成示例 .env 环境变量文件
 func GenerateExampleEnv(filePath string) error {
 	exampleContent := `# 这是一个示例的环境变量配置文件
 # 请将此文件复制为 .env 并根据需要进行修改

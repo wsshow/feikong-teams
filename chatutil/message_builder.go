@@ -32,13 +32,13 @@ func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []a
 	return inputMessages
 }
 
-// buildHistoryMessages 根据历史记录构建消息
+// buildHistoryMessages 将历史记录构建为消息列表，支持摘要压缩
 func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
 	if summaryText != "" && summarizedCount > 0 {
-		// 有摘要：摘要 + 最近未覆盖的记录
+		// 有摘要时：摘要 + 未被摘要覆盖的最近记录
 		var historyMessage strings.Builder
 		historyMessage.WriteString("## 对话历史摘要\n")
 		historyMessage.WriteString(summaryText)
@@ -58,7 +58,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 	}
 
 	if len(agentMessages) > 0 {
-		// 无摘要：全部历史
+		// 无摘要时：使用全部历史记录
 		var historyMessage strings.Builder
 		for _, msg := range agentMessages {
 			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetTextContent())

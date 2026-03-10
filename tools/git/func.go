@@ -69,7 +69,7 @@ func (gt *GitTools) validatePath(userPath string) (string, error) {
 	return absPath, nil
 }
 
-// ========== Git Init ==========
+// --- Git Init ---
 
 // GitInitRequest 初始化仓库请求
 type GitInitRequest struct {
@@ -118,7 +118,7 @@ func (gt *GitTools) GitInit(ctx context.Context, req *GitInitRequest) (*GitInitR
 	}, nil
 }
 
-// ========== Git Status ==========
+// --- Git Status ---
 
 // GitStatusRequest 获取仓库状态请求
 type GitStatusRequest struct {
@@ -216,7 +216,7 @@ func (gt *GitTools) GitStatus(ctx context.Context, req *GitStatusRequest) (*GitS
 	}, nil
 }
 
-// ========== Git Add ==========
+// --- Git Add ---
 
 // GitAddRequest 添加文件到暂存区请求
 type GitAddRequest struct {
@@ -277,7 +277,7 @@ func (gt *GitTools) GitAdd(ctx context.Context, req *GitAddRequest) (*GitAddResp
 	}, nil
 }
 
-// ========== Git Commit ==========
+// --- Git Commit ---
 
 // GitCommitRequest 提交请求
 type GitCommitRequest struct {
@@ -354,7 +354,7 @@ func (gt *GitTools) GitCommit(ctx context.Context, req *GitCommitRequest) (*GitC
 	}, nil
 }
 
-// ========== Git Log ==========
+// --- Git Log ---
 
 // GitLogRequest 查看提交历史请求
 type GitLogRequest struct {
@@ -437,7 +437,7 @@ func (gt *GitTools) GitLog(ctx context.Context, req *GitLogRequest) (*GitLogResp
 	}, nil
 }
 
-// ========== Git Branch ==========
+// --- Git Branch ---
 
 // GitBranchRequest 分支操作请求
 type GitBranchRequest struct {
@@ -605,7 +605,7 @@ func (gt *GitTools) deleteBranch(repo *git.Repository, name string) (*GitBranchR
 	}, nil
 }
 
-// ========== Git Checkout ==========
+// --- Git Checkout ---
 
 // GitCheckoutRequest 切换分支/提交请求
 type GitCheckoutRequest struct {
@@ -681,7 +681,7 @@ func (gt *GitTools) GitCheckout(ctx context.Context, req *GitCheckoutRequest) (*
 	}, nil
 }
 
-// ========== Git Reset ==========
+// --- Git Reset ---
 
 // GitResetRequest 重置请求
 type GitResetRequest struct {
@@ -778,7 +778,7 @@ func (gt *GitTools) GitReset(ctx context.Context, req *GitResetRequest) (*GitRes
 	}, nil
 }
 
-// ========== Git Tag ==========
+// --- Git Tag ---
 
 // GitTagRequest 标签操作请求
 type GitTagRequest struct {
@@ -955,7 +955,7 @@ func (gt *GitTools) deleteTag(repo *git.Repository, name string) (*GitTagRespons
 	}, nil
 }
 
-// ========== Git Diff ==========
+// --- Git Diff ---
 
 // GitDiffRequest 查看差异请求
 type GitDiffRequest struct {
@@ -1038,7 +1038,7 @@ func (gt *GitTools) GitDiff(ctx context.Context, req *GitDiffRequest) (*GitDiffR
 	}, nil
 }
 
-// ========== Git Clean ==========
+// --- Git Clean ---
 
 // GitCleanRequest 清理未跟踪文件请求
 type GitCleanRequest struct {
@@ -1114,7 +1114,7 @@ func (gt *GitTools) GitClean(ctx context.Context, req *GitCleanRequest) (*GitCle
 	}, nil
 }
 
-// ========== Git Remove ==========
+// --- Git Remove ---
 
 // GitRemoveRequest 从仓库移除文件请求
 type GitRemoveRequest struct {
@@ -1175,7 +1175,7 @@ func (gt *GitTools) GitRemove(ctx context.Context, req *GitRemoveRequest) (*GitR
 	}, nil
 }
 
-// ========== Git Config ==========
+// --- Git Config ---
 
 // GitConfigRequest 配置操作请求
 type GitConfigRequest struct {
@@ -1308,7 +1308,7 @@ func (gt *GitTools) GitConfig(ctx context.Context, req *GitConfigRequest) (*GitC
 	}
 }
 
-// ========== Git Remote ==========
+// --- Git Remote ---
 
 // GitRemoteRequest 远程仓库操作请求
 type GitRemoteRequest struct {

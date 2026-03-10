@@ -1,3 +1,4 @@
+// Package router 定义 HTTP 路由和 API 端点
 package router
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Init 初始化并返回配置好的 Gin 路由引擎
 func Init() *gin.Engine {
 	r := gin.New()
 	r.Use(

@@ -6,6 +6,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
+// NewInMemoryStore 创建基于内存的 CheckPoint 存储
 func NewInMemoryStore() compose.CheckPointStore {
 	return &inMemoryStore{
 		mem: map[string][]byte{},

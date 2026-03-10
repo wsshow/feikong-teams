@@ -1,3 +1,4 @@
+// Package config 提供应用配置文件的加载、解析和示例生成
 package config
 
 import (
@@ -8,11 +9,13 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// Server 服务端配置
 type Server struct {
 	Port     int    `toml:"port"`
 	LogLevel string `toml:"log_level"`
 }
 
+// TeamMember 圆桌讨论模式的成员配置
 type TeamMember struct {
 	Index     int    `toml:"index"`
 	Name      string `toml:"name"`
@@ -22,17 +25,20 @@ type TeamMember struct {
 	ModelName string `toml:"model_name"`
 }
 
+// Roundtable 圆桌讨论模式配置
 type Roundtable struct {
 	Members       []TeamMember `toml:"members"`
 	MaxIterations int          `toml:"max_iterations"`
 }
 
+// Custom 自定义会议模式配置
 type Custom struct {
 	Moderator  Agent       `toml:"moderator"`
 	Agents     []Agent     `toml:"agents"`
 	MCPServers []MCPServer `toml:"mcp_servers"`
 }
 
+// Agent 自定义智能体配置
 type Agent struct {
 	Name         string   `toml:"name"`
 	Desc         string   `toml:"desc"`
@@ -43,6 +49,7 @@ type Agent struct {
 	Tools        []string `toml:"tools,omitempty"`
 }
 
+// MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
 type MCPServer struct {
 	Name          string   `toml:"name"`
 	Desc          string   `toml:"desc"`
@@ -55,12 +62,14 @@ type MCPServer struct {
 	TransportType string   `toml:"transport_type"`
 }
 
+// Config 应用全局配置
 type Config struct {
 	Server     Server     `toml:"server"`
 	Roundtable Roundtable `toml:"roundtable"`
 	Custom     Custom     `toml:"custom"`
 }
 
+// Unmarshal 从 TOML 文件反序列化配置
 func Unmarshal(filePath string, v any) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -73,6 +82,7 @@ func Unmarshal(filePath string, v any) error {
 	return nil
 }
 
+// Get 加载并返回应用配置
 func Get() (*Config, error) {
 	var config Config
 	err := Unmarshal("config/config.toml", &config)
@@ -82,6 +92,7 @@ func Get() (*Config, error) {
 	return &config, nil
 }
 
+// GenerateExample 生成示例配置文件
 func GenerateExample() error {
 	filePath := "config/config.toml"
 	dir := filepath.Dir(filePath)

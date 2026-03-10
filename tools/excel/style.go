@@ -7,7 +7,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// ========== 样式操作 ==========
+// --- 样式操作 ---
 
 // CreateStyleRequest 创建样式请求
 type CreateStyleRequest struct {

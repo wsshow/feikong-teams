@@ -1,3 +1,4 @@
+// Package commands 定义 CLI 命令行入口和子命令
 package commands
 
 import (

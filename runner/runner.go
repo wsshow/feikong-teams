@@ -1,3 +1,4 @@
+// Package runner 提供各工作模式的 Runner 创建工厂函数
 package runner
 
 import (

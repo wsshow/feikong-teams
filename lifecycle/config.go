@@ -7,12 +7,12 @@ import (
 
 // AppConfig 应用配置
 type AppConfig struct {
-	WorkspaceDir       string
-	MemoryEnabled      bool
-	SchedulerEnabled   bool
-	SchedulerOutputDir string
-	InputHistoryPath   string
-	ChatHistoryDir     string
+	WorkspaceDir       string // 工作目录
+	MemoryEnabled      bool   // 是否启用长期记忆
+	SchedulerEnabled   bool   // 是否启用定时任务
+	SchedulerOutputDir string // 定时任务输出目录
+	InputHistoryPath   string // 输入历史文件路径
+	ChatHistoryDir     string // 聊天历史目录
 
 	// ExitSignals 触发退出的系统信号（CLI 模式应排除 SIGINT）
 	ExitSignals []os.Signal
@@ -36,7 +36,7 @@ func DefaultConfig() *AppConfig {
 	}
 }
 
-// Option 用于自定义 AppConfig 的选项函数
+// Option 自定义配置的选项函数
 type Option func(*AppConfig)
 
 // WithWorkspaceDir 设置工作目录

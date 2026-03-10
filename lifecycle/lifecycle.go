@@ -12,16 +12,17 @@ import (
 	"syscall"
 )
 
+// Phase 生命周期阶段
 type Phase int
 
 const (
-	PhaseInit Phase = iota
-	PhaseSetup
-	PhaseStart
-	PhaseReady
-	PhasePreStop
-	PhaseStop
-	PhaseCleanup
+	PhaseInit    Phase = iota // 初始化阶段
+	PhaseSetup                // 配置准备阶段
+	PhaseStart                // 启动阶段
+	PhaseReady                // 就绪阶段
+	PhasePreStop              // 停止前阶段
+	PhaseStop                 // 停止阶段
+	PhaseCleanup              // 清理阶段
 )
 
 // String 返回阶段名称
@@ -49,21 +50,24 @@ func (p Phase) String() string {
 // HookFunc 生命周期钩子函数
 type HookFunc func(ctx context.Context) error
 
-// Service 可插拔的服务接口
+// Service 可插拔的后台服务接口
 type Service interface {
+	// Name 返回服务名称
 	Name() string
+	// Start 启动服务
 	Start(ctx context.Context) error
+	// Stop 停止服务
 	Stop(ctx context.Context) error
 }
 
 // Application 应用程序生命周期管理器
 type Application struct {
-	config       *AppConfig
-	hooks        map[Phase][]HookFunc
-	services     []Service
-	mu           sync.Mutex
-	currentPhase Phase
-	exitCh       chan os.Signal
+	config       *AppConfig           // 应用配置
+	hooks        map[Phase][]HookFunc // 各阶段的钩子函数
+	services     []Service            // 注册的后台服务
+	mu           sync.Mutex           // 保护并发访问
+	currentPhase Phase                // 当前生命周期阶段
+	exitCh       chan os.Signal       // 退出信号通道
 }
 
 // New 创建 Application 实例
@@ -99,12 +103,25 @@ func (app *Application) OnPhase(phase Phase, hook HookFunc) {
 	app.hooks[phase] = append(app.hooks[phase], hook)
 }
 
-func (app *Application) OnInit(hook HookFunc)    { app.OnPhase(PhaseInit, hook) }
-func (app *Application) OnSetup(hook HookFunc)   { app.OnPhase(PhaseSetup, hook) }
-func (app *Application) OnStart(hook HookFunc)   { app.OnPhase(PhaseStart, hook) }
-func (app *Application) OnReady(hook HookFunc)   { app.OnPhase(PhaseReady, hook) }
+// OnInit 注册初始化阶段钩子
+func (app *Application) OnInit(hook HookFunc) { app.OnPhase(PhaseInit, hook) }
+
+// OnSetup 注册配置准备阶段钩子
+func (app *Application) OnSetup(hook HookFunc) { app.OnPhase(PhaseSetup, hook) }
+
+// OnStart 注册启动阶段钩子
+func (app *Application) OnStart(hook HookFunc) { app.OnPhase(PhaseStart, hook) }
+
+// OnReady 注册就绪阶段钩子
+func (app *Application) OnReady(hook HookFunc) { app.OnPhase(PhaseReady, hook) }
+
+// OnPreStop 注册停止前阶段钩子
 func (app *Application) OnPreStop(hook HookFunc) { app.OnPhase(PhasePreStop, hook) }
-func (app *Application) OnStop(hook HookFunc)    { app.OnPhase(PhaseStop, hook) }
+
+// OnStop 注册停止阶段钩子
+func (app *Application) OnStop(hook HookFunc) { app.OnPhase(PhaseStop, hook) }
+
+// OnCleanup 注册清理阶段钩子
 func (app *Application) OnCleanup(hook HookFunc) { app.OnPhase(PhaseCleanup, hook) }
 
 // RegisterService 注册服务（Start 时按序启动，Stop 时逆序停止）
@@ -124,17 +141,15 @@ func (app *Application) Run(ctx context.Context) error {
 	appCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Init
 	if err := app.executePhase(appCtx, PhaseInit); err != nil {
 		return fmt.Errorf("init failed: %w", err)
 	}
 
-	// Setup
 	if err := app.executePhase(appCtx, PhaseSetup); err != nil {
 		return fmt.Errorf("setup failed: %w", err)
 	}
 
-	// Start services
+	// 启动所有注册的服务
 	if err := app.startServices(appCtx); err != nil {
 		app.stopServices(appCtx)
 		return fmt.Errorf("start failed: %w", err)
@@ -144,28 +159,25 @@ func (app *Application) Run(ctx context.Context) error {
 		return fmt.Errorf("start hooks failed: %w", err)
 	}
 
-	// Ready
 	if err := app.executePhase(appCtx, PhaseReady); err != nil {
 		app.stopServices(appCtx)
 		return fmt.Errorf("ready failed: %w", err)
 	}
 
-	// Wait for exit signal
+	// 阻塞等待退出信号
 	app.waitForExit(appCtx)
 	cancel()
 
-	// PreStop
 	if err := app.executePhase(context.Background(), PhasePreStop); err != nil {
 		log.Printf("[lifecycle] prestop error: %v", err)
 	}
 
-	// Stop services (LIFO)
+	// 逆序停止服务（LIFO）
 	app.stopServices(context.Background())
 	if err := app.executePhase(context.Background(), PhaseStop); err != nil {
 		log.Printf("[lifecycle] stop hooks error: %v", err)
 	}
 
-	// Cleanup
 	if err := app.executePhase(context.Background(), PhaseCleanup); err != nil {
 		log.Printf("[lifecycle] cleanup error: %v", err)
 	}

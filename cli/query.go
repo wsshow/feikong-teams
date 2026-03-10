@@ -1,3 +1,4 @@
+// Package cli 提供 CLI 交互模式的会话管理、查询执行和信号处理
 package cli
 
 import (
@@ -191,6 +192,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			return nil
 		case result, ok := <-eventChan:
 			spinner.Stop()
+			// 二次检测 context 取消：eventChan 和 ctx.Done 可能同时就绪，
+			// 需要确认收到事件后 context 未被取消，避免处理已过期的事件
 			select {
 			case <-queryCtx.Done():
 				pterm.Warning.Println("查询已中断")

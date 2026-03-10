@@ -8,7 +8,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// ========== 图片操作 ==========
+// --- 图片操作 ---
 
 // AddPictureRequest 添加图片请求
 type AddPictureRequest struct {

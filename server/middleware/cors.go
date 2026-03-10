@@ -1,3 +1,4 @@
+// Package middleware 提供 HTTP 中间件（CORS、认证等）
 package middleware
 
 import (
@@ -6,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Cors 返回跨域请求处理中间件
 func Cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method

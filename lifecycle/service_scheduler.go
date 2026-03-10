@@ -23,8 +23,10 @@ func NewSchedulerService(workspaceDir, outputDir string) *SchedulerService {
 	}
 }
 
+// Name 返回服务名称
 func (s *SchedulerService) Name() string { return "scheduler" }
 
+// Start 初始化调度器并启动定时任务服务
 func (s *SchedulerService) Start(ctx context.Context) error {
 	sched, err := scheduler.InitGlobal(s.workspaceDir)
 	if err != nil {
@@ -41,6 +43,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop 停止定时任务调度服务
 func (s *SchedulerService) Stop(ctx context.Context) error {
 	if sched := scheduler.Global(); sched != nil {
 		sched.Stop()

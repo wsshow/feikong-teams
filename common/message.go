@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// ConcatMessages 将多个流式消息分片合并为一条完整消息
 func ConcatMessages(msgs []*schema.Message) (*schema.Message, error) {
 	var (
 		contents                      []string

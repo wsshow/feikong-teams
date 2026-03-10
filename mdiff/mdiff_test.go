@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// ============================================================
-// Diff 算法测试
-// ============================================================
+// --- Diff 算法测试 ---
 
 func TestDiffEmpty(t *testing.T) {
 	edits := Diff(nil, nil)
@@ -205,9 +203,7 @@ func TestDiffIdenticalSingleLine(t *testing.T) {
 	}
 }
 
-// ============================================================
-// UnifiedDiff & Format 测试
-// ============================================================
+// --- UnifiedDiff & Format 测试 ---
 
 func TestUnifiedDiffFormat(t *testing.T) {
 	oldLines := []string{"line1", "line2", "line3", "line4", "line5"}
@@ -328,9 +324,7 @@ func TestDeleteFileHunkHeader(t *testing.T) {
 	}
 }
 
-// ============================================================
-// Parse 测试
-// ============================================================
+// --- Parse 测试 ---
 
 func TestParseAndApply(t *testing.T) {
 	oldContent := "line1\nline2\nline3\nline4\nline5\n"
@@ -510,9 +504,7 @@ func TestParseRange(t *testing.T) {
 	}
 }
 
-// ============================================================
-// Patch 应用测试
-// ============================================================
+// --- Patch 应用测试 ---
 
 func TestApplyFileDiffNil(t *testing.T) {
 	result, err := ApplyFileDiff("content", nil)
@@ -662,9 +654,7 @@ func TestMatchAt(t *testing.T) {
 	}
 }
 
-// ============================================================
-// PatchText 测试
-// ============================================================
+// --- PatchText 测试 ---
 
 func TestPatchText(t *testing.T) {
 	original := "line1\nline2\nline3\n"
@@ -699,9 +689,7 @@ func TestPatchTextInvalidPatch(t *testing.T) {
 	_ = err
 }
 
-// ============================================================
-// 多文件 Diff & Apply 测试
-// ============================================================
+// --- 多文件 Diff & Apply 测试 ---
 
 func TestMultiFileDiff(t *testing.T) {
 	changes := []FileChange{
@@ -815,9 +803,7 @@ func TestApplyMultiFileDiffReadError(t *testing.T) {
 	}
 }
 
-// ============================================================
-// 统计信息测试
-// ============================================================
+// --- 统计信息测试 ---
 
 func TestStat(t *testing.T) {
 	changes := []FileChange{
@@ -879,9 +865,7 @@ func TestPluralize(t *testing.T) {
 	}
 }
 
-// ============================================================
-// 新文件 & 删除文件测试
-// ============================================================
+// --- 新文件 & 删除文件测试 ---
 
 func TestNewFile(t *testing.T) {
 	changes := []FileChange{
@@ -939,9 +923,7 @@ func TestDeleteFile(t *testing.T) {
 	}
 }
 
-// ============================================================
-// 往返一致性（Round-trip）测试
-// ============================================================
+// --- 往返一致性（Round-trip）测试 ---
 
 func TestRoundTripSimple(t *testing.T) {
 	roundTripTest(t, "line1\nline2\nline3\n", "line1\nchanged\nline3\n")
@@ -1009,9 +991,7 @@ func roundTripTest(t *testing.T, oldContent, newContent string) {
 	}
 }
 
-// ============================================================
-// splitLines 测试
-// ============================================================
+// --- splitLines 测试 ---
 
 func TestSplitLines(t *testing.T) {
 	tests := []struct {
@@ -1041,9 +1021,7 @@ func TestSplitLines(t *testing.T) {
 	}
 }
 
-// ============================================================
-// 辅助结构
-// ============================================================
+// --- 辅助结构 ---
 
 type memAccessor struct {
 	files map[string]string
@@ -1070,9 +1048,7 @@ func (m *memAccessor) DeleteFile(path string) error {
 	return nil
 }
 
-// ============================================================
-// 空行解析 & 宽松匹配测试
-// ============================================================
+// --- 空行解析 & 宽松匹配测试 ---
 
 func TestParseHunkWithEmptyContextLine(t *testing.T) {
 	// 模拟 LLM 生成的 diff，空上下文行无前导空格
@@ -1179,9 +1155,7 @@ func TestMatchAtLoose(t *testing.T) {
 	}
 }
 
-// ============================================================
-// 多 hunk 同时修改测试
-// ============================================================
+// --- 多 hunk 同时修改测试 ---
 
 func TestMultiHunkSameFile(t *testing.T) {
 	// 同一文件两处修改，相距较远
@@ -1582,9 +1556,7 @@ func HandleDelete(w http.ResponseWriter, r *http.Request) {
 	roundTripTest(t, oldContent, newContent)
 }
 
-// ============================================================
-// Python 代码编辑场景测试
-// ============================================================
+// --- Python 代码编辑场景测试 ---
 
 func TestRoundTripPythonMultiFunctionEdit(t *testing.T) {
 	// Python 文件中同时修改多个函数
@@ -1787,9 +1759,7 @@ func TestRoundTripPythonIndentationHeavy(t *testing.T) {
 	roundTripTest(t, oldContent, newContent)
 }
 
-// ============================================================
-// HTML/CSS/JS/TS 代码编辑场景测试
-// ============================================================
+// --- HTML/CSS/JS/TS 代码编辑场景测试 ---
 
 func TestRoundTripHTMLMultiSectionEdit(t *testing.T) {
 	// HTML 文件中同时修改 head 和 body 部分
@@ -2477,9 +2447,7 @@ func TestRoundTripPythonLLMStyleDiff(t *testing.T) {
 	}
 }
 
-// ============================================================
-// 部分应用与增强匹配测试
-// ============================================================
+// --- 部分应用与增强匹配测试 ---
 
 // TestPartialApplySkipsFailedHunks 验证部分 hunk 失败时其余 hunk 仍然生效
 func TestPartialApplySkipsFailedHunks(t *testing.T) {

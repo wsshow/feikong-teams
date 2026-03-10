@@ -1,3 +1,4 @@
+// Package report 提供 Markdown 转 HTML 的报告生成功能
 package report
 
 import (
@@ -10,6 +11,7 @@ import (
 	"github.com/gomarkdown/markdown/parser"
 )
 
+// ConvertMarkdownToHTML 将 Markdown 字节数据转换为 HTML
 func ConvertMarkdownToHTML(markdownByteData []byte) (htmlByteData []byte) {
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
 	p := parser.NewWithExtensions(extensions)
@@ -22,6 +24,7 @@ func ConvertMarkdownToHTML(markdownByteData []byte) (htmlByteData []byte) {
 	return markdown.Render(doc, renderer)
 }
 
+// ConvertMarkdownFileToHTML 读取 Markdown 文件并转换为 HTML
 func ConvertMarkdownFileToHTML(mdFilePath string) (htmlByteData []byte, err error) {
 	md, err := os.ReadFile(mdFilePath)
 	if err != nil {
@@ -30,6 +33,7 @@ func ConvertMarkdownFileToHTML(mdFilePath string) (htmlByteData []byte, err erro
 	return ConvertMarkdownToHTML(md), nil
 }
 
+// ConvertMarkdownFileToHTMLFile 将 Markdown 文件转换并保存为 HTML 文件
 func ConvertMarkdownFileToHTMLFile(mdFilePath string) (htmlFilePath string, err error) {
 	htmlByteData, err := ConvertMarkdownFileToHTML(mdFilePath)
 	if err != nil {
@@ -43,6 +47,7 @@ func ConvertMarkdownFileToHTMLFile(mdFilePath string) (htmlFilePath string, err 
 	return htmlFilePath, nil
 }
 
+// ConvertMarkdownFileToNiceHTMLFile 将 Markdown 文件转换为带样式的 HTML 文件
 func ConvertMarkdownFileToNiceHTMLFile(mdFilePath string) (htmlFilePath string, err error) {
 	htmlByteData, err := ConvertMarkdownFileToHTML(mdFilePath)
 	if err != nil {

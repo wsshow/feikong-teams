@@ -1,3 +1,5 @@
+// Package fkevent 提供智能体事件的处理和分发机制。
+// 支持流式和非流式消息、工具调用、动作事件的统一处理。
 package fkevent
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// Event 统一的事件结构，承载各类智能体输出
 type Event struct {
 	Type       string            `json:"type"`
 	AgentName  string            `json:"agent_name,omitempty"`
@@ -22,10 +25,12 @@ type Event struct {
 	Error      string            `json:"error,omitempty"`
 }
 
+// formatRunPath 将运行路径格式化为字符串
 func formatRunPath(runPath []adk.RunStep) string {
 	return fmt.Sprintf("%v", runPath)
 }
 
+// callbackKey 用于在 context 中存储事件回调的 key
 type callbackKey struct{}
 
 // WithCallback 将事件回调绑定到 context
@@ -33,6 +38,7 @@ func WithCallback(ctx context.Context, cb func(Event) error) context.Context {
 	return context.WithValue(ctx, callbackKey{}, cb)
 }
 
+// getCallback 从 context 中获取事件回调函数
 func getCallback(ctx context.Context) func(Event) error {
 	if cb, ok := ctx.Value(callbackKey{}).(func(Event) error); ok {
 		return cb
@@ -40,6 +46,7 @@ func getCallback(ctx context.Context) func(Event) error {
 	return nil
 }
 
+// ProcessAgentEvent 处理智能体事件，按顺序分发动作和消息输出
 func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 	if event.Err != nil {
 		return handleEvent(ctx, Event{
@@ -66,6 +73,7 @@ func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 	return nil
 }
 
+// handleMessageOutput 处理消息输出，区分完整消息和流式消息
 func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
 	msgOutput := event.Output.MessageOutput
 
@@ -80,6 +88,7 @@ func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
 	return nil
 }
 
+// handleRegularMessage 处理非流式的完整消息
 func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schema.Message) error {
 	eventType := "message"
 	if msg.Role == schema.Tool {
@@ -100,10 +109,12 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 	return handleEvent(ctx, nEvent)
 }
 
+// handleStreamingMessage 处理流式消息，通过 goroutine 异步接收以支持 context 取消
 func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
-	toolCallsMap := make(map[int][]*schema.Message)
-	toolCallStarted := make(map[int]bool)
+	toolCallsMap := make(map[int][]*schema.Message) // 按 index 聚合工具调用分片
+	toolCallStarted := make(map[int]bool)           // 记录已发送准备事件的工具调用
 
+	// 在独立 goroutine 中接收流数据，避免阻塞 context 取消检测
 	type recvResult struct {
 		chunk *schema.Message
 		err   error
@@ -194,12 +205,12 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 		}
 	}
 
-	// context 取消时跳过后续处理
+	// context 取消时跳过后续工具调用处理
 	if ctx.Err() != nil {
 		return nil
 	}
 
-	// 按 index 顺序处理工具调用
+	// 合并所有工具调用分片，按 index 排序后统一发送
 	indices := make([]int, 0, len(toolCallsMap))
 	for idx := range toolCallsMap {
 		indices = append(indices, idx)
@@ -229,6 +240,7 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 	return nil
 }
 
+// handleAction 处理智能体动作事件（转发、中断、退出）
 func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 	action := event.Action
 

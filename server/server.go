@@ -1,3 +1,4 @@
+// Package server 提供 Web 服务端模式的入口和 HTTP 服务管理
 package server
 
 import (
@@ -17,11 +18,12 @@ import (
 
 // httpService HTTP 服务，实现 lifecycle.Service 接口
 type httpService struct {
-	port     int
-	logLevel string
-	server   *http.Server
+	port     int          // 监听端口
+	logLevel string       // 日志级别
+	server   *http.Server // HTTP 服务实例
 }
 
+// newHttpService 创建 HTTP 服务实例
 func newHttpService(port int, logLevel string) *httpService {
 	return &httpService{
 		port:     port,
@@ -29,8 +31,10 @@ func newHttpService(port int, logLevel string) *httpService {
 	}
 }
 
+// Name 返回服务名称
 func (s *httpService) Name() string { return "http" }
 
+// Start 启动 HTTP 服务（非阻塞）
 func (s *httpService) Start(ctx context.Context) error {
 	if s.logLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -57,6 +61,7 @@ func (s *httpService) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop 优雅关闭 HTTP 服务（5 秒超时）
 func (s *httpService) Stop(ctx context.Context) error {
 	if s.server == nil {
 		return nil
@@ -73,6 +78,7 @@ func (s *httpService) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Addr 返回服务监听地址
 func (s *httpService) Addr() string {
 	if s.server != nil {
 		return s.server.Addr

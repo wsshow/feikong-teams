@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 )
 
+// SaveHistory 将输入历史保存到文件
 func SaveHistory(filePath string, history []string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -28,6 +29,7 @@ func SaveHistory(filePath string, history []string) error {
 	return writer.Flush()
 }
 
+// LoadHistory 从文件加载输入历史，最多返回 maxLines 行
 func LoadHistory(filePath string, maxLines int) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -53,6 +55,7 @@ func LoadHistory(filePath string, maxLines int) ([]string, error) {
 	return lines, nil
 }
 
+// ClearHistory 清空输入历史文件
 func ClearHistory(filePath string) error {
 	err := os.Truncate(filePath, 0)
 	if err != nil {
