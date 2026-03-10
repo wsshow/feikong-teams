@@ -87,7 +87,9 @@ func Run() {
 	}
 	// 等待异步记忆提取完成
 	if g.MemManager != nil {
+		fmt.Println("正在等待记忆提取完成...")
 		g.MemManager.Wait()
+		fmt.Println("记忆提取完成")
 	}
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal(err)

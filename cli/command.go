@@ -47,7 +47,6 @@ func NewCommandHandler(modeSwitcher ModeSwitcher) *CommandHandler {
 func (h *CommandHandler) Handle(input string) CommandResult {
 	switch input {
 	case "q", "quit", "":
-		pterm.Info.Println("谢谢使用，再见！")
 		return ResultExit
 
 	case "help":

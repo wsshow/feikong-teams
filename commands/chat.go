@@ -57,8 +57,10 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		g.MemManager = memory.NewManager(workspaceDir, memory.NewLLMClient(common.NewChatModel()))
 		pterm.Info.Println("全局长期记忆已启用")
 		g.Cleaner.AddNamed("memory", func() error {
+			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
 			cli.FlushSessionMemory()
 			g.MemManager.Wait()
+			pterm.Success.Println("记忆提取完成")
 			return nil
 		})
 	}
@@ -104,7 +106,8 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	}
 
 	sig := <-exitSignals
-	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
+	fmt.Println()
+	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理以及记忆提取...", sig)
 	done()
 
 	// 执行资源清理（包括记忆提取）
