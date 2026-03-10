@@ -313,3 +313,18 @@ func convertRecorderMessages(recorder *fkevent.HistoryRecorder) []memory.Message
 	}
 	return msgs
 }
+
+// FlushSessionMemory 退出前强制提取当前会话的剩余记忆
+func FlushSessionMemory() {
+	if g.MemManager == nil {
+		return
+	}
+	recorder := getCliRecorder()
+	msgs := convertRecorderMessages(recorder)
+	if len(msgs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	g.MemManager.FlushExtract(ctx, msgs, activeSessionID)
+}

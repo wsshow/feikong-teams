@@ -15,6 +15,11 @@ const (
 	defaultMaxEntries   = 500
 	defaultMinScore     = 1.0
 	defaultEvictionDays = 30
+
+	// 提取触发条件
+	minNewUserMessages = 2   // 新增至少 2 条用户消息才触发提取
+	minNewContentLen   = 300 // 新增消息总字符数至少 300
+	extractCooldown    = 3 * time.Minute
 )
 
 // Manager 记忆管理器
@@ -31,6 +36,7 @@ type Manager struct {
 
 	wg               sync.WaitGroup
 	extractedOffsets map[string]int
+	lastExtractTime  map[string]time.Time
 	dirty            bool
 }
 
@@ -44,20 +50,22 @@ func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
 		minScore:         defaultMinScore,
 		evictionDays:     defaultEvictionDays,
 		extractedOffsets: make(map[string]int),
+		lastExtractTime:  make(map[string]time.Time),
 	}
 	m.load()
 	m.rebuildIndex()
 	return m
 }
 
-// ExtractAndStore 提取记忆并存储（设计为异步调用，由调用方 go 启动）
+// ExtractAndStore 提取记忆并存储
+// 内部根据新增消息数量、内容长度和冷却时间智能判断是否触发 LLM 提取
 func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
 	m.wg.Add(1)
 	defer m.wg.Done()
 
-	// 去重提取：只提取新增消息
 	m.mu.RLock()
 	offset := m.extractedOffsets[sessionID]
+	lastTime := m.lastExtractTime[sessionID]
 	m.mu.RUnlock()
 
 	if offset >= len(messages) {
@@ -65,15 +73,20 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	}
 	newMessages := messages[offset:]
 
+	// 智能触发：检查是否值得调用 LLM 提取
+	if !m.shouldExtract(newMessages, lastTime) {
+		return
+	}
+
 	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
 	if err != nil {
 		log.Printf("[memory] warn: extract failed: %v\n", err)
 		return
 	}
 
-	// 更新偏移量
 	m.mu.Lock()
 	m.extractedOffsets[sessionID] = len(messages)
+	m.lastExtractTime[sessionID] = time.Now()
 	m.mu.Unlock()
 
 	if len(entries) == 0 {
@@ -146,7 +159,6 @@ func (m *Manager) Search(query string, topK int) []MemoryEntry {
 // Wait 等待所有异步提取任务完成（用于优雅退出）
 func (m *Manager) Wait() {
 	m.wg.Wait()
-	// 退出前写入脏数据
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.dirty {
@@ -155,6 +167,60 @@ func (m *Manager) Wait() {
 		}
 		m.dirty = false
 	}
+}
+
+// FlushExtract 强制提取指定会话的剩余消息（退出前调用，跳过触发条件检查）
+func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionID string) {
+	m.mu.RLock()
+	offset := m.extractedOffsets[sessionID]
+	m.mu.RUnlock()
+
+	if offset >= len(messages) {
+		return
+	}
+	newMessages := messages[offset:]
+
+	// 跳过过短的内容（仍保留基本过滤）
+	totalLen := 0
+	for _, msg := range newMessages {
+		totalLen += len(msg.Content)
+	}
+	if totalLen < 100 {
+		return
+	}
+
+	entries, err := Extract(ctx, newMessages, sessionID, m.llm)
+	if err != nil {
+		log.Printf("[memory] warn: flush extract failed: %v\n", err)
+		return
+	}
+
+	m.mu.Lock()
+	m.extractedOffsets[sessionID] = len(messages)
+
+	added := 0
+	for _, entry := range entries {
+		action, idx := m.checkDuplicate(entry)
+		switch action {
+		case actionAdd:
+			m.entries = append(m.entries, entry)
+			added++
+		case actionUpdate:
+			entry.HitCount = m.entries[idx].HitCount
+			entry.LastHitAt = m.entries[idx].LastHitAt
+			m.entries[idx] = entry
+			added++
+		}
+	}
+
+	if added > 0 {
+		m.evictIfNeeded()
+		m.rebuildIndex()
+		if err := m.save(); err != nil {
+			log.Printf("[memory] warn: flush save failed: %v\n", err)
+		}
+	}
+	m.mu.Unlock()
 }
 
 // List 列出所有记忆条目
@@ -198,6 +264,7 @@ func (m *Manager) Clear() {
 
 	m.entries = []MemoryEntry{}
 	m.extractedOffsets = make(map[string]int)
+	m.lastExtractTime = make(map[string]time.Time)
 	m.rebuildIndex()
 	if err := m.save(); err != nil {
 		log.Printf("[memory] warn: save after clear failed: %v\n", err)
@@ -209,6 +276,26 @@ func (m *Manager) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.entries)
+}
+
+// shouldExtract 智能判断是否需要触发 LLM 提取
+func (m *Manager) shouldExtract(newMessages []Message, lastTime time.Time) bool {
+	// 冷却期内不提取
+	if !lastTime.IsZero() && time.Since(lastTime) < extractCooldown {
+		return false
+	}
+
+	// 统计新增用户消息数和总内容长度
+	userMsgCount := 0
+	totalLen := 0
+	for _, msg := range newMessages {
+		totalLen += len(msg.Content)
+		if msg.Role == "user" {
+			userMsgCount++
+		}
+	}
+
+	return userMsgCount >= minNewUserMessages && totalLen >= minNewContentLen
 }
 
 // updateHitStats 更新命中统计

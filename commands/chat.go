@@ -48,12 +48,6 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		return nil
 	}
 
-	defer func() {
-		if err := g.Cleaner.ExecuteAndClear(); err != nil {
-			log.Fatalf("清理资源失败: %v", err)
-		}
-	}()
-
 	// 初始化全局记忆管理器
 	workspaceDir := "./workspace"
 	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
@@ -62,8 +56,8 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	if os.Getenv("FEIKONG_MEMORY_ENABLED") == "true" {
 		g.MemManager = memory.NewManager(workspaceDir, memory.NewLLMClient(common.NewChatModel()))
 		pterm.Info.Println("全局长期记忆已启用")
-		// 注册优雅退出：等待异步记忆提取完成
 		g.Cleaner.AddNamed("memory", func() error {
+			cli.FlushSessionMemory()
 			g.MemManager.Wait()
 			return nil
 		})
@@ -112,6 +106,11 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	sig := <-exitSignals
 	pterm.Info.Printfln("收到信号: %v, 开始退出前的清理...", sig)
 	done()
+
+	// 执行资源清理（包括记忆提取）
+	if err := g.Cleaner.ExecuteAndClear(); err != nil {
+		log.Printf("清理资源失败: %v", err)
+	}
 
 	if err := commonPkg.SaveHistory(inputHistoryPath, session.InputHistory); err != nil {
 		log.Fatalf("保存输入历史失败: %v", err)
