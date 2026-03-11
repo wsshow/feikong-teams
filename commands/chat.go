@@ -73,7 +73,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		session.StartSignalHandler(app.ExitCh())
 
 		if query != "" {
-			session.HandleDirect(ctx, r, app.ExitCh(), query)
+			session.HandleDirect(ctx, r, app.ExitCh(), query, cmd.Bool("save"))
 		} else {
 			session.HandleInteractive(ctx, r, app.ExitCh())
 		}

@@ -37,6 +37,10 @@ func Root() *ucli.Command {
 				Value:   "team",
 				Usage:   "工作模式: team|deep|group|custom",
 			},
+			&ucli.BoolFlag{
+				Name:  "save",
+				Usage: "保存聊天历史（仅在直接查询模式下生效）",
+			},
 		},
 		Action: chatAction,
 	}

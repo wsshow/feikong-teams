@@ -35,6 +35,10 @@ func agentCommand() *ucli.Command {
 				Aliases: []string{"q"},
 				Usage:   "直接查询模式，执行完查询后退出",
 			},
+			&ucli.BoolFlag{
+				Name:  "save",
+				Usage: "保存聊天历史",
+			},
 		},
 		Action: agentAction,
 	}
@@ -93,8 +97,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		session.SetCurrentAgent(agentName)
 		session.StartSignalHandler(app.ExitCh())
 
+		save := cmd.Bool("save") || cmd.Root().Bool("save")
 		if query != "" {
-			session.HandleDirect(ctx, agentRunner, app.ExitCh(), query)
+			session.HandleDirect(ctx, agentRunner, app.ExitCh(), query, save)
 		} else {
 			session.HandleInteractive(ctx, agentRunner, app.ExitCh())
 		}
