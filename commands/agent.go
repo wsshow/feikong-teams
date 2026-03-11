@@ -126,7 +126,6 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	app.OnSetup(func(ctx context.Context) error {
 		agent := agentInfo.Creator(ctx)
 		agentRunner = runner.CreateAgentRunner(ctx, agent)
-		fmt.Printf("已启用 Agent: %s (%s)\n", agentInfo.Name, agentInfo.Description)
 		return nil
 	})
 

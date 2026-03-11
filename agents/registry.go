@@ -11,7 +11,6 @@ import (
 	"fkteams/agents/summarizer"
 	"fkteams/agents/visitor"
 	"fkteams/config"
-	"fmt"
 	"os"
 	"sync"
 
@@ -131,8 +130,6 @@ func loadCustomAgents(_ context.Context) {
 				}
 			}(agent),
 		})
-
-		fmt.Printf("[tips] 加载自定义智能体: %s (%s)\n", agentCfg.Name, agentCfg.Desc)
 	}
 }
 

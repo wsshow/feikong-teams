@@ -4,7 +4,6 @@ import (
 	"context"
 	"fkteams/agents/common"
 	toolFile "fkteams/tools/file"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -27,8 +26,6 @@ func NewAgent() adk.Agent {
 	if err != nil {
 		log.Fatal("初始化文件工具失败:", err)
 	}
-
-	fmt.Printf("[tips] 文件工具已限制在目录: %s\n", codeDir)
 
 	// 创建文件操作工具
 	fileTools, err := fileToolsInstance.GetTools()

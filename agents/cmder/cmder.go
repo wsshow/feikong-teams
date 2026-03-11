@@ -5,7 +5,6 @@ import (
 	"fkteams/agents/common"
 	"fkteams/tools/command"
 	"fkteams/tools/script/uv"
-	"fmt"
 	"log"
 	"os"
 	"runtime"
@@ -44,8 +43,6 @@ func NewAgent() adk.Agent {
 	var toolList []tool.BaseTool
 	toolList = append(toolList, cliTools...)
 	toolList = append(toolList, uvTools...)
-
-	fmt.Printf("[tips] 命令行智能体已初始化，运行在 %s/%s 平台\n", runtime.GOOS, runtime.GOARCH)
 
 	// 格式化系统消息
 	systemMessages, err := CmderPromptTemplate.Format(ctx, map[string]any{
