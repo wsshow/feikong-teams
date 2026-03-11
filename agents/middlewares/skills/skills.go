@@ -5,6 +5,7 @@ import (
 	"fkteams/agents/middlewares/fkfs"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/middlewares/skill"
@@ -21,8 +22,8 @@ func ensureDir(path string) error {
 	return err
 }
 
-func New(ctx context.Context) (skillsMiddleware adk.ChatModelAgentMiddleware, err error) {
-	skillsDirPath := "./skills"
+func New(ctx context.Context, safeDir string) (skillsMiddleware adk.ChatModelAgentMiddleware, err error) {
+	skillsDirPath := filepath.Join(safeDir, "skills")
 
 	if err := ensureDir(skillsDirPath); err != nil {
 		return skillsMiddleware, fmt.Errorf("无法创建或访问目录 %s: %w", skillsDirPath, err)

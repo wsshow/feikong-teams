@@ -69,7 +69,7 @@ func NewAgent(ctx context.Context) adk.Agent {
 	toolList = append(toolList, schedulerTools...)
 
 	// 加载技能
-	skillsMiddleware, err := skills.New(ctx)
+	skillsMiddleware, err := skills.New(ctx, safeDir)
 	if err != nil {
 		log.Fatal(err)
 	}
