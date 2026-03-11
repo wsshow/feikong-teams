@@ -69,7 +69,7 @@ func NewAgent(ctx context.Context) adk.Agent {
 	toolList = append(toolList, schedulerTools...)
 
 	// 加载技能
-	skillsMiddleware, err := skills.New(ctx, safeDir)
+	skillsMiddleware, err := skills.New(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -109,10 +109,10 @@ func NewAgent(ctx context.Context) adk.Agent {
 			IsRetryAble: common.IsRetryAble,
 		},
 		Middlewares: []adk.AgentMiddleware{
-			skillsMiddleware,
-			summaryMiddleware,
 			warperrorMiddleware,
+			summaryMiddleware,
 		},
+		Handlers: []adk.ChatModelAgentMiddleware{skillsMiddleware},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,

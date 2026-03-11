@@ -2,9 +2,9 @@ package skills
 
 import (
 	"context"
+	"fkteams/agents/middlewares/fkfs"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/middlewares/skill"
@@ -21,20 +21,26 @@ func ensureDir(path string) error {
 	return err
 }
 
-func New(ctx context.Context, safeDir string) (skillsMiddleware adk.AgentMiddleware, err error) {
-	skillsDirPath := filepath.Join(safeDir, "skills")
+func New(ctx context.Context) (skillsMiddleware adk.ChatModelAgentMiddleware, err error) {
+	skillsDirPath := "./skills"
 
 	if err := ensureDir(skillsDirPath); err != nil {
 		return skillsMiddleware, fmt.Errorf("无法创建或访问目录 %s: %w", skillsDirPath, err)
 	}
 
-	localBackend, err := skill.NewLocalBackend(&skill.LocalBackendConfig{
+	fkBackend, err := fkfs.NewLocalBackend(skillsDirPath)
+	if err != nil {
+		return skillsMiddleware, fmt.Errorf("无法创建本地后端: %w", err)
+	}
+
+	localBackend, err := skill.NewBackendFromFilesystem(ctx, &skill.BackendFromFilesystemConfig{
+		Backend: fkBackend,
 		BaseDir: skillsDirPath,
 	})
 	if err != nil {
 		return skillsMiddleware, err
 	}
-	skillsMiddleware, err = skill.New(ctx, &skill.Config{
+	skillsMiddleware, err = skill.NewMiddleware(ctx, &skill.Config{
 		Backend:    localBackend,
 		UseChinese: true,
 	})
