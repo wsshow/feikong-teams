@@ -23,6 +23,28 @@ func agentCommand() *ucli.Command {
 	return &ucli.Command{
 		Name:  "agent",
 		Usage: "指定单个 Agent 执行任务",
+		Commands: []*ucli.Command{
+			{
+				Name:  "list",
+				Usage: "列出所有可用的 Agent",
+				Action: func(ctx context.Context, cmd *ucli.Command) error {
+					if err := godotenv.Load(); err != nil {
+						fmt.Println("加载 .env 文件失败，请确保已创建该文件")
+						return nil
+					}
+					registry := agents.GetRegistry()
+					if len(registry) == 0 {
+						fmt.Println("暂无可用的 Agent")
+						return nil
+					}
+					fmt.Println("可用的 Agent 列表:")
+					for _, info := range registry {
+						fmt.Printf("  %-12s %s\n", info.Name, info.Description)
+					}
+					return nil
+				},
+			},
+		},
 		Flags: []ucli.Flag{
 			&ucli.StringFlag{
 				Name:     "name",
