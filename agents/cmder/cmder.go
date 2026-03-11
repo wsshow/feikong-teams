@@ -4,23 +4,46 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/tools/command"
+	"fkteams/tools/script/uv"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 )
 
 func NewAgent() adk.Agent {
 	ctx := context.Background()
 
+	workspaceDir := "./workspace"
+	workspaceDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
+	if workspaceDirEnv != "" {
+		workspaceDir = workspaceDirEnv
+	}
+
 	// 创建 CLI 操作工具
 	cliTools, err := command.GetTools()
 	if err != nil {
 		log.Fatal("创建 CLI 工具失败:", err)
 	}
+
+	// 初始化 uv 工具
+	uvToolsInstance, err := uv.NewUVTools(workspaceDir)
+	if err != nil {
+		log.Fatal("初始化uv工具失败:", err)
+	}
+	uvTools, err := uvToolsInstance.GetTools()
+	if err != nil {
+		log.Fatal("创建uv工具失败:", err)
+	}
+
+	var toolList []tool.BaseTool
+	toolList = append(toolList, cliTools...)
+	toolList = append(toolList, uvTools...)
 
 	fmt.Printf("[tips] 命令行智能体已初始化，运行在 %s/%s 平台\n", runtime.GOOS, runtime.GOARCH)
 
@@ -48,7 +71,7 @@ func NewAgent() adk.Agent {
 		},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: cliTools,
+				Tools: toolList,
 			},
 		},
 	})
