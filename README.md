@@ -377,6 +377,7 @@ cancel_schedule <task_id>
 | `init`            | 初始化运行环境（安装/升级 uv 等依赖） |
 | `generate env`    | 生成示例 .env 文件                    |
 | `generate config` | 生成示例配置文件                      |
+| `agent`           | 指定单个 Agent 执行任务               |
 
 #### 全局参数
 
@@ -386,6 +387,21 @@ cancel_schedule <task_id>
 | `--query`   | `-q` | 直接查询模式，执行完查询后退出                                                 |
 | `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
 | `--version` | `-v` | 显示版本信息                                                                   |
+
+#### agent 子命令参数
+
+| 参数      | 简写 | 说明                           |
+| --------- | ---- | ------------------------------ |
+| `--name`  | `-n` | Agent 名称（必填）             |
+| `--query` | `-q` | 直接查询模式，执行完查询后退出 |
+
+```bash
+# 直接查询模式
+./fkteams agent --name 小搜 --query "搜索最新的 Go 语言新闻"
+
+# 交互模式（进入指定 Agent 的对话）
+./fkteams agent -n 小码
+```
 
 ## 使用场景示例
 

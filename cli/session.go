@@ -277,6 +277,11 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 	}()
 }
 
+// SetCurrentAgent 设置当前智能体名称（用于 agent 命令初始化）
+func (s *Session) SetCurrentAgent(name string) {
+	s.currentAgent = name
+}
+
 // switchAgent 切换到指定智能体
 func (s *Session) switchAgent(ctx context.Context, executor *QueryExecutor, agentName string) {
 	agentInfo := agents.GetAgentByName(agentName)
