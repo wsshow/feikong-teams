@@ -492,6 +492,9 @@ description: "一套用于数据分析的技能，包含数据清洗、统计分
 ## 具体的数据分析技能描述...
 ```
 
+### 推荐的 Skills：
+- https://github.com/anthropics/skills/tree/main/skills/skill-creator
+
 ## MCP 工具集成指南
 
 ### 什么是 MCP？
