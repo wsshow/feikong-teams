@@ -64,8 +64,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		app.RegisterService(lifecycle.NewSchedulerService(cfg.WorkspaceDir, cfg.SchedulerOutputDir))
 	}
 
+	var session *cli.Session
 	app.OnReady(func(ctx context.Context) error {
-		session := cli.NewSession(currentMode, inputHistory, createModeRunner)
+		session = cli.NewSession(currentMode, inputHistory, createModeRunner)
 		if resumeSession != "" {
 			cli.SetResumeSessionID(resumeSession)
 		}
@@ -88,7 +89,11 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	}
 
 	app.OnCleanup(func(ctx context.Context) error {
-		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, inputHistory); err != nil {
+		history := inputHistory
+		if session != nil {
+			history = session.InputHistory
+		}
+		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, history); err != nil {
 			log.Printf("保存输入历史失败: %v", err)
 		}
 		pterm.Success.Println("成功退出")
