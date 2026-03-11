@@ -592,3 +592,16 @@ func CLIEventCallback(recorder *HistoryRecorder) func(Event) error {
 		return nil
 	}
 }
+
+// JSONEventCallback 创建 JSON 格式的事件回调，将事件序列化为 JSON 输出
+func JSONEventCallback(recorder *HistoryRecorder) func(Event) error {
+	return func(event Event) error {
+		recorder.RecordEvent(event)
+		data, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+}

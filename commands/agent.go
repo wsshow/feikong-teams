@@ -9,6 +9,7 @@ import (
 	"fkteams/agents"
 	"fkteams/cli"
 	commonPkg "fkteams/common"
+	"fkteams/fkevent"
 	"fkteams/lifecycle"
 	"fkteams/runner"
 
@@ -63,6 +64,11 @@ func agentCommand() *ucli.Command {
 			&ucli.BoolFlag{
 				Name:  "save",
 				Usage: "保存聊天历史",
+			},
+			&ucli.StringFlag{
+				Name:  "format",
+				Value: "default",
+				Usage: "输出格式: default（格式化输出）或 json（原始 JSON 事件）",
 			},
 		},
 		Action: agentAction,
@@ -129,6 +135,11 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		session = cli.NewSession(cli.ModeTeam, inputHistory, nil)
 		session.SetCurrentAgent(agentName)
 		session.StartSignalHandler(app.ExitCh())
+
+		format := cmd.String("format")
+		if format == "json" {
+			session.SetCallbackBuilder(fkevent.JSONEventCallback)
+		}
 
 		save := cmd.Bool("save") || cmd.Root().Bool("save")
 		if query != "" {

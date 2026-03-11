@@ -79,21 +79,28 @@ func (s *QueryState) Cancel() bool {
 
 // QueryExecutor 查询执行器
 type QueryExecutor struct {
-	state  *QueryState
-	runner *adk.Runner
+	state           *QueryState
+	runner          *adk.Runner
+	callbackBuilder func(*fkevent.HistoryRecorder) func(fkevent.Event) error
 }
 
 // NewQueryExecutor 创建查询执行器
 func NewQueryExecutor(runner *adk.Runner, state *QueryState) *QueryExecutor {
 	return &QueryExecutor{
-		state:  state,
-		runner: runner,
+		state:           state,
+		runner:          runner,
+		callbackBuilder: fkevent.CLIEventCallback,
 	}
 }
 
 // SetRunner 设置 runner
 func (e *QueryExecutor) SetRunner(runner *adk.Runner) {
 	e.runner = runner
+}
+
+// SetCallbackBuilder 设置事件回调构造器
+func (e *QueryExecutor) SetCallbackBuilder(cb func(*fkevent.HistoryRecorder) func(fkevent.Event) error) {
+	e.callbackBuilder = cb
 }
 
 // CLI 模式会话常量
@@ -138,7 +145,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	// 创建可取消的 context，并设置 CLI 事件回调
 	queryCtx, cancelFunc := context.WithCancel(ctx)
-	queryCtx = fkevent.WithCallback(queryCtx, fkevent.CLIEventCallback(recorder))
+	queryCtx = fkevent.WithCallback(queryCtx, e.callbackBuilder(recorder))
 
 	// 设置摘要持久化回调
 	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/agents"
+	"fkteams/fkevent"
 	"fkteams/runner"
 	"fkteams/tui"
 	"fmt"
@@ -27,6 +28,7 @@ type Session struct {
 	queryState       *QueryState
 	currentAgent     string
 	createModeRunner ModeRunnerCreator
+	callbackBuilder  func(*fkevent.HistoryRecorder) func(fkevent.Event) error
 }
 
 // NewSession 创建交互会话
@@ -89,6 +91,9 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
 
 	executor := NewQueryExecutor(r, s.queryState)
+	if s.callbackBuilder != nil {
+		executor.SetCallbackBuilder(s.callbackBuilder)
+	}
 	if err := executor.Execute(ctx, query); err != nil {
 		log.Printf("执行查询失败: %v", err)
 	}
@@ -282,6 +287,11 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 // SetCurrentAgent 设置当前智能体名称（用于 agent 命令初始化）
 func (s *Session) SetCurrentAgent(name string) {
 	s.currentAgent = name
+}
+
+// SetCallbackBuilder 设置事件回调构造器（用于自定义输出格式）
+func (s *Session) SetCallbackBuilder(cb func(*fkevent.HistoryRecorder) func(fkevent.Event) error) {
+	s.callbackBuilder = cb
 }
 
 // switchAgent 切换到指定智能体
