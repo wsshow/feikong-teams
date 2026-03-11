@@ -4,8 +4,8 @@ package lifecycle
 
 import (
 	"context"
+	"fkteams/log"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"sync"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/g"
+	"fkteams/log"
 	"fkteams/memory"
-	"log"
 )
 
 // MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理
