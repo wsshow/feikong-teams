@@ -37,20 +37,23 @@ func agentCommand() *ucli.Command {
 						fmt.Println("暂无可用的 Agent")
 						return nil
 					}
-					fmt.Println("可用的 Agent 列表:")
+					pterm.DefaultSection.Println("可用的 Agent 列表")
+					var items []pterm.BulletListItem
 					for _, info := range registry {
-						fmt.Printf("  %-12s %s\n", info.Name, info.Description)
+						items = append(items, pterm.BulletListItem{
+							Level: 0,
+							Text:  pterm.Bold.Sprint(info.Name) + "  " + pterm.FgGray.Sprint(info.Description),
+						})
 					}
-					return nil
+					return pterm.DefaultBulletList.WithItems(items).Render()
 				},
 			},
 		},
 		Flags: []ucli.Flag{
 			&ucli.StringFlag{
-				Name:     "name",
-				Aliases:  []string{"n"},
-				Usage:    "Agent 名称",
-				Required: true,
+				Name:    "name",
+				Aliases: []string{"n"},
+				Usage:   "Agent 名称",
 			},
 			&ucli.StringFlag{
 				Name:    "query",
@@ -75,6 +78,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	}
 
 	agentName := cmd.String("name")
+	if agentName == "" {
+		return fmt.Errorf("请通过 --name/-n 指定 Agent 名称，或使用 agent list 查看可用列表")
+	}
 	query := cmd.String("query")
 	if query == "" {
 		query = cmd.Root().String("query")
@@ -83,10 +89,15 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	agentInfo := agents.GetAgentByName(agentName)
 	if agentInfo == nil {
 		pterm.Error.Printfln("未找到 Agent: %s", agentName)
-		fmt.Println("可用的 Agent 列表:")
+		pterm.DefaultSection.Println("可用的 Agent 列表")
+		var items []pterm.BulletListItem
 		for _, info := range agents.GetRegistry() {
-			fmt.Printf("  - %s: %s\n", info.Name, info.Description)
+			items = append(items, pterm.BulletListItem{
+				Level: 0,
+				Text:  pterm.Bold.Sprint(info.Name) + "  " + pterm.FgGray.Sprint(info.Description),
+			})
 		}
+		_ = pterm.DefaultBulletList.WithItems(items).Render()
 		return nil
 	}
 
