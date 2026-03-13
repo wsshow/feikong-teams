@@ -5,6 +5,7 @@ import (
 	"context"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
+	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/report"
@@ -150,9 +151,19 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(input)
 
-	// 创建可取消的 context，并设置 CLI 事件回调
+	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)
-	queryCtx = fkevent.WithCallback(queryCtx, e.callbackBuilder(recorder))
+
+	// 显示加载动画，通过包装回调在首个事件到达时停止
+	fmt.Println()
+	spinner, _ := pterm.DefaultSpinner.Start("思考中...")
+	stopSpinner := sync.OnceFunc(func() { spinner.Stop() })
+
+	innerCallback := e.callbackBuilder(recorder)
+	queryCtx = fkevent.WithCallback(queryCtx, func(event fkevent.Event) error {
+		stopSpinner()
+		return innerCallback(event)
+	})
 
 	// 注入会话审批状态（支持"该会话允许该命令/所有命令"）
 	queryCtx = command.WithSessionApprovals(queryCtx, command.NewSessionApprovals())
@@ -166,6 +177,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	e.state.StartQuery()
 
 	defer func() {
+		stopSpinner()
 		e.state.EndQuery()
 
 		// 异步提取记忆
@@ -174,102 +186,28 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}
 	}()
 
-	iter := e.runner.Run(queryCtx, inputMessages, adk.WithCheckPointID("fkteams"))
-
-	// 显示加载动画
-	fmt.Println()
-	spinner, _ := pterm.DefaultSpinner.Start("思考中...")
+	// 构建中断处理器
+	var handler engine.InterruptHandler
+	if e.autoReject {
+		handler = engine.AutoRejectHandler()
+	} else {
+		handler = engine.CallbackHandler(e.promptApproval)
+	}
 
 	startTime := time.Now()
-	for {
-		lastEvent, cancelled := e.drainIterator(queryCtx, iter, spinner)
-		if cancelled {
+	_, err := engine.New(e.runner, "fkteams").Run(queryCtx, inputMessages, engine.WithInterruptHandler(handler))
+	if err != nil {
+		if queryCtx.Err() != nil {
 			pterm.Warning.Println("查询已中断")
 			return nil
 		}
-
-		// HITL: 检查审批中断
-		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
-			interrupts := lastEvent.Action.Interrupted.InterruptContexts
-			if len(interrupts) > 0 {
-				decision := e.promptApproval()
-				targets := make(map[string]any, len(interrupts))
-				for _, ic := range interrupts {
-					if ic.IsRootCause {
-						targets[ic.ID] = decision
-					}
-				}
-
-				resumeIter, err := e.runner.ResumeWithParams(queryCtx, "fkteams", &adk.ResumeParams{
-					Targets: targets,
-				})
-				if err != nil {
-					log.Printf("Resume failed: %v", err)
-					break
-				}
-				iter = resumeIter
-				spinner, _ = pterm.DefaultSpinner.Start("执行中...")
-				continue
-			}
-		}
-
-		elapsed := time.Since(startTime).Round(time.Millisecond)
-		fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
-		break
+		log.Printf("执行出错: %v", err)
+		return nil
 	}
 
+	elapsed := time.Since(startTime).Round(time.Millisecond)
+	fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
 	return nil
-}
-
-// drainIterator 处理迭代器中所有事件，返回最后一个事件和是否被取消
-func (e *QueryExecutor) drainIterator(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent], spinner *pterm.SpinnerPrinter) (*adk.AgentEvent, bool) {
-	eventChan := make(chan struct {
-		event *adk.AgentEvent
-		ok    bool
-	}, 1)
-
-	go func() {
-		defer close(eventChan)
-		for {
-			event, ok := iter.Next()
-			eventChan <- struct {
-				event *adk.AgentEvent
-				ok    bool
-			}{event, ok}
-			if !ok {
-				return
-			}
-		}
-	}()
-
-	var lastEvent *adk.AgentEvent
-	for {
-		select {
-		case <-ctx.Done():
-			if spinner != nil {
-				spinner.Stop()
-			}
-			return nil, true
-		case result, ok := <-eventChan:
-			if spinner != nil {
-				spinner.Stop()
-				spinner = nil
-			}
-			select {
-			case <-ctx.Done():
-				return nil, true
-			default:
-			}
-			if !ok || !result.ok {
-				return lastEvent, false
-			}
-			lastEvent = result.event
-			if err := fkevent.ProcessAgentEvent(ctx, result.event); err != nil {
-				log.Printf("Error processing event: %v", err)
-				return lastEvent, false
-			}
-		}
-	}
 }
 
 // promptApproval 提示用户审批，返回审批决定

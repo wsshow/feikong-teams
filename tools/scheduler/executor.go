@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fkteams/engine"
 	"fkteams/fkevent"
 	"fmt"
 	"os"
@@ -42,19 +43,12 @@ func (e *BackgroundExecutor) Execute(task string) (string, error) {
 	ctx = fkevent.WithCallback(ctx, callback)
 
 	inputMessages := []adk.Message{schema.UserMessage(task)}
-	iter := r.Run(ctx, inputMessages, adk.WithCheckPointID("fkteams_scheduler"))
 
-	for {
-		event, ok := iter.Next()
-		if !ok {
-			break
-		}
-		if event.Err != nil {
-			errMsg := fmt.Sprintf("执行出错: %v", event.Err)
-			e.writeResult(task, errMsg)
-			return "", event.Err
-		}
-		_ = fkevent.ProcessAgentEvent(ctx, event)
+	_, err := engine.New(r, "fkteams_scheduler").Run(ctx, inputMessages)
+	if err != nil {
+		errMsg := fmt.Sprintf("执行出错: %v", err)
+		e.writeResult(task, errMsg)
+		return "", err
 	}
 
 	output := getResult()
