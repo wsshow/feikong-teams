@@ -24,7 +24,7 @@ func GetFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
 		if baseDir == "" {
-			Fail(c, http.StatusOK, "FEIKONG_WORKSPACE_DIR 未配置")
+			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
 			return
 		}
 
@@ -41,17 +41,17 @@ func GetFilesHandler() gin.HandlerFunc {
 
 		info, err := os.Stat(fullPath)
 		if err != nil {
-			Fail(c, http.StatusOK, "目录不存在或无法访问")
+			Fail(c, http.StatusNotFound, "目录不存在或无法访问")
 			return
 		}
 		if !info.IsDir() {
-			Fail(c, http.StatusOK, "路径不是目录")
+			Fail(c, http.StatusBadRequest, "路径不是目录")
 			return
 		}
 
 		entries, err := os.ReadDir(fullPath)
 		if err != nil {
-			Fail(c, http.StatusOK, "读取目录失败")
+			Fail(c, http.StatusInternalServerError, "读取目录失败")
 			return
 		}
 

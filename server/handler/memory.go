@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fkteams/g"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,7 +22,7 @@ func GetMemoryListHandler() gin.HandlerFunc {
 func DeleteMemoryHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if g.MemManager == nil {
-			Fail(c, 400, "长期记忆未启用")
+			Fail(c, http.StatusBadRequest, "长期记忆未启用")
 			return
 		}
 
@@ -29,7 +30,7 @@ func DeleteMemoryHandler() gin.HandlerFunc {
 			Summary string `json:"summary" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			Fail(c, 400, "参数错误: summary 不能为空")
+			Fail(c, http.StatusBadRequest, "参数错误: summary 不能为空")
 			return
 		}
 
@@ -37,7 +38,7 @@ func DeleteMemoryHandler() gin.HandlerFunc {
 		if deleted > 0 {
 			OK(c, gin.H{"deleted": deleted})
 		} else {
-			Fail(c, 404, "未找到匹配的记忆条目")
+			Fail(c, http.StatusNotFound, "未找到匹配的记忆条目")
 		}
 	}
 }
@@ -46,7 +47,7 @@ func DeleteMemoryHandler() gin.HandlerFunc {
 func ClearMemoryHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if g.MemManager == nil {
-			Fail(c, 400, "长期记忆未启用")
+			Fail(c, http.StatusBadRequest, "长期记忆未启用")
 			return
 		}
 		count := g.MemManager.Count()
