@@ -218,7 +218,7 @@ go run main.go serve
 go run main.go serve --host 0.0.0.0 --port 8080
 ```
 
-提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。
+提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。详细接口文档请参考 [API 文档](./docs/API.md)。
 
 #### 命令行模式
 
