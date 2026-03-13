@@ -14,6 +14,7 @@ func Root() *ucli.Command {
 		Version: version.Get().String(),
 		Commands: []*ucli.Command{
 			webCommand(),
+			serveCommand(),
 			sessionCommand(),
 			updateCommand(),
 			initCommand(),

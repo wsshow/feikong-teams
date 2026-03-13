@@ -203,6 +203,23 @@ Web 界面特性：
 - 可折叠侧边栏和模式切换
 - 可选的登录认证（通过环境变量配置）
 
+#### 纯 API 服务模式
+
+启动不带 Web 界面的纯 API 服务，适合作为后端接口独立部署：
+
+```bash
+# 使用预编译版本
+./release/fkteams_darwin_arm64 serve
+
+# 或直接编译运行
+go run main.go serve
+
+# 指定监听地址和端口
+go run main.go serve --host 0.0.0.0 --port 8080
+```
+
+提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。
+
 #### 命令行模式
 
 适合开发者和高级用户：

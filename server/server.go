@@ -16,19 +16,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// serverMode 服务模式
+type serverMode int
+
+const (
+	ModeWeb serverMode = iota // 含 Web 界面
+	ModeAPI                   // 纯 API 服务
+)
+
 // httpService HTTP 服务，实现 lifecycle.Service 接口
 type httpService struct {
+	host     string       // 监听地址
 	port     int          // 监听端口
 	logLevel string       // 日志级别
+	mode     serverMode   // 服务模式
 	server   *http.Server // HTTP 服务实例
-}
-
-// newHttpService 创建 HTTP 服务实例
-func newHttpService(port int, logLevel string) *httpService {
-	return &httpService{
-		port:     port,
-		logLevel: logLevel,
-	}
 }
 
 // Name 返回服务名称
@@ -45,9 +47,16 @@ func (s *httpService) Start(ctx context.Context) error {
 		port = 23456
 	}
 
+	var h http.Handler
+	if s.mode == ModeAPI {
+		h = router.InitAPI()
+	} else {
+		h = router.Init()
+	}
+
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: router.Init(),
+		Addr:    fmt.Sprintf("%s:%d", s.host, port),
+		Handler: h,
 	}
 	s.server.RegisterOnShutdown(handler.CloseAllWebSockets)
 
@@ -86,8 +95,14 @@ func (s *httpService) Addr() string {
 	return ""
 }
 
-// Run 启动 Web 服务器模式
-func Run() {
+// ServeOptions serve 命令的配置选项
+type ServeOptions struct {
+	Host string
+	Port int
+}
+
+// run 启动服务的公共逻辑
+func run(mode serverMode, opts *ServeOptions) {
 	cfg, err := config.Get()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
@@ -103,14 +118,35 @@ func Run() {
 		app.RegisterService(lifecycle.NewSchedulerService(appCfg.WorkspaceDir, appCfg.SchedulerOutputDir))
 	}
 
-	httpSvc := newHttpService(cfg.Server.Port, cfg.Server.LogLevel)
+	host := "127.0.0.1"
+	port := cfg.Server.Port
+	if opts != nil {
+		if opts.Host != "" {
+			host = opts.Host
+		}
+		if opts.Port > 0 {
+			port = opts.Port
+		}
+	}
+
+	httpSvc := &httpService{
+		host:     host,
+		port:     port,
+		logLevel: cfg.Server.LogLevel,
+		mode:     mode,
+	}
 	app.RegisterService(httpSvc)
 
 	app.OnReady(func(ctx context.Context) error {
 		addr := httpSvc.Addr()
-		fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
-		fmt.Printf("当前服务运行在端口 [%s]\n", addr)
-		fmt.Printf("前端页面地址: http://localhost%s\n", addr)
+		if mode == ModeAPI {
+			fmt.Printf("欢迎来到非空小队 - API 服务模式: %s\n", version.Get())
+			fmt.Printf("当前服务运行在 [%s]\n", addr)
+		} else {
+			fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
+			fmt.Printf("当前服务运行在 [%s]\n", addr)
+			fmt.Printf("前端页面地址: http://%s\n", addr)
+		}
 		if appCfg.MemoryEnabled {
 			fmt.Println("全局长期记忆已启用")
 		}
@@ -125,4 +161,14 @@ func Run() {
 	if err := app.Run(context.Background()); err != nil {
 		log.Fatalf("application error: %v", err)
 	}
+}
+
+// Run 启动 Web 服务器模式
+func Run() {
+	run(ModeWeb, nil)
+}
+
+// RunServe 启动纯 API 服务（无 Web 界面）
+func RunServe(opts ServeOptions) {
+	run(ModeAPI, &opts)
 }
