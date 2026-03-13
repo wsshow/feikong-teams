@@ -55,8 +55,11 @@ func (s *httpService) Start(ctx context.Context) error {
 	}
 
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", s.host, port),
-		Handler: h,
+		Addr:           fmt.Sprintf("%s:%d", s.host, port),
+		Handler:        h,
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   60 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1MB
 	}
 	s.server.RegisterOnShutdown(handler.CloseAllWebSockets)
 

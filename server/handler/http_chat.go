@@ -1,0 +1,201 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"fkteams/agents/middlewares/summary"
+	"fkteams/chatutil"
+	"fkteams/fkevent"
+	"fkteams/g"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/cloudwego/eino/adk"
+	"github.com/gin-gonic/gin"
+)
+
+// ChatRequest HTTP 聊天请求
+type ChatRequest struct {
+	SessionID string   `json:"session_id"`
+	Message   string   `json:"message" binding:"required"`
+	Mode      string   `json:"mode"`
+	AgentName string   `json:"agent_name"`
+	FilePaths []string `json:"file_paths"`
+	Stream    bool     `json:"stream"`
+}
+
+// ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
+func ChatHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req ChatRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+
+		sessionID := req.SessionID
+		if sessionID == "" {
+			sessionID = "default"
+		}
+		mode := req.Mode
+		if mode == "" {
+			mode = "supervisor"
+		}
+
+		// 获取 runner
+		ctx := c.Request.Context()
+		var r *adk.Runner
+		if req.AgentName != "" {
+			r = getOrCreateAgentRunner(ctx, req.AgentName)
+			if r == nil {
+				Fail(c, http.StatusBadRequest, fmt.Sprintf("agent not found: %s", req.AgentName))
+				return
+			}
+		} else {
+			r = getOrCreateRunner(ctx, mode)
+		}
+
+		// 获取该会话的 HistoryRecorder
+		recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+		inputMessages := chatutil.BuildInputMessages(recorder, req.Message)
+		countBeforeRun := recorder.GetMessageCount()
+		recorder.RecordUserInput(req.Message)
+
+		if req.Stream {
+			handleStreamChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID)
+		} else {
+			handleSyncChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID)
+		}
+	}
+}
+
+// handleStreamChat SSE 流式聊天响应
+func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID string) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	taskCtx, taskCancel := context.WithCancel(ctx)
+	defer taskCancel()
+
+	// 绑定事件回调
+	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
+		recorder.RecordEvent(event)
+		data, _ := json.Marshal(convertEventForWS(event))
+		_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+		c.Writer.Flush()
+		return err
+	})
+
+	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
+		recorder.SetSummary(summaryText, countBeforeRun)
+	})
+
+	// 执行 agent runner
+	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
+	iter := r.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
+	for {
+		select {
+		case <-taskCtx.Done():
+			saveHistory(recorder, historyFilePath, sessionID)
+			return
+		default:
+		}
+
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "closed network connection") ||
+				strings.Contains(errMsg, "broken pipe") ||
+				strings.Contains(errMsg, "connection reset") {
+				log.Printf("connection closed, stopping: session=%s", sessionID)
+				return
+			}
+			log.Printf("error processing event: %v", err)
+			break
+		}
+	}
+
+	saveHistory(recorder, historyFilePath, sessionID)
+
+	if g.MemManager != nil {
+		g.MemManager.ExtractFromRecorder(recorder, sessionID)
+	}
+
+	// 发送结束事件
+	data, _ := json.Marshal(map[string]string{"type": "processing_end", "message": "处理完成"})
+	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+	c.Writer.Flush()
+
+	defer func() {
+		if err := g.Cleaner.ExecuteAndClear(); err != nil {
+			fmt.Printf("failed to cleanup resources: %v\n", err)
+		}
+	}()
+}
+
+// handleSyncChat 同步聊天响应（收集完整结果后返回）
+func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID string) {
+	taskCtx, taskCancel := context.WithCancel(ctx)
+	defer taskCancel()
+
+	var events []fkevent.Event
+
+	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
+		recorder.RecordEvent(event)
+		events = append(events, event)
+		return nil
+	})
+
+	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
+		recorder.SetSummary(summaryText, countBeforeRun)
+	})
+
+	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
+	iter := r.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Printf("error processing event: %v", err)
+			break
+		}
+	}
+
+	saveHistory(recorder, historyFilePath, sessionID)
+
+	if g.MemManager != nil {
+		g.MemManager.ExtractFromRecorder(recorder, sessionID)
+	}
+
+	defer func() {
+		if err := g.Cleaner.ExecuteAndClear(); err != nil {
+			fmt.Printf("failed to cleanup resources: %v\n", err)
+		}
+	}()
+
+	// 收集最终文本内容
+	var content strings.Builder
+	for _, e := range events {
+		if e.Content != "" {
+			content.WriteString(e.Content)
+		}
+	}
+
+	OK(c, gin.H{
+		"session_id": sessionID,
+		"content":    content.String(),
+		"events":     events,
+	})
+}

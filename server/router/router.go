@@ -17,6 +17,7 @@ func newEngine() *gin.Engine {
 		gin.Logger(),
 		gin.Recovery(),
 		middleware.Cors(),
+		middleware.MaxBodySize(100<<20), // 100MB
 	)
 	if handler.AuthEnabled() {
 		r.Use(middleware.Auth())
@@ -26,6 +27,7 @@ func newEngine() *gin.Engine {
 
 // registerAPIRoutes 注册公共 API 路由
 func registerAPIRoutes(r *gin.Engine) {
+	r.GET("/health", handler.HealthHandler())
 	r.GET("/ws", handler.WebSocketHandler())
 
 	apiV1 := r.Group("/api/fkteams")
@@ -37,6 +39,9 @@ func registerAPIRoutes(r *gin.Engine) {
 
 		// 智能体 API
 		apiV1.GET("/agents", handler.GetAgentsHandler())
+
+		// 聊天 API
+		apiV1.POST("/chat", handler.ChatHandler())
 
 		// 文件列表 API
 		apiV1.GET("/files", handler.GetFilesHandler())

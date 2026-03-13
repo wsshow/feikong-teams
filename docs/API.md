@@ -50,6 +50,24 @@
 
 所有接口挂载在 `/api/fkteams` 路径下。
 
+### GET /health
+
+健康检查接口，用于容器编排和负载均衡的健康探测。
+
+**成功响应** (200)：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "status": "ok"
+  }
+}
+```
+
+---
+
 ### POST /api/fkteams/login
 
 > 仅在认证启用时可用
@@ -125,6 +143,68 @@ Token 格式为 `hex(payload).hex(hmac-sha256)`，payload 为 `username|expiry(R
   ]
 }
 ```
+
+---
+
+### POST /api/fkteams/chat
+
+通过 HTTP 发送聊天消息，支持同步和 SSE 流式两种响应模式。
+
+**请求 Body**：
+
+```json
+{
+  "session_id": "string",
+  "message": "string",
+  "mode": "string",
+  "agent_name": "string",
+  "file_paths": ["string"],
+  "stream": false
+}
+```
+
+| 字段         | 类型     | 必填 | 说明                                                           |
+| ------------ | -------- | ---- | -------------------------------------------------------------- |
+| `message`    | string   | 是   | 用户输入的文本                                                 |
+| `session_id` | string   | 否   | 会话标识，默认 `"default"`                                     |
+| `mode`       | string   | 否   | 运行模式：`supervisor`（默认）、`roundtable`、`custom`、`deep` |
+| `agent_name` | string   | 否   | 指定单个智能体直接对话（优先级高于 mode）                      |
+| `file_paths` | string[] | 否   | 引用的文件路径列表                                             |
+| `stream`     | bool     | 否   | 是否使用 SSE 流式响应，默认 `false`                            |
+
+**同步响应** (`stream: false`)：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "session_id": "default",
+    "content": "完整的回复文本",
+    "events": []
+  }
+}
+```
+
+**SSE 流式响应** (`stream: true`)：
+
+返回 `text/event-stream`，每个事件的格式为：
+
+```
+data: {"type":"stream_chunk","agent_name":"小码","content":"..."}
+
+data: {"type":"processing_end","message":"处理完成"}
+
+```
+
+事件结构与 WebSocket 的 Agent 事件消息相同。
+
+**失败响应**：
+
+| 状态码 | message         | 说明               |
+| ------ | --------------- | ------------------ |
+| 400    | invalid request | 请求体解析失败     |
+| 400    | agent not found | 指定的智能体不存在 |
 
 ---
 
