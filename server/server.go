@@ -66,7 +66,7 @@ func (s *httpService) Start(ctx context.Context) error {
 		}
 	}()
 
-	log.Printf("[http] 服务运行在端口 %s", s.server.Addr)
+	log.Printf("[http] 服务运行在 [%s]", s.server.Addr)
 	return nil
 }
 
@@ -119,6 +119,9 @@ func run(mode serverMode, opts *ServeOptions) {
 	}
 
 	host := "127.0.0.1"
+	if cfg.Server.Host != "" {
+		host = cfg.Server.Host
+	}
 	port := cfg.Server.Port
 	if opts != nil {
 		if opts.Host != "" {

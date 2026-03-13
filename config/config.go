@@ -11,6 +11,7 @@ import (
 
 // Server 服务端配置
 type Server struct {
+	Host     string `toml:"host"`
 	Port     int    `toml:"port"`
 	LogLevel string `toml:"log_level"`
 }
