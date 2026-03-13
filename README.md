@@ -56,6 +56,9 @@ FEIKONG_CMDER_ENABLED = true
 # 数据分析师
 FEIKONG_ANALYST_ENABLED = false
 
+# 个人全能助手（带审批功能）
+FEIKONG_ASSISTANT_ENABLED = false
+
 # 全局长期记忆
 FEIKONG_MEMORY_ENABLED = false
 
@@ -153,7 +156,7 @@ transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 - `file` - 文件读写操作（限制在 workspace 目录），支持 unified diff 批量修改
 - `git` - Git 仓库操作
 - `excel` - Excel 文件处理
-- `command` - 命令行执行
+- `command` - 智能命令执行（带安全审批），危险命令需用户确认后才执行
 - `ssh` - SSH 远程连接
 - `search` - 网络搜索（DuckDuckGo）
 - `todo` - 待办事项管理
@@ -323,6 +326,7 @@ list_agents
 - `@小访` - 远程访问专家，擅长通过 SSH 连接远程服务器，执行命令、传输文件和管理远程系统
 - `@小天` - 讲故事专家，擅长编写引人入胜的故事
 - `@小简` - 总结专家，擅长将冗长的信息提炼为简洁的摘要
+- `@小助` - 个人全能助手，集成命令执行（带安全审批）、文件操作、待办管理、定时任务、搜索和网页抓取，一个智能体完成几乎所有个人助手工作
 
 **提示**：输入 `@` 符号后会自动显示可用的智能体列表供选择。
 

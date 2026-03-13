@@ -30,6 +30,9 @@ FEIKONG_CMDER_ENABLED = true
 # 数据分析师
 FEIKONG_ANALYST_ENABLED = false
 
+# 个人全能助手（带审批功能）
+FEIKONG_ASSISTANT_ENABLED = false
+
 # 全局长期记忆
 FEIKONG_MEMORY_ENABLED = false
 

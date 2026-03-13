@@ -84,8 +84,13 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil
 		})
 		return sshTools.GetTools()
-	case "command":
-		return command.GetTools()
+	case "command", "assistant":
+		cmdDir := "./workspace"
+		cmdDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
+		if cmdDirEnv != "" {
+			cmdDir = cmdDirEnv
+		}
+		return command.NewCommandTools(cmdDir).GetTools()
 	case "search":
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err

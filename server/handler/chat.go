@@ -8,6 +8,7 @@ import (
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
+	"fkteams/tools/command"
 	"fmt"
 	"log"
 	"strings"
@@ -165,46 +166,109 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
+	// 注入会话审批状态
+	taskCtx = command.WithSessionApprovals(taskCtx, command.NewSessionApprovals())
+
+	// 初始化 HITL 审批通道
+	approvalCh := make(chan int, 1)
+	tm.mu.Lock()
+	tm.approvalCh = approvalCh
+	tm.mu.Unlock()
+	defer func() {
+		tm.mu.Lock()
+		tm.approvalCh = nil
+		tm.mu.Unlock()
+	}()
+
 	_ = writeJSON(map[string]interface{}{
 		"type":    "processing_start",
 		"message": "开始处理您的请求...",
 	})
 
-	// 执行 agent runner
+	// 执行 agent runner（支持 HITL 中断→恢复循环）
 	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
 	iter := r.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
 	for {
-		select {
-		case <-taskCtx.Done():
-			log.Printf("task cancelled: session=%s, saving history...", sessionID)
-			saveHistory(recorder, historyFilePath, sessionID)
-			return
-		default:
-		}
-
-		event, ok := iter.Next()
-		if !ok {
-			break
-		}
-		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
-			// 检查是否是连接已关闭的错误，避免重复记录
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "closed network connection") ||
-				strings.Contains(errMsg, "broken pipe") ||
-				strings.Contains(errMsg, "connection reset") {
-				// 连接已断开，静默返回
-				log.Printf("connection closed, stopping event processing: session=%s", sessionID)
+		// 遍历事件
+		var lastEvent *adk.AgentEvent
+		aborted := false
+		for {
+			select {
+			case <-taskCtx.Done():
+				log.Printf("task cancelled: session=%s, saving history...", sessionID)
+				saveHistory(recorder, historyFilePath, sessionID)
 				return
+			default:
 			}
 
-			// 其他错误，尝试发送错误消息（可能失败但不再记录）
-			log.Printf("error processing event: %v", err)
-			_ = writeJSON(map[string]interface{}{
-				"type":  "error",
-				"error": err.Error(),
-			})
+			event, ok := iter.Next()
+			if !ok {
+				break
+			}
+			lastEvent = event
+			if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "closed network connection") ||
+					strings.Contains(errMsg, "broken pipe") ||
+					strings.Contains(errMsg, "connection reset") {
+					log.Printf("connection closed, stopping event processing: session=%s", sessionID)
+					return
+				}
+				log.Printf("error processing event: %v", err)
+				_ = writeJSON(map[string]interface{}{
+					"type":  "error",
+					"error": err.Error(),
+				})
+				aborted = true
+				break
+			}
+		}
+
+		if aborted {
 			break
 		}
+
+		// HITL: 检查审批中断
+		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
+			interrupts := lastEvent.Action.Interrupted.InterruptContexts
+			if len(interrupts) > 0 {
+				_ = writeJSON(map[string]interface{}{
+					"type":    "approval_required",
+					"message": "危险命令需要审批",
+				})
+
+				// 等待前端审批决定
+				var decision int
+				select {
+				case <-taskCtx.Done():
+					saveHistory(recorder, historyFilePath, sessionID)
+					return
+				case decision = <-approvalCh:
+				}
+
+				targets := make(map[string]any, len(interrupts))
+				for _, ic := range interrupts {
+					if ic.IsRootCause {
+						targets[ic.ID] = decision
+					}
+				}
+
+				resumeIter, err := r.ResumeWithParams(taskCtx, "fkteams", &adk.ResumeParams{
+					Targets: targets,
+				})
+				if err != nil {
+					log.Printf("Resume failed: %v", err)
+					_ = writeJSON(map[string]interface{}{
+						"type":  "error",
+						"error": fmt.Sprintf("恢复执行失败: %v", err),
+					})
+					break
+				}
+				iter = resumeIter
+				continue
+			}
+		}
+		break
 	}
 
 	// 保存聊天历史

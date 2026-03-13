@@ -18,6 +18,7 @@ var (
 type taskManager struct {
 	mu         sync.Mutex
 	taskCancel context.CancelFunc
+	approvalCh chan int // HITL 审批通道
 }
 
 var (

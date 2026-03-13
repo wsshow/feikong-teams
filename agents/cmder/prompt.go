@@ -54,9 +54,7 @@ var cmderPrompt = `
 - 多命令用 "&&" 或 ";" 连接
 
 ## 可用工具
-- **execute_command**: 执行命令（Windows用PowerShell，Unix用bash），支持超时控制（默认30秒，最大300秒）。
-- **get_system_info**: 获取系统信息（info_type: os/shell/path/env/all）。
-- **get_command_history**: 查看已执行命令历史（limit: 默认10，最大100）。
+- **smart_execute**: 智能命令执行工具，带安全审批功能。可执行任意 shell 命令并自动评估安全风险（Windows用PowerShell，Unix用bash）。安全命令直接执行，危险命令暂停并请求用户审批。支持超时控制（默认60秒，最大600秒）。使用时必须提供执行原因。
 
 ## 输出格式
 - 成功: 一句话总结结果。

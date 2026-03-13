@@ -91,6 +91,7 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
 
 	executor := NewQueryExecutor(r, s.queryState)
+	executor.SetAutoReject(true)
 	if s.callbackBuilder != nil {
 		executor.SetCallbackBuilder(s.callbackBuilder)
 	}

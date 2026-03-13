@@ -5,30 +5,16 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 )
 
-// GetTools 获取所有 CLI 操作工具
-func GetTools() ([]tool.BaseTool, error) {
-	var tools []tool.BaseTool
-
-	// 执行命令工具
-	executeTool, err := utils.InferTool("execute_command", "执行命令。会根据操作系统自动选择合适的 shell（Windows 使用 PowerShell，macOS/Linux 使用 bash）。命令执行前会进行安全检查，拒绝执行危险命令。支持设置超时时间（默认30秒，最大300秒）", ExecuteCommand)
+// GetTools 返回命令行工具列表
+func (t *CommandTools) GetTools() ([]tool.BaseTool, error) {
+	smartExec, err := utils.InferTool(
+		"smart_execute",
+		"智能命令执行工具，带安全审批功能。可执行任意 shell 命令并自动评估安全风险。安全命令直接执行，危险命令暂停并请求用户审批。支持超时控制（默认60秒，最大600秒），输出限制 1MB。适合系统管理、文件操作、包管理、构建编译、数据处理等任务。使用时必须提供执行原因。",
+		t.SmartExecute,
+	)
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, executeTool)
 
-	// 获取系统信息工具
-	systemInfoTool, err := utils.InferTool("get_system_info", "获取系统信息，包括操作系统类型、架构、shell、工作目录、环境变量等。支持通过 info_type 参数指定返回的信息类型（os, shell, path, env, all）", GetSystemInfo)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, systemInfoTool)
-
-	// 获取命令历史工具
-	historyTool, err := utils.InferTool("get_command_history", "获取命令执行历史记录。可以查看之前执行过的命令、执行时间、退出码、安全级别等信息。支持通过 limit 参数限制返回的记录数量", GetCommandHistory)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, historyTool)
-
-	return tools, nil
+	return []tool.BaseTool{smartExec}, nil
 }

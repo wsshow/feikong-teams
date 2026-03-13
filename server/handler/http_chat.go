@@ -7,6 +7,7 @@ import (
 	"fkteams/chatutil"
 	"fkteams/fkevent"
 	"fkteams/g"
+	"fkteams/tools/command"
 	"fmt"
 	"io"
 	"log"
@@ -94,32 +95,65 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
-	// 执行 agent runner
+	// 执行 agent runner（HTTP 模式自动拒绝危险命令）
 	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
 	iter := r.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
 	for {
-		select {
-		case <-taskCtx.Done():
-			saveHistory(recorder, historyFilePath, sessionID)
-			return
-		default:
+		var lastEvent *adk.AgentEvent
+		aborted := false
+		for {
+			select {
+			case <-taskCtx.Done():
+				saveHistory(recorder, historyFilePath, sessionID)
+				return
+			default:
+			}
+
+			event, ok := iter.Next()
+			if !ok {
+				break
+			}
+			lastEvent = event
+			if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "closed network connection") ||
+					strings.Contains(errMsg, "broken pipe") ||
+					strings.Contains(errMsg, "connection reset") {
+					log.Printf("connection closed, stopping: session=%s", sessionID)
+					return
+				}
+				log.Printf("error processing event: %v", err)
+				aborted = true
+				break
+			}
 		}
 
-		event, ok := iter.Next()
-		if !ok {
+		if aborted {
 			break
 		}
-		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "closed network connection") ||
-				strings.Contains(errMsg, "broken pipe") ||
-				strings.Contains(errMsg, "connection reset") {
-				log.Printf("connection closed, stopping: session=%s", sessionID)
-				return
+
+		// HITL: HTTP 模式自动拒绝危险命令
+		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
+			interrupts := lastEvent.Action.Interrupted.InterruptContexts
+			if len(interrupts) > 0 {
+				targets := make(map[string]any, len(interrupts))
+				for _, ic := range interrupts {
+					if ic.IsRootCause {
+						targets[ic.ID] = command.DecisionReject
+					}
+				}
+				resumeIter, err := r.ResumeWithParams(taskCtx, "fkteams", &adk.ResumeParams{
+					Targets: targets,
+				})
+				if err != nil {
+					log.Printf("Resume failed: %v", err)
+					break
+				}
+				iter = resumeIter
+				continue
 			}
-			log.Printf("error processing event: %v", err)
-			break
 		}
+		break
 	}
 
 	saveHistory(recorder, historyFilePath, sessionID)
@@ -160,17 +194,44 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
 	iter := r.Run(taskCtx, inputMessages, adk.WithCheckPointID("fkteams"))
 	for {
-		event, ok := iter.Next()
-		if !ok {
-			break
-		}
-		if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
-			if err == io.EOF {
+		var lastEvent *adk.AgentEvent
+		for {
+			event, ok := iter.Next()
+			if !ok {
 				break
 			}
-			log.Printf("error processing event: %v", err)
-			break
+			lastEvent = event
+			if err := fkevent.ProcessAgentEvent(taskCtx, event); err != nil {
+				if err == io.EOF {
+					break
+				}
+				log.Printf("error processing event: %v", err)
+				break
+			}
 		}
+
+		// HITL: HTTP 模式自动拒绝危险命令
+		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
+			interrupts := lastEvent.Action.Interrupted.InterruptContexts
+			if len(interrupts) > 0 {
+				targets := make(map[string]any, len(interrupts))
+				for _, ic := range interrupts {
+					if ic.IsRootCause {
+						targets[ic.ID] = command.DecisionReject
+					}
+				}
+				resumeIter, err := r.ResumeWithParams(taskCtx, "fkteams", &adk.ResumeParams{
+					Targets: targets,
+				})
+				if err != nil {
+					log.Printf("Resume failed: %v", err)
+					break
+				}
+				iter = resumeIter
+				continue
+			}
+		}
+		break
 	}
 
 	saveHistory(recorder, historyFilePath, sessionID)

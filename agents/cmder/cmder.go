@@ -24,10 +24,10 @@ func NewAgent() adk.Agent {
 		workspaceDir = workspaceDirEnv
 	}
 
-	// 创建 CLI 操作工具
-	cliTools, err := command.GetTools()
+	// 创建命令行工具
+	cmdTools, err := command.NewCommandTools(workspaceDir).GetTools()
 	if err != nil {
-		log.Fatal("创建 CLI 工具失败:", err)
+		log.Fatal("创建命令行工具失败:", err)
 	}
 
 	// 初始化 uv 工具
@@ -41,7 +41,7 @@ func NewAgent() adk.Agent {
 	}
 
 	var toolList []tool.BaseTool
-	toolList = append(toolList, cliTools...)
+	toolList = append(toolList, cmdTools...)
 	toolList = append(toolList, uvTools...)
 
 	// 格式化系统消息

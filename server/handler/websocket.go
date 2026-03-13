@@ -29,6 +29,7 @@ type WSMessage struct {
 	Mode      string   `json:"mode,omitempty"`
 	AgentName string   `json:"agent_name,omitempty"`
 	FilePaths []string `json:"file_paths,omitempty"`
+	Decision  int      `json:"decision,omitempty"` // HITL 审批决定
 }
 
 // WebSocketHandler 处理 WebSocket 连接
@@ -97,6 +98,17 @@ func WebSocketHandler() gin.HandlerFunc {
 				}
 				tm.mu.Unlock()
 				_ = writeJSON(map[string]interface{}{"type": "cancelled", "message": "任务已取消"})
+
+			case "approval":
+				tm.mu.Lock()
+				ch := tm.approvalCh
+				tm.mu.Unlock()
+				if ch != nil {
+					select {
+					case ch <- wsMsg.Decision:
+					default:
+					}
+				}
 
 			case "clear_history":
 				handleClearHistory(wsMsg, writeJSON)

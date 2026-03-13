@@ -8,6 +8,7 @@ import (
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/report"
+	"fkteams/tools/command"
 	"fmt"
 	"log"
 	"sync"
@@ -81,6 +82,7 @@ func (s *QueryState) Cancel() bool {
 type QueryExecutor struct {
 	state           *QueryState
 	runner          *adk.Runner
+	autoReject      bool
 	callbackBuilder func(*fkevent.HistoryRecorder) func(fkevent.Event) error
 }
 
@@ -91,6 +93,11 @@ func NewQueryExecutor(runner *adk.Runner, state *QueryState) *QueryExecutor {
 		runner:          runner,
 		callbackBuilder: fkevent.CLIEventCallback,
 	}
+}
+
+// SetAutoReject 设置自动拒绝危险命令（用于非交互模式）
+func (e *QueryExecutor) SetAutoReject(v bool) {
+	e.autoReject = v
 }
 
 // SetRunner 设置 runner
@@ -147,6 +154,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	queryCtx, cancelFunc := context.WithCancel(ctx)
 	queryCtx = fkevent.WithCallback(queryCtx, e.callbackBuilder(recorder))
 
+	// 注入会话审批状态（支持"该会话允许该命令/所有命令"）
+	queryCtx = command.WithSessionApprovals(queryCtx, command.NewSessionApprovals())
+
 	// 设置摘要持久化回调
 	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
@@ -170,13 +180,56 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	fmt.Println()
 	spinner, _ := pterm.DefaultSpinner.Start("思考中...")
 
-	// 使用 channel 接收事件
+	startTime := time.Now()
+	for {
+		lastEvent, cancelled := e.drainIterator(queryCtx, iter, spinner)
+		if cancelled {
+			pterm.Warning.Println("查询已中断")
+			return nil
+		}
+
+		// HITL: 检查审批中断
+		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
+			interrupts := lastEvent.Action.Interrupted.InterruptContexts
+			if len(interrupts) > 0 {
+				decision := e.promptApproval()
+				targets := make(map[string]any, len(interrupts))
+				for _, ic := range interrupts {
+					if ic.IsRootCause {
+						targets[ic.ID] = decision
+					}
+				}
+
+				resumeIter, err := e.runner.ResumeWithParams(queryCtx, "fkteams", &adk.ResumeParams{
+					Targets: targets,
+				})
+				if err != nil {
+					log.Printf("Resume failed: %v", err)
+					break
+				}
+				iter = resumeIter
+				spinner, _ = pterm.DefaultSpinner.Start("执行中...")
+				continue
+			}
+		}
+
+		elapsed := time.Since(startTime).Round(time.Millisecond)
+		fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
+		break
+	}
+
+	return nil
+}
+
+// drainIterator 处理迭代器中所有事件，返回最后一个事件和是否被取消
+func (e *QueryExecutor) drainIterator(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent], spinner *pterm.SpinnerPrinter) (*adk.AgentEvent, bool) {
 	eventChan := make(chan struct {
 		event *adk.AgentEvent
 		ok    bool
 	}, 1)
 
 	go func() {
+		defer close(eventChan)
 		for {
 			event, ok := iter.Next()
 			eventChan <- struct {
@@ -184,45 +237,70 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 				ok    bool
 			}{event, ok}
 			if !ok {
-				close(eventChan)
 				return
 			}
 		}
 	}()
 
-	startTime := time.Now()
+	var lastEvent *adk.AgentEvent
 	for {
 		select {
-		case <-queryCtx.Done():
-			spinner.Stop()
-			pterm.Warning.Println("查询已中断")
-			return nil
+		case <-ctx.Done():
+			if spinner != nil {
+				spinner.Stop()
+			}
+			return nil, true
 		case result, ok := <-eventChan:
-			spinner.Stop()
-			// 二次检测 context 取消：eventChan 和 ctx.Done 可能同时就绪，
-			// 需要确认收到事件后 context 未被取消，避免处理已过期的事件
+			if spinner != nil {
+				spinner.Stop()
+				spinner = nil
+			}
 			select {
-			case <-queryCtx.Done():
-				pterm.Warning.Println("查询已中断")
-				return nil
+			case <-ctx.Done():
+				return nil, true
 			default:
 			}
-
-			if !ok {
-				elapsed := time.Since(startTime).Round(time.Millisecond)
-				fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
-				return nil
+			if !ok || !result.ok {
+				return lastEvent, false
 			}
-			if !result.ok {
-				elapsed := time.Since(startTime).Round(time.Millisecond)
-				fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
-				return nil
-			}
-			if err := fkevent.ProcessAgentEvent(queryCtx, result.event); err != nil {
+			lastEvent = result.event
+			if err := fkevent.ProcessAgentEvent(ctx, result.event); err != nil {
 				log.Printf("Error processing event: %v", err)
-				return err
+				return lastEvent, false
 			}
 		}
+	}
+}
+
+// promptApproval 提示用户审批，返回审批决定
+func (e *QueryExecutor) promptApproval() int {
+	if e.autoReject {
+		pterm.Warning.Println("非交互模式，自动拒绝危险命令")
+		return command.DecisionReject
+	}
+
+	fmt.Println()
+	options := []string{
+		"允许一次",
+		"该会话允许该命令",
+		"该会话允许所有命令",
+		"拒绝执行",
+	}
+	selected, _ := pterm.DefaultInteractiveSelect.
+		WithDefaultText("请选择操作").
+		WithOptions(options).
+		Show()
+	fmt.Println()
+
+	switch selected {
+	case "允许一次":
+		return command.DecisionApproveOnce
+	case "该会话允许该命令":
+		return command.DecisionApproveCommand
+	case "该会话允许所有命令":
+		return command.DecisionApproveAll
+	default:
+		return command.DecisionReject
 	}
 }
 

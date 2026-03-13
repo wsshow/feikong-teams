@@ -5,186 +5,295 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/cloudwego/eino/components/tool"
 )
 
-// CommandSecurityLevel 定义命令的安全级别
-type CommandSecurityLevel int
+// ApprovalDecision 审批决定
+type ApprovalDecision = int
 
 const (
-	// SecurityLevelSafe 安全命令，只读操作，不会修改系统
-	SecurityLevelSafe CommandSecurityLevel = iota
-	// SecurityLevelModerate 中等风险命令，可能修改文件或系统设置
-	SecurityLevelModerate
-	// SecurityLevelDangerous 危险命令，可能造成系统损坏或数据丢失
-	SecurityLevelDangerous
+	DecisionReject         ApprovalDecision = iota // 拒绝执行
+	DecisionApproveOnce                            // 允许一次
+	DecisionApproveCommand                         // 该会话允许该命令
+	DecisionApproveAll                             // 该会话允许所有命令
 )
 
-// CommandDangerousLevel 定义危险等级
-type CommandDangerousLevel struct {
-	Level       CommandSecurityLevel
+// ApprovalMode 审批模式
+type ApprovalMode int
+
+const (
+	ApprovalModeHITL   ApprovalMode = iota // 危险命令触发中断审批
+	ApprovalModeReject                     // 危险命令直接拒绝
+)
+
+// SessionApprovals 会话级别审批状态，支持跨多次工具调用记住审批决定
+type SessionApprovals struct {
+	mu           sync.Mutex
+	approvedCmds map[string]bool
+	approveAll   bool
+}
+
+// NewSessionApprovals 创建会话审批状态
+func NewSessionApprovals() *SessionApprovals {
+	return &SessionApprovals{approvedCmds: make(map[string]bool)}
+}
+
+type approvalCtxKey struct{}
+
+// WithSessionApprovals 将会话审批状态注入 context
+func WithSessionApprovals(ctx context.Context, sa *SessionApprovals) context.Context {
+	return context.WithValue(ctx, approvalCtxKey{}, sa)
+}
+
+func getSessionApprovals(ctx context.Context) *SessionApprovals {
+	if v, ok := ctx.Value(approvalCtxKey{}).(*SessionApprovals); ok {
+		return v
+	}
+	return nil
+}
+
+// Option 配置选项
+type Option func(*CommandTools)
+
+// WithApprovalMode 设置审批模式
+func WithApprovalMode(mode ApprovalMode) Option {
+	return func(t *CommandTools) { t.approvalMode = mode }
+}
+
+// CommandTools 命令行工具，带安全审批功能
+type CommandTools struct {
+	workDir      string
+	approvalMode ApprovalMode
+}
+
+// NewCommandTools 创建命令行工具实例
+func NewCommandTools(workDir string, opts ...Option) *CommandTools {
+	t := &CommandTools{workDir: workDir}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
+}
+
+// SmartExecuteRequest 智能执行请求
+type SmartExecuteRequest struct {
+	Command string `json:"command" jsonschema:"description=要执行的 shell 命令,required"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"description=超时时间（秒）默认60秒最大600秒"`
+	Reason  string `json:"reason" jsonschema:"description=执行该命令的原因和目的,required"`
+}
+
+// SmartExecuteResponse 智能执行响应
+type SmartExecuteResponse struct {
+	Success        bool   `json:"success"`
+	Stdout         string `json:"stdout,omitempty"`
+	Stderr         string `json:"stderr,omitempty"`
+	ExitCode       int    `json:"exit_code"`
+	ExecutionTime  string `json:"execution_time,omitempty"`
+	SecurityLevel  string `json:"security_level"`
+	Command        string `json:"command"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+	WarningMessage string `json:"warning_message,omitempty"`
+}
+
+// SecurityLevel 安全等级
+type SecurityLevel int
+
+const (
+	LevelSafe SecurityLevel = iota
+	LevelModerate
+	LevelDangerous
+)
+
+// SecurityEvaluation 安全评估结果
+type SecurityEvaluation struct {
+	Level       SecurityLevel
 	Description string
-	Reasons     []string
+	Risks       []string
 }
 
 // 危险命令黑名单
-var dangerousCommands = map[string]CommandDangerousLevel{
-	// Unix/Linux 危险命令
-	"rm -rf /":        {Level: SecurityLevelDangerous, Description: "删除根目录", Reasons: []string{"会导致系统完全崩溃"}},
-	"rm -rf /*":       {Level: SecurityLevelDangerous, Description: "删除根目录下所有内容", Reasons: []string{"会导致系统完全崩溃"}},
-	"mkfs":            {Level: SecurityLevelDangerous, Description: "格式化文件系统", Reasons: []string{"会清除磁盘上的所有数据"}},
-	"dd if=/dev/zero": {Level: SecurityLevelDangerous, Description: "使用 dd 命令覆盖设备", Reasons: []string{"可能永久性擦除数据"}},
-	":(){ :|:& };:":   {Level: SecurityLevelDangerous, Description: "fork 炸弹", Reasons: []string{"会耗尽系统资源"}},
-	"chmod -R 777 /":  {Level: SecurityLevelDangerous, Description: "递归修改根目录权限", Reasons: []string{"严重的安全风险"}},
-	"chown -R":        {Level: SecurityLevelDangerous, Description: "递归修改所有者", Reasons: []string{"可能破坏系统权限"}},
-	"mv /":            {Level: SecurityLevelDangerous, Description: "移动根目录", Reasons: []string{"会破坏系统结构"}},
-	"kill -9 -1":      {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
-	"killall9":        {Level: SecurityLevelDangerous, Description: "杀死所有进程", Reasons: []string{"会导致系统崩溃"}},
-	// Windows/PowerShell 危险命令
-	"remove-item -recurse -force c:\\": {Level: SecurityLevelDangerous, Description: "递归删除系统盘", Reasons: []string{"会导致系统完全崩溃"}},
-	"format-volume":                    {Level: SecurityLevelDangerous, Description: "格式化卷", Reasons: []string{"会清除磁盘上的所有数据"}},
-	"clear-disk":                       {Level: SecurityLevelDangerous, Description: "清除磁盘", Reasons: []string{"会永久性擦除数据"}},
-	"stop-process -id 0":               {Level: SecurityLevelDangerous, Description: "终止系统关键进程", Reasons: []string{"会导致系统崩溃"}},
-	"stop-computer":                    {Level: SecurityLevelDangerous, Description: "关闭计算机", Reasons: []string{"会立即关机"}},
-	"restart-computer":                 {Level: SecurityLevelDangerous, Description: "重启计算机", Reasons: []string{"会立即重启"}},
+var dangerousCommands = map[string]SecurityEvaluation{
+	// Unix/Linux
+	"rm -rf /":        {Level: LevelDangerous, Description: "删除根目录", Risks: []string{"会导致系统完全崩溃"}},
+	"rm -rf /*":       {Level: LevelDangerous, Description: "删除根目录下所有内容", Risks: []string{"会导致系统完全崩溃"}},
+	"mkfs":            {Level: LevelDangerous, Description: "格式化文件系统", Risks: []string{"会清除磁盘上的所有数据"}},
+	"dd if=/dev/zero": {Level: LevelDangerous, Description: "覆盖设备", Risks: []string{"可能永久性擦除数据"}},
+	":(){ :|:& };:":   {Level: LevelDangerous, Description: "fork 炸弹", Risks: []string{"会耗尽系统资源"}},
+	"chmod -r 777 /":  {Level: LevelDangerous, Description: "递归修改根目录权限", Risks: []string{"严重的安全风险"}},
+	"chown -r":        {Level: LevelDangerous, Description: "递归修改所有者", Risks: []string{"可能破坏系统权限"}},
+	"mv /":            {Level: LevelDangerous, Description: "移动根目录", Risks: []string{"会破坏系统结构"}},
+	"kill -9 -1":      {Level: LevelDangerous, Description: "杀死所有进程", Risks: []string{"会导致系统崩溃"}},
+	// Windows/PowerShell
+	"remove-item -recurse -force c:\\": {Level: LevelDangerous, Description: "递归删除系统盘", Risks: []string{"会导致系统完全崩溃"}},
+	"format-volume":                    {Level: LevelDangerous, Description: "格式化卷", Risks: []string{"会清除磁盘数据"}},
+	"clear-disk":                       {Level: LevelDangerous, Description: "清除磁盘", Risks: []string{"会永久擦除数据"}},
+	"stop-process -id 0":               {Level: LevelDangerous, Description: "终止系统关键进程", Risks: []string{"会导致系统崩溃"}},
+	"stop-computer":                    {Level: LevelDangerous, Description: "关闭计算机", Risks: []string{"会立即关机"}},
+	"restart-computer":                 {Level: LevelDangerous, Description: "重启计算机", Risks: []string{"会立即重启"}},
+	"set-executionpolicy unrestricted": {Level: LevelDangerous, Description: "解除脚本执行限制", Risks: []string{"严重安全风险"}},
 }
 
 // 需要特别审查的命令模式
-var riskyCommandPatterns = []struct {
+var riskyPatterns = []struct {
 	Pattern     string
-	Level       CommandSecurityLevel
+	Level       SecurityLevel
 	Description string
-	Reason      string
+	Risk        string
 }{
-	// Unix/Linux 风险模式
-	{"rm -rf", SecurityLevelDangerous, "强制递归删除", "可能意外删除重要文件"},
-	{"dd if=", SecurityLevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
-	{"mv /", SecurityLevelDangerous, "移动根目录", "会破坏系统结构"},
-	{"chmod 777", SecurityLevelModerate, "设置全局可写权限", "安全风险"},
-	{"chmod -R 777", SecurityLevelDangerous, "递归设置全局可写权限", "严重安全风险"},
-	{"wget", SecurityLevelModerate, "下载文件", "可能下载恶意内容"},
-	{"curl", SecurityLevelModerate, "下载/上传数据", "可能泄露数据或下载恶意内容"},
-	{"> /", SecurityLevelDangerous, "重定向到系统目录", "可能破坏系统文件"},
-	{"kill -9", SecurityLevelModerate, "强制终止进程", "可能导致数据丢失"},
-	{"killall", SecurityLevelModerate, "终止进程组", "可能导致服务中断"},
-	{"pkill", SecurityLevelModerate, "终止进程", "可能导致服务中断"},
-	// Windows/PowerShell 风险模式
-	{"remove-item -recurse -force", SecurityLevelDangerous, "PowerShell 强制递归删除", "可能意外删除重要文件"},
-	{"remove-item -recurse", SecurityLevelModerate, "PowerShell 递归删除", "可能意外删除重要文件"},
-	{"format-volume", SecurityLevelDangerous, "PowerShell 格式化卷", "会清除磁盘数据"},
-	{"clear-disk", SecurityLevelDangerous, "PowerShell 清除磁盘", "会永久擦除数据"},
-	{"stop-process", SecurityLevelModerate, "PowerShell 终止进程", "可能导致服务中断"},
-	{"invoke-webrequest", SecurityLevelModerate, "PowerShell 下载文件", "可能下载恶意内容"},
-	{"invoke-restmethod", SecurityLevelModerate, "PowerShell 调用远程接口", "可能泄露数据或下载恶意内容"},
-	{"set-executionpolicy unrestricted", SecurityLevelDangerous, "PowerShell 解除脚本执行限制", "严重安全风险"},
-	{"new-psdrive", SecurityLevelModerate, "PowerShell 映射网络驱动器", "可能连接不可信网络资源"},
+	// Unix/Linux
+	{"rm -rf", LevelDangerous, "强制递归删除", "可能意外删除重要文件"},
+	{"rm -r", LevelModerate, "递归删除", "可能意外删除文件"},
+	{"dd if=", LevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
+	{"> /etc/", LevelDangerous, "重定向到系统配置", "可能破坏系统配置"},
+	{"> /", LevelDangerous, "重定向到系统目录", "可能破坏系统文件"},
+	{"chmod 777", LevelModerate, "设置全局可写权限", "安全风险"},
+	{"chmod -r", LevelModerate, "递归修改权限", "可能影响多个文件"},
+	{"chown -r", LevelModerate, "递归修改所有者", "可能破坏权限结构"},
+	{"kill -9", LevelModerate, "强制终止进程", "可能导致数据丢失"},
+	{"killall", LevelModerate, "终止进程组", "可能导致服务中断"},
+	{"pkill", LevelModerate, "终止进程", "可能导致服务中断"},
+	{"sudo ", LevelModerate, "以管理员权限执行", "高权限操作"},
+	{"pip install", LevelModerate, "安装 Python 包", "可能引入不安全的依赖"},
+	{"npm install -g", LevelModerate, "全局安装 npm 包", "可能影响系统环境"},
+	{"wget", LevelModerate, "下载文件", "可能下载恶意内容"},
+	{"curl", LevelModerate, "下载/上传数据", "可能泄露数据"},
+	// Windows/PowerShell
+	{"remove-item -recurse -force", LevelDangerous, "强制递归删除", "可能意外删除重要文件"},
+	{"remove-item -recurse", LevelModerate, "递归删除", "可能意外删除文件"},
+	{"stop-process", LevelModerate, "终止进程", "可能导致服务中断"},
+	{"invoke-webrequest", LevelModerate, "下载文件", "可能下载恶意内容"},
+	{"invoke-restmethod", LevelModerate, "调用远程接口", "可能泄露数据或下载恶意内容"},
+	{"new-psdrive", LevelModerate, "映射网络驱动器", "可能连接不可信网络资源"},
 }
 
-// 命令执行历史记录
-var commandHistory []CommandExecutionRecord
+func evaluateSecurity(command string) SecurityEvaluation {
+	cmdLower := strings.ToLower(strings.TrimSpace(command))
 
-// CommandExecutionRecord 命令执行记录
-type CommandExecutionRecord struct {
-	Command       string
-	ExecutedAt    time.Time
-	ExitCode      int
-	Duration      time.Duration
-	SecurityLevel CommandSecurityLevel
-	Approved      bool
-}
-
-// ExecuteCommandRequest 执行命令请求
-type ExecuteCommandRequest struct {
-	Command string `json:"command" jsonschema:"description=要执行的命令,required"`
-	Timeout int    `json:"timeout,omitempty" jsonschema:"description=超时时间（秒），默认30秒，最大300秒"`
-}
-
-// ExecuteCommandResponse 执行命令响应
-type ExecuteCommandResponse struct {
-	Stdout         string `json:"stdout" jsonschema:"description=标准输出内容"`
-	Stderr         string `json:"stderr" jsonschema:"description=标准错误内容"`
-	ExitCode       int    `json:"exit_code" jsonschema:"description=退出码，0表示成功"`
-	ExecutionTime  string `json:"execution_time" jsonschema:"description=执行时长"`
-	SecurityLevel  string `json:"security_level" jsonschema:"description=命令的安全级别"`
-	WarningMessage string `json:"warning_message,omitempty" jsonschema:"description=警告信息"`
-	ErrorMessage   string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// evaluateCommandSecurity 评估命令的安全级别
-func evaluateCommandSecurity(command string) CommandDangerousLevel {
-	cmdLower := strings.ToLower(command)
-
-	// 检查是否在黑名单中
-	for dangerousCmd, level := range dangerousCommands {
-		if strings.Contains(cmdLower, dangerousCmd) {
-			return level
+	for pattern, eval := range dangerousCommands {
+		if strings.Contains(cmdLower, pattern) {
+			return eval
 		}
 	}
 
-	// 检查风险模式
-	for _, pattern := range riskyCommandPatterns {
-		if strings.Contains(cmdLower, pattern.Pattern) {
-			return CommandDangerousLevel{
-				Level:       pattern.Level,
-				Description: pattern.Description,
-				Reasons:     []string{pattern.Reason},
+	for _, p := range riskyPatterns {
+		if strings.Contains(cmdLower, p.Pattern) {
+			return SecurityEvaluation{
+				Level:       p.Level,
+				Description: p.Description,
+				Risks:       []string{p.Risk},
 			}
 		}
 	}
 
-	// 默认为中等风险
-	return CommandDangerousLevel{
-		Level:       SecurityLevelModerate,
-		Description: "常规命令",
-		Reasons:     []string{"需要监控执行"},
+	return SecurityEvaluation{Level: LevelSafe, Description: "常规命令"}
+}
+
+func securityLevelName(level SecurityLevel) string {
+	switch level {
+	case LevelSafe:
+		return "安全"
+	case LevelModerate:
+		return "中等"
+	case LevelDangerous:
+		return "危险"
+	default:
+		return "未知"
 	}
 }
 
-// ExecuteCommand 执行 shell 命令
-func ExecuteCommand(ctx context.Context, req *ExecuteCommandRequest) (*ExecuteCommandResponse, error) {
+// SmartExecute 智能执行命令，危险命令根据审批模式处理
+func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteRequest) (*SmartExecuteResponse, error) {
 	if req.Command == "" {
-		return &ExecuteCommandResponse{
-			ErrorMessage: "command 参数是必需的",
-		}, nil
+		return &SmartExecuteResponse{ErrorMessage: "command is required"}, nil
 	}
 
-	// 评估命令安全性
-	securityLevel := evaluateCommandSecurity(req.Command)
+	eval := evaluateSecurity(req.Command)
 
-	// 如果是危险命令，拒绝执行
-	if securityLevel.Level == SecurityLevelDangerous {
-		return &ExecuteCommandResponse{
-			ErrorMessage: fmt.Sprintf("命令执行被拒绝：检测到危险命令\n\n危险等级：%s\n风险描述：%s\n拒绝原因：%s\n\n出于安全考虑，此命令不会被执行。如需执行，请联系系统管理员。",
-				getSecurityLevelName(securityLevel.Level),
-				securityLevel.Description,
-				strings.Join(securityLevel.Reasons, "；")),
-			SecurityLevel: getSecurityLevelName(securityLevel.Level),
-		}, nil
+	if eval.Level == LevelDangerous {
+		// Reject 模式：直接拒绝
+		if t.approvalMode == ApprovalModeReject {
+			return &SmartExecuteResponse{
+				Command:       req.Command,
+				SecurityLevel: securityLevelName(eval.Level),
+				ErrorMessage: fmt.Sprintf("命令被拒绝：%s — %s",
+					eval.Description, strings.Join(eval.Risks, "; ")),
+			}, nil
+		}
+
+		// HITL 模式：检查会话级别审批
+		if sa := getSessionApprovals(ctx); sa != nil {
+			sa.mu.Lock()
+			approved := sa.approveAll || sa.approvedCmds[req.Command]
+			sa.mu.Unlock()
+			if approved {
+				return t.executeCommand(ctx, req, eval)
+			}
+		}
+
+		// 检查是否从审批中断恢复
+		wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
+		if wasInterrupted {
+			isTarget, hasData, decision := tool.GetResumeContext[int](ctx)
+			if !isTarget {
+				return nil, tool.Interrupt(ctx, nil)
+			}
+			if hasData {
+				switch decision {
+				case DecisionApproveOnce:
+					return t.executeCommand(ctx, req, eval)
+				case DecisionApproveCommand:
+					if sa := getSessionApprovals(ctx); sa != nil {
+						sa.mu.Lock()
+						sa.approvedCmds[req.Command] = true
+						sa.mu.Unlock()
+					}
+					return t.executeCommand(ctx, req, eval)
+				case DecisionApproveAll:
+					if sa := getSessionApprovals(ctx); sa != nil {
+						sa.mu.Lock()
+						sa.approveAll = true
+						sa.mu.Unlock()
+					}
+					return t.executeCommand(ctx, req, eval)
+				}
+			}
+			return &SmartExecuteResponse{
+				Command:       req.Command,
+				SecurityLevel: securityLevelName(eval.Level),
+				ErrorMessage:  "command rejected by user",
+			}, nil
+		}
+
+		// 首次执行，触发审批中断
+		info := fmt.Sprintf("危险命令需要审批\n  命令: %s\n  原因: %s\n  风险等级: %s\n  风险描述: %s\n  风险详情: %s",
+			req.Command, req.Reason,
+			securityLevelName(eval.Level), eval.Description,
+			strings.Join(eval.Risks, "; "))
+		return nil, tool.Interrupt(ctx, info)
 	}
 
-	// 设置超时时间
-	timeout := 30 * time.Second
-	if req.Timeout > 0 && req.Timeout <= 300 {
+	return t.executeCommand(ctx, req, eval)
+}
+
+func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequest, eval SecurityEvaluation) (*SmartExecuteResponse, error) {
+	timeout := 60 * time.Second
+	if req.Timeout > 0 && req.Timeout <= 600 {
 		timeout = time.Duration(req.Timeout) * time.Second
-	} else if req.Timeout > 300 {
-		return &ExecuteCommandResponse{
-			ErrorMessage: "超时时间不能超过 300 秒",
-		}, nil
+	} else if req.Timeout > 600 {
+		return &SmartExecuteResponse{Command: req.Command, ErrorMessage: "timeout must be <= 600 seconds"}, nil
 	}
 
-	// 获取系统信息
-	osType := runtime.GOOS
 	var shell string
 	var shellArgs []string
-
-	switch osType {
+	switch runtime.GOOS {
 	case "windows":
 		shell = "powershell"
-		// 设置 UTF-8 编码确保中文等多字节字符正确输出
 		utf8Prefix := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
 		shellArgs = []string{"-NoProfile", "-NonInteractive", "-Command", utf8Prefix + req.Command}
 	case "darwin", "linux":
@@ -195,214 +304,66 @@ func ExecuteCommand(ctx context.Context, req *ExecuteCommandRequest) (*ExecuteCo
 		shellArgs = []string{"-c", req.Command}
 	}
 
-	// 创建命令
-	cmd := exec.CommandContext(ctx, shell, shellArgs...)
-
-	// 设置进程组，便于控制子进程
-	setupCmdProcessGroup(cmd)
-
-	// 执行命令
-	startTime := time.Now()
-	stdout, stderr, exitCode := runCommandWithTimeout(cmd, timeout)
-	executionTime := time.Since(startTime)
-
-	// 记录命令执行历史
-	record := CommandExecutionRecord{
-		Command:       req.Command,
-		ExecutedAt:    startTime,
-		ExitCode:      exitCode,
-		Duration:      executionTime,
-		SecurityLevel: securityLevel.Level,
-		Approved:      securityLevel.Level != SecurityLevelDangerous,
-	}
-	commandHistory = append(commandHistory, record)
-
-	// 限制历史记录数量
-	if len(commandHistory) > 1000 {
-		commandHistory = commandHistory[len(commandHistory)-1000:]
-	}
-
-	// 构建响应
-	response := &ExecuteCommandResponse{
-		Stdout:        stdout,
-		Stderr:        stderr,
-		ExitCode:      exitCode,
-		ExecutionTime: executionTime.String(),
-		SecurityLevel: getSecurityLevelName(securityLevel.Level),
-	}
-
-	// 添加警告信息
-	if securityLevel.Level == SecurityLevelModerate {
-		response.WarningMessage = fmt.Sprintf("注意：此命令被评估为中等风险 (%s)。原因：%s",
-			securityLevel.Description,
-			strings.Join(securityLevel.Reasons, "；"))
-	}
-
-	return response, nil
-}
-
-// runCommandWithTimeout 带超时执行命令
-func runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) (stdout, stderr string, exitCode int) {
-	// 创建带超时的 context
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// 使用新的 context 重建命令，保留进程组设置
-	newCmd := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
-	newCmd.SysProcAttr = cmd.SysProcAttr
-	newCmd.Dir = cmd.Dir
-	newCmd.Env = cmd.Env
+	cmd := exec.CommandContext(cmdCtx, shell, shellArgs...)
+	cmd.Dir = t.workDir
+	setupProcessGroup(cmd)
 
-	// 使用 bytes.Buffer 捕获完整输出
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutBuf.Grow(64 * 1024)
-	stderrBuf.Grow(64 * 1024)
+	const maxOutputSize = 1 << 20
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &limitedWriter{w: &stdout, limit: maxOutputSize}
+	cmd.Stderr = &limitedWriter{w: &stderr, limit: maxOutputSize}
 
-	// 限制输出大小为 1MB
-	newCmd.Stdout = &limitedWriter{w: &stdoutBuf, limit: 1024 * 1024}
-	newCmd.Stderr = &limitedWriter{w: &stderrBuf, limit: 1024 * 1024}
+	startTime := time.Now()
+	err := cmd.Run()
+	elapsed := time.Since(startTime)
 
-	// 执行命令并等待完成
-	err := newCmd.Run()
+	resp := &SmartExecuteResponse{
+		Success:       err == nil,
+		Command:       req.Command,
+		Stdout:        stdout.String(),
+		Stderr:        stderr.String(),
+		ExecutionTime: elapsed.Round(time.Millisecond).String(),
+		SecurityLevel: securityLevelName(eval.Level),
+	}
 
-	exitCode = 0
 	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode = exitError.ExitCode()
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			resp.ExitCode = exitErr.ExitCode()
+		} else if cmdCtx.Err() != nil {
+			resp.ExitCode = -1
+			resp.ErrorMessage = fmt.Sprintf("command timed out after %s", timeout)
 		} else {
-			exitCode = -1
+			resp.ExitCode = -1
+			resp.ErrorMessage = fmt.Sprintf("execution failed: %v", err)
 		}
 	}
 
-	return stdoutBuf.String(), stderrBuf.String(), exitCode
+	if eval.Level == LevelModerate {
+		resp.WarningMessage = fmt.Sprintf("中等风险命令: %s - %s",
+			eval.Description, strings.Join(eval.Risks, "; "))
+	}
+
+	return resp, nil
 }
 
-// limitedWriter 限制写入大小的 Writer
 type limitedWriter struct {
 	w       io.Writer
-	limit   int
-	written int
+	limit   int64
+	written int64
 }
 
 func (lw *limitedWriter) Write(p []byte) (n int, err error) {
-	if lw.written >= lw.limit {
-		return len(p), nil // 丢弃超出部分但不报错
+	remaining := lw.limit - lw.written
+	if remaining <= 0 {
+		return len(p), nil
 	}
-	if lw.written+len(p) > lw.limit {
-		p = p[:lw.limit-lw.written]
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
 	}
 	n, err = lw.w.Write(p)
-	lw.written += n
-	return n, err
-}
-
-// getSecurityLevelName 获取安全级别名称
-func getSecurityLevelName(level CommandSecurityLevel) string {
-	switch level {
-	case SecurityLevelSafe:
-		return "安全"
-	case SecurityLevelModerate:
-		return "中等风险"
-	case SecurityLevelDangerous:
-		return "危险"
-	default:
-		return "未知"
-	}
-}
-
-// GetSystemInfoRequest 获取系统信息请求
-type GetSystemInfoRequest struct {
-	InfoType string `json:"info_type" jsonschema:"description=信息类型: os, shell, path, env, all。默认为 all"`
-}
-
-// GetSystemInfoResponse 获取系统信息响应
-type GetSystemInfoResponse struct {
-	OS           string            `json:"os" jsonschema:"description=操作系统类型"`
-	Arch         string            `json:"arch" jsonschema:"description=系统架构"`
-	Shell        string            `json:"shell" jsonschema:"description=默认 shell"`
-	WorkingDir   string            `json:"working_dir" jsonschema:"description=当前工作目录"`
-	Environment  map[string]string `json:"environment,omitempty" jsonschema:"description=环境变量（仅当 info_type 为 env 或 all 时返回）"`
-	ErrorMessage string            `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// GetSystemInfo 获取系统信息
-func GetSystemInfo(ctx context.Context, req *GetSystemInfoRequest) (*GetSystemInfoResponse, error) {
-	infoType := "all"
-	if req.InfoType != "" {
-		infoType = req.InfoType
-	}
-
-	response := &GetSystemInfoResponse{
-		OS:         runtime.GOOS,
-		Arch:       runtime.GOARCH,
-		WorkingDir: getWorkingDir(),
-	}
-
-	// 设置 shell
-	switch runtime.GOOS {
-	case "windows":
-		response.Shell = "powershell (Windows PowerShell)"
-	case "darwin":
-		response.Shell = "/bin/bash (Bash) or /bin/zsh (Z shell)"
-	case "linux":
-		response.Shell = "/bin/bash (Bash)"
-	default:
-		response.Shell = "/bin/sh (POSIX shell)"
-	}
-
-	// 如果请求环境变量
-	if infoType == "env" || infoType == "all" {
-		response.Environment = make(map[string]string)
-		// 只返回安全的环境变量
-		safeEnvVars := []string{
-			"PATH", "HOME", "USER", "SHELL", "PWD", "LANG",
-			"TERM", "GOPATH", "GOROOT", "NODE_ENV",
-		}
-		for _, key := range safeEnvVars {
-			if val := os.Getenv(key); val != "" {
-				response.Environment[key] = val
-			}
-		}
-	}
-
-	return response, nil
-}
-
-// getWorkingDir 获取当前工作目录
-func getWorkingDir() string {
-	if pwd, err := os.Getwd(); err == nil {
-		return pwd
-	}
-	return "无法获取"
-}
-
-// GetCommandHistoryRequest 获取命令历史请求
-type GetCommandHistoryRequest struct {
-	Limit int `json:"limit,omitempty" jsonschema:"description=返回的历史记录数量，默认10条，最多100条"`
-}
-
-// GetCommandHistoryResponse 获取命令历史响应
-type GetCommandHistoryResponse struct {
-	History       []CommandExecutionRecord `json:"history" jsonschema:"description=命令执行历史"`
-	TotalExecuted int                      `json:"total_executed" jsonschema:"description=总共执行的命令数量"`
-	ErrorMessage  string                   `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// GetCommandHistory 获取命令执行历史
-func GetCommandHistory(ctx context.Context, req *GetCommandHistoryRequest) (*GetCommandHistoryResponse, error) {
-	limit := 10
-	if req.Limit > 0 && req.Limit <= 100 {
-		limit = req.Limit
-	}
-
-	historyLen := len(commandHistory)
-	start := 0
-	if historyLen > limit {
-		start = historyLen - limit
-	}
-
-	return &GetCommandHistoryResponse{
-		History:       commandHistory[start:],
-		TotalExecuted: historyLen,
-	}, nil
+	lw.written += int64(n)
+	return len(p), err
 }

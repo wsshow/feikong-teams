@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"fkteams/agents/analyst"
+	assistantagent "fkteams/agents/assistant"
 	"fkteams/agents/cmder"
 	"fkteams/agents/coder"
 	"fkteams/agents/custom"
@@ -61,6 +62,10 @@ func initRegistry() {
 
 		if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
 			creators = append(creators, visitor.NewAgent)
+		}
+
+		if os.Getenv("FEIKONG_ASSISTANT_ENABLED") == "true" {
+			creators = append(creators, assistantagent.NewAgent)
 		}
 
 		// 动态构建注册表

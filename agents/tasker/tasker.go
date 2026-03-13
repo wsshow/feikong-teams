@@ -34,8 +34,8 @@ func NewAgent(ctx context.Context) adk.Agent {
 		log.Fatal("初始化 Fetch 工具失败:", err)
 	}
 
-	// 命令执行工具
-	cmdTools, err := command.GetTools()
+	// 命令执行工具（后台任务直接拒绝危险命令）
+	cmdTools, err := command.NewCommandTools(workspaceDir, command.WithApprovalMode(command.ApprovalModeReject)).GetTools()
 	if err != nil {
 		log.Fatal("初始化命令工具失败:", err)
 	}
