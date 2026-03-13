@@ -11,6 +11,7 @@ func Root() *ucli.Command {
 	return &ucli.Command{
 		Name:    "fkteams",
 		Usage:   "多智能体协作 AI 助手",
+		Authors: []any{"FeiKong"},
 		Version: version.Get().String(),
 		Commands: []*ucli.Command{
 			webCommand(),
