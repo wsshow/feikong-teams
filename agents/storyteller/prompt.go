@@ -48,6 +48,6 @@ var storytellerPrompt = `
 - **专业化**: 逻辑严丝合缝。
 `
 
-var StorytellerPromptTemplate = prompt.FromMessages(schema.FString,
+var storytellerPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(storytellerPrompt),
 )

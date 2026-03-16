@@ -11,6 +11,7 @@ import (
 	"fkteams/tools/file"
 	"fkteams/tools/git"
 	"fkteams/tools/mcp"
+	"fkteams/tools/scheduler"
 	"fkteams/tools/script/bun"
 	"fkteams/tools/script/uv"
 	"fkteams/tools/search"
@@ -72,6 +73,12 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		return sshTools.GetTools()
 	case "command", "assistant":
 		return command.NewCommandTools(workspacePath()).GetTools()
+	case "scheduler":
+		s, err := scheduler.InitGlobal(workspacePath())
+		if err != nil {
+			return nil, fmt.Errorf("初始化调度器工具失败: %w", err)
+		}
+		return s.GetTools()
 	case "search":
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err

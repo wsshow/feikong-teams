@@ -127,6 +127,6 @@ var moderatorPrompt = `
 - 全程使用主持人口吻，而非旁观者或分析者口吻
 `
 
-var ModeratorPromptTemplate = prompt.FromMessages(schema.FString,
+var moderatorPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(moderatorPrompt),
 )

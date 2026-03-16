@@ -48,6 +48,6 @@ var summarizerPrompt = `
 - **专业化**: 保持客观、中立的语气。
 `
 
-var SummarizerPromptTemplate = prompt.FromMessages(schema.FString,
+var summarizerPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(summarizerPrompt),
 )

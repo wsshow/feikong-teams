@@ -76,6 +76,6 @@ var taskerPrompt = `# Role: 任务官（Tasker）— 后台定时任务专属执
 - **已尝试方法**：列出已尝试的搜索关键词、访问的来源
 - **建议**：给出可能的替代方案或后续建议（如换时间重试、换数据源等）`
 
-var TaskerPromptTemplate = prompt.FromMessages(schema.FString,
+var taskerPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(taskerPrompt),
 )

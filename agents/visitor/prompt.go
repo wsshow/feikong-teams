@@ -327,6 +327,6 @@ ssh_download(...)
 现在，请以专业、安全、高效的方式帮助用户完成远程服务器管理任务！
 `
 
-var VisitorPromptTemplate = prompt.FromMessages(schema.FString,
+var visitorPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(visitorPrompt),
 )

@@ -9,6 +9,6 @@ import (
 
 func NewAgent() (adk.Agent, error) {
 	return common.NewAgentBuilder("小天", "讲故事专家，擅长编写引人入胜的故事。").
-		WithTemplate(StorytellerPromptTemplate).
+		WithTemplate(storytellerPromptTemplate).
 		Build(context.Background())
 }

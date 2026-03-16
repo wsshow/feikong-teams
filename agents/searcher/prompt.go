@@ -55,6 +55,6 @@ var searcherPrompt = `
 [^2]: https://example.org/report
 `
 
-var SearcherPromptTemplate = prompt.FromMessages(schema.FString,
+var searcherPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(searcherPrompt),
 )

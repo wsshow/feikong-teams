@@ -16,7 +16,7 @@ func NewAgent(member config.TeamMember) (adk.Agent, error) {
 	}
 
 	return common.NewAgentBuilder(member.Name, member.Desc).
-		WithTemplate(DiscussantPromptTemplate).
+		WithTemplate(discussantPromptTemplate).
 		WithModel(chatModel).
 		Build(context.Background())
 }

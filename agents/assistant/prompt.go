@@ -5,7 +5,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-var AssistantPromptTemplate = prompt.FromMessages(schema.FString,
+var assistantPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(`你是「小助」，一个全能的个人助手智能体。通过命令执行工具和文件操作来完成用户的各种需求。
 
 ## 当前环境

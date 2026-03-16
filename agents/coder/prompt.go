@@ -76,6 +76,6 @@ var coderPrompt = `
 - DRY 原则，避免重复代码
 `
 
-var CoderPromptTemplate = prompt.FromMessages(schema.FString,
+var coderPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(coderPrompt),
 )

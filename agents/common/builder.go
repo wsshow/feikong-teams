@@ -5,6 +5,7 @@ import (
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/agents/middlewares/tools/warperror"
+	"fkteams/tools"
 	"fmt"
 	"time"
 
@@ -20,6 +21,7 @@ type AgentBuilder struct {
 	name         string
 	description  string
 	tools        []tool.BaseTool
+	toolNames    []string
 	template     prompt.ChatTemplate
 	templateVars map[string]any
 
@@ -45,6 +47,12 @@ func NewAgentBuilder(name, description string) *AgentBuilder {
 // WithTools 设置工具列表
 func (b *AgentBuilder) WithTools(tools ...tool.BaseTool) *AgentBuilder {
 	b.tools = append(b.tools, tools...)
+	return b
+}
+
+// WithToolNames 通过工具名称添加工具（在 Build 时通过 tools.GetToolsByName 解析）
+func (b *AgentBuilder) WithToolNames(names ...string) *AgentBuilder {
+	b.toolNames = append(b.toolNames, names...)
 	return b
 }
 
@@ -95,6 +103,15 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 			return nil, fmt.Errorf("format prompt: %w", err)
 		}
 		instruction = msgs[0].Content
+	}
+
+	// 通过名称解析工具
+	for _, name := range b.toolNames {
+		resolved, err := tools.GetToolsByName(name)
+		if err != nil {
+			return nil, fmt.Errorf("init tool %s: %w", name, err)
+		}
+		b.tools = append(b.tools, resolved...)
 	}
 
 	// 构建配置

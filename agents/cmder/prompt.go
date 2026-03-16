@@ -62,6 +62,6 @@ var cmderPrompt = `
 - 命令语法不匹配当前系统时，自动转换后执行。
 `
 
-var CmderPromptTemplate = prompt.FromMessages(schema.FString,
+var cmderPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(cmderPrompt),
 )

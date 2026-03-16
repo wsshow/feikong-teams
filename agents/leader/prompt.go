@@ -149,6 +149,6 @@ var leaderPrompt = `
 - 以“调度正确性”和“任务完成率”为唯一评价标准的指挥官
 `
 
-var LeaderPromptTemplate = prompt.FromMessages(schema.FString,
+var leaderPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(leaderPrompt),
 )

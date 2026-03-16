@@ -37,6 +37,6 @@ var analystPrompt = `
 - 报告结构: 摘要 -> 数据概览 -> 关键发现 -> 结论与建议
 `
 
-var AnalystPromptTemplate = prompt.FromMessages(schema.FString,
+var analystPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(analystPrompt),
 )

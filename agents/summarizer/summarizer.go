@@ -9,6 +9,6 @@ import (
 
 func NewAgent() (adk.Agent, error) {
 	return common.NewAgentBuilder("小简", "总结专家，擅长将冗长的信息提炼为简洁的摘要。").
-		WithTemplate(SummarizerPromptTemplate).
+		WithTemplate(summarizerPromptTemplate).
 		Build(context.Background())
 }

@@ -96,6 +96,6 @@ var discussantPrompt = `
 - 自信表达观点，同时接受被反驳的可能。
 - 将“追求更好答案”置于“保持一致”之上。
 `
-var DiscussantPromptTemplate = prompt.FromMessages(schema.FString,
+var discussantPromptTemplate = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(discussantPrompt),
 )
