@@ -3,25 +3,14 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fkteams/approval"
 	"fmt"
 	"io"
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/cloudwego/eino/components/tool"
-)
-
-// ApprovalDecision 审批决定
-type ApprovalDecision = int
-
-const (
-	DecisionReject         ApprovalDecision = iota // 拒绝执行
-	DecisionApproveOnce                            // 允许一次
-	DecisionApproveCommand                         // 该会话允许该命令
-	DecisionApproveAll                             // 该会话允许所有命令
 )
 
 // ApprovalMode 审批模式
@@ -32,31 +21,8 @@ const (
 	ApprovalModeReject                     // 危险命令直接拒绝
 )
 
-// SessionApprovals 会话级别审批状态，支持跨多次工具调用记住审批决定
-type SessionApprovals struct {
-	mu           sync.Mutex
-	approvedCmds map[string]bool
-	approveAll   bool
-}
-
-// NewSessionApprovals 创建会话审批状态
-func NewSessionApprovals() *SessionApprovals {
-	return &SessionApprovals{approvedCmds: make(map[string]bool)}
-}
-
-type approvalCtxKey struct{}
-
-// WithSessionApprovals 将会话审批状态注入 context
-func WithSessionApprovals(ctx context.Context, sa *SessionApprovals) context.Context {
-	return context.WithValue(ctx, approvalCtxKey{}, sa)
-}
-
-func getSessionApprovals(ctx context.Context) *SessionApprovals {
-	if v, ok := ctx.Value(approvalCtxKey{}).(*SessionApprovals); ok {
-		return v
-	}
-	return nil
-}
+// ApprovalStoreName 命令工具在审批注册表中的名称
+const ApprovalStoreName = "command"
 
 // Option 配置选项
 type Option func(*CommandTools)
@@ -226,56 +192,21 @@ func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteReques
 			}, nil
 		}
 
-		// HITL 模式：检查会话级别审批
-		if sa := getSessionApprovals(ctx); sa != nil {
-			sa.mu.Lock()
-			approved := sa.approveAll || sa.approvedCmds[req.Command]
-			sa.mu.Unlock()
-			if approved {
-				return t.executeCommand(ctx, req, eval)
-			}
-		}
-
-		// 检查是否从审批中断恢复
-		wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
-		if wasInterrupted {
-			isTarget, hasData, decision := tool.GetResumeContext[int](ctx)
-			if !isTarget {
-				return nil, tool.Interrupt(ctx, nil)
-			}
-			if hasData {
-				switch decision {
-				case DecisionApproveOnce:
-					return t.executeCommand(ctx, req, eval)
-				case DecisionApproveCommand:
-					if sa := getSessionApprovals(ctx); sa != nil {
-						sa.mu.Lock()
-						sa.approvedCmds[req.Command] = true
-						sa.mu.Unlock()
-					}
-					return t.executeCommand(ctx, req, eval)
-				case DecisionApproveAll:
-					if sa := getSessionApprovals(ctx); sa != nil {
-						sa.mu.Lock()
-						sa.approveAll = true
-						sa.mu.Unlock()
-					}
-					return t.executeCommand(ctx, req, eval)
-				}
-			}
-			return &SmartExecuteResponse{
-				Command:       req.Command,
-				SecurityLevel: securityLevelName(eval.Level),
-				ErrorMessage:  "command rejected by user",
-			}, nil
-		}
-
-		// 首次执行，触发审批中断
+		// HITL 审批流程
 		info := fmt.Sprintf("危险命令需要审批\n  命令: %s\n  原因: %s\n  风险等级: %s\n  风险描述: %s\n  风险详情: %s",
 			req.Command, req.Reason,
 			securityLevelName(eval.Level), eval.Description,
 			strings.Join(eval.Risks, "; "))
-		return nil, tool.Interrupt(ctx, info)
+		if err := approval.Require(ctx, ApprovalStoreName, req.Command, info); err != nil {
+			if errors.Is(err, approval.ErrRejected) {
+				return &SmartExecuteResponse{
+					Command:       req.Command,
+					SecurityLevel: securityLevelName(eval.Level),
+					ErrorMessage:  "command rejected by user",
+				}, nil
+			}
+			return nil, err
+		}
 	}
 
 	return t.executeCommand(ctx, req, eval)

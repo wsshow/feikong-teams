@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/approval"
 	"fkteams/chatutil"
 	"fkteams/engine"
 	"fkteams/fkevent"
@@ -166,10 +167,11 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		return innerCallback(event)
 	})
 
-	// 注入会话审批状态（支持"该会话允许该命令/所有命令"）
-	queryCtx = command.WithSessionApprovals(queryCtx, command.NewSessionApprovals())
-	// 注入文件访问审批状态（支持外部目录访问审批）
-	queryCtx = file.WithFileApprovals(queryCtx, file.NewFileApprovals())
+	// 注入统一审批注册表
+	queryCtx = approval.WithRegistry(queryCtx, approval.NewDefaultRegistry(
+		approval.StoreConfig{Name: command.ApprovalStoreName},
+		approval.StoreConfig{Name: file.ApprovalStoreName, Matcher: file.DirMatchFunc},
+	))
 
 	// 设置摘要持久化回调
 	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {
@@ -217,7 +219,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 func (e *QueryExecutor) promptApproval() int {
 	if e.autoReject {
 		pterm.Warning.Println("非交互模式，自动拒绝危险命令")
-		return command.DecisionReject
+		return approval.Reject
 	}
 
 	fmt.Println()
@@ -235,13 +237,13 @@ func (e *QueryExecutor) promptApproval() int {
 
 	switch selected {
 	case "允许一次":
-		return command.DecisionApproveOnce
+		return approval.ApproveOnce
 	case "该会话允许该命令":
-		return command.DecisionApproveCommand
+		return approval.ApproveItem
 	case "该会话允许所有命令":
-		return command.DecisionApproveAll
+		return approval.ApproveAll
 	default:
-		return command.DecisionReject
+		return approval.Reject
 	}
 }
 

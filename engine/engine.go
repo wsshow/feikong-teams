@@ -3,8 +3,8 @@ package engine
 
 import (
 	"context"
+	"fkteams/approval"
 	"fkteams/fkevent"
-	"fkteams/tools/command"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -99,7 +99,7 @@ func AutoRejectHandler() InterruptHandler {
 		targets := make(map[string]any, len(interrupts))
 		for _, ic := range interrupts {
 			if ic.IsRootCause {
-				targets[ic.ID] = command.DecisionReject
+				targets[ic.ID] = approval.Reject
 			}
 		}
 		return targets, nil

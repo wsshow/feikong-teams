@@ -3,16 +3,16 @@ package file
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 
+	"fkteams/approval"
 	"fkteams/mdiff"
 
-	"github.com/cloudwego/eino/components/tool"
 	"github.com/spf13/afero"
 )
 
@@ -53,42 +53,14 @@ func NewFileTools(baseDir string) (*FileTools, error) {
 	}, nil
 }
 
-// FileApprovals 文件访问审批状态，支持会话级别的目录访问授权
-type FileApprovals struct {
-	mu           sync.RWMutex
-	approvedDirs map[string]bool
-	approveAll   bool
-}
+// ApprovalStoreName 文件工具在审批注册表中的名称
+const ApprovalStoreName = "file"
 
-// NewFileApprovals 创建文件审批状态
-func NewFileApprovals() *FileApprovals {
-	return &FileApprovals{approvedDirs: make(map[string]bool)}
-}
-
-type fileApprovalsCtxKey struct{}
-
-// WithFileApprovals 将文件审批状态注入 context
-func WithFileApprovals(ctx context.Context, fa *FileApprovals) context.Context {
-	return context.WithValue(ctx, fileApprovalsCtxKey{}, fa)
-}
-
-func getFileApprovals(ctx context.Context) *FileApprovals {
-	if v, ok := ctx.Value(fileApprovalsCtxKey{}).(*FileApprovals); ok {
-		return v
-	}
-	return nil
-}
-
-func (fa *FileApprovals) isApproved(absPath string) bool {
-	fa.mu.RLock()
-	defer fa.mu.RUnlock()
-	if fa.approveAll {
-		return true
-	}
-	// 检查路径本身或其父目录是否被批准
-	dir := absPath
+// DirMatchFunc 文件审批的匹配函数：检查路径本身或其父目录是否已被批准
+func DirMatchFunc(key string, approved map[string]bool) bool {
+	dir := key
 	for {
-		if fa.approvedDirs[dir] {
+		if approved[dir] {
 			return true
 		}
 		parent := filepath.Dir(dir)
@@ -99,26 +71,6 @@ func (fa *FileApprovals) isApproved(absPath string) bool {
 	}
 	return false
 }
-
-func (fa *FileApprovals) approveDir(dir string) {
-	fa.mu.Lock()
-	defer fa.mu.Unlock()
-	fa.approvedDirs[dir] = true
-}
-
-func (fa *FileApprovals) setApproveAll() {
-	fa.mu.Lock()
-	defer fa.mu.Unlock()
-	fa.approveAll = true
-}
-
-// 审批决定常量（与 command 包一致，供 HITL 中断机制使用）
-const (
-	decisionReject      = 0
-	decisionApproveOnce = 1
-	decisionApproveDir  = 2
-	decisionApproveAll  = 3
-)
 
 // resolvedPath 路径解析结果
 type resolvedPath struct {
@@ -144,41 +96,17 @@ func (ft *FileTools) resolvePath(ctx context.Context, userPath string) (*resolve
 		return nil, fmt.Errorf("路径 %s 不在工作目录 %s 内，如需访问外部文件请使用绝对路径", userPath, ft.allowedBaseDir)
 	}
 
-	// 3. 检查会话级别审批
-	approvals := getFileApprovals(ctx)
-	if approvals != nil && approvals.isApproved(cleanPath) {
-		return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
+	// 3. 统一审批流程（文件工具使用父目录作为审批 key）
+	parentDir := filepath.Dir(cleanPath)
+	info := fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanPath, ft.allowedBaseDir)
+	if err := approval.Require(ctx, ApprovalStoreName, parentDir, info); err != nil {
+		if errors.Is(err, approval.ErrRejected) {
+			return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanPath)
+		}
+		return nil, err
 	}
 
-	// 4. HITL 中断恢复检查
-	wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
-	if wasInterrupted {
-		isTarget, hasData, decision := tool.GetResumeContext[int](ctx)
-		if !isTarget {
-			return nil, tool.Interrupt(ctx, nil)
-		}
-		if hasData {
-			parentDir := filepath.Dir(cleanPath)
-			switch decision {
-			case decisionApproveOnce:
-				return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
-			case decisionApproveDir:
-				if approvals != nil {
-					approvals.approveDir(parentDir)
-				}
-				return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
-			case decisionApproveAll:
-				if approvals != nil {
-					approvals.setApproveAll()
-				}
-				return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
-			}
-		}
-		return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanPath)
-	}
-
-	// 5. 首次访问外部路径，触发审批中断
-	return nil, tool.Interrupt(ctx, fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanPath, ft.allowedBaseDir))
+	return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
 }
 
 // readFileLinesFrom 读取文件全部内容并按行分割，同时记录是否有尾部换行

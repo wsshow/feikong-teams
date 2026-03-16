@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/approval"
 	"fkteams/chatutil"
 	"fkteams/engine"
 	"fkteams/fkevent"
@@ -168,10 +169,11 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
-	// 注入会话审批状态
-	taskCtx = command.WithSessionApprovals(taskCtx, command.NewSessionApprovals())
-	// 注入文件访问审批状态
-	taskCtx = file.WithFileApprovals(taskCtx, file.NewFileApprovals())
+	// 注入统一审批注册表
+	taskCtx = approval.WithRegistry(taskCtx, approval.NewDefaultRegistry(
+		approval.StoreConfig{Name: command.ApprovalStoreName},
+		approval.StoreConfig{Name: file.ApprovalStoreName, Matcher: file.DirMatchFunc},
+	))
 
 	// 初始化 HITL 审批通道
 	approvalCh := make(chan int, 1)
@@ -193,26 +195,13 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
 
 	// 构建 HITL 中断处理器：先通知前端，再等待审批
+	channelHandler := engine.ChannelHandler(approvalCh)
 	interruptHandler := func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		_ = writeJSON(map[string]interface{}{
 			"type":    "approval_required",
 			"message": "危险命令需要审批",
 		})
-
-		var decision int
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case decision = <-approvalCh:
-		}
-
-		targets := make(map[string]any, len(interrupts))
-		for _, ic := range interrupts {
-			if ic.IsRootCause {
-				targets[ic.ID] = decision
-			}
-		}
-		return targets, nil
+		return channelHandler(ctx, interrupts)
 	}
 
 	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
