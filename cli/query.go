@@ -10,6 +10,7 @@ import (
 	"fkteams/g"
 	"fkteams/report"
 	"fkteams/tools/command"
+	"fkteams/tools/file"
 	"fmt"
 	"log"
 	"sync"
@@ -167,6 +168,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	// 注入会话审批状态（支持"该会话允许该命令/所有命令"）
 	queryCtx = command.WithSessionApprovals(queryCtx, command.NewSessionApprovals())
+	// 注入文件访问审批状态（支持外部目录访问审批）
+	queryCtx = file.WithFileApprovals(queryCtx, file.NewFileApprovals())
 
 	// 设置摘要持久化回调
 	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {

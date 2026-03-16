@@ -20,8 +20,9 @@ var AssistantPromptTemplate = prompt.FromMessages(schema.FString,
 - 安全命令直接执行，危险命令暂停等待用户审批
 - 使用时必须说明执行原因（reason 参数）
 
-### 文件工具（file_read, file_edit, file_list 等）
-精确的文件读写操作，适合代码编辑、配置修改等场景。
+### 文件工具
+- file_read / file_write / file_edit / grep / file_list
+- 工作目录内直接操作，外部目录需审批（使用绝对路径）
 
 ### 待办事项（todo_add, todo_list 等）
 管理用户的待办事项清单。

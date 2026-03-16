@@ -7,11 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
+	"sync"
 
 	"fkteams/mdiff"
 
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/spf13/afero"
 )
 
@@ -19,6 +20,8 @@ import (
 type FileTools struct {
 	// securedFs 是受限制的文件系统，只允许访问指定目录
 	securedFs afero.Fs
+	// osFs 是无限制的操作系统文件系统，用于访问已审批的外部路径
+	osFs afero.Fs
 	// allowedBaseDir 是允许访问的基础目录
 	allowedBaseDir string
 }
@@ -45,13 +48,142 @@ func NewFileTools(baseDir string) (*FileTools, error) {
 
 	return &FileTools{
 		securedFs:      securedFs,
+		osFs:           afero.NewOsFs(),
 		allowedBaseDir: absPath,
 	}, nil
 }
 
-// readFileLines 读取文件全部内容并按行分割，同时记录是否有尾部换行
-func (ft *FileTools) readFileLines(relPath string) (lines []string, hasTrailingNewline bool, err error) {
-	content, err := afero.ReadFile(ft.securedFs, relPath)
+// FileApprovals 文件访问审批状态，支持会话级别的目录访问授权
+type FileApprovals struct {
+	mu           sync.RWMutex
+	approvedDirs map[string]bool
+	approveAll   bool
+}
+
+// NewFileApprovals 创建文件审批状态
+func NewFileApprovals() *FileApprovals {
+	return &FileApprovals{approvedDirs: make(map[string]bool)}
+}
+
+type fileApprovalsCtxKey struct{}
+
+// WithFileApprovals 将文件审批状态注入 context
+func WithFileApprovals(ctx context.Context, fa *FileApprovals) context.Context {
+	return context.WithValue(ctx, fileApprovalsCtxKey{}, fa)
+}
+
+func getFileApprovals(ctx context.Context) *FileApprovals {
+	if v, ok := ctx.Value(fileApprovalsCtxKey{}).(*FileApprovals); ok {
+		return v
+	}
+	return nil
+}
+
+func (fa *FileApprovals) isApproved(absPath string) bool {
+	fa.mu.RLock()
+	defer fa.mu.RUnlock()
+	if fa.approveAll {
+		return true
+	}
+	// 检查路径本身或其父目录是否被批准
+	dir := absPath
+	for {
+		if fa.approvedDirs[dir] {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return false
+}
+
+func (fa *FileApprovals) approveDir(dir string) {
+	fa.mu.Lock()
+	defer fa.mu.Unlock()
+	fa.approvedDirs[dir] = true
+}
+
+func (fa *FileApprovals) setApproveAll() {
+	fa.mu.Lock()
+	defer fa.mu.Unlock()
+	fa.approveAll = true
+}
+
+// 审批决定常量（与 command 包一致，供 HITL 中断机制使用）
+const (
+	decisionReject      = 0
+	decisionApproveOnce = 1
+	decisionApproveDir  = 2
+	decisionApproveAll  = 3
+)
+
+// resolvedPath 路径解析结果
+type resolvedPath struct {
+	fs   afero.Fs
+	path string
+}
+
+// resolvePath 解析用户路径，支持工作目录内和工作目录外的路径访问
+// 工作目录内的路径直接访问，工作目录外的绝对路径需要用户审批
+func (ft *FileTools) resolvePath(ctx context.Context, userPath string) (*resolvedPath, error) {
+	if userPath == "" {
+		return nil, fmt.Errorf("路径不能为空")
+	}
+
+	// 1. 尝试解析为工作目录内的路径
+	if relPath, err := ft.workspacePath(userPath); err == nil {
+		return &resolvedPath{fs: ft.securedFs, path: relPath}, nil
+	}
+
+	// 2. 仅支持绝对路径访问外部文件
+	cleanPath := filepath.Clean(userPath)
+	if !filepath.IsAbs(cleanPath) {
+		return nil, fmt.Errorf("路径 %s 不在工作目录 %s 内，如需访问外部文件请使用绝对路径", userPath, ft.allowedBaseDir)
+	}
+
+	// 3. 检查会话级别审批
+	approvals := getFileApprovals(ctx)
+	if approvals != nil && approvals.isApproved(cleanPath) {
+		return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
+	}
+
+	// 4. HITL 中断恢复检查
+	wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
+	if wasInterrupted {
+		isTarget, hasData, decision := tool.GetResumeContext[int](ctx)
+		if !isTarget {
+			return nil, tool.Interrupt(ctx, nil)
+		}
+		if hasData {
+			parentDir := filepath.Dir(cleanPath)
+			switch decision {
+			case decisionApproveOnce:
+				return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
+			case decisionApproveDir:
+				if approvals != nil {
+					approvals.approveDir(parentDir)
+				}
+				return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
+			case decisionApproveAll:
+				if approvals != nil {
+					approvals.setApproveAll()
+				}
+				return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
+			}
+		}
+		return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanPath)
+	}
+
+	// 5. 首次访问外部路径，触发审批中断
+	return nil, tool.Interrupt(ctx, fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanPath, ft.allowedBaseDir))
+}
+
+// readFileLinesFrom 读取文件全部内容并按行分割，同时记录是否有尾部换行
+func readFileLinesFrom(fs afero.Fs, path string) (lines []string, hasTrailingNewline bool, err error) {
+	content, err := afero.ReadFile(fs, path)
 	if err != nil {
 		return nil, false, err
 	}
@@ -64,6 +196,11 @@ func (ft *FileTools) readFileLines(relPath string) (lines []string, hasTrailingN
 	}
 	lines = strings.Split(text, "\n")
 	return lines, hasTrailingNewline, nil
+}
+
+// readFileLines 使用工作目录文件系统读取文件（兼容 fsAccessor）
+func (ft *FileTools) readFileLines(relPath string) ([]string, bool, error) {
+	return readFileLinesFrom(ft.securedFs, relPath)
 }
 
 // joinLines 将行数组拼接为文件内容，根据原始文件情况保留尾部换行
@@ -84,9 +221,9 @@ func countLines(content string) int {
 	return strings.Count(text, "\n") + 1
 }
 
-// validatePath 验证并规范化路径
+// workspacePath 验证并规范化路径（仅限工作目录内）
 // 确保路径在允许的目录范围内，并返回相对路径
-func (ft *FileTools) validatePath(userPath string) (string, error) {
+func (ft *FileTools) workspacePath(userPath string) (string, error) {
 	if userPath == "" {
 		return "", fmt.Errorf("路径不能为空")
 	}
@@ -153,16 +290,13 @@ func (ft *FileTools) FileRead(ctx context.Context, req *FileReadRequest) (*FileR
 		}, nil
 	}
 
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
+	rp, err := ft.resolvePath(ctx, req.Filepath)
 	if err != nil {
-		return &FileReadResponse{
-			ErrorMessage: err.Error(),
-		}, nil
+		return nil, err
 	}
 
 	// 读取文件所有行
-	lines, _, err := ft.readFileLines(relPath)
+	lines, _, err := readFileLinesFrom(rp.fs, rp.path)
 	if err != nil {
 		return &FileReadResponse{
 			ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
@@ -234,25 +368,22 @@ func (ft *FileTools) FileWrite(ctx context.Context, req *FileWriteRequest) (*Fil
 		}, nil
 	}
 
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
+	rp, err := ft.resolvePath(ctx, req.Filepath)
 	if err != nil {
-		return &FileWriteResponse{
-			ErrorMessage: err.Error(),
-		}, nil
+		return nil, err
 	}
 
 	// 自动创建父目录
-	dir := filepath.Dir(relPath)
+	dir := filepath.Dir(rp.path)
 	if dir != "." {
-		if err := ft.securedFs.MkdirAll(dir, 0755); err != nil {
+		if err := rp.fs.MkdirAll(dir, 0755); err != nil {
 			return &FileWriteResponse{
 				ErrorMessage: fmt.Sprintf("创建目录失败: %v", err),
 			}, nil
 		}
 	}
 
-	err = afero.WriteFile(ft.securedFs, relPath, []byte(req.Content), 0644)
+	err = afero.WriteFile(rp.fs, rp.path, []byte(req.Content), 0644)
 	if err != nil {
 		return &FileWriteResponse{
 			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
@@ -264,214 +395,6 @@ func (ft *FileTools) FileWrite(ctx context.Context, req *FileWriteRequest) (*Fil
 	return &FileWriteResponse{
 		Message:    fmt.Sprintf("成功写入 %d 字节到文件 %s", len(req.Content), req.Filepath),
 		TotalLines: totalLines,
-	}, nil
-}
-
-// FileAppendRequest 追加文件请求
-type FileAppendRequest struct {
-	Filepath string `json:"filepath" jsonschema:"description=要追加的文件路径,required"`
-	Content  string `json:"content" jsonschema:"description=要追加的内容,required"`
-}
-
-// FileAppendResponse 追加文件响应
-type FileAppendResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	TotalLines   int    `json:"total_lines" jsonschema:"description=追加后文件总行数"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileAppend 在文件末尾追加内容
-func (ft *FileTools) FileAppend(ctx context.Context, req *FileAppendRequest) (*FileAppendResponse, error) {
-	if req.Filepath == "" {
-		return &FileAppendResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
-	if err != nil {
-		return &FileAppendResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	file, err := ft.securedFs.OpenFile(relPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return &FileAppendResponse{
-			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
-		}, nil
-	}
-
-	n, err := file.WriteString(req.Content)
-	file.Close()
-	if err != nil {
-		return &FileAppendResponse{
-			ErrorMessage: fmt.Sprintf("追加内容失败: %v", err),
-		}, nil
-	}
-
-	// 读取追加后的总行数
-	lines, _, _ := ft.readFileLines(relPath)
-
-	return &FileAppendResponse{
-		Message:    fmt.Sprintf("成功追加 %d 字节到文件 %s", n, req.Filepath),
-		TotalLines: len(lines),
-	}, nil
-}
-
-// FileModifyRequest 修改文件请求
-type FileModifyRequest struct {
-	Filepath   string `json:"filepath" jsonschema:"description=要修改的文件路径,required"`
-	StartLine  int    `json:"start_line" jsonschema:"description=起始行号(从1开始),required"`
-	EndLine    int    `json:"end_line" jsonschema:"description=结束行号,required"`
-	NewContent string `json:"new_content" jsonschema:"description=新的内容(将替换指定行范围),required"`
-}
-
-// FileModifyResponse 修改文件响应
-type FileModifyResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	TotalLines   int    `json:"total_lines" jsonschema:"description=修改后文件总行数"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileModify 修改文件中指定行范围的内容
-func (ft *FileTools) FileModify(ctx context.Context, req *FileModifyRequest) (*FileModifyResponse, error) {
-	if req.Filepath == "" {
-		return &FileModifyResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
-	if req.StartLine < 1 || req.EndLine < req.StartLine {
-		return &FileModifyResponse{
-			ErrorMessage: fmt.Sprintf("行号无效: start_line=%d, end_line=%d", req.StartLine, req.EndLine),
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
-	if err != nil {
-		return &FileModifyResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	// 读取原文件
-	lines, hasTrailingNewline, err := ft.readFileLines(relPath)
-	if err != nil {
-		return &FileModifyResponse{
-			ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
-		}, nil
-	}
-
-	if req.StartLine > len(lines) {
-		return &FileModifyResponse{
-			ErrorMessage: fmt.Sprintf("起始行号 %d 超出文件总行数 %d", req.StartLine, len(lines)),
-		}, nil
-	}
-
-	// 构建新内容：将 NewContent 按行分割后插入
-	newLines := strings.Split(req.NewContent, "\n")
-	var result []string
-	result = append(result, lines[:req.StartLine-1]...)
-	result = append(result, newLines...)
-	if req.EndLine < len(lines) {
-		result = append(result, lines[req.EndLine:]...)
-	}
-
-	// 写回文件，保留原始尾部换行符
-	err = afero.WriteFile(ft.securedFs, relPath, []byte(joinLines(result, hasTrailingNewline)), 0644)
-	if err != nil {
-		return &FileModifyResponse{
-			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
-		}, nil
-	}
-
-	oldLineCount := req.EndLine - req.StartLine + 1
-	return &FileModifyResponse{
-		Message:    fmt.Sprintf("成功修改文件 %s 的第 %d-%d 行（替换了 %d 行为 %d 行）", req.Filepath, req.StartLine, req.EndLine, oldLineCount, len(newLines)),
-		TotalLines: len(result),
-	}, nil
-}
-
-// FileInsertRequest 插入文件请求
-type FileInsertRequest struct {
-	Filepath   string `json:"filepath" jsonschema:"description=要修改的文件路径,required"`
-	LineNumber int    `json:"line_number" jsonschema:"description=在该行之后插入内容(从1开始),0表示插入到文件开头,required"`
-	Content    string `json:"content" jsonschema:"description=要插入的内容,required"`
-}
-
-// FileInsertResponse 插入文件响应
-type FileInsertResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	TotalLines   int    `json:"total_lines" jsonschema:"description=插入后文件总行数"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileInsert 在文件的指定行之后插入新内容
-func (ft *FileTools) FileInsert(ctx context.Context, req *FileInsertRequest) (*FileInsertResponse, error) {
-	if req.Filepath == "" {
-		return &FileInsertResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
-	if req.LineNumber < 0 {
-		return &FileInsertResponse{
-			ErrorMessage: fmt.Sprintf("行号无效: line_number=%d", req.LineNumber),
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
-	if err != nil {
-		return &FileInsertResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	// 读取原文件
-	lines, hasTrailingNewline, err := ft.readFileLines(relPath)
-	if err != nil {
-		return &FileInsertResponse{
-			ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
-		}, nil
-	}
-
-	if req.LineNumber > len(lines) {
-		return &FileInsertResponse{
-			ErrorMessage: fmt.Sprintf("行号 %d 超出文件总行数 %d", req.LineNumber, len(lines)),
-		}, nil
-	}
-
-	// 将插入内容按行分割
-	newLines := strings.Split(req.Content, "\n")
-	var result []string
-	if req.LineNumber == 0 {
-		result = append(result, newLines...)
-		result = append(result, lines...)
-	} else {
-		result = append(result, lines[:req.LineNumber]...)
-		result = append(result, newLines...)
-		result = append(result, lines[req.LineNumber:]...)
-	}
-
-	// 写回文件，保留原始尾部换行符
-	err = afero.WriteFile(ft.securedFs, relPath, []byte(joinLines(result, hasTrailingNewline)), 0644)
-	if err != nil {
-		return &FileInsertResponse{
-			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
-		}, nil
-	}
-
-	position := "开头"
-	if req.LineNumber > 0 {
-		position = "第 " + strconv.Itoa(req.LineNumber) + " 行之后"
-	}
-	return &FileInsertResponse{
-		Message:    fmt.Sprintf("成功在文件 %s 的%s插入 %d 行内容", req.Filepath, position, len(newLines)),
-		TotalLines: len(result),
 	}, nil
 }
 
@@ -494,15 +417,12 @@ func (ft *FileTools) FileList(ctx context.Context, req *FileListRequest) (*FileL
 		}, nil
 	}
 
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Dirpath)
+	rp, err := ft.resolvePath(ctx, req.Dirpath)
 	if err != nil {
-		return &FileListResponse{
-			ErrorMessage: err.Error(),
-		}, nil
+		return nil, err
 	}
 
-	entries, err := afero.ReadDir(ft.securedFs, relPath)
+	entries, err := afero.ReadDir(rp.fs, rp.path)
 	if err != nil {
 		return &FileListResponse{
 			ErrorMessage: fmt.Sprintf("无法读取目录: %v", err),
@@ -525,491 +445,244 @@ func (ft *FileTools) FileList(ctx context.Context, req *FileListRequest) (*FileL
 	}, nil
 }
 
-// FileCreateRequest 创建文件请求
-type FileCreateRequest struct {
-	Filepath string `json:"filepath" jsonschema:"description=要创建的文件路径,required"`
+// GrepRequest 搜索请求
+type GrepRequest struct {
+	Pattern  string `json:"pattern" jsonschema:"description=搜索模式,required"`
+	Path     string `json:"path,omitempty" jsonschema:"description=搜索路径(文件或目录)，默认为工作目录"`
+	Include  string `json:"include,omitempty" jsonschema:"description=文件名 glob 过滤，如 *.go 或 *.{js,ts}"`
+	UseRegex bool   `json:"use_regex,omitempty" jsonschema:"description=是否启用正则表达式(默认false即纯文本匹配)"`
+	Context  int    `json:"context,omitempty" jsonschema:"description=显示匹配行前后的上下文行数(默认0)"`
+	MaxCount int    `json:"max_count,omitempty" jsonschema:"description=最大返回结果数(默认100)"`
 }
 
-// FileCreateResponse 创建文件响应
-type FileCreateResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+// GrepMatch 搜索匹配结果
+type GrepMatch struct {
+	File       string `json:"file" jsonschema:"description=文件路径"`
+	LineNumber int    `json:"line" jsonschema:"description=行号"`
+	Text       string `json:"text" jsonschema:"description=匹配行内容"`
+	Context    string `json:"context,omitempty" jsonschema:"description=前后上下文"`
 }
 
-// FileCreate 创建一个新的空文件
-func (ft *FileTools) FileCreate(ctx context.Context, req *FileCreateRequest) (*FileCreateResponse, error) {
-	if req.Filepath == "" {
-		return &FileCreateResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
-	if err != nil {
-		return &FileCreateResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	// 创建文件（如果已存在则清空）
-	file, err := ft.securedFs.Create(relPath)
-	if err != nil {
-		return &FileCreateResponse{
-			ErrorMessage: fmt.Sprintf("创建文件失败: %v", err),
-		}, nil
-	}
-	defer file.Close()
-
-	return &FileCreateResponse{
-		Message: fmt.Sprintf("成功创建空文件 %s", req.Filepath),
-	}, nil
+// GrepResponse 搜索响应
+type GrepResponse struct {
+	Matches      []GrepMatch `json:"matches,omitempty" jsonschema:"description=匹配结果"`
+	TotalMatches int         `json:"total_matches" jsonschema:"description=总匹配数"`
+	ErrorMessage string      `json:"error_message,omitempty" jsonschema:"description=错误信息"`
 }
 
-// FileDeleteRequest 删除文件请求
-type FileDeleteRequest struct {
-	Filepath string `json:"filepath" jsonschema:"description=要删除的文件路径,required"`
-}
-
-// FileDeleteResponse 删除文件响应
-type FileDeleteResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileDelete 删除指定的文件
-func (ft *FileTools) FileDelete(ctx context.Context, req *FileDeleteRequest) (*FileDeleteResponse, error) {
-	if req.Filepath == "" {
-		return &FileDeleteResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
-	if err != nil {
-		return &FileDeleteResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	err = ft.securedFs.Remove(relPath)
-	if err != nil {
-		return &FileDeleteResponse{
-			ErrorMessage: fmt.Sprintf("删除文件失败: %v", err),
-		}, nil
-	}
-
-	return &FileDeleteResponse{
-		Message: fmt.Sprintf("成功删除文件 %s", req.Filepath),
-	}, nil
-}
-
-// DirCreateRequest 创建目录请求
-type DirCreateRequest struct {
-	Dirpath string `json:"dirpath" jsonschema:"description=要创建的目录路径,required"`
-}
-
-// DirCreateResponse 创建目录响应
-type DirCreateResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// DirCreate 创建一个新的目录（支持递归创建）
-func (ft *FileTools) DirCreate(ctx context.Context, req *DirCreateRequest) (*DirCreateResponse, error) {
-	if req.Dirpath == "" {
-		return &DirCreateResponse{
-			ErrorMessage: "dirpath 参数是必需的",
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Dirpath)
-	if err != nil {
-		return &DirCreateResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	err = ft.securedFs.MkdirAll(relPath, 0755)
-	if err != nil {
-		return &DirCreateResponse{
-			ErrorMessage: fmt.Sprintf("创建目录失败: %v", err),
-		}, nil
-	}
-
-	return &DirCreateResponse{
-		Message: fmt.Sprintf("成功创建目录 %s", req.Dirpath),
-	}, nil
-}
-
-// DirDeleteRequest 删除目录请求
-type DirDeleteRequest struct {
-	Dirpath string `json:"dirpath" jsonschema:"description=要删除的目录路径,required"`
-}
-
-// DirDeleteResponse 删除目录响应
-type DirDeleteResponse struct {
-	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// DirDelete 删除指定的目录（仅限空目录）
-func (ft *FileTools) DirDelete(ctx context.Context, req *DirDeleteRequest) (*DirDeleteResponse, error) {
-	if req.Dirpath == "" {
-		return &DirDeleteResponse{
-			ErrorMessage: "dirpath 参数是必需的",
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Dirpath)
-	if err != nil {
-		return &DirDeleteResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	err = ft.securedFs.Remove(relPath)
-	if err != nil {
-		return &DirDeleteResponse{
-			ErrorMessage: fmt.Sprintf("删除目录失败: %v", err),
-		}, nil
-	}
-
-	return &DirDeleteResponse{
-		Message: fmt.Sprintf("成功删除目录 %s", req.Dirpath),
-	}, nil
-}
-
-// FileSearchRequest 搜索文件内容请求
-type FileSearchRequest struct {
-	Filepath string `json:"filepath" jsonschema:"description=要搜索的文件路径,required"`
-	Pattern  string `json:"pattern" jsonschema:"description=搜索文本,required"`
-	UseRegex bool   `json:"use_regex,omitempty" jsonschema:"description=是否启用正则表达式匹配(默认false即纯文本匹配)"`
-	MaxCount int    `json:"max_count,omitempty" jsonschema:"description=最大返回结果数,默认100"`
-}
-
-// SearchMatch 搜索匹配结果
-type SearchMatch struct {
-	LineNumber int    `json:"line_number" jsonschema:"description=行号(从1开始)"`
-	LineText   string `json:"line_text" jsonschema:"description=匹配的行内容"`
-}
-
-// FileSearchResponse 搜索文件内容响应
-type FileSearchResponse struct {
-	Matches      []SearchMatch `json:"matches,omitempty" jsonschema:"description=匹配结果列表"`
-	TotalMatches int           `json:"total_matches" jsonschema:"description=总匹配数"`
-	ErrorMessage string        `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileSearch 在文件中搜索指定模式
-func (ft *FileTools) FileSearch(ctx context.Context, req *FileSearchRequest) (*FileSearchResponse, error) {
-	if req.Filepath == "" {
-		return &FileSearchResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
+// Grep 在文件或目录中搜索文本
+func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse, error) {
 	if req.Pattern == "" {
-		return &FileSearchResponse{
-			ErrorMessage: "pattern 参数是必需的",
-		}, nil
+		return &GrepResponse{ErrorMessage: "pattern is required"}, nil
 	}
 
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
+	// 确定搜索路径
+	searchPath := req.Path
+	if searchPath == "" {
+		searchPath = "."
+	}
+
+	rp, err := ft.resolvePath(ctx, searchPath)
 	if err != nil {
-		return &FileSearchResponse{
-			ErrorMessage: err.Error(),
-		}, nil
+		return nil, err
 	}
 
-	// 根据 use_regex 参数决定匹配方式
-	var regex *regexp.Regexp
+	// 编译匹配器
+	var matcher func(string) bool
 	if req.UseRegex {
-		var err error
-		regex, err = regexp.Compile(req.Pattern)
+		re, err := regexp.Compile(req.Pattern)
 		if err != nil {
-			return &FileSearchResponse{
-				ErrorMessage: fmt.Sprintf("invalid regex pattern: %v", err),
-			}, nil
+			return &GrepResponse{ErrorMessage: fmt.Sprintf("invalid regex: %v", err)}, nil
 		}
+		matcher = re.MatchString
+	} else {
+		matcher = func(line string) bool { return strings.Contains(line, req.Pattern) }
 	}
 
-	// 读取文件
-	file, err := ft.securedFs.Open(relPath)
-	if err != nil {
-		return &FileSearchResponse{
-			ErrorMessage: fmt.Sprintf("无法打开文件: %v", err),
-		}, nil
+	// 编译 glob 过滤器
+	var includePattern string
+	if req.Include != "" {
+		includePattern = req.Include
 	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	var matches []SearchMatch
-	lineNumber := 1
 	maxCount := req.MaxCount
 	if maxCount <= 0 {
 		maxCount = 100
 	}
-
-	for scanner.Scan() && len(matches) < maxCount {
-		line := scanner.Text()
-		matched := false
-
-		if regex != nil {
-			matched = regex.MatchString(line)
-		} else {
-			matched = strings.Contains(line, req.Pattern)
-		}
-
-		if matched {
-			matches = append(matches, SearchMatch{
-				LineNumber: lineNumber,
-				LineText:   line,
-			})
-		}
-		lineNumber++
+	contextLines := req.Context
+	if contextLines < 0 {
+		contextLines = 0
 	}
 
-	if err := scanner.Err(); err != nil {
-		return &FileSearchResponse{
-			ErrorMessage: fmt.Sprintf("读取文件时出错: %v", err),
-		}, nil
+	var matches []GrepMatch
+
+	// 检查搜索路径是文件还是目录
+	info, err := rp.fs.Stat(rp.path)
+	if err != nil {
+		return &GrepResponse{ErrorMessage: fmt.Sprintf("路径不存在: %v", err)}, nil
 	}
 
-	return &FileSearchResponse{
+	if !info.IsDir() {
+		// 单文件搜索
+		fileMatches := ft.grepFile(rp.fs, rp.path, searchPath, matcher, contextLines, maxCount)
+		matches = append(matches, fileMatches...)
+	} else {
+		// 目录递归搜索
+		_ = afero.Walk(rp.fs, rp.path, func(path string, fi os.FileInfo, walkErr error) error {
+			if walkErr != nil || fi.IsDir() {
+				return walkErr
+			}
+			if len(matches) >= maxCount {
+				return fmt.Errorf("max reached")
+			}
+
+			// glob 过滤
+			if includePattern != "" {
+				matched, _ := filepath.Match(includePattern, fi.Name())
+				if !matched {
+					return nil
+				}
+			}
+
+			// 跳过二进制文件（简单检测：大于 1MB 或扩展名为常见二进制）
+			if fi.Size() > 1<<20 {
+				return nil
+			}
+
+			// 构建显示路径
+			displayPath := path
+			if rp.path == "." {
+				displayPath = path
+			}
+
+			remaining := maxCount - len(matches)
+			fileMatches := ft.grepFile(rp.fs, path, displayPath, matcher, contextLines, remaining)
+			matches = append(matches, fileMatches...)
+			return nil
+		})
+	}
+
+	return &GrepResponse{
 		Matches:      matches,
 		TotalMatches: len(matches),
 	}, nil
 }
 
-// FileReplaceRequest 替换文件内容请求
-type FileReplaceRequest struct {
-	Filepath   string `json:"filepath" jsonschema:"description=要修改的文件路径,required"`
-	OldPattern string `json:"old_pattern" jsonschema:"description=要替换的文本(精确匹配),required"`
-	NewText    string `json:"new_text" jsonschema:"description=替换后的文本,required"`
-	UseRegex   bool   `json:"use_regex,omitempty" jsonschema:"description=是否启用正则表达式匹配(默认false即纯文本精确匹配)"`
-	MaxCount   int    `json:"max_count,omitempty" jsonschema:"description=最大替换次数,0表示替换所有,默认0"`
-}
-
-// FileReplaceResponse 替换文件内容响应
-type FileReplaceResponse struct {
-	Message       string `json:"message" jsonschema:"description=操作结果消息"`
-	ReplacedCount int    `json:"replaced_count" jsonschema:"description=实际替换次数"`
-	TotalLines    int    `json:"total_lines" jsonschema:"description=替换后文件总行数"`
-	ErrorMessage  string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileReplace 在文件中替换指定模式
-func (ft *FileTools) FileReplace(ctx context.Context, req *FileReplaceRequest) (*FileReplaceResponse, error) {
-	if req.Filepath == "" {
-		return &FileReplaceResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
-	}
-
-	if req.OldPattern == "" {
-		return &FileReplaceResponse{
-			ErrorMessage: "old_pattern 参数是必需的",
-		}, nil
-	}
-
-	// 验证并规范化路径
-	relPath, err := ft.validatePath(req.Filepath)
+// grepFile 在单个文件中搜索
+func (ft *FileTools) grepFile(fs afero.Fs, fsPath, displayPath string, matcher func(string) bool, contextLines, maxCount int) []GrepMatch {
+	file, err := fs.Open(fsPath)
 	if err != nil {
-		return &FileReplaceResponse{
-			ErrorMessage: err.Error(),
-		}, nil
+		return nil
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var allLines []string
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+	if scanner.Err() != nil {
+		return nil
 	}
 
-	// 读取文件内容
-	content, err := afero.ReadFile(ft.securedFs, relPath)
-	if err != nil {
-		return &FileReplaceResponse{
-			ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
-		}, nil
-	}
-
-	// 执行替换
-	originalContent := string(content)
-	newContent := originalContent
-	replacedCount := 0
-
-	if req.UseRegex {
-		// 正则替换模式
-		regex, err := regexp.Compile(req.OldPattern)
-		if err != nil {
-			return &FileReplaceResponse{
-				ErrorMessage: fmt.Sprintf("invalid regex pattern: %v", err),
-			}, nil
+	var matches []GrepMatch
+	for i, line := range allLines {
+		if len(matches) >= maxCount {
+			break
 		}
-		if req.MaxCount > 0 {
-			count := 0
-			newContent = regex.ReplaceAllStringFunc(originalContent, func(match string) string {
-				if count < req.MaxCount {
-					count++
-					return req.NewText
+		if !matcher(line) {
+			continue
+		}
+
+		m := GrepMatch{
+			File:       displayPath,
+			LineNumber: i + 1,
+			Text:       line,
+		}
+
+		// 添加上下文
+		if contextLines > 0 {
+			start := i - contextLines
+			if start < 0 {
+				start = 0
+			}
+			end := i + contextLines + 1
+			if end > len(allLines) {
+				end = len(allLines)
+			}
+			var ctxLines []string
+			for j := start; j < end; j++ {
+				prefix := " "
+				if j == i {
+					prefix = ">"
 				}
-				return match
-			})
-			replacedCount = count
-		} else {
-			matches := regex.FindAllStringIndex(originalContent, -1)
-			replacedCount = len(matches)
-			newContent = regex.ReplaceAllString(originalContent, req.NewText)
+				ctxLines = append(ctxLines, fmt.Sprintf("%s%d: %s", prefix, j+1, allLines[j]))
+			}
+			m.Context = strings.Join(ctxLines, "\n")
 		}
-	} else {
-		// 默认纯文本精确匹配
-		if req.MaxCount > 0 {
-			newContent = strings.Replace(originalContent, req.OldPattern, req.NewText, req.MaxCount)
-			replacedCount = strings.Count(originalContent, req.OldPattern) - strings.Count(newContent, req.OldPattern)
-		} else {
-			replacedCount = strings.Count(originalContent, req.OldPattern)
-			newContent = strings.ReplaceAll(originalContent, req.OldPattern, req.NewText)
-		}
-	}
 
-	// 如果没有任何替换,返回提示
-	if newContent == originalContent {
-		return &FileReplaceResponse{
-			Message:       "未找到匹配的内容,文件未修改",
-			ReplacedCount: 0,
-			TotalLines:    countLines(originalContent),
-		}, nil
+		matches = append(matches, m)
 	}
-
-	// 写回文件
-	err = afero.WriteFile(ft.securedFs, relPath, []byte(newContent), 0644)
-	if err != nil {
-		return &FileReplaceResponse{
-			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
-		}, nil
-	}
-
-	return &FileReplaceResponse{
-		Message:       fmt.Sprintf("成功在文件 %s 中替换了 %d 处内容", req.Filepath, replacedCount),
-		ReplacedCount: replacedCount,
-		TotalLines:    countLines(newContent),
-	}, nil
+	return matches
 }
 
-// FileEditRequest 统一文件编辑请求
+// FileEditRequest 精确查找替换请求
 type FileEditRequest struct {
-	Filepath string `json:"filepath" jsonschema:"description=文件路径,required"`
-	Action   string `json:"action" jsonschema:"description=操作类型: write(创建或覆盖整个文件) | append(追加内容到文件末尾) | replace(精确查找并替换文本),required"`
-	Content  string `json:"content" jsonschema:"description=新内容。write模式为整个文件内容;append模式为追加的内容;replace模式为替换后的新文本,required"`
-	OldText  string `json:"old_text,omitempty" jsonschema:"description=replace模式下要查找的原始文本(精确匹配)。应包含足够上下文确保唯一匹配"`
+	Filepath  string `json:"filepath" jsonschema:"description=文件路径,required"`
+	OldString string `json:"old_string" jsonschema:"description=要查找的原始文本(精确匹配,必须唯一)。应包含足够上下文确保唯一匹配,required"`
+	NewString string `json:"new_string" jsonschema:"description=替换后的新文本。为空则删除匹配文本,required"`
 }
 
-// FileEditResponse 统一文件编辑响应
+// FileEditResponse 文件编辑响应
 type FileEditResponse struct {
 	Message      string `json:"message" jsonschema:"description=操作结果消息"`
 	TotalLines   int    `json:"total_lines" jsonschema:"description=操作后文件总行数"`
 	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
 }
 
-// FileEdit 统一文件编辑工具，支持 write/append/replace 三种模式
+// FileEdit 精确查找并替换文件内容（old_string 必须唯一匹配）
 func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileEditResponse, error) {
 	if req.Filepath == "" {
-		return &FileEditResponse{
-			ErrorMessage: "filepath is required",
-		}, nil
+		return &FileEditResponse{ErrorMessage: "filepath is required"}, nil
+	}
+	if req.OldString == "" {
+		return &FileEditResponse{ErrorMessage: "old_string is required"}, nil
 	}
 
-	relPath, err := ft.validatePath(req.Filepath)
+	rp, err := ft.resolvePath(ctx, req.Filepath)
 	if err != nil {
+		return nil, err
+	}
+
+	content, err := afero.ReadFile(rp.fs, rp.path)
+	if err != nil {
+		return &FileEditResponse{ErrorMessage: fmt.Sprintf("读取文件失败: %v", err)}, nil
+	}
+
+	original := string(content)
+	matchCount := strings.Count(original, req.OldString)
+	if matchCount == 0 {
 		return &FileEditResponse{
-			ErrorMessage: err.Error(),
+			ErrorMessage: fmt.Sprintf("未找到匹配文本，请检查 old_string 是否正确 (文件共 %d 行)", countLines(original)),
+			TotalLines:   countLines(original),
+		}, nil
+	}
+	if matchCount > 1 {
+		return &FileEditResponse{
+			ErrorMessage: fmt.Sprintf("找到 %d 处匹配，请包含更多上下文确保唯一匹配 (文件共 %d 行)", matchCount, countLines(original)),
+			TotalLines:   countLines(original),
 		}, nil
 	}
 
-	switch req.Action {
-	case "write":
-		// 自动创建父目录
-		dir := filepath.Dir(relPath)
-		if dir != "." {
-			if err := ft.securedFs.MkdirAll(dir, 0755); err != nil {
-				return &FileEditResponse{
-					ErrorMessage: fmt.Sprintf("failed to create directory: %v", err),
-				}, nil
-			}
-		}
-		if err := afero.WriteFile(ft.securedFs, relPath, []byte(req.Content), 0644); err != nil {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("failed to write file: %v", err),
-			}, nil
-		}
-		return &FileEditResponse{
-			Message:    fmt.Sprintf("成功写入文件 %s (%d 字节)", req.Filepath, len(req.Content)),
-			TotalLines: countLines(req.Content),
-		}, nil
-
-	case "append":
-		file, err := ft.securedFs.OpenFile(relPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("failed to open file: %v", err),
-			}, nil
-		}
-		_, err = file.WriteString(req.Content)
-		file.Close()
-		if err != nil {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("failed to append: %v", err),
-			}, nil
-		}
-		lines, _, _ := ft.readFileLines(relPath)
-		return &FileEditResponse{
-			Message:    fmt.Sprintf("成功追加内容到文件 %s", req.Filepath),
-			TotalLines: len(lines),
-		}, nil
-
-	case "replace":
-		if req.OldText == "" {
-			return &FileEditResponse{
-				ErrorMessage: "replace mode requires old_text parameter",
-			}, nil
-		}
-		content, err := afero.ReadFile(ft.securedFs, relPath)
-		if err != nil {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("failed to read file: %v", err),
-			}, nil
-		}
-		original := string(content)
-		matchCount := strings.Count(original, req.OldText)
-		if matchCount == 0 {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("未找到匹配的文本，请检查 old_text 是否完全正确 (文件共 %d 行)", countLines(original)),
-				TotalLines:   countLines(original),
-			}, nil
-		}
-		if matchCount > 1 {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("找到 %d 处匹配，请在 old_text 中包含更多上下文以确保唯一匹配 (文件共 %d 行)", matchCount, countLines(original)),
-				TotalLines:   countLines(original),
-			}, nil
-		}
-		// 精确替换唯一匹配
-		newContent := strings.Replace(original, req.OldText, req.Content, 1)
-		if err := afero.WriteFile(ft.securedFs, relPath, []byte(newContent), 0644); err != nil {
-			return &FileEditResponse{
-				ErrorMessage: fmt.Sprintf("failed to write file: %v", err),
-			}, nil
-		}
-		return &FileEditResponse{
-			Message:    fmt.Sprintf("成功替换文件 %s 中的内容", req.Filepath),
-			TotalLines: countLines(newContent),
-		}, nil
-
-	default:
-		return &FileEditResponse{
-			ErrorMessage: fmt.Sprintf("unsupported action: %s, use write/append/replace", req.Action),
-		}, nil
+	newContent := strings.Replace(original, req.OldString, req.NewString, 1)
+	if err := afero.WriteFile(rp.fs, rp.path, []byte(newContent), 0644); err != nil {
+		return &FileEditResponse{ErrorMessage: fmt.Sprintf("写入文件失败: %v", err)}, nil
 	}
+
+	return &FileEditResponse{
+		Message:    fmt.Sprintf("成功编辑文件 %s", req.Filepath),
+		TotalLines: countLines(newContent),
+	}, nil
 }
 
 // FilePatchRequest 多文件 patch 请求
@@ -1094,61 +767,13 @@ func (ft *FileTools) FilePatch(ctx context.Context, req *FilePatchRequest) (*Fil
 	return resp, nil
 }
 
-// FileDiffRequest 计算文件 diff 请求
-type FileDiffRequest struct {
-	Filepath   string `json:"filepath" jsonschema:"description=文件路径,required"`
-	NewContent string `json:"new_content" jsonschema:"description=新的文件内容,required"`
-}
-
-// FileDiffResponse 文件 diff 响应
-type FileDiffResponse struct {
-	Diff         string `json:"diff" jsonschema:"description=unified diff 格式的差异内容"`
-	Insertions   int    `json:"insertions" jsonschema:"description=新增行数"`
-	Deletions    int    `json:"deletions" jsonschema:"description=删除行数"`
-	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
-}
-
-// FileDiff 计算文件与新内容之间的 diff
-func (ft *FileTools) FileDiff(ctx context.Context, req *FileDiffRequest) (*FileDiffResponse, error) {
-	if req.Filepath == "" {
-		return &FileDiffResponse{
-			ErrorMessage: "filepath is required",
-		}, nil
-	}
-
-	relPath, err := ft.validatePath(req.Filepath)
-	if err != nil {
-		return &FileDiffResponse{
-			ErrorMessage: err.Error(),
-		}, nil
-	}
-
-	// 读取原始文件内容（如果文件不存在，视为空文件）
-	oldContent := ""
-	content, err := afero.ReadFile(ft.securedFs, relPath)
-	if err == nil {
-		oldContent = string(content)
-	}
-
-	fd := mdiff.DiffFiles(req.Filepath, oldContent, req.Filepath, req.NewContent, 3)
-	diffText := mdiff.FormatFileDiff(fd)
-
-	stat := mdiff.Stat(&mdiff.MultiFileDiff{Files: []mdiff.FileDiff{*fd}})
-
-	return &FileDiffResponse{
-		Diff:       diffText,
-		Insertions: stat.Insertions,
-		Deletions:  stat.Deletions,
-	}, nil
-}
-
 // fsAccessor 适配 FileTools 到 mdiff.FileAccessor 接口
 type fsAccessor struct {
 	ft *FileTools
 }
 
 func (a *fsAccessor) ReadFile(path string) (string, error) {
-	relPath, err := a.ft.validatePath(path)
+	relPath, err := a.ft.workspacePath(path)
 	if err != nil {
 		return "", err
 	}
@@ -1160,7 +785,7 @@ func (a *fsAccessor) ReadFile(path string) (string, error) {
 }
 
 func (a *fsAccessor) WriteFile(path string, content string) error {
-	relPath, err := a.ft.validatePath(path)
+	relPath, err := a.ft.workspacePath(path)
 	if err != nil {
 		return err
 	}
@@ -1175,7 +800,7 @@ func (a *fsAccessor) WriteFile(path string, content string) error {
 }
 
 func (a *fsAccessor) DeleteFile(path string) error {
-	relPath, err := a.ft.validatePath(path)
+	relPath, err := a.ft.workspacePath(path)
 	if err != nil {
 		return err
 	}

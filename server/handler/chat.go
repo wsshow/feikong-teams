@@ -10,6 +10,7 @@ import (
 	"fkteams/g"
 	"fkteams/runner"
 	"fkteams/tools/command"
+	"fkteams/tools/file"
 	"fmt"
 	"log"
 	"strings"
@@ -169,6 +170,8 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 
 	// 注入会话审批状态
 	taskCtx = command.WithSessionApprovals(taskCtx, command.NewSessionApprovals())
+	// 注入文件访问审批状态
+	taskCtx = file.WithFileApprovals(taskCtx, file.NewFileApprovals())
 
 	// 初始化 HITL 审批通道
 	approvalCh := make(chan int, 1)

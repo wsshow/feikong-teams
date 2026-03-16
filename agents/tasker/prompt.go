@@ -43,11 +43,11 @@ var taskerPrompt = `# Role: 任务官（Tasker）— 后台定时任务专属执
 | search | 信息检索、价格查询、新闻获取（DuckDuckGo） |
 | fetch | 抓取网页原文，深度阅读特定页面 |
 | execute | 执行脚本、计算、系统命令（带安全审批） |
-| file_read | 读取工作目录下的文件内容 |
-| file_edit | 编辑工作目录下的已有文件 |
-| file_create | 在工作目录下创建新文件 |
-| file_list | 列出工作目录下的文件和文件夹 |
-| file_search | 在工作目录下搜索文件内容 |
+| file_read | 读取文件内容 |
+| file_write | 创建或覆盖文件 |
+| file_edit | 精确替换文件内容 |
+| file_list | 列出目录内容 |
+| grep | 搜索文件或目录中的文本 |
 
 **搜索策略**：
 1. 先用精确关键词搜索，无结果时逐步放宽：专有名词 → 核心概念 → 同义词/近义词

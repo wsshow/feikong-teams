@@ -36,12 +36,10 @@ func printEvent() func(Event) {
 					formatted = formatSearchResults(event.Content)
 				case "execute_command", "command_execute", "smart_execute", "execute":
 					formatted = formatCommandResult(event.Content)
-				case "file_read", "file_edit", "file_list", "file_create", "file_delete", "dir_create", "dir_delete", "file_search":
+				case "file_read", "file_write", "file_edit", "file_list", "grep":
 					formatted = formatFileOpResult(event.Content)
 				case "file_patch":
 					formatted = formatFilePatchResult(event.Content)
-				case "file_diff":
-					formatted = formatFileDiffResult(event.Content)
 				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)
 				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
@@ -584,58 +582,6 @@ func formatFilePatchResult(content string) string {
 			output.WriteString(fmt.Sprintf("  │ \033[32m✓\033[0m %s\n", r.Path))
 		} else {
 			output.WriteString(fmt.Sprintf("  │ \033[31m✗\033[0m %s: %s\n", r.Path, r.Error))
-		}
-	}
-
-	return output.String()
-}
-
-func formatFileDiffResult(content string) string {
-	var result struct {
-		Diff         string `json:"diff"`
-		Insertions   int    `json:"insertions"`
-		Deletions    int    `json:"deletions"`
-		ErrorMessage string `json:"error_message"`
-	}
-
-	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		return ""
-	}
-
-	var output strings.Builder
-
-	if result.ErrorMessage != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
-		return output.String()
-	}
-
-	if result.Diff == "" {
-		output.WriteString("  \033[32m✓ 文件无变更\033[0m\n")
-		return output.String()
-	}
-
-	var statParts []string
-	if result.Insertions > 0 {
-		statParts = append(statParts, fmt.Sprintf("\033[32m+%d\033[0m", result.Insertions))
-	}
-	if result.Deletions > 0 {
-		statParts = append(statParts, fmt.Sprintf("\033[31m-%d\033[0m", result.Deletions))
-	}
-	output.WriteString(fmt.Sprintf("  变更统计: %s\n\n", strings.Join(statParts, " ")))
-
-	lines := strings.Split(result.Diff, "\n")
-	for _, line := range lines {
-		switch {
-		case strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++"):
-			output.WriteString(fmt.Sprintf("  \033[1m%s\033[0m\n", line))
-		case strings.HasPrefix(line, "@@"):
-			output.WriteString(fmt.Sprintf("  \033[36m%s\033[0m\n", line))
-		case strings.HasPrefix(line, "+"):
-			output.WriteString(fmt.Sprintf("  \033[32m%s\033[0m\n", line))
-		case strings.HasPrefix(line, "-"):
-			output.WriteString(fmt.Sprintf("  \033[31m%s\033[0m\n", line))
-		case line != "":
-			output.WriteString(fmt.Sprintf("  %s\n", line))
 		}
 	}
 
