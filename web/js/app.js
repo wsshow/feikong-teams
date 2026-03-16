@@ -162,6 +162,13 @@ class FKTeamsChat {
         this.hideDeleteModal();
       }
     });
+    // 审批弹窗事件
+    const approvalModal = document.getElementById("approval-modal");
+    approvalModal.querySelectorAll(".approval-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.sendApprovalDecision(parseInt(btn.dataset.decision, 10));
+      });
+    });
     this.modeButtons.forEach((btn) => {
       btn.addEventListener("click", () => this.setMode(btn.dataset.mode));
     });

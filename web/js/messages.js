@@ -164,6 +164,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
         case 'action':
             this.handleAction(event);
             break;
+        case 'approval_required':
+            this.showApprovalDialog(event.message);
+            break;
         case 'error':
             this.handleError(event);
             break;
@@ -678,6 +681,48 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
     this.messagesContainer.appendChild(cancelEl);
 
     this.showNotification('任务已取消', 'success');
+};
+
+// 显示审批弹窗
+FKTeamsChat.prototype.showApprovalDialog = function (message) {
+    var modal = document.getElementById('approval-modal');
+    var msgEl = document.getElementById('approval-message');
+    msgEl.textContent = message || '需要审批';
+    modal.style.display = 'flex';
+
+    // 更新状态提示
+    this.updateStatus('processing', '等待审批...');
+};
+
+// 发送审批决定
+FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
+    var modal = document.getElementById('approval-modal');
+    modal.style.display = 'none';
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({
+            type: 'approval',
+            decision: decision
+        }));
+    }
+
+    // 在聊天中显示审批结果
+    var labels = { 0: '已拒绝', 1: '已允许（一次）', 2: '已允许（该项）', 3: '已全部允许' };
+    var classes = { 0: 'rejected', 1: 'approved', 2: 'approved', 3: 'approved' };
+    var icons = {
+        0: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        1: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+        2: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+        3: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+    };
+
+    var el = document.createElement('div');
+    el.className = 'action-event approval-result ' + (classes[decision] || '');
+    el.innerHTML = (icons[decision] || '') + '<span>' + this.escapeHtml(labels[decision] || '审批完成') + '</span>';
+    this.messagesContainer.appendChild(el);
+    this.scrollToBottom();
+
+    this.updateStatus('processing', '处理中...');
 };
 
 FKTeamsChat.prototype.clearChat = function () {

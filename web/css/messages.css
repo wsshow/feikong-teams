@@ -723,6 +723,18 @@ a.source-item:hover {
     color: var(--error);
 }
 
+.action-event.approval-result.approved {
+    background: var(--success-light);
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.action-event.approval-result.rejected {
+    background: var(--error-light);
+    border-color: var(--error);
+    color: var(--error);
+}
+
 .action-event.context-compress {
     background: var(--accent-light);
     border-color: var(--accent-primary);

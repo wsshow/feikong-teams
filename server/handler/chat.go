@@ -215,9 +215,24 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	// 构建 HITL 中断处理器：先通知前端，再等待审批
 	channelHandler := engine.ChannelHandler(approvalCh)
 	interruptHandler := func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+		// 提取中断信息发送给前端
+		var infos []string
+		for _, ic := range interrupts {
+			if ic.IsRootCause && ic.Info != nil {
+				if s, ok := ic.Info.(fmt.Stringer); ok {
+					infos = append(infos, s.String())
+				} else {
+					infos = append(infos, fmt.Sprintf("%v", ic.Info))
+				}
+			}
+		}
+		msg := "需要审批"
+		if len(infos) > 0 {
+			msg = strings.Join(infos, "\n")
+		}
 		_ = writeJSON(map[string]interface{}{
 			"type":    "approval_required",
-			"message": "危险命令需要审批",
+			"message": msg,
 		})
 		return channelHandler(ctx, interrupts)
 	}
