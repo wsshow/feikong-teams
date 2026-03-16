@@ -4,14 +4,12 @@ package cli
 import (
 	"context"
 	"fkteams/agents/middlewares/summary"
-	"fkteams/approval"
 	"fkteams/chatutil"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/report"
-	"fkteams/tools/command"
-	"fkteams/tools/file"
+	"fkteams/tools/approval"
 	"fmt"
 	"log"
 	"sync"
@@ -168,9 +166,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	})
 
 	// 注入统一审批注册表
-	queryCtx = approval.WithRegistry(queryCtx, approval.NewDefaultRegistry(
-		approval.StoreConfig{Name: command.ApprovalStoreName},
-		approval.StoreConfig{Name: file.ApprovalStoreName, Matcher: file.DirMatchFunc},
+	queryCtx = approval.WithRegistry(queryCtx, approval.NewRegistry(
+		approval.StoreConfig{Name: approval.StoreCommand},
+		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
 	))
 
 	// 设置摘要持久化回调
@@ -225,8 +223,8 @@ func (e *QueryExecutor) promptApproval() int {
 	fmt.Println()
 	options := []string{
 		"允许一次",
-		"该会话允许该命令",
-		"该会话允许所有命令",
+		"该会话允许该项",
+		"该会话允许所有",
 		"拒绝执行",
 	}
 	selected, _ := pterm.DefaultInteractiveSelect.
@@ -238,9 +236,9 @@ func (e *QueryExecutor) promptApproval() int {
 	switch selected {
 	case "允许一次":
 		return approval.ApproveOnce
-	case "该会话允许该命令":
+	case "该会话允许该项":
 		return approval.ApproveItem
-	case "该会话允许所有命令":
+	case "该会话允许所有":
 		return approval.ApproveAll
 	default:
 		return approval.Reject

@@ -4,14 +4,12 @@ import (
 	"context"
 	"fkteams/agents"
 	"fkteams/agents/middlewares/summary"
-	"fkteams/approval"
 	"fkteams/chatutil"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
-	"fkteams/tools/command"
-	"fkteams/tools/file"
+	"fkteams/tools/approval"
 	"fmt"
 	"log"
 	"strings"
@@ -170,9 +168,9 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	})
 
 	// 注入统一审批注册表
-	taskCtx = approval.WithRegistry(taskCtx, approval.NewDefaultRegistry(
-		approval.StoreConfig{Name: command.ApprovalStoreName},
-		approval.StoreConfig{Name: file.ApprovalStoreName, Matcher: file.DirMatchFunc},
+	taskCtx = approval.WithRegistry(taskCtx, approval.NewRegistry(
+		approval.StoreConfig{Name: approval.StoreCommand},
+		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
 	))
 
 	// 初始化 HITL 审批通道

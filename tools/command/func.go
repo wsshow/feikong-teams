@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fkteams/approval"
+	"fkteams/tools/approval"
 	"fmt"
 	"io"
 	"os/exec"
@@ -20,9 +20,6 @@ const (
 	ApprovalModeHITL   ApprovalMode = iota // 危险命令触发中断审批
 	ApprovalModeReject                     // 危险命令直接拒绝
 )
-
-// ApprovalStoreName 命令工具在审批注册表中的名称
-const ApprovalStoreName = "command"
 
 // Option 配置选项
 type Option func(*CommandTools)
@@ -197,7 +194,7 @@ func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteReques
 			req.Command, req.Reason,
 			securityLevelName(eval.Level), eval.Description,
 			strings.Join(eval.Risks, "; "))
-		if err := approval.Require(ctx, ApprovalStoreName, req.Command, info); err != nil {
+		if err := approval.Require(ctx, approval.StoreCommand, req.Command, info); err != nil {
 			if errors.Is(err, approval.ErrRejected) {
 				return &SmartExecuteResponse{
 					Command:       req.Command,

@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"fkteams/approval"
 	"fkteams/mdiff"
+	"fkteams/tools/approval"
 
 	"github.com/spf13/afero"
 )
@@ -53,25 +53,6 @@ func NewFileTools(baseDir string) (*FileTools, error) {
 	}, nil
 }
 
-// ApprovalStoreName 文件工具在审批注册表中的名称
-const ApprovalStoreName = "file"
-
-// DirMatchFunc 文件审批的匹配函数：检查路径本身或其父目录是否已被批准
-func DirMatchFunc(key string, approved map[string]bool) bool {
-	dir := key
-	for {
-		if approved[dir] {
-			return true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return false
-}
-
 // resolvedPath 路径解析结果
 type resolvedPath struct {
 	fs   afero.Fs
@@ -99,7 +80,7 @@ func (ft *FileTools) resolvePath(ctx context.Context, userPath string) (*resolve
 	// 3. 统一审批流程（文件工具使用父目录作为审批 key）
 	parentDir := filepath.Dir(cleanPath)
 	info := fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanPath, ft.allowedBaseDir)
-	if err := approval.Require(ctx, ApprovalStoreName, parentDir, info); err != nil {
+	if err := approval.Require(ctx, approval.StoreFile, parentDir, info); err != nil {
 		if errors.Is(err, approval.ErrRejected) {
 			return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanPath)
 		}
