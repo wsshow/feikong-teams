@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -49,6 +50,9 @@ func getCallback(ctx context.Context) func(Event) error {
 // ProcessAgentEvent 处理智能体事件，按顺序分发动作和消息输出
 func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 	if event.Err != nil {
+		if isContextCanceled(ctx, event.Err) {
+			return nil
+		}
 		return handleEvent(ctx, Event{
 			Type:      "error",
 			AgentName: event.AgentName,
@@ -144,6 +148,10 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 				break
 			}
 			if r.err != nil {
+				if isContextCanceled(ctx, r.err) {
+					cancelled = true
+					break
+				}
 				return handleEvent(ctx, Event{
 					Type:      "error",
 					AgentName: event.AgentName,
@@ -284,6 +292,18 @@ func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 	}
 
 	return nil
+}
+
+// isContextCanceled 判断是否为 context 取消导致的错误，这类错误不需要展示给用户
+func isContextCanceled(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded")
 }
 
 // handleEvent 分发事件到 context 中的回调，无回调时仅打印
