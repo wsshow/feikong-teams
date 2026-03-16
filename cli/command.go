@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/agents/leader"
 	"fkteams/common"
 	"fkteams/fkevent"
 	"fkteams/g"
@@ -73,7 +72,6 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("  save_chat_history_to_html       导出聊天历史为 HTML 文件")
 		pterm.Println()
 		pterm.Println("任务管理:")
-		pterm.Println("  clear_todo                      清空所有待办事项")
 		pterm.Println("  list_schedule                   列出所有定时任务")
 		pterm.Println("  cancel_schedule                 选择并取消定时任务")
 		pterm.Println()
@@ -116,15 +114,6 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 			pterm.Error.Printfln("保存聊天历史到 Markdown 失败: %v", err)
 		} else {
 			pterm.Success.Printfln("成功保存聊天历史到 Markdown 文件: %s", filePath)
-		}
-		return ResultHandled
-
-	case "clear_todo":
-		err := leader.ClearTodoTool()
-		if err != nil {
-			pterm.Error.Printfln("清空待办事项失败: %v", err)
-		} else {
-			pterm.Success.Println("成功清空待办事项")
 		}
 		return ResultHandled
 

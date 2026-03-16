@@ -114,7 +114,6 @@ var allCommands = []CommandInfo{
 	{"switch_work_mode", "切换工作模式(团队/深度/讨论/自定义)"},
 	{"save_chat_history_to_html", "导出聊天历史为 HTML 文件"},
 	{"save_chat_history_to_markdown", "导出聊天历史为 Markdown 文件"},
-	{"clear_todo", "清空所有待办事项"},
 	{"list_schedule", "列出所有定时任务"},
 	{"cancel_schedule", "选择并取消定时任务"},
 	{"list_memory", "列出所有长期记忆条目"},
