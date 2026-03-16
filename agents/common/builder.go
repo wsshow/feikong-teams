@@ -29,10 +29,14 @@ type AgentBuilder struct {
 	chatModel model.ToolCallingChatModel
 
 	// 中间件
+	middlewares []adk.AgentMiddleware
+	handlers    []adk.ChatModelAgentMiddleware
+
+	// 便捷中间件标记
 	enableWarperror bool
 	enableSummary   bool
 	enableSkills    bool
-	workspaceDir    string // skills 和 summary 需要
+	skillsDir       string
 }
 
 // NewAgentBuilder 创建构建器
@@ -74,12 +78,34 @@ func (b *AgentBuilder) WithModel(m model.ToolCallingChatModel) *AgentBuilder {
 	return b
 }
 
-// WithFullMiddleware 启用完整中间件栈（warperror + summary + skills）
-func (b *AgentBuilder) WithFullMiddleware(workspaceDir string) *AgentBuilder {
+// WithMiddleware 添加 AgentMiddleware
+func (b *AgentBuilder) WithMiddleware(m ...adk.AgentMiddleware) *AgentBuilder {
+	b.middlewares = append(b.middlewares, m...)
+	return b
+}
+
+// WithHandler 添加 ChatModelAgentMiddleware
+func (b *AgentBuilder) WithHandler(h ...adk.ChatModelAgentMiddleware) *AgentBuilder {
+	b.handlers = append(b.handlers, h...)
+	return b
+}
+
+// WithWarperror 启用 warperror 中间件
+func (b *AgentBuilder) WithWarperror() *AgentBuilder {
 	b.enableWarperror = true
+	return b
+}
+
+// WithSummary 启用 summary 中间件
+func (b *AgentBuilder) WithSummary() *AgentBuilder {
 	b.enableSummary = true
+	return b
+}
+
+// WithSkills 启用 skills 中间件
+func (b *AgentBuilder) WithSkills(workspaceDir string) *AgentBuilder {
 	b.enableSkills = true
-	b.workspaceDir = workspaceDir
+	b.skillsDir = workspaceDir
 	return b
 }
 
@@ -137,32 +163,34 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	}
 
 	// 中间件
-	if b.enableWarperror || b.enableSummary || b.enableSkills {
-		if b.enableWarperror {
-			cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
-		}
-
-		if b.enableSummary {
-			summaryMiddleware, err := summary.New(ctx, &summary.Config{
-				Model:                      chatModel,
-				SystemPrompt:               summary.PromptOfSummary,
-				MaxTokensBeforeSummary:     summary.DefaultMaxTokensBeforeSummary,
-				MaxTokensForRecentMessages: summary.DefaultMaxTokensForRecentMessages,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("init summary middleware: %w", err)
-			}
-			cfg.Middlewares = append(cfg.Middlewares, summaryMiddleware)
-		}
-
-		if b.enableSkills {
-			skillsMiddleware, err := skills.New(ctx, b.workspaceDir)
-			if err != nil {
-				return nil, fmt.Errorf("init skills middleware: %w", err)
-			}
-			cfg.Handlers = append(cfg.Handlers, skillsMiddleware)
-		}
+	if b.enableWarperror {
+		cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
 	}
+
+	if b.enableSummary {
+		summaryMiddleware, err := summary.New(ctx, &summary.Config{
+			Model:                      chatModel,
+			SystemPrompt:               summary.PromptOfSummary,
+			MaxTokensBeforeSummary:     summary.DefaultMaxTokensBeforeSummary,
+			MaxTokensForRecentMessages: summary.DefaultMaxTokensForRecentMessages,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("init summary middleware: %w", err)
+		}
+		cfg.Middlewares = append(cfg.Middlewares, summaryMiddleware)
+	}
+
+	cfg.Middlewares = append(cfg.Middlewares, b.middlewares...)
+
+	if b.enableSkills {
+		skillsMiddleware, err := skills.New(ctx, b.skillsDir)
+		if err != nil {
+			return nil, fmt.Errorf("init skills middleware: %w", err)
+		}
+		cfg.Handlers = append(cfg.Handlers, skillsMiddleware)
+	}
+
+	cfg.Handlers = append(cfg.Handlers, b.handlers...)
 
 	return adk.NewChatModelAgent(ctx, cfg)
 }

@@ -3,8 +3,6 @@ package leader
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/tools/todo"
-	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 )
@@ -17,15 +15,8 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplateVar("team_members", ctx.Value("team_members")).
 		WithTemplateVar("workspace_dir", safeDir).
 		WithToolNames("todo", "file", "scheduler").
-		WithFullMiddleware(safeDir).
+		WithWarperror().
+		WithSummary().
+		WithSkills(safeDir).
 		Build(ctx)
-}
-
-func ClearTodoTool() error {
-	todoToolsInstance, err := todo.NewTodoTools(common.WorkspaceDir())
-	if err != nil {
-		return fmt.Errorf("init todo tools: %w", err)
-	}
-	_, err = todoToolsInstance.TodoClear(context.Background(), &todo.TodoClearRequest{})
-	return err
 }

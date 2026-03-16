@@ -17,6 +17,8 @@ func NewAgent() (adk.Agent, error) {
 		WithTemplateVar("os_arch", runtime.GOARCH).
 		WithTemplateVar("workspace_dir", safeDir).
 		WithToolNames("command", "file", "todo", "scheduler", "search", "fetch").
-		WithFullMiddleware(safeDir).
+		WithWarperror().
+		WithSummary().
+		WithSkills(safeDir).
 		Build(context.Background())
 }
