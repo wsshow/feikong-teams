@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"os"
+
 	"github.com/pterm/pterm"
 )
 
@@ -12,18 +14,18 @@ type Initializer interface {
 	Run() error
 }
 
-// 注册所有初始化器（后续新增只需在此追加）
-var initializers = map[string]Initializer{
-	"uv":  &uvInitializer{},
-	"bun": &bunInitializer{},
+// 注册所有初始化器（有序列表，确保选项顺序一致）
+var initializers = []Initializer{
+	&uvInitializer{},
+	&bunInitializer{},
 }
 
 // Run 让用户选择需要初始化的环境并执行
 func Run() {
 	// 构建选项列表
 	options := make([]string, 0, len(initializers))
-	for name := range initializers {
-		options = append(options, name)
+	for _, init := range initializers {
+		options = append(options, init.Name())
 	}
 
 	// 交互式多选
@@ -39,8 +41,14 @@ func Run() {
 
 	pterm.Info.Printfln("即将初始化: %v", selectedOptions)
 
+	// 构建 name->initializer 映射用于查找
+	initMap := make(map[string]Initializer, len(initializers))
+	for _, init := range initializers {
+		initMap[init.Name()] = init
+	}
+
 	for _, name := range selectedOptions {
-		init := initializers[name]
+		init := initMap[name]
 		pterm.Info.Printfln("[%s] 开始检测...", init.Name())
 		if err := init.Run(); err != nil {
 			pterm.Error.Printfln("[%s] 初始化失败: %v", init.Name(), err)
@@ -50,4 +58,20 @@ func Run() {
 	}
 
 	pterm.Success.Println("环境初始化完成")
+}
+
+// appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量
+func appendProxyEnv(env []string) []string {
+	proxyURL := os.Getenv("FEIKONG_PROXY_URL")
+	if proxyURL == "" {
+		return env
+	}
+	pterm.Info.Printfln("使用代理: %s", proxyURL)
+	env = append(env,
+		"HTTP_PROXY="+proxyURL,
+		"HTTPS_PROXY="+proxyURL,
+		"http_proxy="+proxyURL,
+		"https_proxy="+proxyURL,
+	)
+	return env
 }

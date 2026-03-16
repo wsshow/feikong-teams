@@ -85,18 +85,16 @@ func (b *bunInitializer) configureMirror() {
 	}
 
 	// 确定 bunfig.toml 全局配置路径
-	var configDir string
+	var configPath string
 	if runtime.GOOS == "windows" {
-		configDir = filepath.Join(os.Getenv("USERPROFILE"), ".bunfig")
+		configPath = filepath.Join(os.Getenv("USERPROFILE"), ".bunfig.toml")
 	} else {
 		home, _ := os.UserHomeDir()
-		configDir = home
+		configPath = filepath.Join(home, ".bunfig.toml")
 	}
 
-	configPath := filepath.Join(configDir, "bunfig.toml")
-
 	// 镜像源配置内容（使用 npmmirror）
-	mirrorConfig := `# 由 fkteams --init 自动生成
+	mirrorConfig := `# 由 fkteams init 自动生成
 [install]
 registry = "https://registry.npmmirror.com"
 `

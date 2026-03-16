@@ -92,7 +92,7 @@ func (u *uvInitializer) configureMirror() {
 	configPath := filepath.Join(configDir, "uv.toml")
 
 	// 镜像源配置内容
-	mirrorConfig := `# 由 fkteams --init 自动生成
+	mirrorConfig := `# 由 fkteams init 自动生成
 python-install-mirror = "https://gh-proxy.com/https://github.com/astral-sh/python-build-standalone/releases/download"
 
 [[index]]
@@ -118,20 +118,4 @@ default = true
 		return
 	}
 	pterm.Success.Printfln("已配置 uv 镜像源: %s", configPath)
-}
-
-// appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量
-func appendProxyEnv(env []string) []string {
-	proxyURL := os.Getenv("FEIKONG_PROXY_URL")
-	if proxyURL == "" {
-		return env
-	}
-	pterm.Info.Printfln("使用代理: %s", proxyURL)
-	env = append(env,
-		"HTTP_PROXY="+proxyURL,
-		"HTTPS_PROXY="+proxyURL,
-		"http_proxy="+proxyURL,
-		"https_proxy="+proxyURL,
-	)
-	return env
 }
