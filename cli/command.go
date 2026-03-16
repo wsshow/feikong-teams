@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents"
 	"fkteams/agents/leader"
+	"fkteams/common"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/memory"
@@ -94,7 +95,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 
 	case "save_chat_history":
 		recorder := getCliRecorder()
-		historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
+		historyFile := CLIHistoryDir + common.ChatHistoryPrefix + activeSessionID
 		err := recorder.SaveToFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
@@ -211,10 +212,10 @@ func ListChatHistoryFiles(interactive ...bool) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, "fkteams_chat_history_") {
+		if !strings.HasPrefix(name, common.ChatHistoryPrefix) {
 			continue
 		}
-		sessionID := strings.TrimPrefix(name, "fkteams_chat_history_")
+		sessionID := strings.TrimPrefix(name, common.ChatHistoryPrefix)
 		info, _ := entry.Info()
 		if info != nil {
 			pterm.Printf("  %s  (%s, %d bytes)\n", sessionID, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
@@ -239,7 +240,7 @@ func ListChatHistoryFiles(interactive ...bool) {
 
 // loadChatHistory 加载指定 session ID 的聊天历史
 func loadChatHistory(sessionID string) {
-	historyFile := CLIHistoryDir + "fkteams_chat_history_" + sessionID
+	historyFile := CLIHistoryDir + common.ChatHistoryPrefix + sessionID
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		pterm.Error.Printfln("历史文件不存在: %s", historyFile)
 		pterm.Info.Println("使用 list_chat_history 查看可用的会话")
@@ -278,12 +279,12 @@ func ListAvailableAgents() {
 
 // handleListMemory 列出所有长期记忆条目
 func handleListMemory() {
-	if g.MemManager == nil {
+	if g.MemoryManager == nil {
 		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
 		return
 	}
 
-	entries := g.MemManager.List()
+	entries := g.MemoryManager.List()
 	if len(entries) == 0 {
 		pterm.Info.Println("暂无长期记忆条目")
 		return
@@ -302,12 +303,12 @@ func handleListMemory() {
 
 // handleDeleteMemory 交互式选择并删除记忆条目
 func handleDeleteMemory() {
-	if g.MemManager == nil {
+	if g.MemoryManager == nil {
 		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
 		return
 	}
 
-	entries := g.MemManager.List()
+	entries := g.MemoryManager.List()
 	if len(entries) == 0 {
 		pterm.Info.Println("暂无记忆条目可删除")
 		return
@@ -327,7 +328,7 @@ func handleDeleteMemory() {
 		return
 	}
 
-	deleted := g.MemManager.Delete(selected)
+	deleted := g.MemoryManager.Delete(selected)
 	if deleted > 0 {
 		pterm.Success.Printfln("成功删除 %d 条记忆: %s", deleted, selected)
 	} else {
@@ -387,10 +388,10 @@ func handleLoadChatHistory() {
 
 	var items []tui.SelectItem
 	for _, entry := range historyEntries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "fkteams_chat_history_") {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), common.ChatHistoryPrefix) {
 			continue
 		}
-		sessionID := strings.TrimPrefix(entry.Name(), "fkteams_chat_history_")
+		sessionID := strings.TrimPrefix(entry.Name(), common.ChatHistoryPrefix)
 		label := sessionID
 		if info, _ := entry.Info(); info != nil {
 			label = fmt.Sprintf("%s (%s, %d bytes)", sessionID, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
@@ -434,17 +435,17 @@ func printMemoryEntries(entries []memory.MemoryEntry) {
 
 // handleClearMemory 清空所有长期记忆
 func handleClearMemory() {
-	if g.MemManager == nil {
+	if g.MemoryManager == nil {
 		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
 		return
 	}
 
-	count := g.MemManager.Count()
+	count := g.MemoryManager.Count()
 	if count == 0 {
 		pterm.Info.Println("当前没有记忆条目")
 		return
 	}
 
-	g.MemManager.Clear()
+	g.MemoryManager.Clear()
 	pterm.Success.Printfln("成功清空 %d 条长期记忆", count)
 }

@@ -17,8 +17,8 @@ func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []a
 	var inputMessages []adk.Message
 
 	// 注入长期记忆
-	if g.MemManager != nil {
-		memories := g.MemManager.Search(userInput, 5)
+	if g.MemoryManager != nil {
+		memories := g.MemoryManager.Search(userInput, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
 			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
 		}

@@ -14,7 +14,7 @@ import (
 )
 
 // RunnerCreator 创建 Runner 的函数类型
-type RunnerCreator func(ctx context.Context) *adk.Runner
+type RunnerCreator func(ctx context.Context) (*adk.Runner, error)
 
 // BackgroundExecutor 后台任务执行器
 type BackgroundExecutor struct {
@@ -34,9 +34,9 @@ func NewBackgroundExecutor(createRunner RunnerCreator, outputDir string) *Backgr
 // Execute 执行任务，完全静默，结果写入文件
 func (e *BackgroundExecutor) Execute(task string) (string, error) {
 	ctx := context.Background()
-	r := e.createRunner(ctx)
-	if r == nil {
-		return "", fmt.Errorf("failed to create runner")
+	r, err := e.createRunner(ctx)
+	if err != nil {
+		return "", fmt.Errorf("create runner: %w", err)
 	}
 
 	callback, getResult := fkevent.NewMarkdownCollector()
@@ -44,7 +44,7 @@ func (e *BackgroundExecutor) Execute(task string) (string, error) {
 
 	inputMessages := []adk.Message{schema.UserMessage(task)}
 
-	_, err := engine.New(r, "fkteams_scheduler").Run(ctx, inputMessages)
+	_, err = engine.New(r, "fkteams_scheduler").Run(ctx, inputMessages)
 	if err != nil {
 		errMsg := fmt.Sprintf("执行出错: %v", err)
 		e.writeResult(task, errMsg)

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fkteams/common"
 	"fkteams/fkevent"
 	"log"
 	"net/http"
@@ -167,7 +168,7 @@ func RenameHistoryFileHandler() gin.HandlerFunc {
 
 // extractSessionID 从文件名中提取 session_id
 func extractSessionID(filename string) string {
-	prefix := "fkteams_chat_history_"
+	prefix := common.ChatHistoryPrefix
 	if strings.HasPrefix(filename, prefix) {
 		sessionID := strings.TrimPrefix(filename, prefix)
 		if idx := strings.LastIndex(sessionID, "."); idx > 0 {

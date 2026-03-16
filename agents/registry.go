@@ -37,41 +37,47 @@ func initRegistry() {
 	registryOnce.Do(func() {
 		ctx := context.Background()
 
-		// 定义所有 agent 的创建函数
-		var creators []func() adk.Agent
+		type agentCreator struct {
+			name    string
+			creator func() (adk.Agent, error)
+		}
 
 		// 基础智能体（始终可用）
-		creators = append(creators,
-			searcher.NewAgent,
-			storyteller.NewAgent,
-			summarizer.NewAgent,
-		)
+		creators := []agentCreator{
+			{"searcher", searcher.NewAgent},
+			{"storyteller", storyteller.NewAgent},
+			{"summarizer", summarizer.NewAgent},
+		}
 
 		// 可选智能体（根据环境变量启用）
 		if os.Getenv("FEIKONG_ANALYST_ENABLED") == "true" {
-			creators = append(creators, analyst.NewAgent)
+			creators = append(creators, agentCreator{"analyst", analyst.NewAgent})
 		}
 
 		if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
-			creators = append(creators, coder.NewAgent)
+			creators = append(creators, agentCreator{"coder", coder.NewAgent})
 		}
 
 		if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
-			creators = append(creators, cmder.NewAgent)
+			creators = append(creators, agentCreator{"cmder", cmder.NewAgent})
 		}
 
 		if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
-			creators = append(creators, visitor.NewAgent)
+			creators = append(creators, agentCreator{"visitor", visitor.NewAgent})
 		}
 
 		if os.Getenv("FEIKONG_ASSISTANT_ENABLED") == "true" {
-			creators = append(creators, assistantagent.NewAgent)
+			creators = append(creators, agentCreator{"assistant", assistantagent.NewAgent})
 		}
 
 		// 动态构建注册表
 		Registry = make([]AgentInfo, 0, len(creators))
-		for _, creator := range creators {
-			agent := creator()
+		for _, c := range creators {
+			agent, err := c.creator()
+			if err != nil {
+				pterm.Warning.Printfln("初始化智能体 %s 失败: %v", c.name, err)
+				continue
+			}
 			Registry = append(Registry, AgentInfo{
 				Name:        agent.Name(ctx),
 				Description: agent.Description(ctx),
@@ -92,14 +98,13 @@ func initRegistry() {
 func loadCustomAgents(_ context.Context) {
 	cfg, err := config.Get()
 	if err != nil {
-		return // 配置文件不存在或解析失败，跳过
+		return
 	}
 
 	if len(cfg.Custom.Agents) == 0 {
 		return
 	}
 
-	// 构建已有名称集合用于冲突检测
 	existingNames := make(map[string]bool, len(Registry))
 	for _, info := range Registry {
 		existingNames[info.Name] = true
@@ -114,7 +119,7 @@ func loadCustomAgents(_ context.Context) {
 			pterm.Warning.Printfln("自定义智能体 \"%s\" 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
 		}
 
-		agent := custom.NewAgent(custom.Config{
+		agent, err := custom.NewAgent(custom.Config{
 			Name:         agentCfg.Name,
 			Description:  agentCfg.Desc,
 			SystemPrompt: agentCfg.SystemPrompt,
@@ -125,6 +130,10 @@ func loadCustomAgents(_ context.Context) {
 			},
 			ToolNames: agentCfg.Tools,
 		})
+		if err != nil {
+			pterm.Warning.Printfln("初始化自定义智能体 \"%s\" 失败: %v", agentCfg.Name, err)
+			continue
+		}
 
 		Registry = append(Registry, AgentInfo{
 			Name:        agentCfg.Name,

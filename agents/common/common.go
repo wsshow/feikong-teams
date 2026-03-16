@@ -4,7 +4,7 @@ package common
 import (
 	"context"
 	"errors"
-	"log"
+	rootcommon "fkteams/common"
 	"net"
 	"os"
 	"strings"
@@ -20,30 +20,27 @@ const (
 	MaxRetries = 3
 )
 
+// WorkspaceDir 返回工作目录，优先使用 FEIKONG_WORKSPACE_DIR 环境变量
+func WorkspaceDir() string {
+	return rootcommon.WorkspaceDir()
+}
+
 // NewChatModel 使用环境变量配置创建聊天模型
-func NewChatModel() model.ToolCallingChatModel {
-	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+func NewChatModel() (model.ToolCallingChatModel, error) {
+	return openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  os.Getenv("FEIKONG_OPENAI_API_KEY"),
 		BaseURL: os.Getenv("FEIKONG_OPENAI_BASE_URL"),
 		Model:   os.Getenv("FEIKONG_OPENAI_MODEL"),
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cm
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
-func NewChatModelWithConfig(modelName, baseURL, apiKey string) model.ToolCallingChatModel {
-	cm, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+func NewChatModelWithConfig(modelName, baseURL, apiKey string) (model.ToolCallingChatModel, error) {
+	return openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  apiKey,
 		BaseURL: baseURL,
 		Model:   modelName,
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cm
 }
 
 // IsRetryAble 判断错误是否可重试（网络错误、限流等）

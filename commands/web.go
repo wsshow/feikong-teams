@@ -20,8 +20,7 @@ func webCommand() *ucli.Command {
 				fmt.Println("可以使用 generate env 子命令生成示例文件")
 				return nil
 			}
-			server.Run()
-			return nil
+			return server.Run()
 		},
 	}
 }

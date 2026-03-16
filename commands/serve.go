@@ -32,11 +32,10 @@ func serveCommand() *ucli.Command {
 				fmt.Println("可以使用 generate env 子命令生成示例文件")
 				return nil
 			}
-			server.RunServe(server.ServeOptions{
+			return server.RunServe(server.ServeOptions{
 				Host: cmd.String("host"),
 				Port: int(cmd.Int("port")),
 			})
-			return nil
 		},
 	}
 }

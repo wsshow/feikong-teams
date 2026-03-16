@@ -7,8 +7,7 @@ import (
 	"fkteams/tools/fetch"
 	"fkteams/tools/file"
 	toolSearch "fkteams/tools/search"
-	"log"
-	"os"
+	"fmt"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -16,38 +15,31 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewAgent(ctx context.Context) adk.Agent {
-	workspaceDir := "./workspace"
-	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
-		workspaceDir = d
-	}
+func NewAgent(ctx context.Context) (adk.Agent, error) {
+	workspaceDir := common.WorkspaceDir()
 
-	// 搜索工具
 	duckTool, err := toolSearch.NewDuckDuckGoTool(ctx)
 	if err != nil {
-		log.Fatal("初始化搜索工具失败:", err)
+		return nil, fmt.Errorf("init search tool: %w", err)
 	}
 
-	// Fetch 工具
 	fetchTools, err := fetch.GetTools()
 	if err != nil {
-		log.Fatal("初始化 Fetch 工具失败:", err)
+		return nil, fmt.Errorf("init fetch tools: %w", err)
 	}
 
-	// 命令执行工具（后台任务直接拒绝危险命令）
 	cmdTools, err := command.NewCommandTools(workspaceDir, command.WithApprovalMode(command.ApprovalModeReject)).GetTools()
 	if err != nil {
-		log.Fatal("初始化命令工具失败:", err)
+		return nil, fmt.Errorf("init command tools: %w", err)
 	}
 
-	// 文件操作工具
 	fileToolsInstance, err := file.NewFileTools(workspaceDir)
 	if err != nil {
-		log.Fatal("初始化文件工具失败:", err)
+		return nil, fmt.Errorf("init file tools: %w", err)
 	}
 	fileTools, err := fileToolsInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建文件工具失败:", err)
+		return nil, fmt.Errorf("create file tools: %w", err)
 	}
 
 	var toolList []etool.BaseTool
@@ -61,15 +53,19 @@ func NewAgent(ctx context.Context) adk.Agent {
 		"workspace_dir": workspaceDir,
 	})
 	if err != nil {
-		log.Fatal("格式化提示词失败:", err)
+		return nil, fmt.Errorf("format prompt: %w", err)
 	}
-	instruction := systemMessages[0].Content
 
-	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+	chatModel, err := common.NewChatModel()
+	if err != nil {
+		return nil, fmt.Errorf("create chat model: %w", err)
+	}
+
+	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "任务官",
 		Description:   "后台定时任务专属执行官，独立完成信息检索、数据分析、命令执行等各类定时任务，输出严谨可靠的结果。",
-		Instruction:   instruction,
-		Model:         common.NewChatModel(),
+		Instruction:   systemMessages[0].Content,
+		Model:         chatModel,
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
 			MaxRetries:  common.MaxRetries,
@@ -81,8 +77,4 @@ func NewAgent(ctx context.Context) adk.Agent {
 			},
 		},
 	})
-	if err != nil {
-		log.Fatal("创建任务官智能体失败:", err)
-	}
-	return a
 }

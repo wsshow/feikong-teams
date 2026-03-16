@@ -5,13 +5,14 @@ import (
 	"fkteams/server/handler"
 	"fkteams/server/middleware"
 	"fkteams/web"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 // newEngine 创建带公共中间件的 Gin 引擎
-func newEngine() *gin.Engine {
+func newEngine() (*gin.Engine, error) {
 	r := gin.New()
 	r.Use(
 		gin.Logger(),
@@ -19,20 +20,28 @@ func newEngine() *gin.Engine {
 		middleware.Cors(),
 		middleware.MaxBodySize(100<<20), // 100MB
 	)
-	if handler.AuthEnabled() {
+	authEnabled, err := handler.AuthEnabled()
+	if err != nil {
+		return nil, fmt.Errorf("check auth config: %w", err)
+	}
+	if authEnabled {
 		r.Use(middleware.Auth())
 	}
-	return r
+	return r, nil
 }
 
 // registerAPIRoutes 注册公共 API 路由
-func registerAPIRoutes(r *gin.Engine) {
+func registerAPIRoutes(r *gin.Engine) error {
 	r.GET("/health", handler.HealthHandler())
 	r.GET("/ws", handler.WebSocketHandler())
 
 	apiV1 := r.Group("/api/fkteams")
 	{
-		if handler.AuthEnabled() {
+		authEnabled, err := handler.AuthEnabled()
+		if err != nil {
+			return fmt.Errorf("check auth config: %w", err)
+		}
+		if authEnabled {
 			apiV1.POST("/login", handler.LoginHandler())
 		}
 		apiV1.GET("/version", handler.VersionHandler())
@@ -61,17 +70,25 @@ func registerAPIRoutes(r *gin.Engine) {
 		apiV1.DELETE("/memory", handler.DeleteMemoryHandler())
 		apiV1.POST("/memory/clear", handler.ClearMemoryHandler())
 	}
+	return nil
 }
 
 // Init 初始化并返回配置好的 Gin 路由引擎（含 Web 界面）
-func Init() *gin.Engine {
-	r := newEngine()
+func Init() (*gin.Engine, error) {
+	r, err := newEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	webFS := web.GetFS()
 	r.StaticFS("/static", http.FS(webFS))
 
 	// 登录页（仅启用认证时注册）
-	if handler.AuthEnabled() {
+	authEnabled, err := handler.AuthEnabled()
+	if err != nil {
+		return nil, fmt.Errorf("check auth config: %w", err)
+	}
+	if authEnabled {
 		serveLogin := func(c *gin.Context) {
 			data, err := webFS.Open("login.html")
 			if err != nil {
@@ -97,13 +114,20 @@ func Init() *gin.Engine {
 	r.GET("/", serveIndex)
 	r.GET("/chat", serveIndex)
 
-	registerAPIRoutes(r)
-	return r
+	if err := registerAPIRoutes(r); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // InitAPI 初始化纯 API 路由（无 Web 界面）
-func InitAPI() *gin.Engine {
-	r := newEngine()
-	registerAPIRoutes(r)
-	return r
+func InitAPI() (*gin.Engine, error) {
+	r, err := newEngine()
+	if err != nil {
+		return nil, err
+	}
+	if err := registerAPIRoutes(r); err != nil {
+		return nil, err
+	}
+	return r, nil
 }

@@ -54,15 +54,3 @@ func LoadHistory(filePath string, maxLines int) ([]string, error) {
 	}
 	return lines, nil
 }
-
-// ClearHistory 清空输入历史文件
-func ClearHistory(filePath string) error {
-	err := os.Truncate(filePath, 0)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	return nil
-}

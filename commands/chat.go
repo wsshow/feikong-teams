@@ -50,7 +50,11 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	var r *adk.Runner
 	app.OnSetup(func(ctx context.Context) error {
-		r = createModeRunner(ctx, currentMode)
+		var err error
+		r, err = createModeRunner(ctx, currentMode)
+		if err != nil {
+			return err
+		}
 		if r == nil {
 			return fmt.Errorf("暂不支持该模式: %s", workMode)
 		}
@@ -109,7 +113,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 }
 
 // createModeRunner 根据工作模式创建对应的 Runner
-func createModeRunner(ctx context.Context, mode cli.WorkMode) *adk.Runner {
+func createModeRunner(ctx context.Context, mode cli.WorkMode) (*adk.Runner, error) {
 	switch mode {
 	case cli.ModeTeam:
 		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
@@ -119,13 +123,17 @@ func createModeRunner(ctx context.Context, mode cli.WorkMode) *adk.Runner {
 		return runner.CreateDeepAgentsRunner(ctx)
 	case cli.ModeGroup:
 		fmt.Printf("欢迎来到非空小队 - 多智能体讨论模式: %s\n", version.Get())
-		runner.PrintLoopAgentsInfo(ctx)
+		if err := runner.PrintLoopAgentsInfo(ctx); err != nil {
+			return nil, err
+		}
 		return runner.CreateLoopAgentRunner(ctx)
 	case cli.ModeCustom:
 		fmt.Printf("欢迎来到非空小队 - 自定义会议模式: %s\n", version.Get())
-		runner.PrintCustomAgentsInfo(ctx)
+		if err := runner.PrintCustomAgentsInfo(ctx); err != nil {
+			return nil, err
+		}
 		return runner.CreateCustomSupervisorRunner(ctx)
 	default:
-		return nil
+		return nil, nil
 	}
 }

@@ -55,7 +55,12 @@ func ChatHandler() gin.HandlerFunc {
 				return
 			}
 		} else {
-			r = getOrCreateRunner(ctx, mode)
+			var err error
+			r, err = getOrCreateRunner(ctx, mode)
+			if err != nil {
+				Fail(c, http.StatusInternalServerError, fmt.Sprintf("failed to create runner: %v", err))
+				return
+			}
 		}
 
 		// 获取该会话的 HistoryRecorder
@@ -113,8 +118,8 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 
 	saveHistory(recorder, historyFilePath, sessionID)
 
-	if g.MemManager != nil {
-		g.MemManager.ExtractFromRecorder(recorder, sessionID)
+	if g.MemoryManager != nil {
+		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 	}
 
 	// 发送结束事件
@@ -155,8 +160,8 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 
 	saveHistory(recorder, historyFilePath, sessionID)
 
-	if g.MemManager != nil {
-		g.MemManager.ExtractFromRecorder(recorder, sessionID)
+	if g.MemoryManager != nil {
+		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 	}
 
 	defer func() {

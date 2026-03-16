@@ -18,81 +18,93 @@ import (
 	"github.com/cloudwego/eino/adk"
 )
 
-// Runner 缓存管理（按模式缓存）
-var (
-	runnerCacheMu sync.RWMutex
-	runnerCache   = make(map[string]*adk.Runner)
-)
+// RunnerCache 基于双重检查锁的 Runner 缓存
+type RunnerCache struct {
+	mu    sync.RWMutex
+	cache map[string]*adk.Runner
+}
 
-// getOrCreateRunner 获取或创建 runner（带缓存，双重检查锁）
-func getOrCreateRunner(ctx context.Context, mode string) *adk.Runner {
-	runnerCacheMu.RLock()
-	if r, exists := runnerCache[mode]; exists {
-		runnerCacheMu.RUnlock()
-		return r
+// NewRunnerCache 创建 Runner 缓存
+func NewRunnerCache() *RunnerCache {
+	return &RunnerCache{cache: make(map[string]*adk.Runner)}
+}
+
+// GetOrCreate 获取缓存的 Runner，不存在则通过 factory 创建并缓存
+func (c *RunnerCache) GetOrCreate(key string, factory func() (*adk.Runner, error)) (*adk.Runner, error) {
+	c.mu.RLock()
+	if r, exists := c.cache[key]; exists {
+		c.mu.RUnlock()
+		return r, nil
 	}
-	runnerCacheMu.RUnlock()
+	c.mu.RUnlock()
 
-	runnerCacheMu.Lock()
-	defer runnerCacheMu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	if r, exists := runnerCache[mode]; exists {
-		return r
-	}
-
-	var r *adk.Runner
-	switch mode {
-	case "roundtable":
-		r = runner.CreateLoopAgentRunner(ctx)
-	case "custom":
-		r = runner.CreateCustomSupervisorRunner(ctx)
-	case "deep":
-		r = runner.CreateDeepAgentsRunner(ctx)
-	default:
-		r = runner.CreateSupervisorRunner(ctx)
+	if r, exists := c.cache[key]; exists {
+		return r, nil
 	}
 
-	runnerCache[mode] = r
-	log.Printf("[WebSocket] runner created and cached: mode=%s", mode)
-	return r
+	r, err := factory()
+	if err != nil {
+		return nil, err
+	}
+
+	c.cache[key] = r
+	return r, nil
+}
+
+// Clear 清除所有缓存
+func (c *RunnerCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cache = make(map[string]*adk.Runner)
+}
+
+var globalRunnerCache = NewRunnerCache()
+
+// getOrCreateRunner 获取或创建 runner（带缓存）
+func getOrCreateRunner(ctx context.Context, mode string) (*adk.Runner, error) {
+	r, err := globalRunnerCache.GetOrCreate(mode, func() (*adk.Runner, error) {
+		switch mode {
+		case "roundtable":
+			return runner.CreateLoopAgentRunner(ctx)
+		case "custom":
+			return runner.CreateCustomSupervisorRunner(ctx)
+		case "deep":
+			return runner.CreateDeepAgentsRunner(ctx)
+		default:
+			return runner.CreateSupervisorRunner(ctx)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("[WebSocket] runner ready: mode=%s", mode)
+	return r, nil
 }
 
 // getOrCreateAgentRunner 获取或创建指定智能体的 runner
 func getOrCreateAgentRunner(ctx context.Context, agentName string) *adk.Runner {
-	cacheKey := "agent_" + agentName
-
-	runnerCacheMu.RLock()
-	if r, exists := runnerCache[cacheKey]; exists {
-		runnerCacheMu.RUnlock()
-		return r
-	}
-	runnerCacheMu.RUnlock()
-
-	runnerCacheMu.Lock()
-	defer runnerCacheMu.Unlock()
-
-	if r, exists := runnerCache[cacheKey]; exists {
-		return r
-	}
-
-	agentInfo := agents.GetAgentByName(agentName)
-	if agentInfo == nil {
-		log.Printf("[WebSocket] agent not found: %s", agentName)
+	r, err := globalRunnerCache.GetOrCreate("agent_"+agentName, func() (*adk.Runner, error) {
+		agentInfo := agents.GetAgentByName(agentName)
+		if agentInfo == nil {
+			return nil, fmt.Errorf("agent not found: %s", agentName)
+		}
+		agent := agentInfo.Creator(ctx)
+		return runner.CreateAgentRunner(ctx, agent), nil
+	})
+	if err != nil {
+		log.Printf("[WebSocket] %v", err)
 		return nil
 	}
-
-	agent := agentInfo.Creator(ctx)
-	r := runner.CreateAgentRunner(ctx, agent)
-	runnerCache[cacheKey] = r
-	log.Printf("[WebSocket] agent runner created and cached: agent=%s", agentName)
+	log.Printf("[WebSocket] agent runner ready: agent=%s", agentName)
 	return r
 }
 
 // ClearRunnerCache 清除 runner 缓存
 func ClearRunnerCache() {
-	runnerCacheMu.Lock()
-	defer runnerCacheMu.Unlock()
-	runnerCache = make(map[string]*adk.Runner)
+	globalRunnerCache.Clear()
 	log.Println("[WebSocket] runner cache cleared")
 }
 
@@ -147,7 +159,15 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		}
 		log.Printf("using specified agent: %s", wsMsg.AgentName)
 	} else {
-		r = getOrCreateRunner(taskCtx, mode)
+		var err error
+		r, err = getOrCreateRunner(taskCtx, mode)
+		if err != nil {
+			_ = writeJSON(map[string]interface{}{
+				"type":  "error",
+				"error": fmt.Sprintf("failed to create runner: %v", err),
+			})
+			return
+		}
 	}
 
 	defer func() {
@@ -224,8 +244,8 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	saveHistory(recorder, historyFilePath, sessionID)
 
 	// 异步提取记忆
-	if g.MemManager != nil {
-		g.MemManager.ExtractFromRecorder(recorder, sessionID)
+	if g.MemoryManager != nil {
+		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 	}
 
 	_ = writeJSON(map[string]interface{}{

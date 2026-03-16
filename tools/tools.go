@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fkteams/common"
 	"fkteams/g"
 	"fkteams/tools/command"
 	"fkteams/tools/doc"
@@ -22,48 +23,33 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 )
 
+// workspacePath 返回工作区目录路径
+func workspacePath() string {
+	return common.WorkspaceDir()
+}
+
 func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	switch name {
 	case "file":
-		safeDir := "./workspace"
-		codeDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if codeDirEnv != "" {
-			safeDir = codeDirEnv
-		}
-		fileTools, err := file.NewFileTools(safeDir)
+		fileTools, err := file.NewFileTools(workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 		}
 		return fileTools.GetTools()
 	case "git":
-		gitDir := "./workspace"
-		gitDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if gitDirEnv != "" {
-			gitDir = gitDirEnv
-		}
-		gitTools, err := git.NewGitTools(gitDir)
+		gitTools, err := git.NewGitTools(workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化Git工具失败: %w", err)
 		}
 		return gitTools.GetTools()
 	case "excel":
-		excelDir := "./workspace"
-		excelDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if excelDirEnv != "" {
-			excelDir = excelDirEnv
-		}
-		excelTools, err := excel.NewExcelTools(excelDir)
+		excelTools, err := excel.NewExcelTools(workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
 		}
 		return excelTools.GetTools()
 	case "todo":
-		todoDir := "./workspace"
-		todoDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if todoDirEnv != "" {
-			todoDir = todoDirEnv
-		}
-		todoTools, err := todo.NewTodoTools(todoDir)
+		todoTools, err := todo.NewTodoTools(workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 		}
@@ -85,12 +71,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		})
 		return sshTools.GetTools()
 	case "command", "assistant":
-		cmdDir := "./workspace"
-		cmdDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if cmdDirEnv != "" {
-			cmdDir = cmdDirEnv
-		}
-		return command.NewCommandTools(cmdDir).GetTools()
+		return command.NewCommandTools(workspacePath()).GetTools()
 	case "search":
 		duckduckgoTool, err := search.NewDuckDuckGoTool(context.Background())
 		return []tool.BaseTool{duckduckgoTool}, err
@@ -99,23 +80,13 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	case "doc":
 		return doc.GetTools()
 	case "uv":
-		uvDir := "./workspace"
-		uvDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if uvDirEnv != "" {
-			uvDir = uvDirEnv
-		}
-		uvTools, err := uv.NewUVTools(uvDir)
+		uvTools, err := uv.NewUVTools(workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
 		}
 		return uvTools.GetTools()
 	case "bun":
-		bunDir := "./workspace"
-		bunDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if bunDirEnv != "" {
-			bunDir = bunDirEnv
-		}
-		bunTools, err := bun.NewBunTools(bunDir)
+		bunTools, err := bun.NewBunTools(workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
 		}

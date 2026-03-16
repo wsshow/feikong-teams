@@ -5,7 +5,7 @@ import (
 	"fkteams/agents/common"
 	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/tools"
-	"log"
+	"fmt"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -29,35 +29,38 @@ type Config struct {
 	ToolNames    []string
 }
 
-func NewAgent(cfg Config) adk.Agent {
+func NewAgent(cfg Config) (adk.Agent, error) {
 	ctx := context.Background()
 
-	customPrompt := cfg.SystemPrompt
 	customPromptTemplate := prompt.FromMessages(schema.FString,
-		schema.SystemMessage(customPrompt),
+		schema.SystemMessage(cfg.SystemPrompt),
 	)
 	systemMessages, err := customPromptTemplate.Format(ctx, map[string]any{
 		"current_time": time.Now().Format("2006-01-02 15:04:05"),
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("format prompt: %w", err)
 	}
-	instruction := systemMessages[0].Content
 
 	var toolList []tool.BaseTool
 	for _, toolName := range cfg.ToolNames {
 		baseTools, err := tools.GetToolsByName(toolName)
 		if err != nil {
-			log.Fatal(err)
+			return nil, fmt.Errorf("init tool %s: %w", toolName, err)
 		}
 		toolList = append(toolList, baseTools...)
 	}
 
-	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+	chatModel, err := common.NewChatModel()
+	if err != nil {
+		return nil, fmt.Errorf("create chat model: %w", err)
+	}
+
+	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          cfg.Name,
 		Description:   cfg.Description,
-		Instruction:   instruction,
-		Model:         common.NewChatModel(),
+		Instruction:   systemMessages[0].Content,
+		Model:         chatModel,
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
 			MaxRetries:  common.MaxRetries,
@@ -70,8 +73,4 @@ func NewAgent(cfg Config) adk.Agent {
 			},
 		},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return a
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/tools"
-	"log"
+	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/deep"
@@ -19,15 +19,20 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 	for _, toolName := range toolNames {
 		baseTools, err := tools.GetToolsByName(toolName)
 		if err != nil {
-			log.Fatal(err)
+			return nil, fmt.Errorf("init tool %s: %w", toolName, err)
 		}
 		toolList = append(toolList, baseTools...)
 	}
 
-	deepAgent, err := deep.New(ctx, &deep.Config{
+	chatModel, err := common.NewChatModel()
+	if err != nil {
+		return nil, fmt.Errorf("create chat model: %w", err)
+	}
+
+	return deep.New(ctx, &deep.Config{
 		Name:         "深度探索者",
 		Description:  "一个能够深入分析问题并协调多个智能体协作解决复杂任务的智能体。",
-		ChatModel:    common.NewChatModel(),
+		ChatModel:    chatModel,
 		SubAgents:    subAgents,
 		MaxIteration: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
@@ -40,8 +45,4 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 			},
 		},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return deepAgent, nil
 }

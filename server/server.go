@@ -47,11 +47,17 @@ func (s *httpService) Start(ctx context.Context) error {
 		port = 23456
 	}
 
-	var h http.Handler
+	var (
+		h   http.Handler
+		err error
+	)
 	if s.mode == ModeAPI {
-		h = router.InitAPI()
+		h, err = router.InitAPI()
 	} else {
-		h = router.Init()
+		h, err = router.Init()
+	}
+	if err != nil {
+		return fmt.Errorf("init router: %w", err)
 	}
 
 	s.server = &http.Server{
@@ -65,7 +71,7 @@ func (s *httpService) Start(ctx context.Context) error {
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("[http] server error: %v", err)
+			log.Printf("[http] server error: %v", err)
 		}
 	}()
 
@@ -105,10 +111,10 @@ type ServeOptions struct {
 }
 
 // run 启动服务的公共逻辑
-func run(mode serverMode, opts *ServeOptions) {
+func run(mode serverMode, opts *ServeOptions) error {
 	cfg, err := config.Get()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	app := lifecycle.New()
@@ -165,16 +171,17 @@ func run(mode serverMode, opts *ServeOptions) {
 	})
 
 	if err := app.Run(context.Background()); err != nil {
-		log.Fatalf("application error: %v", err)
+		return fmt.Errorf("application error: %w", err)
 	}
+	return nil
 }
 
 // Run 启动 Web 服务器模式
-func Run() {
-	run(ModeWeb, nil)
+func Run() error {
+	return run(ModeWeb, nil)
 }
 
 // RunServe 启动纯 API 服务（无 Web 界面）
-func RunServe(opts ServeOptions) {
-	run(ModeAPI, &opts)
+func RunServe(opts ServeOptions) error {
+	return run(ModeAPI, &opts)
 }

@@ -5,8 +5,7 @@ import (
 	"fkteams/agents/common"
 	"fkteams/tools/command"
 	"fkteams/tools/script/uv"
-	"log"
-	"os"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -15,52 +14,48 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewAgent() adk.Agent {
+func NewAgent() (adk.Agent, error) {
 	ctx := context.Background()
 
-	workspaceDir := "./workspace"
-	workspaceDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-	if workspaceDirEnv != "" {
-		workspaceDir = workspaceDirEnv
-	}
+	workspaceDir := common.WorkspaceDir()
 
-	// 创建命令行工具
 	cmdTools, err := command.NewCommandTools(workspaceDir).GetTools()
 	if err != nil {
-		log.Fatal("创建命令行工具失败:", err)
+		return nil, fmt.Errorf("init command tools: %w", err)
 	}
 
-	// 初始化 uv 工具
 	uvToolsInstance, err := uv.NewUVTools(workspaceDir)
 	if err != nil {
-		log.Fatal("初始化uv工具失败:", err)
+		return nil, fmt.Errorf("init uv tools: %w", err)
 	}
 	uvTools, err := uvToolsInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建uv工具失败:", err)
+		return nil, fmt.Errorf("create uv tools: %w", err)
 	}
 
 	var toolList []tool.BaseTool
 	toolList = append(toolList, cmdTools...)
 	toolList = append(toolList, uvTools...)
 
-	// 格式化系统消息
 	systemMessages, err := CmderPromptTemplate.Format(ctx, map[string]any{
 		"current_time": time.Now().Format("2006-01-02 15:04:05"),
 		"os_type":      runtime.GOOS,
 		"os_arch":      runtime.GOARCH,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("format prompt: %w", err)
 	}
-	instruction := systemMessages[0].Content
 
-	// 创建智能体
-	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+	chatModel, err := common.NewChatModel()
+	if err != nil {
+		return nil, fmt.Errorf("create chat model: %w", err)
+	}
+
+	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小令",
 		Description:   "命令行专家，擅长通过命令行操作完成任务，能够根据操作系统环境执行合适的命令。",
-		Instruction:   instruction,
-		Model:         common.NewChatModel(),
+		Instruction:   systemMessages[0].Content,
+		Model:         chatModel,
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
 			MaxRetries:  common.MaxRetries,
@@ -72,8 +67,4 @@ func NewAgent() adk.Agent {
 			},
 		},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return a
 }

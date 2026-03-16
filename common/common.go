@@ -5,6 +5,22 @@ import (
 	"os"
 )
 
+const (
+	// DefaultWorkspaceDir 默认工作目录
+	DefaultWorkspaceDir = "./workspace"
+
+	// ChatHistoryPrefix 聊天历史文件前缀
+	ChatHistoryPrefix = "fkteams_chat_history_"
+)
+
+// WorkspaceDir 返回工作目录，优先使用 FEIKONG_WORKSPACE_DIR 环境变量
+func WorkspaceDir() string {
+	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
+		return d
+	}
+	return DefaultWorkspaceDir
+}
+
 // GenerateExampleEnv 生成示例 .env 环境变量文件
 func GenerateExampleEnv(filePath string) error {
 	exampleContent := `# 这是一个示例的环境变量配置文件

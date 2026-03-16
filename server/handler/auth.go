@@ -4,7 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -18,14 +18,14 @@ func getTokenSecret() []byte {
 }
 
 // AuthEnabled 检查是否启用登录认证，启用时校验 SECRET 非空
-func AuthEnabled() bool {
+func AuthEnabled() (bool, error) {
 	if !strings.EqualFold(os.Getenv("FEIKONG_LOGIN_ENABLED"), "true") {
-		return false
+		return false, nil
 	}
 	if os.Getenv("FEIKONG_LOGIN_SECRET") == "" {
-		log.Fatalf("启用登录认证时 FEIKONG_LOGIN_SECRET 不能为空")
+		return false, fmt.Errorf("启用登录认证时 FEIKONG_LOGIN_SECRET 不能为空")
 	}
-	return true
+	return true, nil
 }
 
 func generateToken(username string) string {

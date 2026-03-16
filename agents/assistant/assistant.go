@@ -12,8 +12,7 @@ import (
 	"fkteams/tools/scheduler"
 	"fkteams/tools/search"
 	"fkteams/tools/todo"
-	"log"
-	"os"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -22,88 +21,81 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewAgent() adk.Agent {
+func NewAgent() (adk.Agent, error) {
 	ctx := context.Background()
 
-	safeDir := "./workspace"
-	if dir := os.Getenv("FEIKONG_WORKSPACE_DIR"); dir != "" {
-		safeDir = dir
-	}
+	safeDir := common.WorkspaceDir()
 
 	var toolList []tool.BaseTool
 
-	// 核心工具：带审批功能的命令行
 	smartTools, err := command.NewCommandTools(safeDir).GetTools()
 	if err != nil {
-		log.Fatal("初始化命令行工具失败:", err)
+		return nil, fmt.Errorf("init command tools: %w", err)
 	}
 	toolList = append(toolList, smartTools...)
 
-	// 文件工具
 	fileInstance, err := file.NewFileTools(safeDir)
 	if err != nil {
-		log.Fatalf("初始化文件工具失败: %v", err)
+		return nil, fmt.Errorf("init file tools: %w", err)
 	}
 	fileTools, err := fileInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建文件工具失败:", err)
+		return nil, fmt.Errorf("create file tools: %w", err)
 	}
 	toolList = append(toolList, fileTools...)
 
-	// 待办事项工具
 	todoInstance, err := todo.NewTodoTools(safeDir)
 	if err != nil {
-		log.Fatal("初始化 Todo 工具失败:", err)
+		return nil, fmt.Errorf("init todo tools: %w", err)
 	}
 	todoTools, err := todoInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建 Todo 工具失败:", err)
+		return nil, fmt.Errorf("create todo tools: %w", err)
 	}
 	toolList = append(toolList, todoTools...)
 
-	// 定时任务工具
 	schedulerInstance, err := scheduler.InitGlobal(safeDir)
 	if err != nil {
-		log.Fatalf("初始化定时任务调度器失败: %v", err)
+		return nil, fmt.Errorf("init scheduler: %w", err)
 	}
 	schedulerTools, err := schedulerInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建定时任务工具失败:", err)
+		return nil, fmt.Errorf("create scheduler tools: %w", err)
 	}
 	toolList = append(toolList, schedulerTools...)
 
-	// 搜索工具
 	searchTool, err := search.NewDuckDuckGoTool(ctx)
 	if err != nil {
-		log.Fatal("初始化搜索工具失败:", err)
+		return nil, fmt.Errorf("init search tool: %w", err)
 	}
 	toolList = append(toolList, searchTool)
 
-	// 网页抓取工具
 	fetchTools, err := fetch.GetTools()
 	if err != nil {
-		log.Fatal("初始化 fetch 工具失败:", err)
+		return nil, fmt.Errorf("init fetch tools: %w", err)
 	}
 	toolList = append(toolList, fetchTools...)
 
-	// 技能中间件
 	skillsMiddleware, err := skills.New(ctx, safeDir)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("init skills middleware: %w", err)
 	}
 
-	// 上下文压缩中间件
+	chatModel, err := common.NewChatModel()
+	if err != nil {
+		return nil, fmt.Errorf("create chat model: %w", err)
+	}
+
 	summaryMiddleware, err := summary.New(ctx, &summary.Config{
-		Model:                      common.NewChatModel(),
+		Model:                      chatModel,
 		SystemPrompt:               summary.PromptOfSummary,
 		MaxTokensBeforeSummary:     80 * 1024,
 		MaxTokensForRecentMessages: 25 * 1024,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("init summary middleware: %w", err)
 	}
 
-	// 工具错误处理中间件
 	warperrorMiddleware := toolwarperror.NewAgentMiddleware(nil)
 
 	systemMessages, err := AssistantPromptTemplate.Format(ctx, map[string]any{
@@ -113,14 +105,14 @@ func NewAgent() adk.Agent {
 		"workspace_dir": safeDir,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("format prompt: %w", err)
 	}
 
-	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小助",
 		Description:   "个人全能助手，通过命令执行工具和文件操作完成各种任务，危险操作需要用户审批。",
 		Instruction:   systemMessages[0].Content,
-		Model:         common.NewChatModel(),
+		Model:         chatModel,
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
 			MaxRetries:  common.MaxRetries,
@@ -137,9 +129,4 @@ func NewAgent() adk.Agent {
 			},
 		},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return a
 }

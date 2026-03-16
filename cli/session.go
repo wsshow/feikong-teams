@@ -19,7 +19,7 @@ import (
 )
 
 // ModeRunnerCreator 模式运行器创建回调
-type ModeRunnerCreator func(ctx context.Context, mode WorkMode) *adk.Runner
+type ModeRunnerCreator func(ctx context.Context, mode WorkMode) (*adk.Runner, error)
 
 // Session 交互会话，封装 CLI 交互的全部状态
 type Session struct {
@@ -314,7 +314,10 @@ func (m *sessionModeSwitcher) SwitchMode() (string, error) {
 		newMode = ModeTeam
 	}
 
-	newRunner := m.session.createModeRunner(m.ctx, newMode)
+	newRunner, err := m.session.createModeRunner(m.ctx, newMode)
+	if err != nil {
+		return "", fmt.Errorf("failed to create runner for mode %s: %w", newMode, err)
+	}
 	if newRunner == nil {
 		return "", fmt.Errorf("failed to create runner for mode: %s", newMode)
 	}

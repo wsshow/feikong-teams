@@ -8,8 +8,7 @@ import (
 	"fkteams/tools/file"
 	"fkteams/tools/script/uv"
 	"fkteams/tools/todo"
-	"log"
-	"os"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -18,59 +17,50 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-func NewAgent() adk.Agent {
+func NewAgent() (adk.Agent, error) {
 	ctx := context.Background()
 
-	analystSafeDir := "./workspace"
-	analystDirEnv := os.Getenv("FEIKONG_WORKSPACE_DIR")
-	if analystDirEnv != "" {
-		analystSafeDir = analystDirEnv
-	}
+	safeDir := common.WorkspaceDir()
 
-	// 初始化 Todo 工具
-	todoToolsInstance, err := todo.NewTodoTools(analystSafeDir)
+	todoToolsInstance, err := todo.NewTodoTools(safeDir)
 	if err != nil {
-		log.Fatalf("初始化Todo工具失败: %v", err)
+		return nil, fmt.Errorf("init todo tools: %w", err)
 	}
 	todoTools, err := todoToolsInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建 Todo 工具失败:", err)
+		return nil, fmt.Errorf("create todo tools: %w", err)
 	}
 
-	// 初始化 Excel 工具
-	excelToolsInstance, err := excel.NewExcelTools(analystSafeDir)
+	excelToolsInstance, err := excel.NewExcelTools(safeDir)
 	if err != nil {
-		log.Fatalf("初始化Excel工具失败: %v", err)
+		return nil, fmt.Errorf("init excel tools: %w", err)
 	}
 	excelTools, err := excelToolsInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建 Excel 工具失败:", err)
+		return nil, fmt.Errorf("create excel tools: %w", err)
 	}
 
-	// 初始化文件工具
-	fileToolsInstance, err := file.NewFileTools(analystSafeDir)
+	fileToolsInstance, err := file.NewFileTools(safeDir)
 	if err != nil {
-		log.Fatalf("初始化文件工具失败: %v", err)
+		return nil, fmt.Errorf("init file tools: %w", err)
 	}
 	fileTools, err := fileToolsInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建文件工具失败:", err)
+		return nil, fmt.Errorf("create file tools: %w", err)
 	}
 
-	// 初始化 uv 工具
-	uvToolsInstance, err := uv.NewUVTools(analystSafeDir)
+	uvToolsInstance, err := uv.NewUVTools(safeDir)
 	if err != nil {
-		log.Fatal("初始化uv工具失败:", err)
+		return nil, fmt.Errorf("init uv tools: %w", err)
 	}
 	uvTools, err := uvToolsInstance.GetTools()
 	if err != nil {
-		log.Fatal("创建uv工具失败:", err)
+		return nil, fmt.Errorf("create uv tools: %w", err)
 	}
 
-	// 初始化文档工具
 	docTools, err := doc.GetTools()
 	if err != nil {
-		log.Fatal("创建文档工具失败:", err)
+		return nil, fmt.Errorf("init doc tools: %w", err)
 	}
 
 	var toolList []tool.BaseTool
@@ -83,18 +73,22 @@ func NewAgent() adk.Agent {
 	systemMessages, err := AnalystPromptTemplate.Format(ctx, map[string]any{
 		"current_time":  time.Now().Format("2006-01-02 15:04:05"),
 		"os":            runtime.GOOS,
-		"workspace_dir": analystSafeDir,
+		"workspace_dir": safeDir,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("format prompt: %w", err)
 	}
-	instruction := systemMessages[0].Content
 
-	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+	chatModel, err := common.NewChatModel()
+	if err != nil {
+		return nil, fmt.Errorf("create chat model: %w", err)
+	}
+
+	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小析",
 		Description:   "数据分析专家，擅长使用 Excel、Python 脚本和文档处理工具，从复杂数据和文档中提取有价值的信息并提供专业洞察。",
-		Instruction:   instruction,
-		Model:         common.NewChatModel(),
+		Instruction:   systemMessages[0].Content,
+		Model:         chatModel,
 		MaxIterations: common.MaxIterations,
 		ModelRetryConfig: &adk.ModelRetryConfig{
 			MaxRetries:  common.MaxRetries,
@@ -106,8 +100,4 @@ func NewAgent() adk.Agent {
 			},
 		},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return a
 }

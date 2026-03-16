@@ -5,6 +5,7 @@ import (
 	"context"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
+	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
@@ -184,8 +185,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		e.state.EndQuery()
 
 		// 异步提取记忆
-		if g.MemManager != nil {
-			g.MemManager.ExtractFromRecorder(recorder, activeSessionID)
+		if g.MemoryManager != nil {
+			g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
 		}
 	}()
 
@@ -281,17 +282,17 @@ func SaveChatHistoryToHTML() (string, error) {
 
 // FlushSessionMemory 退出前强制提取当前会话的剩余记忆
 func FlushSessionMemory() {
-	if g.MemManager == nil {
+	if g.MemoryManager == nil {
 		return
 	}
 	recorder := getCliRecorder()
-	g.MemManager.FlushFromRecorder(recorder, activeSessionID)
+	g.MemoryManager.FlushFromRecorder(recorder, activeSessionID)
 }
 
 // AutoSaveCLIHistory 自动保存 CLI 模式的聊天历史（由 --save 参数控制）
 func AutoSaveCLIHistory() {
 	recorder := getCliRecorder()
-	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
+	historyFile := CLIHistoryDir + common.ChatHistoryPrefix + activeSessionID
 
 	pterm.Info.Println("正在自动保存聊天历史...")
 	if err := recorder.SaveToFile(historyFile); err != nil {

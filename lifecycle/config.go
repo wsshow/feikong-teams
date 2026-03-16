@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"fkteams/common"
 	"os"
 	"syscall"
 )
@@ -20,13 +21,8 @@ type AppConfig struct {
 
 // DefaultConfig 返回基于环境变量的默认配置
 func DefaultConfig() *AppConfig {
-	workspaceDir := "./workspace"
-	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
-		workspaceDir = d
-	}
-
 	return &AppConfig{
-		WorkspaceDir:       workspaceDir,
+		WorkspaceDir:       common.WorkspaceDir(),
 		MemoryEnabled:      os.Getenv("FEIKONG_MEMORY_ENABLED") == "true",
 		SchedulerEnabled:   true,
 		SchedulerOutputDir: "./result/scheduled_tasks/",
