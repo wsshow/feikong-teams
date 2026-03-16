@@ -71,7 +71,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 			return nil
 		})
 		return sshTools.GetTools()
-	case "command", "assistant":
+	case "command":
 		return command.NewCommandTools(workspacePath()).GetTools()
 	case "scheduler":
 		s, err := scheduler.InitGlobal(workspacePath())

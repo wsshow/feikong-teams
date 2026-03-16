@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 )
 
-func NewAgent() (adk.Agent, error) {
+func NewAgent(ctx context.Context) (adk.Agent, error) {
 	host := os.Getenv("FEIKONG_SSH_HOST")
 	username := os.Getenv("FEIKONG_SSH_USERNAME")
 
@@ -24,5 +24,5 @@ func NewAgent() (adk.Agent, error) {
 		WithTemplateVar("ssh_host", host).
 		WithTemplateVar("ssh_username", username).
 		WithToolNames("ssh").
-		Build(context.Background())
+		Build(ctx)
 }

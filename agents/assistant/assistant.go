@@ -8,7 +8,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 )
 
-func NewAgent() (adk.Agent, error) {
+func NewAgent(ctx context.Context) (adk.Agent, error) {
 	safeDir := common.WorkspaceDir()
 
 	return common.NewAgentBuilder("小助", "个人全能助手，通过命令执行工具和文件操作完成各种任务，危险操作需要用户审批。").
@@ -20,5 +20,5 @@ func NewAgent() (adk.Agent, error) {
 		WithWarperror().
 		WithSummary().
 		WithSkills(safeDir).
-		Build(context.Background())
+		Build(ctx)
 }

@@ -23,7 +23,7 @@ type Config struct {
 	ToolNames    []string
 }
 
-func NewAgent(cfg Config) (adk.Agent, error) {
+func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
 	customPromptTemplate := prompt.FromMessages(schema.FString,
 		schema.SystemMessage(cfg.SystemPrompt),
 	)
@@ -32,5 +32,5 @@ func NewAgent(cfg Config) (adk.Agent, error) {
 		WithTemplate(customPromptTemplate).
 		WithToolNames(cfg.ToolNames...).
 		WithWarperror().
-		Build(context.Background())
+		Build(ctx)
 }

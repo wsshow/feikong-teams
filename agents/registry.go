@@ -39,7 +39,7 @@ func initRegistry() {
 
 		type agentCreator struct {
 			name    string
-			creator func() (adk.Agent, error)
+			creator func(ctx context.Context) (adk.Agent, error)
 		}
 
 		// 基础智能体（始终可用）
@@ -73,7 +73,7 @@ func initRegistry() {
 		// 动态构建注册表
 		Registry = make([]AgentInfo, 0, len(creators))
 		for _, c := range creators {
-			agent, err := c.creator()
+			agent, err := c.creator(ctx)
 			if err != nil {
 				pterm.Warning.Printfln("初始化智能体 %s 失败: %v", c.name, err)
 				continue
@@ -95,7 +95,7 @@ func initRegistry() {
 }
 
 // loadCustomAgents 从配置文件加载自定义智能体并添加到注册表
-func loadCustomAgents(_ context.Context) {
+func loadCustomAgents(ctx context.Context) {
 	cfg, err := config.Get()
 	if err != nil {
 		return
@@ -119,7 +119,7 @@ func loadCustomAgents(_ context.Context) {
 			pterm.Warning.Printfln("自定义智能体 \"%s\" 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
 		}
 
-		agent, err := custom.NewAgent(custom.Config{
+		agent, err := custom.NewAgent(ctx, custom.Config{
 			Name:         agentCfg.Name,
 			Description:  agentCfg.Desc,
 			SystemPrompt: agentCfg.SystemPrompt,

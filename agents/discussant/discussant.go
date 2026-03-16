@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 )
 
-func NewAgent(member config.TeamMember) (adk.Agent, error) {
+func NewAgent(ctx context.Context, member config.TeamMember) (adk.Agent, error) {
 	chatModel, err := common.NewChatModelWithConfig(member.ModelName, member.BaseURL, member.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
@@ -18,5 +18,5 @@ func NewAgent(member config.TeamMember) (adk.Agent, error) {
 	return common.NewAgentBuilder(member.Name, member.Desc).
 		WithTemplate(discussantPromptTemplate).
 		WithModel(chatModel).
-		Build(context.Background())
+		Build(ctx)
 }

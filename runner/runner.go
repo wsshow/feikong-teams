@@ -90,7 +90,7 @@ func CreateLoopAgentRunner(ctx context.Context) (*adk.Runner, error) {
 
 	var subAgents []adk.Agent
 	for _, member := range teamConfig.Roundtable.Members {
-		agent, err := discussant.NewAgent(member)
+		agent, err := discussant.NewAgent(ctx, member)
 		if err != nil {
 			return nil, fmt.Errorf("创建讨论智能体 %s 失败: %w", member.Name, err)
 		}
@@ -121,7 +121,7 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 	var subAgents []adk.Agent
 
 	if cfg.Custom.Moderator.Name != "" {
-		moderatorAgent, err = custom.NewAgent(custom.Config{
+		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
 			Name:         cfg.Custom.Moderator.Name,
 			Description:  cfg.Custom.Moderator.Desc,
 			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
@@ -136,14 +136,14 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 			return nil, fmt.Errorf("创建自定义主持人失败: %w", err)
 		}
 	} else {
-		moderatorAgent, err = moderator.NewAgent()
+		moderatorAgent, err = moderator.NewAgent(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("创建主持人失败: %w", err)
 		}
 	}
 
 	for _, customAgent := range cfg.Custom.Agents {
-		agent, err := custom.NewAgent(custom.Config{
+		agent, err := custom.NewAgent(ctx, custom.Config{
 			Name:         customAgent.Name,
 			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
@@ -182,7 +182,7 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 	var subAgents []adk.Agent
 
 	if cfg.Custom.Moderator.Name != "" {
-		moderatorAgent, err = custom.NewAgent(custom.Config{
+		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
 			Name:         cfg.Custom.Moderator.Name,
 			Description:  cfg.Custom.Moderator.Desc,
 			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
@@ -197,14 +197,14 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 			return fmt.Errorf("创建自定义主持人失败: %w", err)
 		}
 	} else {
-		moderatorAgent, err = moderator.NewAgent()
+		moderatorAgent, err = moderator.NewAgent(ctx)
 		if err != nil {
 			return fmt.Errorf("创建主持人失败: %w", err)
 		}
 	}
 
 	for _, customAgent := range cfg.Custom.Agents {
-		agent, err := custom.NewAgent(custom.Config{
+		agent, err := custom.NewAgent(ctx, custom.Config{
 			Name:         customAgent.Name,
 			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
@@ -240,7 +240,7 @@ func PrintLoopAgentsInfo(ctx context.Context) error {
 
 	var subAgents []adk.Agent
 	for _, member := range teamConfig.Roundtable.Members {
-		agent, err := discussant.NewAgent(member)
+		agent, err := discussant.NewAgent(ctx, member)
 		if err != nil {
 			return fmt.Errorf("创建讨论智能体 %s 失败: %w", member.Name, err)
 		}
