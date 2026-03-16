@@ -3,24 +3,17 @@ package leader
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/agents/middlewares/skills"
-	"fkteams/agents/middlewares/summary"
-	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/tools/file"
 	"fkteams/tools/scheduler"
 	"fkteams/tools/todo"
 	"fmt"
-	"time"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
 )
 
 var globalTodoToolsInstance *todo.TodoTools
 
 func NewAgent(ctx context.Context) (adk.Agent, error) {
-
 	safeDir := common.WorkspaceDir()
 
 	todoToolsInstance, err := todo.NewTodoTools(safeDir)
@@ -52,63 +45,15 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		return nil, fmt.Errorf("create scheduler tools: %w", err)
 	}
 
-	var toolList []tool.BaseTool
-	toolList = append(toolList, todoTools...)
-	toolList = append(toolList, fileTools...)
-	toolList = append(toolList, schedulerTools...)
-
-	skillsMiddleware, err := skills.New(ctx, safeDir)
-	if err != nil {
-		return nil, fmt.Errorf("init skills middleware: %w", err)
-	}
-
-	chatModel, err := common.NewChatModel()
-	if err != nil {
-		return nil, fmt.Errorf("create chat model: %w", err)
-	}
-
-	summaryMiddleware, err := summary.New(ctx, &summary.Config{
-		Model:                      chatModel,
-		SystemPrompt:               summary.PromptOfSummary,
-		MaxTokensBeforeSummary:     80 * 1024,
-		MaxTokensForRecentMessages: 25 * 1024,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("init summary middleware: %w", err)
-	}
-
-	warperrorMiddleware := warperror.NewAgentMiddleware(nil)
-
-	systemMessages, err := LeaderPromptTemplate.Format(ctx, map[string]any{
-		"current_time":  time.Now().Format("2006-01-02 15:04:05"),
-		"team_members":  ctx.Value("team_members"),
-		"workspace_dir": safeDir,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("format prompt: %w", err)
-	}
-
-	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          "统御",
-		Description:   "团队管理者，善于规划和分配任务。",
-		Instruction:   systemMessages[0].Content,
-		Model:         chatModel,
-		MaxIterations: common.MaxIterations,
-		ModelRetryConfig: &adk.ModelRetryConfig{
-			MaxRetries:  common.MaxRetries,
-			IsRetryAble: common.IsRetryAble,
-		},
-		Middlewares: []adk.AgentMiddleware{
-			warperrorMiddleware,
-			summaryMiddleware,
-		},
-		Handlers: []adk.ChatModelAgentMiddleware{skillsMiddleware},
-		ToolsConfig: adk.ToolsConfig{
-			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: toolList,
-			},
-		},
-	})
+	return common.NewAgentBuilder("统御", "团队管理者，善于规划和分配任务。").
+		WithTemplate(LeaderPromptTemplate).
+		WithTemplateVar("team_members", ctx.Value("team_members")).
+		WithTemplateVar("workspace_dir", safeDir).
+		WithTools(todoTools...).
+		WithTools(fileTools...).
+		WithTools(schedulerTools...).
+		WithFullMiddleware(safeDir).
+		Build(ctx)
 }
 
 func ClearTodoTool() error {
