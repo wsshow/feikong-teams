@@ -76,7 +76,7 @@ func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
 }
 
 // HandleDirect 非交互模式：执行单次查询后退出
-func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal, query string, saveHistory bool) {
+func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal, query string) {
 	s.InputHistory = append(s.InputHistory, query)
 
 	if resumeSessionID != "" {
@@ -87,9 +87,6 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 		pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
 	}
 
-	recorder := getCliRecorder()
-	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
-
 	executor := NewQueryExecutor(r, s.queryState)
 	executor.SetAutoReject(true)
 	if s.callbackBuilder != nil {
@@ -97,23 +94,6 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 	}
 	if err := executor.Execute(ctx, query); err != nil {
 		log.Printf("执行查询失败: %v", err)
-	}
-
-	if saveHistory {
-		fmt.Println()
-		pterm.Info.Printf("[非交互模式] 任务完成，正在自动保存聊天历史...\n")
-		if err := recorder.SaveToFile(historyFile); err != nil {
-			pterm.Error.Printfln("[非交互模式] 保存聊天历史失败: %v", err)
-		} else {
-			pterm.Success.Printfln("[非交互模式] 成功保存聊天历史: %s", historyFile)
-		}
-
-		htmlFilePath, err := SaveChatHistoryToHTML()
-		if err != nil {
-			pterm.Error.Printfln("[非交互模式] %v", err)
-		} else {
-			pterm.Success.Printfln("[非交互模式] 成功保存聊天历史到网页文件: %s", htmlFilePath)
-		}
 	}
 
 	select {

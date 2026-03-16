@@ -41,7 +41,7 @@ func Root() *ucli.Command {
 			},
 			&ucli.BoolFlag{
 				Name:  "save",
-				Usage: "保存聊天历史（仅在直接查询模式下生效）",
+				Usage: "保存聊天历史",
 			},
 		},
 		Action: chatAction,

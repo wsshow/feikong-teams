@@ -284,3 +284,23 @@ func FlushSessionMemory() {
 	recorder := getCliRecorder()
 	g.MemManager.FlushFromRecorder(recorder, activeSessionID)
 }
+
+// AutoSaveCLIHistory 自动保存 CLI 模式的聊天历史（由 --save 参数控制）
+func AutoSaveCLIHistory() {
+	recorder := getCliRecorder()
+	historyFile := CLIHistoryDir + "fkteams_chat_history_" + activeSessionID
+
+	pterm.Info.Println("正在自动保存聊天历史...")
+	if err := recorder.SaveToFile(historyFile); err != nil {
+		pterm.Error.Printfln("保存聊天历史失败: %v", err)
+	} else {
+		pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
+	}
+
+	htmlFilePath, err := SaveChatHistoryToHTML()
+	if err != nil {
+		pterm.Error.Printfln("%v", err)
+	} else {
+		pterm.Success.Printfln("成功保存聊天历史到网页文件: %s", htmlFilePath)
+	}
+}

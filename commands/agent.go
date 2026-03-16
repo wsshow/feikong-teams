@@ -140,11 +140,17 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 			session.SetCallbackBuilder(fkevent.JSONEventCallback)
 		}
 
-		save := cmd.Bool("save") || cmd.Root().Bool("save")
 		if query != "" {
-			session.HandleDirect(ctx, agentRunner, app.ExitCh(), query, save)
+			session.HandleDirect(ctx, agentRunner, app.ExitCh(), query)
 		} else {
 			session.HandleInteractive(ctx, agentRunner, app.ExitCh())
+		}
+		return nil
+	})
+
+	app.OnPreStop(func(ctx context.Context) error {
+		if cmd.Bool("save") || cmd.Root().Bool("save") {
+			cli.AutoSaveCLIHistory()
 		}
 		return nil
 	})

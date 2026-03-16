@@ -30,6 +30,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	currentMode := cli.ParseWorkMode(workMode)
 	query := cmd.String("query")
 	resumeSession := cmd.String("resume")
+	saveHistory := cmd.Bool("save")
 
 	// 创建应用实例（CLI 模式排除 SIGINT，由 Session 处理）
 	app := lifecycle.New(
@@ -73,20 +74,23 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		session.StartSignalHandler(app.ExitCh())
 
 		if query != "" {
-			session.HandleDirect(ctx, r, app.ExitCh(), query, cmd.Bool("save"))
+			session.HandleDirect(ctx, r, app.ExitCh(), query)
 		} else {
 			session.HandleInteractive(ctx, r, app.ExitCh())
 		}
 		return nil
 	})
 
-	if cfg.MemoryEnabled {
-		app.OnPreStop(func(ctx context.Context) error {
+	app.OnPreStop(func(ctx context.Context) error {
+		if saveHistory {
+			cli.AutoSaveCLIHistory()
+		}
+		if cfg.MemoryEnabled {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
 			cli.FlushSessionMemory()
-			return nil
-		})
-	}
+		}
+		return nil
+	})
 
 	app.OnCleanup(func(ctx context.Context) error {
 		history := inputHistory
