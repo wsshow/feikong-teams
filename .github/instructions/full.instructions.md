@@ -128,7 +128,6 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
         WithTemplateVar("os_type", runtime.GOOS).
         WithTemplateVar("workspace_dir", safeDir).
         WithToolNames("command", "file", "todo", "scheduler", "search", "fetch").
-        WithWarperror().   // 工具错误包装
         WithSummary().     // 自动摘要
         WithSkills(safeDir). // 技能学习
         Build(ctx)
@@ -146,7 +145,6 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 | `WithModel(m)` | 使用自定义模型（不设置则用环境变量配置） |
 | `WithMiddleware(m...)` | 添加 AgentMiddleware |
 | `WithHandler(h...)` | 添加 ChatModelAgentMiddleware |
-| `WithWarperror()` | 启用 warperror 中间件 |
 | `WithSummary()` | 启用 summary 中间件（80K token 阈值） |
 | `WithSkills(dir)` | 启用 skills 中间件 |
 | `Build(ctx)` | 构建并返回 `(adk.Agent, error)` |

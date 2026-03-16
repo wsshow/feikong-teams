@@ -31,6 +31,5 @@ func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
 	return common.NewAgentBuilder(cfg.Name, cfg.Description).
 		WithTemplate(customPromptTemplate).
 		WithToolNames(cfg.ToolNames...).
-		WithWarperror().
 		Build(ctx)
 }

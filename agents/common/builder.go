@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/agents/middlewares/tools/patch"
 	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/tools"
 	"fmt"
@@ -33,10 +34,9 @@ type AgentBuilder struct {
 	handlers    []adk.ChatModelAgentMiddleware
 
 	// 便捷中间件标记
-	enableWarperror bool
-	enableSummary   bool
-	enableSkills    bool
-	skillsDir       string
+	enableSummary bool
+	enableSkills  bool
+	skillsDir     string
 }
 
 // NewAgentBuilder 创建构建器
@@ -87,12 +87,6 @@ func (b *AgentBuilder) WithMiddleware(m ...adk.AgentMiddleware) *AgentBuilder {
 // WithHandler 添加 ChatModelAgentMiddleware
 func (b *AgentBuilder) WithHandler(h ...adk.ChatModelAgentMiddleware) *AgentBuilder {
 	b.handlers = append(b.handlers, h...)
-	return b
-}
-
-// WithWarperror 启用 warperror 中间件
-func (b *AgentBuilder) WithWarperror() *AgentBuilder {
-	b.enableWarperror = true
 	return b
 }
 
@@ -162,10 +156,8 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		}
 	}
 
-	// 中间件
-	if b.enableWarperror {
-		cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
-	}
+	// 中间件（warperror 默认启用）
+	cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
 
 	if b.enableSummary {
 		summaryMiddleware, err := summary.New(ctx, &summary.Config{
@@ -181,6 +173,13 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	}
 
 	cfg.Middlewares = append(cfg.Middlewares, b.middlewares...)
+
+	// patch 中间件默认启用，放在 Handlers 最前面确保其他中间件处理的是完整消息历史
+	patchMiddleware, err := patch.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("init patch middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, patchMiddleware)
 
 	if b.enableSkills {
 		skillsMiddleware, err := skills.New(ctx, b.skillsDir)
