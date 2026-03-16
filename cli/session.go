@@ -298,20 +298,27 @@ type sessionModeSwitcher struct {
 	executor *QueryExecutor
 }
 
-// SwitchMode 切换工作模式（循环切换：team → deep → group → custom → team）
+// SwitchMode 切换工作模式
+// 如果当前处于 @agent 单智能体模式，恢复到切换前的工作模式；否则循环切换（team → deep → group → custom → team）
 func (m *sessionModeSwitcher) SwitchMode() (string, error) {
 	var newMode WorkMode
-	switch m.session.CurrentMode {
-	case ModeTeam:
-		newMode = ModeDeep
-	case ModeDeep:
-		newMode = ModeGroup
-	case ModeGroup:
-		newMode = ModeCustom
-	case ModeCustom:
-		newMode = ModeTeam
-	default:
-		newMode = ModeTeam
+
+	if m.session.currentAgent != "" {
+		// 从 @agent 模式恢复到原工作模式
+		newMode = m.session.CurrentMode
+	} else {
+		switch m.session.CurrentMode {
+		case ModeTeam:
+			newMode = ModeDeep
+		case ModeDeep:
+			newMode = ModeGroup
+		case ModeGroup:
+			newMode = ModeCustom
+		case ModeCustom:
+			newMode = ModeTeam
+		default:
+			newMode = ModeTeam
+		}
 	}
 
 	newRunner, err := m.session.createModeRunner(m.ctx, newMode)
