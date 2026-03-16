@@ -34,7 +34,7 @@ func printEvent() func(Event) {
 				switch lastToolName {
 				case "duckduckgo_search":
 					formatted = formatSearchResults(event.Content)
-				case "execute_command", "command_execute", "smart_execute":
+				case "execute_command", "command_execute", "smart_execute", "execute":
 					formatted = formatCommandResult(event.Content)
 				case "file_read", "file_edit", "file_list", "file_create", "file_delete", "dir_create", "dir_delete", "file_search":
 					formatted = formatFileOpResult(event.Content)

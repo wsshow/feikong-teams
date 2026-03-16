@@ -42,7 +42,7 @@ var taskerPrompt = `# Role: 任务官（Tasker）— 后台定时任务专属执
 |------|---------|
 | search | 信息检索、价格查询、新闻获取（DuckDuckGo） |
 | fetch | 抓取网页原文，深度阅读特定页面 |
-| smart_execute | 执行脚本、计算、系统命令（带安全审批） |
+| execute | 执行脚本、计算、系统命令（带安全审批） |
 | file_read | 读取工作目录下的文件内容 |
 | file_edit | 编辑工作目录下的已有文件 |
 | file_create | 在工作目录下创建新文件 |

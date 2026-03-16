@@ -156,7 +156,7 @@ transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 - `file` - 文件读写操作（限制在 workspace 目录），支持 unified diff 批量修改
 - `git` - Git 仓库操作
 - `excel` - Excel 文件处理
-- `command` - 智能命令执行（带安全审批），危险命令需用户确认后才执行
+- `command` - 命令执行（带安全审批），危险命令需用户确认后才执行
 - `ssh` - SSH 远程连接
 - `search` - 网络搜索（DuckDuckGo）
 - `todo` - 待办事项管理

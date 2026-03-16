@@ -32,10 +32,10 @@ func NewAgent() adk.Agent {
 
 	var toolList []tool.BaseTool
 
-	// 核心工具：带审批功能的智能命令行
+	// 核心工具：带审批功能的命令行
 	smartTools, err := command.NewCommandTools(safeDir).GetTools()
 	if err != nil {
-		log.Fatal("初始化智能命令行工具失败:", err)
+		log.Fatal("初始化命令行工具失败:", err)
 	}
 	toolList = append(toolList, smartTools...)
 
@@ -118,7 +118,7 @@ func NewAgent() adk.Agent {
 
 	a, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "小助",
-		Description:   "个人全能助手，通过智能命令行工具和文件操作完成各种任务，危险操作需要用户审批。",
+		Description:   "个人全能助手，通过命令执行工具和文件操作完成各种任务，危险操作需要用户审批。",
 		Instruction:   systemMessages[0].Content,
 		Model:         common.NewChatModel(),
 		MaxIterations: common.MaxIterations,
