@@ -847,9 +847,8 @@ a.source-item:hover {
 }
 
 .reasoning-content {
-    max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s ease;
+    display: none;
     padding: 0 12px;
     font-size: 13px;
     color: var(--text-secondary);
@@ -857,7 +856,7 @@ a.source-item:hover {
 }
 
 .reasoning-block.expanded .reasoning-content {
-    max-height: 2000px;
+    display: block;
     padding: 8px 12px 12px;
     border-top: 1px solid var(--border);
 }

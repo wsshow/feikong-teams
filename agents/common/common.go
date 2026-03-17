@@ -27,20 +27,28 @@ func WorkspaceDir() string {
 
 // NewChatModel 使用环境变量配置创建聊天模型
 func NewChatModel() (model.ToolCallingChatModel, error) {
-	return openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+	m, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  os.Getenv("FEIKONG_OPENAI_API_KEY"),
 		BaseURL: os.Getenv("FEIKONG_OPENAI_BASE_URL"),
 		Model:   os.Getenv("FEIKONG_OPENAI_MODEL"),
 	})
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithReasoning(m), nil
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
 func NewChatModelWithConfig(modelName, baseURL, apiKey string) (model.ToolCallingChatModel, error) {
-	return openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+	m, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  apiKey,
 		BaseURL: baseURL,
 		Model:   modelName,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithReasoning(m), nil
 }
 
 // IsRetryAble 判断错误是否可重试（网络错误、限流等）

@@ -594,11 +594,11 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case "action":
 				if event.Action != nil {
-					md.WriteString(fmt.Sprintf("> **⚡ Action**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content))
+					md.WriteString(fmt.Sprintf("> **[Action]**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content))
 				}
 
 			case "error":
-				md.WriteString(fmt.Sprintf("> **❌ 错误**: %s\n\n", event.Content))
+				md.WriteString(fmt.Sprintf("> **[错误]**: %s\n\n", event.Content))
 			}
 		}
 

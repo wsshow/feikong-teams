@@ -22,7 +22,7 @@ func printEvent() func(Event) {
 			}
 			if !inReasoning {
 				inReasoning = true
-				fmt.Printf("\033[90m💭 思考中: \033[0m\033[3;90m")
+				fmt.Printf("\033[90m[思考] \033[0m\033[3;90m")
 			}
 			fmt.Printf("%s", event.Content)
 
@@ -44,7 +44,7 @@ func printEvent() func(Event) {
 				fmt.Printf("\033[0m\n")
 			}
 			if event.ReasoningContent != "" {
-				fmt.Printf("\n\033[90m💭 [%s] 思考:\033[0m \033[3;90m%s\033[0m\n", event.AgentName, event.ReasoningContent)
+				fmt.Printf("\n\033[90m[%s] 思考:\033[0m \033[3;90m%s\033[0m\n", event.AgentName, event.ReasoningContent)
 			}
 			if event.Content != "" {
 				fmt.Printf("\n\033[1;32m✓ [%s] 消息:\033[0m %s\n", event.AgentName, event.Content)

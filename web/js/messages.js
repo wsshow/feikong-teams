@@ -429,7 +429,18 @@ FKTeamsChat.prototype.handleStreamChunk = function (event) {
         var lastStreamText = bodyEl.getAttribute('data-stream-text') || '';
         if (streamText !== lastStreamText) {
             bodyEl.setAttribute('data-stream-text', streamText);
-            bodyEl.innerHTML = this.renderMarkdown(streamText, true);
+            const existingReasoning = bodyEl.querySelector('.reasoning-block');
+            if (existingReasoning) {
+                let textContainer = bodyEl.querySelector('.message-text-content');
+                if (!textContainer) {
+                    textContainer = document.createElement('div');
+                    textContainer.className = 'message-text-content';
+                    bodyEl.appendChild(textContainer);
+                }
+                textContainer.innerHTML = this.renderMarkdown(streamText, true);
+            } else {
+                bodyEl.innerHTML = this.renderMarkdown(streamText, true);
+            }
         }
     }
     this.scrollToBottom();
