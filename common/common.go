@@ -31,7 +31,7 @@ FEIKONG_OPENAI_BASE_URL = https://api.openai.com/v1
 FEIKONG_OPENAI_API_KEY = xxxxx
 FEIKONG_OPENAI_MODEL = GPT-5
 
-# 模型提供者类型（可选，自动检测）: openai, deepseek
+# 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
 # FEIKONG_PROVIDER = openai
 
 # 配置代理：网络搜索工具、程序更新等
