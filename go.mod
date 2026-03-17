@@ -12,9 +12,10 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/cloudwego/eino v0.8.0
+	github.com/cloudwego/eino v0.8.2
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
 	github.com/cloudwego/eino-ext/components/tool/mcp v0.0.8
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10
 	github.com/corpix/uarand v0.2.0
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/gin-gonic/gin v1.11.0
@@ -67,7 +68,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

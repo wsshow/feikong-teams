@@ -3,6 +3,8 @@ package custom
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/providers"
+	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/prompt"
@@ -10,9 +12,10 @@ import (
 )
 
 type Model struct {
-	Name    string
-	APIKey  string
-	BaseURL string
+	Provider string
+	Name     string
+	APIKey   string
+	BaseURL  string
 }
 
 type Config struct {
@@ -28,8 +31,22 @@ func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
 		schema.SystemMessage(cfg.SystemPrompt),
 	)
 
-	return common.NewAgentBuilder(cfg.Name, cfg.Description).
+	builder := common.NewAgentBuilder(cfg.Name, cfg.Description).
 		WithTemplate(customPromptTemplate).
-		WithToolNames(cfg.ToolNames...).
-		Build(ctx)
+		WithToolNames(cfg.ToolNames...)
+
+	if cfg.Model.Name != "" || cfg.Model.BaseURL != "" {
+		chatModel, err := common.NewChatModelWithConfig(&providers.Config{
+			Provider: providers.Type(cfg.Model.Provider),
+			APIKey:   cfg.Model.APIKey,
+			BaseURL:  cfg.Model.BaseURL,
+			Model:    cfg.Model.Name,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create chat model: %w", err)
+		}
+		builder = builder.WithModel(chatModel)
+	}
+
+	return builder.Build(ctx)
 }

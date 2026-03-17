@@ -21,6 +21,7 @@ type TeamMember struct {
 	Index     int    `toml:"index"`
 	Name      string `toml:"name"`
 	Desc      string `toml:"desc"`
+	Provider  string `toml:"provider,omitempty"`
 	BaseURL   string `toml:"base_url"`
 	APIKey    string `toml:"api_key"`
 	ModelName string `toml:"model_name"`
@@ -44,6 +45,7 @@ type Agent struct {
 	Name         string   `toml:"name"`
 	Desc         string   `toml:"desc"`
 	SystemPrompt string   `toml:"system_prompt"`
+	Provider     string   `toml:"provider,omitempty"`
 	BaseURL      string   `toml:"base_url"`
 	APIKey       string   `toml:"api_key"`
 	ModelName    string   `toml:"model_name"`
@@ -147,6 +149,7 @@ func GenerateExample() error {
 					Index:     0,
 					Name:      "Deepseek Chat",
 					Desc:      "深度求索聊天模型",
+					Provider:  "deepseek",
 					BaseURL:   "https://api.deepseek.com/v1",
 					APIKey:    "xxx",
 					ModelName: "deepseek-chat",

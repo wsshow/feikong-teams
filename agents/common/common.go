@@ -5,11 +5,10 @@ import (
 	"context"
 	"errors"
 	rootcommon "fkteams/common"
+	"fkteams/providers"
 	"net"
-	"os"
 	"strings"
 
-	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 )
 
@@ -27,28 +26,12 @@ func WorkspaceDir() string {
 
 // NewChatModel 使用环境变量配置创建聊天模型
 func NewChatModel() (model.ToolCallingChatModel, error) {
-	m, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
-		APIKey:  os.Getenv("FEIKONG_OPENAI_API_KEY"),
-		BaseURL: os.Getenv("FEIKONG_OPENAI_BASE_URL"),
-		Model:   os.Getenv("FEIKONG_OPENAI_MODEL"),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return wrapWithReasoning(m), nil
+	return providers.NewChatModelFromEnv(context.Background())
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
-func NewChatModelWithConfig(modelName, baseURL, apiKey string) (model.ToolCallingChatModel, error) {
-	m, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
-		APIKey:  apiKey,
-		BaseURL: baseURL,
-		Model:   modelName,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return wrapWithReasoning(m), nil
+func NewChatModelWithConfig(cfg *providers.Config) (model.ToolCallingChatModel, error) {
+	return providers.NewChatModel(context.Background(), cfg)
 }
 
 // IsRetryAble 判断错误是否可重试（网络错误、限流等）

@@ -126,9 +126,10 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 			Description:  cfg.Custom.Moderator.Desc,
 			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
 			Model: custom.Model{
-				Name:    cfg.Custom.Moderator.ModelName,
-				APIKey:  cfg.Custom.Moderator.APIKey,
-				BaseURL: cfg.Custom.Moderator.BaseURL,
+				Provider: cfg.Custom.Moderator.Provider,
+				Name:     cfg.Custom.Moderator.ModelName,
+				APIKey:   cfg.Custom.Moderator.APIKey,
+				BaseURL:  cfg.Custom.Moderator.BaseURL,
 			},
 			ToolNames: cfg.Custom.Moderator.Tools,
 		})
@@ -148,9 +149,10 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
 			Model: custom.Model{
-				Name:    customAgent.ModelName,
-				APIKey:  customAgent.APIKey,
-				BaseURL: customAgent.BaseURL,
+				Provider: customAgent.Provider,
+				Name:     customAgent.ModelName,
+				APIKey:   customAgent.APIKey,
+				BaseURL:  customAgent.BaseURL,
 			},
 			ToolNames: customAgent.Tools,
 		})
@@ -187,9 +189,10 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 			Description:  cfg.Custom.Moderator.Desc,
 			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
 			Model: custom.Model{
-				Name:    cfg.Custom.Moderator.ModelName,
-				APIKey:  cfg.Custom.Moderator.APIKey,
-				BaseURL: cfg.Custom.Moderator.BaseURL,
+				Provider: cfg.Custom.Moderator.Provider,
+				Name:     cfg.Custom.Moderator.ModelName,
+				APIKey:   cfg.Custom.Moderator.APIKey,
+				BaseURL:  cfg.Custom.Moderator.BaseURL,
 			},
 			ToolNames: cfg.Custom.Moderator.Tools,
 		})
@@ -209,9 +212,10 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
 			Model: custom.Model{
-				Name:    customAgent.ModelName,
-				APIKey:  customAgent.APIKey,
-				BaseURL: customAgent.BaseURL,
+				Provider: customAgent.Provider,
+				Name:     customAgent.ModelName,
+				APIKey:   customAgent.APIKey,
+				BaseURL:  customAgent.BaseURL,
 			},
 			ToolNames: customAgent.Tools,
 		})

@@ -41,6 +41,9 @@ FEIKONG_OPENAI_API_KEY=your_api_key_here
 FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
 FEIKONG_OPENAI_MODEL=gpt-5
 
+# 模型提供者类型（可选，自动检测）: openai, deepseek
+# FEIKONG_PROVIDER=openai
+
 # 网络搜索工具配置（可选）
 FEIKONG_PROXY_URL=http://127.0.0.1:7890
 
@@ -179,6 +182,7 @@ transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 - `system_prompt`：系统提示词，定义智能体的行为和能力
 - `tools`：工具列表，可包含内置工具和 MCP 工具
 - `base_url`、`api_key`、`model_name`：AI 模型配置
+- `provider`：模型提供者类型（可选），支持 `openai`、`deepseek`，不设置时根据 `base_url` 和 `model_name` 自动检测
 
 ### 4. 运行
 

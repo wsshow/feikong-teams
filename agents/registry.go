@@ -124,9 +124,10 @@ func loadCustomAgents(ctx context.Context) {
 			Description:  agentCfg.Desc,
 			SystemPrompt: agentCfg.SystemPrompt,
 			Model: custom.Model{
-				Name:    agentCfg.ModelName,
-				APIKey:  agentCfg.APIKey,
-				BaseURL: agentCfg.BaseURL,
+				Provider: agentCfg.Provider,
+				Name:     agentCfg.ModelName,
+				APIKey:   agentCfg.APIKey,
+				BaseURL:  agentCfg.BaseURL,
 			},
 			ToolNames: agentCfg.Tools,
 		})

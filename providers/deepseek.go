@@ -1,44 +1,53 @@
-package common
+package providers
 
 import (
 	"context"
 	"encoding/json"
 
+	openaiModel "github.com/cloudwego/eino-ext/components/model/openai"
 	aclOpenAI "github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
-// reasoningChatModel 包装 ToolCallingChatModel，确保发送给 API 的 assistant 消息
+func newDeepSeekModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
+	m, err := openaiModel.NewChatModel(ctx, &openaiModel.ChatModelConfig{
+		APIKey:  cfg.APIKey,
+		BaseURL: cfg.BaseURL,
+		Model:   cfg.Model,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &reasoningModel{inner: m}, nil
+}
+
+// reasoningModel 包装 ToolCallingChatModel，确保发送给 API 的 assistant 消息
 // 包含 reasoning_content 字段（DeepSeek 思考模式要求）。
-type reasoningChatModel struct {
+type reasoningModel struct {
 	inner model.ToolCallingChatModel
 }
 
-func wrapWithReasoning(m model.ToolCallingChatModel) model.ToolCallingChatModel {
-	return &reasoningChatModel{inner: m}
-}
-
-func (m *reasoningChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+func (m *reasoningModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	opts = append(opts, reasoningModifierOption(input))
 	return m.inner.Generate(ctx, input, opts...)
 }
 
-func (m *reasoningChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
+func (m *reasoningModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	*schema.StreamReader[*schema.Message], error) {
 	opts = append(opts, reasoningModifierOption(input))
 	return m.inner.Stream(ctx, input, opts...)
 }
 
-func (m *reasoningChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+func (m *reasoningModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	inner, err := m.inner.WithTools(tools)
 	if err != nil {
 		return nil, err
 	}
-	return &reasoningChatModel{inner: inner}, nil
+	return &reasoningModel{inner: inner}, nil
 }
 
-// reasoningModifierOption 创建一个 RequestPayloadModifier，为 JSON 请求体中的
+// reasoningModifierOption 创建 RequestPayloadModifier，为 JSON 请求体中的
 // assistant 消息注入 reasoning_content 字段。
 func reasoningModifierOption(msgs []*schema.Message) model.Option {
 	return aclOpenAI.WithRequestPayloadModifier(
@@ -58,7 +67,6 @@ func reasoningModifierOption(msgs []*schema.Message) model.Option {
 				return rawBody, nil
 			}
 
-			// 收集原始 schema.Message 中 assistant 角色的 ReasoningContent
 			reasoningMap := buildReasoningMap(msgs)
 
 			modified := false
