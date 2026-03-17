@@ -23,13 +23,24 @@ var upgrader = websocket.Upgrader{
 
 // WSMessage WebSocket 消息类型
 type WSMessage struct {
-	Type      string   `json:"type"`
-	SessionID string   `json:"session_id,omitempty"`
-	Message   string   `json:"message,omitempty"`
-	Mode      string   `json:"mode,omitempty"`
-	AgentName string   `json:"agent_name,omitempty"`
-	FilePaths []string `json:"file_paths,omitempty"`
-	Decision  int      `json:"decision,omitempty"` // HITL 审批决定
+	Type      string          `json:"type"`
+	SessionID string          `json:"session_id,omitempty"`
+	Message   string          `json:"message,omitempty"`
+	Mode      string          `json:"mode,omitempty"`
+	AgentName string          `json:"agent_name,omitempty"`
+	FilePaths []string        `json:"file_paths,omitempty"`
+	Decision  int             `json:"decision,omitempty"` // HITL 审批决定
+	Contents  []WSContentPart `json:"contents,omitempty"` // 多模态内容
+}
+
+// WSContentPart 多模态内容部分
+type WSContentPart struct {
+	Type       string `json:"type"`                  // text, image_url, image_base64, audio_url, video_url, file_url
+	Text       string `json:"text,omitempty"`        // type=text 时的文本内容
+	URL        string `json:"url,omitempty"`         // type=image_url/audio_url/video_url/file_url 时的 URL
+	Base64Data string `json:"base64_data,omitempty"` // type=image_base64 时的 Base64 数据
+	MIMEType   string `json:"mime_type,omitempty"`   // type=image_base64 时的 MIME 类型
+	Detail     string `json:"detail,omitempty"`      // type=image_url 时的精度: high/low/auto
 }
 
 // WebSocketHandler 处理 WebSocket 连接

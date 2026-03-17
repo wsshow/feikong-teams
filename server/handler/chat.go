@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/schema"
 )
 
 // RunnerCache 基于双重检查锁的 Runner 缓存
@@ -141,10 +142,26 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	// 获取该会话的 HistoryRecorder（自动从文件加载或创建新的）
 	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 
-	// 构建输入消息（含历史）
-	inputMessages := chatutil.BuildInputMessages(recorder, wsMsg.Message)
+	// 构建输入消息（含历史），支持多模态
+	var inputMessages []adk.Message
+	var userDisplayText string
+
+	if len(wsMsg.Contents) > 0 {
+		// 多模态输入
+		parts := convertWSContentParts(wsMsg.Contents)
+		userDisplayText = chatutil.ExtractTextFromParts(parts)
+		if userDisplayText == "" {
+			userDisplayText = wsMsg.Message
+		}
+		inputMessages = chatutil.BuildMultimodalInputMessages(recorder, userDisplayText, parts)
+	} else {
+		// 纯文本输入
+		userDisplayText = wsMsg.Message
+		inputMessages = chatutil.BuildInputMessages(recorder, wsMsg.Message)
+	}
+
 	countBeforeRun := recorder.GetMessageCount()
-	recorder.RecordUserInput(wsMsg.Message)
+	recorder.RecordUserInput(userDisplayText)
 
 	// 获取 runner
 	var r *adk.Runner
@@ -312,6 +329,39 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 	}
 	if event.Error != "" {
 		result["error"] = event.Error
+	}
+	return result
+}
+
+// convertWSContentParts 将前端传入的多模态内容转换为 eino MessageInputPart
+func convertWSContentParts(parts []WSContentPart) []schema.MessageInputPart {
+	result := make([]schema.MessageInputPart, 0, len(parts))
+	for _, p := range parts {
+		switch p.Type {
+		case "text":
+			result = append(result, chatutil.TextPart(p.Text))
+		case "image_url":
+			detail := schema.ImageURLDetailAuto
+			switch p.Detail {
+			case "high":
+				detail = schema.ImageURLDetailHigh
+			case "low":
+				detail = schema.ImageURLDetailLow
+			}
+			result = append(result, chatutil.ImageURLPart(p.URL, detail))
+		case "image_base64":
+			mimeType := p.MIMEType
+			if mimeType == "" {
+				mimeType = "image/png"
+			}
+			result = append(result, chatutil.ImageBase64Part(p.Base64Data, mimeType))
+		case "audio_url":
+			result = append(result, chatutil.AudioURLPart(p.URL))
+		case "video_url":
+			result = append(result, chatutil.VideoURLPart(p.URL))
+		case "file_url":
+			result = append(result, chatutil.FileURLPart(p.URL))
+		}
 	}
 	return result
 }

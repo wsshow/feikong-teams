@@ -19,12 +19,13 @@ import (
 
 // ChatRequest HTTP 聊天请求
 type ChatRequest struct {
-	SessionID string   `json:"session_id"`
-	Message   string   `json:"message" binding:"required"`
-	Mode      string   `json:"mode"`
-	AgentName string   `json:"agent_name"`
-	FilePaths []string `json:"file_paths"`
-	Stream    bool     `json:"stream"`
+	SessionID string          `json:"session_id"`
+	Message   string          `json:"message"`
+	Mode      string          `json:"mode"`
+	AgentName string          `json:"agent_name"`
+	FilePaths []string        `json:"file_paths"`
+	Stream    bool            `json:"stream"`
+	Contents  []WSContentPart `json:"contents"` // 多模态内容
 }
 
 // ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
@@ -33,6 +34,12 @@ func ChatHandler() gin.HandlerFunc {
 		var req ChatRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+			return
+		}
+
+		// 验证输入：纯文本或多模态内容至少提供一个
+		if req.Message == "" && len(req.Contents) == 0 {
+			Fail(c, http.StatusBadRequest, "message or contents is required")
 			return
 		}
 
@@ -65,9 +72,25 @@ func ChatHandler() gin.HandlerFunc {
 
 		// 获取该会话的 HistoryRecorder
 		recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-		inputMessages := chatutil.BuildInputMessages(recorder, req.Message)
+
+		// 构建输入消息，支持多模态
+		var inputMessages []adk.Message
+		var userDisplayText string
+
+		if len(req.Contents) > 0 {
+			parts := convertWSContentParts(req.Contents)
+			userDisplayText = chatutil.ExtractTextFromParts(parts)
+			if userDisplayText == "" {
+				userDisplayText = req.Message
+			}
+			inputMessages = chatutil.BuildMultimodalInputMessages(recorder, userDisplayText, parts)
+		} else {
+			userDisplayText = req.Message
+			inputMessages = chatutil.BuildInputMessages(recorder, req.Message)
+		}
+
 		countBeforeRun := recorder.GetMessageCount()
-		recorder.RecordUserInput(req.Message)
+		recorder.RecordUserInput(userDisplayText)
 
 		if req.Stream {
 			handleStreamChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID)
