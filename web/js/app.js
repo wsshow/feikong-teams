@@ -27,6 +27,7 @@ class FKTeamsChat {
     this.fileSuggestions = null; // 文件建议弹窗
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
+    this.attachments = []; // 多模态附件列表
 
     this.init();
   }
@@ -62,6 +63,7 @@ class FKTeamsChat {
     this.initTooltips();
     this.initMobileToolbar();
     this.initSchedule();
+    this.initFileUpload();
     this.loadAgents();
     this.connect();
   }
@@ -348,7 +350,8 @@ class FKTeamsChat {
 
   handleInputChange() {
     const hasContent = this.messageInput.value.trim().length > 0;
-    this.sendBtn.disabled = !hasContent || this.isProcessing;
+    const hasAttachments = this.attachments && this.attachments.length > 0;
+    this.sendBtn.disabled = (!hasContent && !hasAttachments) || this.isProcessing;
     this.messageInput.style.height = "auto";
     this.messageInput.style.height =
       Math.min(this.messageInput.scrollHeight, 120) + "px";
@@ -415,7 +418,8 @@ class FKTeamsChat {
       this.cancelBtn.style.display = "none";
       this.messageInput.disabled = false;
       const hasContent = this.messageInput.value.trim().length > 0;
-      this.sendBtn.disabled = !hasContent;
+      const hasAttachments = this.attachments && this.attachments.length > 0;
+      this.sendBtn.disabled = !hasContent && !hasAttachments;
     }
   }
 

@@ -157,7 +157,16 @@
         </button>
 
         <div class="input-container">
+          <div id="attachments-preview" class="attachments-preview"></div>
           <div class="input-wrapper">
+            <button class="upload-btn" id="upload-btn" title="上传图片">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </button>
+            <input type="file" id="file-upload" accept="image/*" multiple style="display:none" />
             <textarea id="message-input" class="message-input" placeholder="请输入消息..." rows="1"></textarea>
             <button class="cancel-btn" id="cancel-btn" style="display: none">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

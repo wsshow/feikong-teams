@@ -401,6 +401,20 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, f
 
             msg.events.forEach(evt => {
                 switch (evt.type) {
+                    case 'reasoning':
+                        // 在导出HTML中渲染推理内容
+                        messagesHTML += flushText();
+                        if (evt.content) {
+                            const rendered = this.renderMarkdown(evt.content);
+                            messagesHTML += `
+                            <div class="message assistant" data-agent="${this.escapeHtml(msg.agent_name || '')}">
+                                <div class="message-content">
+                                    <div class="message-header"><span class="message-name">${this.escapeHtml(msg.agent_name || 'Assistant')}</span></div>
+                                    <div class="message-body"><details><summary>思考过程</summary>${rendered}</details></div>
+                                </div>
+                            </div>`;
+                        }
+                        break;
                     case 'text':
                         currentTextBlock += evt.content || '';
                         break;
@@ -427,14 +441,14 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, f
                                 }
                                 resultHTML = `
                                     <div class="tool-result">
-                                        <div class="tool-result-header">✅ 执行结果</div>
+                                        <div class="tool-result-header">执行结果</div>
                                         <pre class="tool-result-content">${this.escapeHtml(formattedResult)}</pre>
                                     </div>`;
                             }
 
                             messagesHTML += `
                                 <div class="tool-call">
-                                    <div class="tool-call-header">🔧 工具调用: <code>${this.escapeHtml(tc.name || 'tool')}</code></div>
+                                    <div class="tool-call-header">工具调用: <code>${this.escapeHtml(tc.name || 'tool')}</code></div>
                                     ${argsDisplay ? `<pre class="tool-call-args">${this.escapeHtml(argsDisplay)}</pre>` : ''}
                                     ${resultHTML}
                                 </div>`;
@@ -689,6 +703,32 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
 
                 msg.events.forEach(evt => {
                     switch (evt.type) {
+                        case 'reasoning':
+                            // 渲染推理/思考内容
+                            if (!currentMessageEl) {
+                                currentMessageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
+                            }
+                            const reasoningBodyEl = currentMessageEl.querySelector('.message-body');
+                            if (reasoningBodyEl && evt.content) {
+                                const indicator = reasoningBodyEl.querySelector('.streaming-indicator');
+                                if (indicator) indicator.remove();
+                                let reasoningBlock = reasoningBodyEl.querySelector('.reasoning-block');
+                                if (!reasoningBlock) {
+                                    reasoningBlock = document.createElement('div');
+                                    reasoningBlock.className = 'reasoning-block';
+                                    reasoningBlock.innerHTML = `
+                                        <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+                                            <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
+                                            <span class="reasoning-title">思考过程</span>
+                                            <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                        </div>
+                                        <div class="reasoning-content">${this.renderMarkdown(evt.content)}</div>
+                                    `;
+                                    reasoningBodyEl.prepend(reasoningBlock);
+                                }
+                            }
+                            break;
+
                         case 'text':
                             // 累积文本内容
                             currentContent += evt.content;
@@ -699,9 +739,22 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
                             // 更新消息体
                             const bodyEl = currentMessageEl.querySelector('.message-body');
                             if (bodyEl) {
+                                const indicator = bodyEl.querySelector('.streaming-indicator');
+                                if (indicator) indicator.remove();
                                 bodyEl.setAttribute('data-raw', currentContent);
                                 bodyEl.setAttribute('data-fn-done', '1');
-                                bodyEl.innerHTML = this.renderMarkdown(currentContent);
+                                const existingReasoning = bodyEl.querySelector('.reasoning-block');
+                                if (existingReasoning) {
+                                    let textContainer = bodyEl.querySelector('.message-text-content');
+                                    if (!textContainer) {
+                                        textContainer = document.createElement('div');
+                                        textContainer.className = 'message-text-content';
+                                        bodyEl.appendChild(textContainer);
+                                    }
+                                    textContainer.innerHTML = this.renderMarkdown(currentContent);
+                                } else {
+                                    bodyEl.innerHTML = this.renderMarkdown(currentContent);
+                                }
                             }
                             break;
 

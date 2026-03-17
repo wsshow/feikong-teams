@@ -4,7 +4,8 @@
 
 FKTeamsChat.prototype.sendMessage = function () {
     const message = this.messageInput.value.trim();
-    if (!message || this.isProcessing) return;
+    const hasAttachments = this.attachments && this.attachments.length > 0;
+    if ((!message && !hasAttachments) || this.isProcessing) return;
 
     const welcomeMsg = this.messagesContainer.querySelector('.welcome-message');
     if (welcomeMsg) welcomeMsg.remove();
@@ -39,15 +40,14 @@ FKTeamsChat.prototype.sendMessage = function () {
         }
     }
 
-    this.addUserMessage(message);
+    // 显示用户消息（包含附件预览）
+    this.addUserMessage(message, this.attachments);
 
-    // 发送消息 - 始终发送完整的原始消息（包括@智能体和#文件部分）
-    // 如果指定了智能体则包含agent_name字段
-    // 如果有文件路径则包含file_paths字段
+    // 构建发送 payload
     const payload = {
         type: 'chat',
         session_id: this.sessionId,
-        message: message,  // 发送完整的原始消息
+        message: message,
         mode: this.mode
     };
 
@@ -59,9 +59,28 @@ FKTeamsChat.prototype.sendMessage = function () {
         payload.file_paths = filePaths;
     }
 
+    // 多模态内容
+    if (hasAttachments) {
+        const contents = [];
+        if (message) {
+            contents.push({ type: 'text', text: message });
+        }
+        for (const att of this.attachments) {
+            if (att.type === 'image') {
+                contents.push({
+                    type: 'image_base64',
+                    base64_data: att.base64,
+                    mime_type: att.mimeType
+                });
+            }
+        }
+        payload.contents = contents;
+    }
+
     this.ws.send(JSON.stringify(payload));
 
     this.messageInput.value = '';
+    this.clearAttachments();
     this.handleInputChange();
     this.isProcessing = true;
     this.updateSendButtonState();
@@ -147,6 +166,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
             break;
         case 'stream_chunk':
             this.handleStreamChunk(event);
+            break;
+        case 'reasoning_chunk':
+            this.handleReasoningChunk(event);
             break;
         case 'message':
             this.handleMessage(event);
@@ -377,6 +399,14 @@ FKTeamsChat.prototype.handleStreamChunk = function (event) {
         const indicator = bodyEl.querySelector('.streaming-indicator');
         if (indicator) indicator.remove();
 
+        // 推理结束后开始正式内容：折叠推理块并更新标题
+        const reasoningBlock = bodyEl.querySelector('.reasoning-block.expanded');
+        if (reasoningBlock) {
+            reasoningBlock.classList.remove('expanded');
+            const title = reasoningBlock.querySelector('.reasoning-title');
+            if (title) title.textContent = '思考过程';
+        }
+
         // 获取原始文本
         let rawText = bodyEl.getAttribute('data-raw') || '';
         let newContent = event.content || '';
@@ -405,8 +435,54 @@ FKTeamsChat.prototype.handleStreamChunk = function (event) {
     this.scrollToBottom();
 };
 
+// 处理推理/思考内容的流式事件
+FKTeamsChat.prototype.handleReasoningChunk = function (event) {
+    // 检查是否需要创建新卡片
+    const currentAgentName = this.currentMessageElement?.getAttribute('data-agent');
+    const needNewCard = this.hasToolCallAfterMessage ||
+        !this.currentMessageElement ||
+        (event.agent_name && currentAgentName !== event.agent_name);
+
+    if (needNewCard) {
+        this.currentMessageElement = this.createAssistantMessage(event.agent_name);
+        this.hasToolCallAfterMessage = false;
+    }
+
+    const bodyEl = this.currentMessageElement.querySelector('.message-body');
+    if (!bodyEl) return;
+
+    const indicator = bodyEl.querySelector('.streaming-indicator');
+    if (indicator) indicator.remove();
+
+    // 查找或创建推理内容块
+    let reasoningBlock = bodyEl.querySelector('.reasoning-block');
+    if (!reasoningBlock) {
+        reasoningBlock = document.createElement('div');
+        reasoningBlock.className = 'reasoning-block expanded';
+        reasoningBlock.innerHTML = `
+            <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+                <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
+                <span class="reasoning-title">思考中...</span>
+                <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="reasoning-content"></div>
+        `;
+        bodyEl.prepend(reasoningBlock);
+    }
+
+    const contentEl = reasoningBlock.querySelector('.reasoning-content');
+    if (contentEl) {
+        let rawReasoning = contentEl.getAttribute('data-raw') || '';
+        rawReasoning += event.content || '';
+        contentEl.setAttribute('data-raw', rawReasoning);
+        contentEl.innerHTML = this.renderMarkdown(rawReasoning, true);
+    }
+
+    this.scrollToBottom();
+};
+
 FKTeamsChat.prototype.handleMessage = function (event) {
-    if (!event.content) return;
+    if (!event.content && !event.reasoning_content) return;
 
     // 检查是否需要创建新卡片：工具调用后、没有当前元素、或者 agent 名称变化
     const currentAgentName = this.currentMessageElement?.getAttribute('data-agent');
@@ -424,10 +500,43 @@ FKTeamsChat.prototype.handleMessage = function (event) {
         const indicator = bodyEl.querySelector('.streaming-indicator');
         if (indicator) indicator.remove();
 
-        const content = this.trimLeadingWhitespace(event.content);
-        bodyEl.setAttribute('data-raw', content);
-        bodyEl.setAttribute('data-fn-done', '1');
-        bodyEl.innerHTML = this.renderMarkdown(content);
+        // 处理推理/思考内容（非流式完整消息）
+        if (event.reasoning_content) {
+            let reasoningBlock = bodyEl.querySelector('.reasoning-block');
+            if (!reasoningBlock) {
+                reasoningBlock = document.createElement('div');
+                reasoningBlock.className = 'reasoning-block';
+                reasoningBlock.innerHTML = `
+                    <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
+                        <span class="reasoning-title">思考过程</span>
+                        <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                    <div class="reasoning-content">${this.renderMarkdown(event.reasoning_content)}</div>
+                `;
+                bodyEl.prepend(reasoningBlock);
+            }
+        }
+
+        if (event.content) {
+            const content = this.trimLeadingWhitespace(event.content);
+            bodyEl.setAttribute('data-raw', content);
+            bodyEl.setAttribute('data-fn-done', '1');
+            // 保留已有的推理块
+            const existingReasoning = bodyEl.querySelector('.reasoning-block');
+            if (existingReasoning) {
+                // 保留推理块，创建新的文本内容容器
+                let textContainer = bodyEl.querySelector('.message-text-content');
+                if (!textContainer) {
+                    textContainer = document.createElement('div');
+                    textContainer.className = 'message-text-content';
+                    bodyEl.appendChild(textContainer);
+                }
+                textContainer.innerHTML = this.renderMarkdown(content);
+            } else {
+                bodyEl.innerHTML = this.renderMarkdown(content);
+            }
+        }
     }
     this.scrollToBottom();
 };
@@ -605,16 +714,31 @@ FKTeamsChat.prototype.handleError = function (event) {
     this.updateSendButtonState();
 };
 
-FKTeamsChat.prototype.addUserMessage = function (content) {
+FKTeamsChat.prototype.addUserMessage = function (content, attachments) {
     const messageEl = document.createElement('div');
     messageEl.className = 'message user';
     messageEl.setAttribute('data-message-id', `msg-${Date.now()}`);
+
+    let attachmentsHtml = '';
+    if (attachments && attachments.length > 0) {
+        const previews = attachments.map(att => {
+            if (att.type === 'image') {
+                return `<img class="attachment-preview-img" src="data:${att.mimeType};base64,${att.base64}" alt="uploaded image" />`;
+            }
+            return '';
+        }).join('');
+        if (previews) {
+            attachmentsHtml = `<div class="message-attachments">${previews}</div>`;
+        }
+    }
+
     messageEl.innerHTML = `
         <div class="message-content">
             <div class="message-header">
                 <span class="message-name">您</span>
                 <span class="message-time">${this.getCurrentTime()}</span>
             </div>
+            ${attachmentsHtml}
             <div class="message-body">${this.escapeHtml(content)}</div>
         </div>
     `;
@@ -723,6 +847,74 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
     this.scrollToBottom();
 
     this.updateStatus('processing', '处理中...');
+};
+
+// 附件管理
+FKTeamsChat.prototype.clearAttachments = function () {
+    this.attachments = [];
+    const preview = document.getElementById('attachments-preview');
+    if (preview) {
+        preview.innerHTML = '';
+        preview.style.display = 'none';
+    }
+    this.updateSendButtonState();
+};
+
+FKTeamsChat.prototype.removeAttachment = function (index) {
+    this.attachments.splice(index, 1);
+    this.renderAttachmentPreviews();
+    this.updateSendButtonState();
+};
+
+FKTeamsChat.prototype.renderAttachmentPreviews = function () {
+    const preview = document.getElementById('attachments-preview');
+    if (!preview) return;
+
+    if (this.attachments.length === 0) {
+        preview.innerHTML = '';
+        preview.style.display = 'none';
+        return;
+    }
+
+    preview.style.display = 'flex';
+    preview.innerHTML = this.attachments.map((att, i) => {
+        if (att.type === 'image') {
+            return `<div class="attachment-item">
+                <img src="data:${att.mimeType};base64,${att.base64}" alt="preview" />
+                <button class="attachment-remove" onclick="app.removeAttachment(${i})">&times;</button>
+            </div>`;
+        }
+        return '';
+    }).join('');
+};
+
+FKTeamsChat.prototype.initFileUpload = function () {
+    const fileInput = document.getElementById('file-upload');
+    const uploadBtn = document.getElementById('upload-btn');
+    if (!fileInput || !uploadBtn) return;
+
+    uploadBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        files.forEach(file => {
+            if (!file.type.startsWith('image/')) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const base64 = ev.target.result.split(',')[1];
+                this.attachments.push({
+                    type: 'image',
+                    mimeType: file.type,
+                    base64: base64,
+                    name: file.name
+                });
+                this.renderAttachmentPreviews();
+                this.updateSendButtonState();
+            };
+            reader.readAsDataURL(file);
+        });
+        fileInput.value = '';
+    });
 };
 
 FKTeamsChat.prototype.clearChat = function () {
