@@ -805,6 +805,75 @@ FEIKONG_MEMORY_ENABLED = true
 
 启用后，CLI 模式和 Web 模式均自动工作，无需额外配置。
 
+## 多模态支持
+
+fkteams 支持多模态输入，允许用户在对话中发送文本、图片、音频、视频和文件。
+
+### 支持的内容类型
+
+| 类型           | 说明                                              | 字段                       |
+| -------------- | ------------------------------------------------- | -------------------------- |
+| `text`         | 文本内容                                          | `text`                     |
+| `image_url`    | 图片 URL（支持 `detail` 精度控制: high/low/auto） | `url`, `detail`            |
+| `image_base64` | Base64 编码图片                                   | `base64_data`, `mime_type` |
+| `audio_url`    | 音频 URL                                          | `url`                      |
+| `video_url`    | 视频 URL                                          | `url`                      |
+| `file_url`     | 文件 URL                                          | `url`                      |
+
+### WebSocket 消息格式
+
+通过 WebSocket 发送多模态消息时，使用 `contents` 字段：
+
+```json
+{
+  "type": "chat",
+  "session_id": "default",
+  "contents": [
+    {"type": "text", "text": "这张图片里有什么？"},
+    {"type": "image_url", "url": "https://example.com/cat.jpg", "detail": "high"}
+  ]
+}
+```
+
+也可以使用 Base64 编码的图片：
+
+```json
+{
+  "type": "chat",
+  "session_id": "default",
+  "contents": [
+    {"type": "text", "text": "描述这张图片"},
+    {"type": "image_base64", "base64_data": "...", "mime_type": "image/png"}
+  ]
+}
+```
+
+### HTTP API
+
+HTTP POST `/api/chat` 同样支持 `contents` 字段，格式与 WebSocket 一致。
+
+> **注意**：多模态功能的实际效果取决于所使用的模型是否支持对应的输入类型（如视觉理解需要 GPT-4o、Claude 等多模态模型）。
+
+## 推理模型支持
+
+fkteams 原生支持推理/思考模型（如 DeepSeek-R1、OpenAI o1/o3 等），能够流式展示模型的思考过程。
+
+### 工作方式
+
+- **流式思考输出**：推理模型在生成最终回答前的思考过程，会通过 `reasoning_chunk` 事件实时输出
+- **CLI 模式**：思考内容以灰色斜体显示（💭 思考中: ...），与正式回答区分
+- **Web 模式**：通过 WebSocket 的 `reasoning_chunk` 事件传递，前端可自行定制展示样式
+- **历史记录**：思考内容以 `reasoning` 类型事件记录在对话历史中
+
+### 事件类型
+
+| 事件                                | 说明                             |
+| ----------------------------------- | -------------------------------- |
+| `reasoning_chunk`                   | 推理/思考过程的流式增量内容      |
+| `message`（含 `reasoning_content`） | 非流式完整消息，包含推理内容字段 |
+
+> **注意**：只有支持推理/思考的模型才会产生此类事件，普通模型不受影响。
+
 ## 安全说明
 
 - **文件操作限制**：文件操作被限制在工作目录 `workspace/` 下（可通过 `FEIKONG_WORKSPACE_DIR` 配置），防止误操作系统文件

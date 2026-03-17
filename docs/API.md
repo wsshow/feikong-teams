@@ -159,18 +159,20 @@ Token 格式为 `hex(payload).hex(hmac-sha256)`，payload 为 `username|expiry(R
   "mode": "string",
   "agent_name": "string",
   "file_paths": ["string"],
-  "stream": false
+  "stream": false,
+  "contents": []
 }
 ```
 
-| 字段         | 类型     | 必填 | 说明                                                           |
-| ------------ | -------- | ---- | -------------------------------------------------------------- |
-| `message`    | string   | 是   | 用户输入的文本                                                 |
-| `session_id` | string   | 否   | 会话标识，默认 `"default"`                                     |
-| `mode`       | string   | 否   | 运行模式：`supervisor`（默认）、`roundtable`、`custom`、`deep` |
-| `agent_name` | string   | 否   | 指定单个智能体直接对话（优先级高于 mode）                      |
-| `file_paths` | string[] | 否   | 引用的文件路径列表                                             |
-| `stream`     | bool     | 否   | 是否使用 SSE 流式响应，默认 `false`                            |
+| 字段         | 类型     | 必填 | 说明                                                                                                                |
+| ------------ | -------- | ---- | ------------------------------------------------------------------------------------------------------------------- |
+| `message`    | string   | 条件 | 用户输入的文本（`message` 和 `contents` 至少提供一个）                                                              |
+| `session_id` | string   | 否   | 会话标识，默认 `"default"`                                                                                          |
+| `mode`       | string   | 否   | 运行模式：`supervisor`（默认）、`roundtable`、`custom`、`deep`                                                      |
+| `agent_name` | string   | 否   | 指定单个智能体直接对话（优先级高于 mode）                                                                           |
+| `file_paths` | string[] | 否   | 引用的文件路径列表                                                                                                  |
+| `stream`     | bool     | 否   | 是否使用 SSE 流式响应，默认 `false`                                                                                 |
+| `contents`   | array    | 否   | 多模态内容部分（存在时优先于 `message`），每项包含 `type`、`text`、`url`、`base64_data`、`mime_type`、`detail` 字段 |
 
 **同步响应** (`stream: false`)：
 
@@ -583,7 +585,17 @@ data: {"type":"processing_end","message":"处理完成"}
   "message": "string",
   "mode": "string",
   "agent_name": "string",
-  "file_paths": ["string"]
+  "file_paths": ["string"],
+  "contents": [
+    {
+      "type": "text|image_url|image_base64|audio_url|video_url|file_url",
+      "text": "string",
+      "url": "string",
+      "base64_data": "string",
+      "mime_type": "string",
+      "detail": "high|low|auto"
+    }
+  ]
 }
 ```
 
@@ -596,6 +608,7 @@ data: {"type":"processing_end","message":"处理完成"}
 | `mode`       | 运行模式：`supervisor`（默认）、`roundtable`、`custom`、`deep` |
 | `agent_name` | 指定单个智能体直接对话（优先级高于 mode）                      |
 | `file_paths` | 引用的文件路径列表                                             |
+| `contents`   | 多模态内容部分（可选，存在时优先于 `message` 字段）            |
 
 **处理流程**：
 
@@ -681,22 +694,24 @@ data: {"type":"processing_end","message":"处理完成"}
   "agent_name": "string",
   "run_path": "string",
   "content": "string",
+  "reasoning_content": "string",
   "tool_calls": [],
   "action_type": "string",
   "error": "string"
 }
 ```
 
-| type                   | 触发场景           | 关键字段                                      |
-| ---------------------- | ------------------ | --------------------------------------------- |
-| `message`              | Agent 输出完整消息 | `content`，可能含 `tool_calls`                |
-| `tool_result`          | Tool 返回完整结果  | `content`                                     |
-| `stream_chunk`         | 流式输出文本块     | `content`                                     |
-| `tool_result_chunk`    | Tool 流式输出块    | `content`                                     |
-| `tool_calls_preparing` | 识别到工具调用开始 | `tool_calls[].name`                           |
-| `tool_calls`           | 完整的工具调用信息 | `tool_calls[].name`、`tool_calls[].arguments` |
-| `action`               | Agent 执行动作     | `action_type`、`content`                      |
-| `error`                | Agent 执行错误     | `error`                                       |
+| type                   | 触发场景              | 关键字段                                            |
+| ---------------------- | --------------------- | --------------------------------------------------- |
+| `message`              | Agent 输出完整消息    | `content`，可能含 `tool_calls`、`reasoning_content` |
+| `tool_result`          | Tool 返回完整结果     | `content`                                           |
+| `stream_chunk`         | 流式输出文本块        | `content`                                           |
+| `reasoning_chunk`      | 推理/思考过程流式增量 | `content`（仅推理模型）                             |
+| `tool_result_chunk`    | Tool 流式输出块       | `content`                                           |
+| `tool_calls_preparing` | 识别到工具调用开始    | `tool_calls[].name`                                 |
+| `tool_calls`           | 完整的工具调用信息    | `tool_calls[].name`、`tool_calls[].arguments`       |
+| `action`               | Agent 执行动作        | `action_type`、`content`                            |
+| `error`                | Agent 执行错误        | `error`                                             |
 
 **action_type 子类型**：
 
