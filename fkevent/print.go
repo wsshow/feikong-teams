@@ -12,9 +12,25 @@ var PrintEvent = printEvent()
 func printEvent() func(Event) {
 	agentName := ""
 	lastToolName := ""
+	inReasoning := false // 是否正在输出推理内容
 	return func(event Event) {
 		switch event.Type {
+		case "reasoning_chunk":
+			if agentName != event.AgentName {
+				agentName = event.AgentName
+				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
+			}
+			if !inReasoning {
+				inReasoning = true
+				fmt.Printf("\033[90m💭 思考中: \033[0m\033[3;90m")
+			}
+			fmt.Printf("%s", event.Content)
+
 		case "stream_chunk":
+			if inReasoning {
+				inReasoning = false
+				fmt.Printf("\033[0m\n") // 结束斜体和灰色
+			}
 			if agentName != event.AgentName {
 				agentName = event.AgentName
 				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
@@ -23,6 +39,13 @@ func printEvent() func(Event) {
 			fmt.Printf("%s", event.Content)
 
 		case "message":
+			if inReasoning {
+				inReasoning = false
+				fmt.Printf("\033[0m\n")
+			}
+			if event.ReasoningContent != "" {
+				fmt.Printf("\n\033[90m💭 [%s] 思考:\033[0m \033[3;90m%s\033[0m\n", event.AgentName, event.ReasoningContent)
+			}
 			if event.Content != "" {
 				fmt.Printf("\n\033[1;32m✓ [%s] 消息:\033[0m %s\n", event.AgentName, event.Content)
 			}
@@ -60,6 +83,10 @@ func printEvent() func(Event) {
 			fmt.Printf("%s", event.Content)
 
 		case "tool_calls_preparing":
+			if inReasoning {
+				inReasoning = false
+				fmt.Printf("\033[0m\n")
+			}
 			for _, tool := range event.ToolCalls {
 				if tool.Function.Name != "" {
 					fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, tool.Function.Name)

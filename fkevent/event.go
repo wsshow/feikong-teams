@@ -16,14 +16,15 @@ import (
 
 // Event 统一的事件结构，承载各类智能体输出
 type Event struct {
-	Type       string            `json:"type"`
-	AgentName  string            `json:"agent_name,omitempty"`
-	RunPath    string            `json:"run_path,omitempty"`
-	Content    string            `json:"content,omitempty"`
-	Detail     string            `json:"detail,omitempty"`
-	ToolCalls  []schema.ToolCall `json:"tool_calls,omitempty"`
-	ActionType string            `json:"action_type,omitempty"`
-	Error      string            `json:"error,omitempty"`
+	Type             string            `json:"type"`
+	AgentName        string            `json:"agent_name,omitempty"`
+	RunPath          string            `json:"run_path,omitempty"`
+	Content          string            `json:"content,omitempty"`
+	Detail           string            `json:"detail,omitempty"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"` // 推理模型思考内容
+	ToolCalls        []schema.ToolCall `json:"tool_calls,omitempty"`
+	ActionType       string            `json:"action_type,omitempty"`
+	Error            string            `json:"error,omitempty"`
 }
 
 // formatRunPath 将运行路径格式化为字符串
@@ -100,10 +101,11 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 	}
 
 	nEvent := Event{
-		Type:      eventType,
-		AgentName: event.AgentName,
-		RunPath:   formatRunPath(event.RunPath),
-		Content:   msg.Content,
+		Type:             eventType,
+		AgentName:        event.AgentName,
+		RunPath:          formatRunPath(event.RunPath),
+		Content:          msg.Content,
+		ReasoningContent: msg.ReasoningContent,
 	}
 
 	if len(msg.ToolCalls) > 0 {
@@ -161,6 +163,18 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 			}
 
 			chunk := r.chunk
+			// 处理推理/思考内容（推理模型如 DeepSeek-R1、o1）
+			if chunk.ReasoningContent != "" {
+				if err := handleEvent(ctx, Event{
+					Type:      "reasoning_chunk",
+					AgentName: event.AgentName,
+					RunPath:   formatRunPath(event.RunPath),
+					Content:   chunk.ReasoningContent,
+				}); err != nil {
+					return err
+				}
+			}
+
 			if chunk.Content != "" {
 				eventType := "stream_chunk"
 				if chunk.Role == schema.Tool {

@@ -27,7 +27,7 @@ type HistoryData struct {
 	Messages []AgentMessage `json:"messages"`
 }
 
-// MessageEvent 单个消息事件，Type: "text" | "tool_call" | "action"
+// MessageEvent 单个消息事件，Type: "text" | "reasoning" | "tool_call" | "action"
 type MessageEvent struct {
 	Type     string          `json:"type"`
 	Content  string          `json:"content,omitempty"`
@@ -49,6 +49,17 @@ func (m *AgentMessage) GetTextContent() string {
 	var builder strings.Builder
 	for _, event := range m.Events {
 		if event.Type == "text" {
+			builder.WriteString(event.Content)
+		}
+	}
+	return builder.String()
+}
+
+// GetReasoningContent 获取消息中的推理/思考内容
+func (m *AgentMessage) GetReasoningContent() string {
+	var builder strings.Builder
+	for _, event := range m.Events {
+		if event.Type == "reasoning" {
 			builder.WriteString(event.Content)
 		}
 	}
@@ -101,6 +112,18 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	defer h.mu.Unlock()
 
 	switch event.Type {
+	case "reasoning_chunk":
+		h.ensureAgentContext(event)
+		// 合并连续推理事件
+		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == "reasoning" {
+			h.currentEvents[n-1].Content += event.Content
+		} else {
+			h.currentEvents = append(h.currentEvents, MessageEvent{
+				Type:    "reasoning",
+				Content: event.Content,
+			})
+		}
+
 	case "stream_chunk":
 		h.ensureAgentContext(event)
 		// 合并连续文本事件
@@ -154,6 +177,21 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 					Arguments: tc.Arguments,
 					Result:    event.Content,
 				},
+			})
+		}
+
+	case "message":
+		h.ensureAgentContext(event)
+		if event.ReasoningContent != "" {
+			h.currentEvents = append(h.currentEvents, MessageEvent{
+				Type:    "reasoning",
+				Content: event.ReasoningContent,
+			})
+		}
+		if event.Content != "" {
+			h.currentEvents = append(h.currentEvents, MessageEvent{
+				Type:    "text",
+				Content: event.Content,
 			})
 		}
 

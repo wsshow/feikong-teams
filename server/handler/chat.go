@@ -290,6 +290,9 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 	if event.Content != "" {
 		result["content"] = event.Content
 	}
+	if event.ReasoningContent != "" {
+		result["reasoning_content"] = event.ReasoningContent
+	}
 	if len(event.ToolCalls) > 0 {
 		toolCalls := make([]map[string]interface{}, 0, len(event.ToolCalls))
 		for _, tc := range event.ToolCalls {
