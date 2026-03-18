@@ -69,6 +69,8 @@ func printEvent() func(Event) {
 					formatted = formatTodoResult(event.Content, lastToolName)
 				case "schedule_add", "schedule_list", "schedule_cancel":
 					formatted = formatSchedulerResult(event.Content, lastToolName)
+				case "dispatch_tasks":
+					formatted = formatDispatchResult(event.Content)
 				}
 
 				if formatted != "" {
@@ -713,6 +715,8 @@ func formatToolResultMarkdown(content string, toolName string) string {
 	switch toolName {
 	case "duckduckgo_search":
 		return formatSearchResultMarkdown(content)
+	case "dispatch_tasks":
+		return formatDispatchResultMarkdown(content)
 	default:
 		var raw struct {
 			Message      string `json:"message"`
@@ -862,4 +866,89 @@ func formatSchedulerResult(content string, toolName string) string {
 	}
 
 	return output.String()
+}
+
+// formatDispatchResult 格式化分发任务结果（终端 ANSI）
+func formatDispatchResult(content string) string {
+	var data struct {
+		Results []struct {
+			TaskIndex   int      `json:"task_index"`
+			Description string   `json:"description"`
+			Status      string   `json:"status"`
+			Error       string   `json:"error,omitempty"`
+			Operations  []string `json:"operations,omitempty"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(content), &data); err != nil || len(data.Results) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	success, failed := 0, 0
+	for _, r := range data.Results {
+		if r.Status == "success" {
+			success++
+		} else {
+			failed++
+		}
+	}
+	b.WriteString(fmt.Sprintf("  \033[1m分发完成: %d 成功, %d 失败\033[0m\n", success, failed))
+
+	for _, r := range data.Results {
+		icon := "\033[32m✓\033[0m"
+		if r.Status != "success" {
+			icon = "\033[31m✗\033[0m"
+		}
+		b.WriteString(fmt.Sprintf("  %s [%d] %s", icon, r.TaskIndex, truncateString(r.Description, 60)))
+		if r.Error != "" {
+			b.WriteString(fmt.Sprintf(" \033[31m— %s\033[0m", truncateString(r.Error, 40)))
+		}
+		if len(r.Operations) > 0 {
+			b.WriteString(fmt.Sprintf(" \033[90m(%d 项操作)\033[0m", len(r.Operations)))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// formatDispatchResultMarkdown 格式化分发任务结果（Markdown）
+func formatDispatchResultMarkdown(content string) string {
+	var data struct {
+		Results []struct {
+			TaskIndex   int      `json:"task_index"`
+			Description string   `json:"description"`
+			Status      string   `json:"status"`
+			Error       string   `json:"error,omitempty"`
+			Operations  []string `json:"operations,omitempty"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(content), &data); err != nil || len(data.Results) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	success, failed := 0, 0
+	for _, r := range data.Results {
+		if r.Status == "success" {
+			success++
+		} else {
+			failed++
+		}
+	}
+	b.WriteString(fmt.Sprintf("\n\n> **分发完成**: %d 成功, %d 失败\n", success, failed))
+	for _, r := range data.Results {
+		icon := "✓"
+		if r.Status != "success" {
+			icon = "✗"
+		}
+		b.WriteString(fmt.Sprintf("> %s [%d] %s", icon, r.TaskIndex, r.Description))
+		if r.Error != "" {
+			b.WriteString(fmt.Sprintf(" — %s", r.Error))
+		}
+		if len(r.Operations) > 0 {
+			b.WriteString(fmt.Sprintf(" (%d 项操作)", len(r.Operations)))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }

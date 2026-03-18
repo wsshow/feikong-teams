@@ -25,6 +25,7 @@ const (
 // Config 分发中间件配置。未指定工具时子智能体自动继承父智能体的工具。
 type Config struct {
 	Model          model.ToolCallingChatModel // 子智能体模型（由 AgentBuilder 自动填充）
+	ParentName     string                     // 父智能体名称（由 AgentBuilder 自动填充）
 	ToolNames      []string                   // 工具名称，通过 tools.GetToolsByName 解析
 	Tools          []tool.BaseTool            // 工具实例，与 ToolNames 合并
 	MaxConcurrency int                        // 最大并发数（默认 3）
@@ -57,6 +58,7 @@ func New(_ context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
 	}
 
 	return &middleware{
+		parentName:     cfg.ParentName,
 		chatModel:      cfg.Model,
 		tools:          append(resolved, cfg.Tools...),
 		maxConcurrency: int64(cfg.MaxConcurrency),
@@ -66,6 +68,7 @@ func New(_ context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
 
 type middleware struct {
 	*adk.BaseChatModelAgentMiddleware
+	parentName     string
 	chatModel      model.ToolCallingChatModel
 	tools          []tool.BaseTool
 	maxConcurrency int64

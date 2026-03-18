@@ -206,6 +206,9 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		if b.dispatchConfig.Model == nil {
 			b.dispatchConfig.Model = chatModel
 		}
+		if b.dispatchConfig.ParentName == "" {
+			b.dispatchConfig.ParentName = b.name
+		}
 		dispatchMiddleware, err := dispatch.New(ctx, b.dispatchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch middleware: %w", err)

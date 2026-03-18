@@ -28,7 +28,7 @@ func extractMessage(event *adk.AgentEvent) *schema.Message {
 	return nil
 }
 
-// extractOperations 从 AgentEvent 提取工具调用记录
+// extractOperations 从 AgentEvent 提取工具调用记录（含参数）
 func extractOperations(event *adk.AgentEvent) []string {
 	msg := extractMessage(event)
 	if msg == nil || len(msg.ToolCalls) == 0 {
@@ -36,7 +36,11 @@ func extractOperations(event *adk.AgentEvent) []string {
 	}
 	ops := make([]string, 0, len(msg.ToolCalls))
 	for _, tc := range msg.ToolCalls {
-		ops = append(ops, fmt.Sprintf("调用工具: %s", tc.Function.Name))
+		args := tc.Function.Arguments
+		if runes := []rune(args); len(runes) > 120 {
+			args = string(runes[:120]) + "..."
+		}
+		ops = append(ops, fmt.Sprintf("%s(%s)", tc.Function.Name, args))
 	}
 	return ops
 }
