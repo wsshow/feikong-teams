@@ -30,6 +30,7 @@ fkteams/
 │   │   ├── common.go       # NewChatModel() 返回 (model, error), MaxIterations, IsRetryAble
 │   │   └── builder.go      # AgentBuilder 流式构建器
 │   ├── middlewares/         # 智能体中间件
+│   │   ├── dispatch/       # 子任务并行分发中间件
 │   │   ├── fkfs/           # 文件系统后端（内存/本地）
 │   │   ├── skills/         # 技能学习中间件（读取 workspace/skills/ 目录）
 │   │   ├── summary/        # 自动摘要中间件（80K token 阈值）
@@ -147,6 +148,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 | `WithHandler(h...)` | 添加 ChatModelAgentMiddleware |
 | `WithSummary()` | 启用 summary 中间件（80K token 阈值） |
 | `WithSkills(dir)` | 启用 skills 中间件 |
+| `WithDispatch(cfg)` | 启用子任务并行分发中间件（`*dispatch.Config`） |
 | `Build(ctx)` | 构建并返回 `(adk.Agent, error)` |
 
 **智能体签名约定**:

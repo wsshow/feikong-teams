@@ -24,12 +24,6 @@ var assistantPromptTemplate = prompt.FromMessages(schema.FString,
 - file_read / file_write / file_edit / grep / file_list
 - 工作目录内直接操作，外部目录需审批（使用绝对路径）
 
-### 待办事项（todo_add, todo_list 等）
-管理用户的待办事项清单。
-
-### 定时任务（schedule_add, schedule_list 等）
-创建和管理定时任务。
-
 ### 搜索工具（duckduckgo_search）
 搜索互联网获取最新信息。
 

@@ -81,6 +81,19 @@ func NewRegistry(configs ...StoreConfig) *Registry {
 
 func (r *Registry) get(name string) *Store { return r.stores[name] }
 
+// NewAutoApproveRegistry 创建一个所有操作均自动审批通过的 Registry。
+// 用于子任务等无需人工确认的自主执行场景。
+func NewAutoApproveRegistry() *Registry {
+	r := NewRegistry(
+		StoreConfig{Name: StoreCommand},
+		StoreConfig{Name: StoreFile},
+	)
+	for _, s := range r.stores {
+		s.setApproveAll()
+	}
+	return r
+}
+
 type registryCtxKey struct{}
 
 func WithRegistry(ctx context.Context, reg *Registry) context.Context {

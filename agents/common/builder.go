@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fkteams/agents/middlewares/dispatch"
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/agents/middlewares/tools/patch"
@@ -34,9 +35,11 @@ type AgentBuilder struct {
 	handlers    []adk.ChatModelAgentMiddleware
 
 	// 便捷中间件标记
-	enableSummary bool
-	enableSkills  bool
-	skillsDir     string
+	enableSummary  bool
+	enableSkills   bool
+	skillsDir      string
+	enableDispatch bool
+	dispatchConfig *dispatch.Config
 }
 
 // NewAgentBuilder 创建构建器
@@ -100,6 +103,13 @@ func (b *AgentBuilder) WithSummary() *AgentBuilder {
 func (b *AgentBuilder) WithSkills(workspaceDir string) *AgentBuilder {
 	b.enableSkills = true
 	b.skillsDir = workspaceDir
+	return b
+}
+
+// WithDispatch 启用子任务分发中间件，cfg 为 nil 时使用默认配置
+func (b *AgentBuilder) WithDispatch(cfg *dispatch.Config) *AgentBuilder {
+	b.enableDispatch = true
+	b.dispatchConfig = cfg
 	return b
 }
 
@@ -187,6 +197,20 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 			return nil, fmt.Errorf("init skills middleware: %w", err)
 		}
 		cfg.Handlers = append(cfg.Handlers, skillsMiddleware)
+	}
+
+	if b.enableDispatch {
+		if b.dispatchConfig == nil {
+			b.dispatchConfig = &dispatch.Config{}
+		}
+		if b.dispatchConfig.Model == nil {
+			b.dispatchConfig.Model = chatModel
+		}
+		dispatchMiddleware, err := dispatch.New(ctx, b.dispatchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("init dispatch middleware: %w", err)
+		}
+		cfg.Handlers = append(cfg.Handlers, dispatchMiddleware)
 	}
 
 	cfg.Handlers = append(cfg.Handlers, b.handlers...)
