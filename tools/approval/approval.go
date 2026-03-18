@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	StoreCommand = "command"
-	StoreFile    = "file"
+	StoreCommand  = "command"
+	StoreFile     = "file"
+	StoreDispatch = "dispatch"
 )
 
 const (
@@ -87,6 +88,7 @@ func NewAutoApproveRegistry() *Registry {
 	r := NewRegistry(
 		StoreConfig{Name: StoreCommand},
 		StoreConfig{Name: StoreFile},
+		StoreConfig{Name: StoreDispatch},
 	)
 	for _, s := range r.stores {
 		s.setApproveAll()

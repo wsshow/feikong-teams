@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	rootcommon "fkteams/common"
 	"fkteams/tools/approval"
 	"fmt"
@@ -48,10 +49,30 @@ func (m *middleware) executeTasks(ctx context.Context, input *dispatchInput) (st
 		return `{"results":[]}`, nil
 	}
 
+	// 中断请求用户确认
+	var info strings.Builder
+	fmt.Fprintf(&info, "准备并行分发 %d 个子任务（自主执行模式）:\n", len(input.Tasks))
+	for i, t := range input.Tasks {
+		fmt.Fprintf(&info, "  [%d] %s\n", i, t.Description)
+	}
+	info.WriteString("子任务将自动审批工具操作，确认执行？")
+
+	if err := approval.Require(ctx, approval.StoreDispatch, "dispatch_tasks", info.String()); err != nil {
+		if errors.Is(err, approval.ErrRejected) {
+			return `{"error":"用户取消分发"}`, nil
+		}
+		return "", err
+	}
+
 	eventCh := make(chan viewEvent, 64)
 	results := make([]taskResult, len(input.Tasks))
 	sem := semaphore.NewWeighted(m.maxConcurrency)
-	g, gCtx := errgroup.WithContext(ctx)
+
+	// 可取消的上下文，用于 Ctrl+C 中断
+	taskCtx, cancelTasks := context.WithCancel(ctx)
+	defer cancelTasks()
+
+	g, gCtx := errgroup.WithContext(taskCtx)
 	var mu sync.Mutex
 
 	for i, task := range input.Tasks {
@@ -64,7 +85,7 @@ func (m *middleware) executeTasks(ctx context.Context, input *dispatchInput) (st
 			}
 			defer sem.Release(1)
 
-			r := m.executeOneTask(ctx, i, task, eventCh)
+			r := m.executeOneTask(taskCtx, i, task, eventCh)
 			mu.Lock()
 			results[i] = r
 			mu.Unlock()
@@ -79,13 +100,12 @@ func (m *middleware) executeTasks(ctx context.Context, input *dispatchInput) (st
 	}()
 
 	// 启动 Bubble Tea 视图（完成后自动退出）
-	runDispatchView(input.Tasks, eventCh)
+	if cancelled := runDispatchView(input.Tasks, eventCh); cancelled {
+		cancelTasks()
+	}
 
 	// 确保所有任务完成
 	_ = g.Wait()
-
-	// 发送汇总到父 context
-	emit(ctx, m.parentName, "action", m.formatSummary(results))
 
 	data, err := json.Marshal(struct {
 		Results []taskResult `json:"results"`
@@ -115,8 +135,11 @@ func (m *middleware) executeOneTask(parentCtx context.Context, index int, task t
 	output, ops, err := m.runAgent(taskCtx, agent, index, task.Description, ch)
 	if err != nil {
 		if taskCtx.Err() != nil {
-			sendEvent(ch, index, "timeout", "")
-			return fail(result, statusTimeout, "task timeout")
+			if errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+				sendEvent(ch, index, "timeout", "")
+				return fail(result, statusTimeout, "task timeout")
+			}
+			return fail(result, statusError, "cancelled")
 		}
 		sendEvent(ch, index, "error", err.Error())
 		return fail(result, statusError, err.Error())
@@ -138,8 +161,7 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: m.tools},
 		},
-		MaxIterations:    defaultMaxIterations,
-		ModelRetryConfig: &adk.ModelRetryConfig{MaxRetries: defaultMaxRetries},
+		MaxIterations: defaultMaxIterations,
 	})
 }
 
@@ -184,34 +206,6 @@ func sendEvent(ch chan<- viewEvent, index int, typ, content string) {
 	case ch <- viewEvent{TaskIndex: index, Type: typ, Content: content}:
 	default:
 	}
-}
-
-func (m *middleware) formatSummary(results []taskResult) string {
-	var b strings.Builder
-	success, failed := 0, 0
-	for _, r := range results {
-		if r.Status == statusSuccess {
-			success++
-		} else {
-			failed++
-		}
-	}
-	fmt.Fprintf(&b, "分发完成: %d 成功, %d 失败\n", success, failed)
-	for _, r := range results {
-		icon := "✓"
-		if r.Status != statusSuccess {
-			icon = "✗"
-		}
-		fmt.Fprintf(&b, "  %s [%d] %s", icon, r.TaskIndex, r.Description)
-		if r.Error != "" {
-			fmt.Fprintf(&b, " — %s", r.Error)
-		}
-		if len(r.Operations) > 0 {
-			fmt.Fprintf(&b, " (%d 项操作)", len(r.Operations))
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 func fail(r taskResult, status, errMsg string) taskResult {

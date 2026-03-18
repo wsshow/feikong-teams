@@ -208,6 +208,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	taskCtx = approval.WithRegistry(taskCtx, approval.NewRegistry(
 		approval.StoreConfig{Name: approval.StoreCommand},
 		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+		approval.StoreConfig{Name: approval.StoreDispatch},
 	))
 
 	// 初始化 HITL 审批通道

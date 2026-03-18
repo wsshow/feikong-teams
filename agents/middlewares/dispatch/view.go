@@ -35,13 +35,14 @@ type taskCard struct {
 
 // dispatchModel Bubble Tea 模型
 type dispatchModel struct {
-	tasks    []taskCard
-	cursor   int
-	expanded int // -1 = 无展开
-	scrollY  int
-	eventCh  <-chan viewEvent
-	width    int
-	allDone  bool
+	tasks     []taskCard
+	cursor    int
+	expanded  int // -1 = 无展开
+	scrollY   int
+	eventCh   <-chan viewEvent
+	width     int
+	allDone   bool
+	cancelled bool
 }
 
 func newDispatchModel(tasks []taskItem, eventCh <-chan viewEvent) dispatchModel {
@@ -97,6 +98,12 @@ func (m dispatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m dispatchModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+
+	// Ctrl+C 中断
+	if key == "ctrl+c" {
+		m.cancelled = true
+		return m, tea.Quit
+	}
 
 	// 退出
 	if key == "q" {
@@ -237,7 +244,7 @@ func (m dispatchModel) View() tea.View {
 	}
 
 	// 底部提示
-	if !m.allDone {
+	if !m.allDone && !m.cancelled {
 		b.WriteString("\n")
 		if m.expanded >= 0 {
 			b.WriteString(dimStyle.Render("  ↑↓ 滚动  Enter/Esc 收起"))
@@ -361,14 +368,17 @@ func (m dispatchModel) renderExpanded(i, w int) string {
 	return style.Render(detail.String())
 }
 
-// runDispatchView 启动 Bubble Tea 分发视图，非 TTY 环境跳过
-func runDispatchView(tasks []taskItem, eventCh <-chan viewEvent) {
+// runDispatchView 启动 Bubble Tea 分发视图，返回是否被用户取消
+func runDispatchView(tasks []taskItem, eventCh <-chan viewEvent) bool {
 	if !isatty.IsTerminal(os.Stdout.Fd()) {
-		// 非交互模式：消费完 channel 即可
 		for range eventCh {
 		}
-		return
+		return false
 	}
 	p := tea.NewProgram(newDispatchModel(tasks, eventCh))
-	_, _ = p.Run()
+	final, _ := p.Run()
+	if m, ok := final.(dispatchModel); ok {
+		return m.cancelled
+	}
+	return false
 }

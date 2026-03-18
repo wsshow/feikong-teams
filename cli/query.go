@@ -170,6 +170,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	queryCtx = approval.WithRegistry(queryCtx, approval.NewRegistry(
 		approval.StoreConfig{Name: approval.StoreCommand},
 		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+		approval.StoreConfig{Name: approval.StoreDispatch},
 	))
 
 	// 设置摘要持久化回调

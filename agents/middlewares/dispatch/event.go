@@ -1,24 +1,11 @@
 package dispatch
 
 import (
-	"context"
-	"fkteams/fkevent"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 )
-
-// emit 发送事件
-func emit(ctx context.Context, agentName, eventType, content string) {
-	evt := fkevent.Event{Type: eventType, AgentName: agentName}
-	if eventType == "error" {
-		evt.Error = content
-	} else {
-		evt.Content = content
-	}
-	_ = fkevent.DispatchEvent(ctx, evt)
-}
 
 // extractMessage 从 AgentEvent 提取消息
 func extractMessage(event *adk.AgentEvent) *schema.Message {
