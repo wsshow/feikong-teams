@@ -967,6 +967,14 @@ a.source-item:hover {
     color: var(--error);
 }
 
+.action-event.approval-request {
+    background: var(--warning-light, rgba(255, 193, 7, 0.08));
+    border-color: var(--warning, #ffc107);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .action-event.approval-result.approved {
     background: var(--success-light);
     border-color: var(--success);

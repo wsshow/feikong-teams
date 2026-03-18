@@ -190,6 +190,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
             this.handleDispatchProgress(event);
             break;
         case 'approval_required':
+            this.showApprovalRequest(event.message);
             this.showApprovalDialog(event.message);
             break;
         case 'error':
@@ -1103,6 +1104,15 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
     this.messagesContainer.appendChild(cancelEl);
 
     this.showNotification('任务已取消', 'success');
+};
+
+// 在聊天区域显示审批请求卡片
+FKTeamsChat.prototype.showApprovalRequest = function (message) {
+    var el = document.createElement('div');
+    el.className = 'action-event approval-request';
+    el.innerHTML = '<span>' + this.escapeHtml(message || '需要审批') + '</span>';
+    this.messagesContainer.appendChild(el);
+    this.scrollToBottom();
 };
 
 // 显示审批弹窗

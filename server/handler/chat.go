@@ -198,6 +198,10 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 
 	// 绑定事件回调（使用会话级别的 recorder）
 	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
+		// interrupted 事件由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
+		if event.Type == "action" && event.ActionType == "interrupted" {
+			return nil
+		}
 		recorder.RecordEvent(event)
 		return writeJSON(convertEventForWS(event))
 	})
