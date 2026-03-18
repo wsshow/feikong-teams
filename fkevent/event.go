@@ -35,9 +35,23 @@ func formatRunPath(runPath []adk.RunStep) string {
 // callbackKey 用于在 context 中存储事件回调的 key
 type callbackKey struct{}
 
+// nonInteractiveKey 标记非交互模式（如 Web 服务），禁止终端 TUI
+type nonInteractiveKey struct{}
+
 // WithCallback 将事件回调绑定到 context
 func WithCallback(ctx context.Context, cb func(Event) error) context.Context {
 	return context.WithValue(ctx, callbackKey{}, cb)
+}
+
+// WithNonInteractive 标记当前 context 为非交互模式
+func WithNonInteractive(ctx context.Context) context.Context {
+	return context.WithValue(ctx, nonInteractiveKey{}, true)
+}
+
+// IsNonInteractive 检查 context 是否为非交互模式
+func IsNonInteractive(ctx context.Context) bool {
+	v, _ := ctx.Value(nonInteractiveKey{}).(bool)
+	return v
 }
 
 // getCallback 从 context 中获取事件回调函数

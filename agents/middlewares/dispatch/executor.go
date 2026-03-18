@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	rootcommon "fkteams/common"
+	"fkteams/fkevent"
 	"fkteams/tools/approval"
 	"fmt"
 	"strings"
@@ -99,8 +100,10 @@ func (m *middleware) executeTasks(ctx context.Context, input *dispatchInput) (st
 		close(eventCh)
 	}()
 
-	// 启动 Bubble Tea 视图（完成后自动退出）
-	if cancelled := runDispatchView(input.Tasks, eventCh); cancelled {
+	// 非交互模式（如 Web 服务）：跳过 Bubble Tea，将事件通过 fkevent 转发
+	if fkevent.IsNonInteractive(ctx) {
+		forwardEvents(ctx, input.Tasks, eventCh)
+	} else if cancelled := runDispatchView(input.Tasks, eventCh); cancelled {
 		cancelTasks()
 	}
 
@@ -212,4 +215,25 @@ func fail(r taskResult, status, errMsg string) taskResult {
 	r.Status = status
 	r.Error = errMsg
 	return r
+}
+
+// forwardEvents 在非交互模式下将 dispatch 子任务进度通过 fkevent 转发到父 context
+func forwardEvents(ctx context.Context, tasks []taskItem, eventCh <-chan viewEvent) {
+	for e := range eventCh {
+		desc := ""
+		if e.TaskIndex >= 0 && e.TaskIndex < len(tasks) {
+			desc = tasks[e.TaskIndex].Description
+		}
+		detail, _ := json.Marshal(map[string]interface{}{
+			"task_index":   e.TaskIndex,
+			"description":  desc,
+			"event_type":   e.Type,
+			"event_detail": e.Content,
+		})
+		_ = fkevent.DispatchEvent(ctx, fkevent.Event{
+			Type:       "dispatch_progress",
+			ActionType: e.Type,
+			Detail:     string(detail),
+		})
+	}
 }

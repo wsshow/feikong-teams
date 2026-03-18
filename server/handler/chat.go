@@ -193,6 +193,9 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		}
 	}()
 
+	// 标记为非交互模式（禁止终端 TUI）
+	taskCtx = fkevent.WithNonInteractive(taskCtx)
+
 	// 绑定事件回调（使用会话级别的 recorder）
 	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
 		recorder.RecordEvent(event)
@@ -248,11 +251,48 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		if len(infos) > 0 {
 			msg = strings.Join(infos, "\n")
 		}
+
+		// 记录审批请求到历史（不走 callback 避免重复 WebSocket 推送）
+		recorder.RecordEvent(fkevent.Event{
+			Type:       "action",
+			ActionType: "approval_required",
+			Content:    msg,
+		})
+
 		_ = writeJSON(map[string]interface{}{
 			"type":    "approval_required",
 			"message": msg,
 		})
-		return channelHandler(ctx, interrupts)
+
+		result, err := channelHandler(ctx, interrupts)
+
+		// 记录审批决定
+		if err == nil {
+			var decisionText string
+			for _, v := range result {
+				switch v {
+				case 0:
+					decisionText = "已拒绝"
+				case 1:
+					decisionText = "已允许（一次）"
+				case 2:
+					decisionText = "已允许（该项）"
+				case 3:
+					decisionText = "已全部允许"
+				}
+				break
+			}
+			if decisionText != "" {
+				// 记录审批决定到历史（不走 callback，前端已在 sendApprovalDecision 中处理展示）
+				recorder.RecordEvent(fkevent.Event{
+					Type:       "action",
+					ActionType: "approval_decision",
+					Content:    decisionText,
+				})
+			}
+		}
+
+		return result, err
 	}
 
 	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))

@@ -211,6 +211,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			Type:    "error",
 			Content: truncateErrorContent(event.Error),
 		})
+
+	case "dispatch_progress":
+		// 子任务进度事件不单独记录，最终结果已包含在 tool_call 的 result 中
 	}
 }
 

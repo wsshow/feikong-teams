@@ -857,6 +857,15 @@ FKTeamsChat.prototype.renderHistoryToolCalls = function (toolCalls) {
 };
 
 FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
+    // dispatch_tasks 专用卡片渲染
+    if (tc.name === 'dispatch_tasks' && tc.result) {
+        const el = this.renderDispatchResult(tc.result);
+        if (el) {
+            this.messagesContainer.appendChild(el);
+            return;
+        }
+    }
+
     // 渲染工具调用
     const toolCallEl = document.createElement('div');
     toolCallEl.className = 'tool-call';
@@ -960,6 +969,25 @@ FKTeamsChat.prototype.renderSingleAction = function (action, agentName) {
             cardEl.innerHTML = `${compressIcon}<span>[${this.escapeHtml(agentName)}] ${this.escapeHtml(action.content || action.action_type)}</span>`;
         }
         this.messagesContainer.appendChild(cardEl);
+        return;
+    }
+
+    // 审批请求
+    if (action.action_type === 'approval_required') {
+        const el = document.createElement('div');
+        el.className = 'action-event approval-request';
+        el.innerHTML = `<span>${this.escapeHtml(action.content || '需要审批')}</span>`;
+        this.messagesContainer.appendChild(el);
+        return;
+    }
+
+    // 审批决定
+    if (action.action_type === 'approval_decision') {
+        const isApproved = action.content && !action.content.includes('拒绝');
+        const el = document.createElement('div');
+        el.className = 'action-event approval-result ' + (isApproved ? 'approved' : 'rejected');
+        el.innerHTML = `<span>${this.escapeHtml(action.content || '审批完成')}</span>`;
+        this.messagesContainer.appendChild(el);
         return;
     }
 

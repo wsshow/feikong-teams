@@ -186,6 +186,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
         case 'action':
             this.handleAction(event);
             break;
+        case 'dispatch_progress':
+            this.handleDispatchProgress(event);
+            break;
         case 'approval_required':
             this.showApprovalDialog(event.message);
             break;
@@ -556,6 +559,8 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
     if (!event.tool_calls || event.tool_calls.length === 0) return;
 
     this.hasToolCallAfterMessage = true;
+    // 记录最近调用的工具名，供 handleToolResult 识别
+    this.lastToolName = event.tool_calls[0].name;
 
     const toolName = event.tool_calls[0].name;
     const toolCallEl = document.createElement('div');
@@ -578,6 +583,22 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
 FKTeamsChat.prototype.handleToolCalls = function (event) {
     if (!event.tool_calls || event.tool_calls.length === 0) return;
 
+    // dispatch_tasks: 暂存任务列表，卡片在审批通过后由 dispatch_progress 触发创建
+    if (this.lastToolName === 'dispatch_tasks' && event.tool_calls[0].arguments) {
+        try {
+            const args = JSON.parse(event.tool_calls[0].arguments);
+            if (args.tasks && args.tasks.length > 0) {
+                this._pendingDispatchTasks = args.tasks;
+                // 移除 tool-call 占位
+                const toolCalls = this.messagesContainer.querySelectorAll('.tool-call');
+                const lastToolCall = toolCalls[toolCalls.length - 1];
+                if (lastToolCall) lastToolCall.remove();
+                this.scrollToBottom();
+                return;
+            }
+        } catch { /* fall through */ }
+    }
+
     const toolCalls = this.messagesContainer.querySelectorAll('.tool-call');
     const lastToolCall = toolCalls[toolCalls.length - 1];
     if (lastToolCall) {
@@ -596,6 +617,20 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
 
 FKTeamsChat.prototype.handleToolResult = function (event) {
     let content = event.content || '';
+
+    // dispatch_tasks 专用渲染
+    if (this.lastToolName === 'dispatch_tasks') {
+        // 移除实时进度容器
+        const progress = document.getElementById('dispatch-progress');
+        if (progress) progress.remove();
+        const el = this.renderDispatchResult(content);
+        if (el) {
+            this.messagesContainer.appendChild(el);
+            this.scrollToBottom();
+            return;
+        }
+    }
+
     let formattedContent = content;
 
     try {
@@ -623,6 +658,258 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
     `;
     this.messagesContainer.appendChild(toolResultEl);
     this.scrollToBottom();
+};
+
+// 初始化 dispatch 实时进度容器（从 tool_calls 解析得到全部任务）
+FKTeamsChat.prototype._initDispatchProgress = function (tasks) {
+    // 如果已存在则不重复创建
+    if (document.getElementById('dispatch-progress')) return;
+
+    const container = document.createElement('div');
+    container.id = 'dispatch-progress';
+    container.className = 'dispatch-result dispatch-progress-live';
+
+    const header = document.createElement('div');
+    header.className = 'dispatch-header dispatch-status-partial';
+    header.innerHTML = `<span class="dispatch-progress-title">并行分发 ${tasks.length} 个子任务</span>
+        <span class="dispatch-progress-counter" data-total="${tasks.length}" data-done="0">0/${tasks.length}</span>`;
+    container.appendChild(header);
+
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = 'dispatch-cards';
+
+    for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        const card = document.createElement('div');
+        card.id = 'dispatch-task-' + i;
+        card.className = 'dispatch-card dispatch-card-waiting';
+        card.innerHTML = `
+            <div class="dispatch-card-head">
+                <span class="dispatch-card-status-dot"></span>
+                <span class="dispatch-card-desc">${this.escapeHtml(t.description || '')}</span>
+            </div>
+            <div class="dispatch-card-detail" style="display:none">
+                <div class="dispatch-card-ops-list"></div>
+                <div class="dispatch-card-error" style="display:none"></div>
+            </div>
+        `;
+        // 点击展开/收起详情
+        card.addEventListener('click', function () {
+            const detail = card.querySelector('.dispatch-card-detail');
+            const hasCont = detail.querySelector('.dispatch-card-ops-list').childElementCount > 0
+                || detail.querySelector('.dispatch-card-error').style.display !== 'none';
+            if (!hasCont) return;
+            card.classList.toggle('dispatch-card-expanded');
+            detail.style.display = card.classList.contains('dispatch-card-expanded') ? '' : 'none';
+        });
+        cardsWrap.appendChild(card);
+    }
+    container.appendChild(cardsWrap);
+    this.messagesContainer.appendChild(container);
+};
+
+// 渲染 dispatch_tasks 最终结果（替换实时进度）
+FKTeamsChat.prototype.renderDispatchResult = function (content) {
+    try {
+        const data = JSON.parse(content);
+        if (data.error) {
+            const el = document.createElement('div');
+            el.className = 'dispatch-result';
+            el.innerHTML = `<div class="dispatch-header dispatch-status-partial"><span>${this.escapeHtml(data.error)}</span></div>`;
+            return el;
+        }
+        if (data.results) {
+            return this._buildDispatchCards(data.results);
+        }
+    } catch { /* fallback */ }
+    return null;
+};
+
+FKTeamsChat.prototype._buildDispatchCards = function (results) {
+    const total = results.length;
+    const success = results.filter(r => r.status === 'success').length;
+    const failed = total - success;
+
+    const container = document.createElement('div');
+    container.className = 'dispatch-result';
+
+    const statusClass = failed === 0 ? 'dispatch-status-ok' : 'dispatch-status-partial';
+    const header = document.createElement('div');
+    header.className = 'dispatch-header ' + statusClass;
+    header.innerHTML = `<span>子任务分发完成: ${success}/${total} 成功${failed > 0 ? '，' + failed + ' 失败' : ''}</span>`;
+    container.appendChild(header);
+
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = 'dispatch-cards';
+
+    const self = this;
+    for (const r of results) {
+        const isOk = r.status === 'success';
+        const card = document.createElement('div');
+        card.className = 'dispatch-card ' + (isOk ? 'dispatch-card-done' : 'dispatch-card-fail');
+
+        // 操作摘要
+        let opsText = '';
+        if (r.operations && r.operations.length > 0) {
+            opsText = `<span class="dispatch-card-ops-count">${r.operations.length} 项操作</span>`;
+        }
+
+        card.innerHTML = `
+            <div class="dispatch-card-head">
+                <span class="dispatch-card-status-dot"></span>
+                <span class="dispatch-card-desc">${self.escapeHtml(r.description || '')}</span>
+                ${opsText}
+                <span class="dispatch-card-toggle"></span>
+            </div>
+            <div class="dispatch-card-detail" style="display:none"></div>
+        `;
+
+        // 构建详情面板
+        const detailEl = card.querySelector('.dispatch-card-detail');
+        let hasDetail = false;
+
+        if (r.error) {
+            const errDiv = document.createElement('div');
+            errDiv.className = 'dispatch-card-error';
+            errDiv.textContent = r.error;
+            detailEl.appendChild(errDiv);
+            hasDetail = true;
+        }
+
+        if (r.operations && r.operations.length > 0) {
+            const opsList = document.createElement('div');
+            opsList.className = 'dispatch-card-ops-list';
+            for (const op of r.operations) {
+                const line = document.createElement('div');
+                line.className = 'dispatch-card-op-item';
+                line.textContent = op;
+                opsList.appendChild(line);
+            }
+            detailEl.appendChild(opsList);
+            hasDetail = true;
+        }
+
+        if (r.result) {
+            const resDiv = document.createElement('div');
+            resDiv.className = 'dispatch-card-result';
+            resDiv.innerHTML = self.renderMarkdown(r.result);
+            detailEl.appendChild(resDiv);
+            hasDetail = true;
+        }
+
+        if (hasDetail) {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', function () {
+                card.classList.toggle('dispatch-card-expanded');
+                detailEl.style.display = card.classList.contains('dispatch-card-expanded') ? '' : 'none';
+            });
+        }
+
+        cardsWrap.appendChild(card);
+    }
+    container.appendChild(cardsWrap);
+    return container;
+};
+
+// 处理 dispatch 子任务实时进度事件
+FKTeamsChat.prototype.handleDispatchProgress = function (event) {
+    let detail;
+    try {
+        detail = JSON.parse(event.detail || '{}');
+    } catch { return; }
+
+    const idx = detail.task_index;
+    const evtType = detail.event_type;
+    const desc = detail.description || '';
+
+    // 如果进度容器不存在，用暂存的任务列表创建（审批通过后首次收到进度事件时）
+    let container = document.getElementById('dispatch-progress');
+    if (!container) {
+        const tasks = this._pendingDispatchTasks || [{ description: desc }];
+        this._initDispatchProgress(tasks);
+        this._pendingDispatchTasks = null;
+        container = document.getElementById('dispatch-progress');
+    }
+
+    let card = document.getElementById('dispatch-task-' + idx);
+    if (!card) {
+        // 动态追加（不应该到这里，但保险起见）
+        const cardsWrap = container.querySelector('.dispatch-cards');
+        const c = document.createElement('div');
+        c.id = 'dispatch-task-' + idx;
+        c.className = 'dispatch-card dispatch-card-waiting';
+        c.innerHTML = `
+            <div class="dispatch-card-head">
+                <span class="dispatch-card-status-dot"></span>
+                <span class="dispatch-card-desc">${this.escapeHtml(desc)}</span>
+            </div>
+            <div class="dispatch-card-detail" style="display:none">
+                <div class="dispatch-card-ops-list"></div>
+                <div class="dispatch-card-error" style="display:none"></div>
+            </div>
+        `;
+        cardsWrap.appendChild(c);
+        card = c;
+    }
+
+    const opsListEl = card.querySelector('.dispatch-card-ops-list');
+    const errEl = card.querySelector('.dispatch-card-error');
+
+    switch (evtType) {
+        case 'start':
+            card.className = card.className.replace(/dispatch-card-waiting/, 'dispatch-card-running');
+            break;
+        case 'op':
+            if (opsListEl) {
+                const line = document.createElement('div');
+                line.className = 'dispatch-card-op-item';
+                line.textContent = detail.event_detail || '';
+                opsListEl.appendChild(line);
+            }
+            break;
+        case 'content':
+            // 内容会在最终 tool_result 中呈现，进度阶段不显示
+            break;
+        case 'done': {
+            card.className = card.className.replace(/dispatch-card-(waiting|running)/, 'dispatch-card-done');
+            this._updateDispatchCounter(container, 1);
+            break;
+        }
+        case 'error':
+            card.className = card.className.replace(/dispatch-card-(waiting|running)/, 'dispatch-card-fail');
+            if (detail.event_detail && errEl) {
+                errEl.style.display = '';
+                errEl.textContent = detail.event_detail;
+            }
+            this._updateDispatchCounter(container, 1);
+            break;
+        case 'timeout':
+            card.className = card.className.replace(/dispatch-card-(waiting|running)/, 'dispatch-card-fail');
+            if (errEl) {
+                errEl.style.display = '';
+                errEl.textContent = '任务超时';
+            }
+            this._updateDispatchCounter(container, 1);
+            break;
+    }
+
+    this.scrollToBottom();
+};
+
+// 更新进度计数器
+FKTeamsChat.prototype._updateDispatchCounter = function (container, increment) {
+    const counter = container.querySelector('.dispatch-progress-counter');
+    if (!counter) return;
+    let done = parseInt(counter.getAttribute('data-done') || '0') + increment;
+    const total = parseInt(counter.getAttribute('data-total') || '0');
+    counter.setAttribute('data-done', done);
+    counter.textContent = done + '/' + total;
+    if (done >= total) {
+        // 全部完成，移除闪烁
+        container.classList.remove('dispatch-progress-live');
+        const title = container.querySelector('.dispatch-progress-title');
+        if (title) title.textContent = '子任务执行完成，等待汇总...';
+    }
 };
 
 FKTeamsChat.prototype.handleAction = function (event) {
@@ -844,16 +1131,10 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
     // 在聊天中显示审批结果
     var labels = { 0: '已拒绝', 1: '已允许（一次）', 2: '已允许（该项）', 3: '已全部允许' };
     var classes = { 0: 'rejected', 1: 'approved', 2: 'approved', 3: 'approved' };
-    var icons = {
-        0: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-        1: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-        2: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-        3: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
-    };
 
     var el = document.createElement('div');
     el.className = 'action-event approval-result ' + (classes[decision] || '');
-    el.innerHTML = (icons[decision] || '') + '<span>' + this.escapeHtml(labels[decision] || '审批完成') + '</span>';
+    el.innerHTML = '<span>' + this.escapeHtml(labels[decision] || '审批完成') + '</span>';
     this.messagesContainer.appendChild(el);
     this.scrollToBottom();
 
