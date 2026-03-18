@@ -46,15 +46,7 @@ func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
 func CreateSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 	subAgents := agents.GetTeamAgents(ctx)
 
-	organizeCtx := context.WithValue(ctx, "team_members", strings.Join(func() []string {
-		var names []string
-		for _, agent := range subAgents {
-			names = append(names, agent.Name(ctx))
-		}
-		return names
-	}(), ", "))
-
-	leaderAgent, err := leader.NewAgent(organizeCtx)
+	leaderAgent, err := leader.NewAgent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("创建统御智能体失败: %w", err)
 	}
