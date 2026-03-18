@@ -13,6 +13,7 @@ import (
 	"fkteams/tools/approval"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,6 +86,7 @@ type QueryExecutor struct {
 	state           *QueryState
 	runner          *adk.Runner
 	autoReject      bool
+	approveStores   []string // 自动批准的 store 列表
 	callbackBuilder func(*fkevent.HistoryRecorder) func(fkevent.Event) error
 }
 
@@ -100,6 +102,18 @@ func NewQueryExecutor(runner *adk.Runner, state *QueryState) *QueryExecutor {
 // SetAutoReject 设置自动拒绝危险命令（用于非交互模式）
 func (e *QueryExecutor) SetAutoReject(v bool) {
 	e.autoReject = v
+}
+
+// SetApproveStores 设置自动批准的操作类别（逗号分隔: all/command/file/dispatch）
+func (e *QueryExecutor) SetApproveStores(s string) {
+	if s == "" {
+		return
+	}
+	for _, part := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			e.approveStores = append(e.approveStores, v)
+		}
+	}
 }
 
 // SetRunner 设置 runner
@@ -167,11 +181,16 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	})
 
 	// 注入统一审批注册表
-	queryCtx = approval.WithRegistry(queryCtx, approval.NewRegistry(
-		approval.StoreConfig{Name: approval.StoreCommand},
-		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-		approval.StoreConfig{Name: approval.StoreDispatch},
-	))
+	storeConfigs := []approval.StoreConfig{
+		{Name: approval.StoreCommand},
+		{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+		{Name: approval.StoreDispatch},
+	}
+	if len(e.approveStores) > 0 {
+		queryCtx = approval.WithRegistry(queryCtx, approval.NewSelectiveRegistry(e.approveStores, storeConfigs...))
+	} else {
+		queryCtx = approval.WithRegistry(queryCtx, approval.NewRegistry(storeConfigs...))
+	}
 
 	// 设置摘要持久化回调
 	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {

@@ -43,6 +43,10 @@ func Root() *ucli.Command {
 				Name:  "save",
 				Usage: "保存聊天历史",
 			},
+			&ucli.StringFlag{
+				Name:  "approve",
+				Usage: "自动批准指定操作类别 (all/command/file/dispatch，逗号分隔)",
+			},
 		},
 		Action: chatAction,
 	}

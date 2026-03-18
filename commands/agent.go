@@ -70,6 +70,10 @@ func agentCommand() *ucli.Command {
 				Value: "default",
 				Usage: "输出格式: default（格式化输出）或 json（原始 JSON 事件）",
 			},
+			&ucli.StringFlag{
+				Name:  "approve",
+				Usage: "自动批准指定操作类别 (all/command/file/dispatch，逗号分隔)",
+			},
 		},
 		Action: agentAction,
 	}
@@ -134,6 +138,12 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		session = cli.NewSession(cli.ModeTeam, inputHistory, nil)
 		session.SetCurrentAgent(agentName)
 		session.StartSignalHandler(app.ExitCh())
+
+		approve := cmd.String("approve")
+		if approve == "" {
+			approve = cmd.Root().String("approve")
+		}
+		session.ApproveStores = approve
 
 		format := cmd.String("format")
 		if format == "json" {

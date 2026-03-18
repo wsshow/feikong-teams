@@ -31,6 +31,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	query := cmd.String("query")
 	resumeSession := cmd.String("resume")
 	saveHistory := cmd.Bool("save")
+	approve := cmd.String("approve")
 
 	// 创建应用实例（CLI 模式排除 SIGINT，由 Session 处理）
 	app := lifecycle.New(
@@ -72,6 +73,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	var session *cli.Session
 	app.OnReady(func(ctx context.Context) error {
 		session = cli.NewSession(currentMode, inputHistory, createModeRunner)
+		session.ApproveStores = approve
 		if resumeSession != "" {
 			cli.SetResumeSessionID(resumeSession)
 		}

@@ -25,6 +25,7 @@ type ModeRunnerCreator func(ctx context.Context, mode WorkMode) (*adk.Runner, er
 type Session struct {
 	InputHistory     []string
 	CurrentMode      WorkMode
+	ApproveStores    string // 自动批准的 store（逗号分隔: all/command/file/dispatch）
 	queryState       *QueryState
 	currentAgent     string
 	createModeRunner ModeRunnerCreator
@@ -89,6 +90,7 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 
 	executor := NewQueryExecutor(r, s.queryState)
 	executor.SetAutoReject(true)
+	executor.SetApproveStores(s.ApproveStores)
 	if s.callbackBuilder != nil {
 		executor.SetCallbackBuilder(s.callbackBuilder)
 	}
@@ -124,6 +126,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 		}()
 
 		executor := NewQueryExecutor(r, s.queryState)
+		executor.SetApproveStores(s.ApproveStores)
 		modeSwitcher := &sessionModeSwitcher{session: s, ctx: ctx, executor: executor}
 		cmdHandler := NewCommandHandler(modeSwitcher)
 

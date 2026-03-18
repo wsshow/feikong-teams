@@ -96,6 +96,25 @@ func NewAutoApproveRegistry() *Registry {
 	return r
 }
 
+// NewSelectiveRegistry 创建选择性自动批准的 Registry。
+// autoApprove 中的 store 会被标记为全部通过，其余需审批。
+// 传入 "all" 等同于 NewAutoApproveRegistry。
+func NewSelectiveRegistry(autoApprove []string, configs ...StoreConfig) *Registry {
+	r := NewRegistry(configs...)
+	for _, name := range autoApprove {
+		if name == "all" {
+			for _, s := range r.stores {
+				s.setApproveAll()
+			}
+			return r
+		}
+		if s, ok := r.stores[name]; ok {
+			s.setApproveAll()
+		}
+	}
+	return r
+}
+
 type registryCtxKey struct{}
 
 func WithRegistry(ctx context.Context, reg *Registry) context.Context {
