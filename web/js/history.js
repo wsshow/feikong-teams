@@ -38,7 +38,14 @@ FKTeamsChat.prototype.createNewSession = function (silent) {
 
 // ===== 侧边栏历史会话 =====
 
-FKTeamsChat.prototype.loadSidebarHistory = async function () {
+FKTeamsChat.prototype.loadSidebarHistory = function () {
+    // 防抖：短时间多次调用只执行最后一次，避免频繁请求
+    this.debounce('sidebarHistory', () => {
+        this._doLoadSidebarHistory();
+    }, 300);
+};
+
+FKTeamsChat.prototype._doLoadSidebarHistory = async function () {
     if (!this.sidebarSessionList) return;
 
     try {
@@ -674,7 +681,7 @@ FKTeamsChat.prototype.loadSession = function (sessionId) {
         }));
         this.hideHistoryModal();
     } else {
-        this.showNotification('WebSocket 未连接', 'error');
+        this.showNotification('服务未连接，请稍后重试', 'error');
     }
 };
 

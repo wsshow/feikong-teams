@@ -507,3 +507,40 @@
     transform: translateY(-50%);
     border-left-color: var(--border-sketch);
 }
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+
+    /* 聊天容器移动端内边距 */
+    .chat-container {
+        padding: 0 12px;
+    }
+
+    /* 会话项更紧凑 */
+    .sidebar-session-item {
+        padding: 10px 12px;
+    }
+
+    .sidebar-session-name {
+        font-size: 13px;
+    }
+
+    .sidebar-session-time {
+        font-size: 10px;
+    }
+
+    /* 模式选择器紧凑 */
+    .mode-buttons {
+        gap: 3px;
+    }
+
+    .mode-btn {
+        padding: 5px 6px;
+        font-size: 11px;
+    }
+
+    .mode-btn svg {
+        width: 12px;
+        height: 12px;
+    }
+}

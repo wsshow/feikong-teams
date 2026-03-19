@@ -1209,3 +1209,98 @@ a.source-item:hover {
 .attachment-remove:hover {
     background: #c53030;
 }
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+    .chat-container {
+        padding: 0 10px;
+    }
+
+    .messages-wrapper {
+        padding: 16px 0;
+    }
+
+    .messages {
+        gap: 12px;
+    }
+
+    /* 消息气泡 */
+    .message-body {
+        padding: 10px 12px;
+        font-size: 14px;
+    }
+
+    .message.user .message-body {
+        max-width: 92%;
+    }
+
+    /* 代码块 */
+    .message-body pre {
+        margin: 8px 0;
+        padding: 10px 12px;
+        border-radius: 8px;
+    }
+
+    .message-body pre code {
+        font-size: 12px;
+    }
+
+    /* 工具调用卡片更紧凑 */
+    .tool-call,
+    .tool-result {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    .tool-call-header,
+    .tool-result-header {
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .tool-call-name {
+        font-size: 11px;
+        padding: 1px 6px;
+    }
+
+    .tool-call-args,
+    .tool-result-content {
+        font-size: 11px;
+        padding: 8px 10px;
+        max-height: 120px;
+    }
+
+    /* 操作事件 */
+    .action-event {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    /* 隐藏桌面端的快速导航 */
+    .quick-nav-wrapper {
+        display: none;
+    }
+
+    /* 欢迎页 */
+    .welcome-message {
+        padding: 40px 16px;
+    }
+
+    .welcome-message h2 {
+        font-size: 24px;
+    }
+
+    .welcome-message p {
+        font-size: 13px;
+    }
+
+    .welcome-tips {
+        gap: 8px;
+        margin-top: 16px;
+    }
+
+    .welcome-tip {
+        font-size: 12px;
+        padding: 5px 10px;
+    }
+}

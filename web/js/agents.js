@@ -36,7 +36,10 @@ FKTeamsChat.prototype.handleInputForMention = function (e) {
         this.hideFileSuggestions();
     } else if (hashMatch) {
         const searchText = hashMatch[1];
-        this.showFileSuggestions(searchText, cursorPos);
+        // 防抖：避免每次按键都请求文件列表接口
+        this.debounce('fileSuggestions', () => {
+            this.showFileSuggestions(searchText, cursorPos);
+        }, 250);
         this.hideAgentSuggestions();
     } else {
         this.hideAgentSuggestions();

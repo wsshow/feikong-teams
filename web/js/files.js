@@ -95,6 +95,11 @@ FKTeamsChat.prototype.showFileSuggestions = async function (searchText, cursorPo
                 <div class="file-suggestion-path">#${this.escapeHtml(file.path)}</div>
                 ${file.is_dir ? '' : `<div class="file-suggestion-meta">${this.formatFileSize(file.size)} · ${this.formatFileTime(file.mod_time)}</div>`}
             </div>
+            ${file.is_dir ? `<button class="file-enter-folder-btn" data-enter-path="${this.escapeHtml(file.path)}" title="Tab 进入文件夹">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"/>
+                </svg>
+            </button>` : ''}
         </div>
     `).join('');
 
@@ -115,7 +120,10 @@ FKTeamsChat.prototype.showFileSuggestions = async function (searchText, cursorPo
     // 绑定点击事件
     this.fileSuggestions.querySelectorAll('.file-suggestion-item').forEach(item => {
         // 单击：选择文件或文件夹
-        item.addEventListener('click', () => {
+        item.addEventListener('click', (e) => {
+            // 如果点击的是进入文件夹按钮，不触发选择
+            if (e.target.closest('.file-enter-folder-btn')) return;
+
             const filePath = item.getAttribute('data-path');
             const isParent = item.getAttribute('data-is-parent') === 'true';
 
@@ -128,18 +136,14 @@ FKTeamsChat.prototype.showFileSuggestions = async function (searchText, cursorPo
                 this.insertFileMention(filePath);
             }
         });
+    });
 
-        // 双击：进入文件夹
-        item.addEventListener('dblclick', async (e) => {
+    // 绑定进入文件夹按钮点击事件
+    this.fileSuggestions.querySelectorAll('.file-enter-folder-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const filePath = item.getAttribute('data-path');
-            const isDir = item.getAttribute('data-is-dir') === 'true';
-            const isParent = item.getAttribute('data-is-parent') === 'true';
-
-            if (isDir && !isParent) {
-                // 进入子目录
-                await this.showFileSuggestions(filePath + '/', cursorPos);
-            }
+            const enterPath = btn.getAttribute('data-enter-path');
+            this.showFileSuggestions(enterPath + '/', cursorPos);
         });
     });
 };

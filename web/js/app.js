@@ -29,8 +29,15 @@ class FKTeamsChat {
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
     this.attachments = []; // 多模态附件列表
+    this._debounceTimers = {}; // 防抖定时器
 
     this.init();
+  }
+
+  // 通用防抖方法
+  debounce(key, fn, delay) {
+    clearTimeout(this._debounceTimers[key]);
+    this._debounceTimers[key] = setTimeout(fn, delay);
   }
 
   // 获取 auth token
@@ -269,7 +276,10 @@ class FKTeamsChat {
   }
 
   restoreSidebarState() {
-    const isCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
+    const isMobile = window.innerWidth <= 768;
+    const savedPref = localStorage.getItem("sidebarCollapsed");
+    // 移动端首次加载默认隐藏侧边栏
+    const isCollapsed = savedPref !== null ? savedPref === "true" : isMobile;
     if (isCollapsed) {
       this.sidebar.classList.add("collapsed");
       this.sidebarToggle.classList.add("collapsed");
@@ -277,7 +287,6 @@ class FKTeamsChat {
       if (this.scrollToBottomBtn) {
         this.scrollToBottomBtn.classList.add("sidebar-collapsed");
       }
-      // 同步调整快速导航按钮和菜单位置
     }
   }
 
@@ -297,7 +306,7 @@ class FKTeamsChat {
     };
 
     this.ws.onclose = () => {
-      this.updateStatus("disconnected", "连接断开");
+      this.updateStatus("disconnected", "服务未连接");
       // 连接断开时重置处理状态，恢复发送按钮
       if (this.isProcessing) {
         this.isProcessing = false;
@@ -308,7 +317,7 @@ class FKTeamsChat {
 
     this.ws.onerror = (error) => {
       console.error("WebSocket error:", error);
-      this.updateStatus("disconnected", "连接错误");
+      this.updateStatus("disconnected", "连接异常");
       // 连接错误时重置处理状态，恢复发送按钮
       if (this.isProcessing) {
         this.isProcessing = false;

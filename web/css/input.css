@@ -152,3 +152,42 @@
     width: 16px;
     height: 16px;
 }
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+    .input-container {
+        padding: 10px 0 16px;
+        padding-left: 10px;
+        padding-right: 10px;
+        margin-left: -10px;
+        margin-right: -10px;
+    }
+
+    .input-wrapper {
+        padding: 10px 12px;
+        border-radius: 12px;
+        gap: 8px;
+    }
+
+    .message-input {
+        font-size: 16px;
+        /* 防止 iOS 自动缩放 */
+    }
+
+    .send-btn {
+        padding: 6px 14px;
+        font-size: 13px;
+        border-radius: 8px;
+    }
+
+    .cancel-btn {
+        padding: 6px 12px;
+        font-size: 13px;
+        border-radius: 8px;
+    }
+
+    /* 隐藏输入提示，移动端空间有限 */
+    .input-hints {
+        display: none;
+    }
+}
