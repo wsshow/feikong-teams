@@ -345,7 +345,7 @@ POST   /login       # 登录（若启用认证）
 | | `save_chat_history` `clear_chat_history` | 保存、清空 |
 | | `save_chat_history_to_markdown` | 导出为 Markdown |
 | | `save_chat_history_to_html` | 导出为 HTML |
-| 定时任务 | `list_schedule` `cancel_schedule` | 查看、取消 |
+| 定时任务 | `list_schedule` `cancel_schedule` `delete_schedule` | 查看、取消、删除 |
 | 模式 | `switch_work_mode` | 切换工作模式 |
 | 记忆 | `list_memory` `delete_memory` `clear_memory` | 长期记忆管理 |
 

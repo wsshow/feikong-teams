@@ -358,13 +358,15 @@ list_agents
 请输入您的问题: 定期帮我搜一下 AI 新闻
 # 统御会追问：需要多久执行一次？从什么时候开始？
 
-# 通过 AI 对话查看/取消定时任务
+# 通过 AI 对话查看/取消/删除定时任务
 请输入您的问题: 列出当前所有定时任务
 请输入您的问题: 取消那个搜索新闻的定时任务
+请输入您的问题: 删除所有已完成的定时任务
 
-# 通过 CLI 命令查看/取消定时任务
+# 通过 CLI 命令管理定时任务
 list_schedule
-cancel_schedule <task_id>
+cancel_schedule
+delete_schedule
 ```
 
 - 定时任务在后台静默执行，执行结果保存在 `result/scheduled_tasks/` 目录

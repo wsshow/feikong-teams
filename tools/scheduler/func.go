@@ -166,6 +166,60 @@ func (s *Scheduler) ScheduleCancel(ctx context.Context, req *ScheduleCancelReque
 	}, nil
 }
 
+// ScheduleDeleteRequest 删除定时任务请求
+type ScheduleDeleteRequest struct {
+	TaskID string `json:"task_id" jsonschema:"description=要删除的任务 ID"`
+}
+
+// ScheduleDeleteResponse 删除定时任务响应
+type ScheduleDeleteResponse struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// ScheduleDelete 删除定时任务（从列表中永久移除）
+func (s *Scheduler) ScheduleDelete(ctx context.Context, req *ScheduleDeleteRequest) (*ScheduleDeleteResponse, error) {
+	if req.TaskID == "" {
+		return &ScheduleDeleteResponse{ErrorMessage: "任务 ID 不能为空"}, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("加载任务列表失败: %v", err)}, nil
+	}
+
+	found := false
+	var remaining []ScheduledTask
+	for _, t := range tasks.Tasks {
+		if t.ID == req.TaskID {
+			if t.Status == "running" {
+				return &ScheduleDeleteResponse{ErrorMessage: "不能删除正在执行中的任务，请先取消"}, nil
+			}
+			found = true
+			continue
+		}
+		remaining = append(remaining, t)
+	}
+
+	if !found {
+		return &ScheduleDeleteResponse{ErrorMessage: "未找到指定的任务"}, nil
+	}
+
+	tasks.Tasks = remaining
+	if err := s.saveTasks(tasks); err != nil {
+		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("保存任务列表失败: %v", err)}, nil
+	}
+
+	return &ScheduleDeleteResponse{
+		Success: true,
+		Message: "任务已删除",
+	}, nil
+}
+
 // FormatTasksForDisplay 格式化任务列表用于 CLI 显示
 func FormatTasksForDisplay(tasks []ScheduledTask) string {
 	if len(tasks) == 0 {

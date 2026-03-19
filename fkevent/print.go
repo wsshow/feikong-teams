@@ -67,7 +67,7 @@ func printEvent() func(Event) {
 					formatted = formatSSHResult(event.Content, lastToolName)
 				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
 					formatted = formatTodoResult(event.Content, lastToolName)
-				case "schedule_add", "schedule_list", "schedule_cancel":
+				case "schedule_add", "schedule_list", "schedule_cancel", "schedule_delete":
 					formatted = formatSchedulerResult(event.Content, lastToolName)
 				case "dispatch_tasks":
 					formatted = formatDispatchResult(event.Content)
@@ -849,7 +849,7 @@ func formatSchedulerResult(content string, toolName string) string {
 			}
 		}
 
-	case "schedule_cancel":
+	case "schedule_cancel", "schedule_delete":
 		var result struct {
 			Success      bool   `json:"success"`
 			Message      string `json:"message"`

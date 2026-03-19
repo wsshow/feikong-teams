@@ -39,5 +39,13 @@ func (s *Scheduler) GetTools() ([]tool.BaseTool, error) {
 	}
 	tools = append(tools, scheduleCancelTool)
 
+	scheduleDeleteTool, err := utils.InferTool("schedule_delete",
+		"永久删除指定的定时任务（从任务列表中移除）。不能删除正在执行中（running）的任务。",
+		s.ScheduleDelete)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, scheduleDeleteTool)
+
 	return tools, nil
 }

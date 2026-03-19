@@ -116,6 +116,7 @@ var allCommands = []CommandInfo{
 	{"save_chat_history_to_markdown", "导出聊天历史为 Markdown 文件"},
 	{"list_schedule", "列出所有定时任务"},
 	{"cancel_schedule", "选择并取消定时任务"},
+	{"delete_schedule", "选择并删除定时任务"},
 	{"list_memory", "列出所有长期记忆条目"},
 	{"delete_memory", "选择并删除记忆条目"},
 	{"clear_memory", "清空所有长期记忆"},

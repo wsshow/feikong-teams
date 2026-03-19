@@ -74,6 +74,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		pterm.Println("任务管理:")
 		pterm.Println("  list_schedule                   列出所有定时任务")
 		pterm.Println("  cancel_schedule                 选择并取消定时任务")
+		pterm.Println("  delete_schedule                 选择并删除定时任务")
 		pterm.Println()
 		pterm.Println("模式切换:")
 		pterm.Println("  switch_work_mode               切换当前工作模式")
@@ -158,6 +159,10 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 
 	case "cancel_schedule":
 		handleCancelSchedule()
+		return ResultHandled
+
+	case "delete_schedule":
+		handleDeleteSchedule()
 		return ResultHandled
 
 	case "load_chat_history":
@@ -366,6 +371,56 @@ func handleCancelSchedule() {
 
 	ctx := context.Background()
 	resp, _ := s.ScheduleCancel(ctx, &scheduler.ScheduleCancelRequest{TaskID: selected})
+	if resp.ErrorMessage != "" {
+		pterm.Error.Println(resp.ErrorMessage)
+	} else {
+		pterm.Success.Println(resp.Message)
+	}
+}
+
+// handleDeleteSchedule 交互式选择并删除定时任务
+func handleDeleteSchedule() {
+	s := scheduler.Global()
+	if s == nil {
+		pterm.Error.Println("定时任务调度器未初始化")
+		return
+	}
+
+	tasks, err := s.GetTasks("")
+	if err != nil {
+		pterm.Error.Printfln("获取定时任务列表失败: %v", err)
+		return
+	}
+
+	// 过滤掉 running 状态的任务
+	var deletable []scheduler.ScheduledTask
+	for _, t := range tasks {
+		if t.Status != "running" {
+			deletable = append(deletable, t)
+		}
+	}
+
+	if len(deletable) == 0 {
+		pterm.Info.Println("暂无可删除的定时任务")
+		return
+	}
+
+	var items []tui.SelectItem
+	for _, t := range deletable {
+		items = append(items, tui.SelectItem{
+			Label: fmt.Sprintf("[%s] %s - %s", t.Status, t.ID, t.Task),
+			Value: t.ID,
+		})
+	}
+
+	selected, err := tui.SelectFromList("选择要删除的定时任务", items)
+	if err != nil {
+		pterm.Warning.Println("已取消操作")
+		return
+	}
+
+	ctx := context.Background()
+	resp, _ := s.ScheduleDelete(ctx, &scheduler.ScheduleDeleteRequest{TaskID: selected})
 	if resp.ErrorMessage != "" {
 		pterm.Error.Println(resp.ErrorMessage)
 	} else {
