@@ -47,11 +47,12 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		// 文件列表 API
 		apiV1.GET("/files", handler.GetFilesHandler())
 
-		// 历史文件管理 API
-		apiV1.GET("/history/files", handler.ListHistoryFilesHandler())
-		apiV1.GET("/history/files/:filename", handler.LoadHistoryFileHandler())
-		apiV1.DELETE("/history/files/:filename", handler.DeleteHistoryFileHandler())
-		apiV1.POST("/history/files/rename", handler.RenameHistoryFileHandler())
+		// 会话管理 API
+		apiV1.GET("/sessions", handler.ListSessionsHandler())
+		apiV1.POST("/sessions", handler.CreateSessionHandler())
+		apiV1.GET("/sessions/:sessionID", handler.GetSessionHandler())
+		apiV1.DELETE("/sessions/:sessionID", handler.DeleteSessionHandler())
+		apiV1.POST("/sessions/rename", handler.RenameSessionHandler())
 
 		// 定时任务管理 API
 		apiV1.GET("/schedules", handler.GetScheduleTasksHandler())

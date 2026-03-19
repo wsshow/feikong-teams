@@ -92,7 +92,7 @@ fkteams/
 │   │   ├── conn.go         # WS 连接池管理
 │   │   ├── chat.go         # RunnerCache 类型 + 聊天处理
 │   │   ├── websocket.go    # WS handler + 消息路由
-│   │   ├── history.go      # 历史文件 CRUD
+│   │   ├── history.go      # 会话 CRUD
 │   │   ├── agents.go       # 智能体列表
 │   │   ├── auth.go         # 认证（AuthEnabled 返回 error）
 │   │   ├── files.go        # 文件列表
@@ -285,8 +285,8 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 
 公共常量定义在 `common/common.go`:
 - `DefaultWorkspaceDir`: 默认工作目录 `"./workspace"`
-- `ChatHistoryPrefix`: 聊天历史文件前缀
 - `WorkspaceDir()`: 获取工作目录（优先读环境变量）
+- `GenerateSessionID()`: 生成 UUID v4 会话 ID
 
 ### 环境变量
 

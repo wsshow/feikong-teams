@@ -301,6 +301,33 @@
     height: 13px;
 }
 
+/* 会话状态标签 */
+.session-status-label {
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.session-status-label.processing {
+    color: var(--primary);
+    animation: session-pulse 1.5s ease-in-out infinite;
+}
+
+.session-status-label.completed {
+    color: var(--success);
+}
+
+@keyframes session-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
 .sidebar-footer {
     padding: 10px 12px;
     border-top: 2px dashed var(--border-color);

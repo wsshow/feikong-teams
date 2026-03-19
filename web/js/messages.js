@@ -133,6 +133,39 @@ FKTeamsChat.prototype.resetToTeamMode = function () {
 };
 
 FKTeamsChat.prototype.handleServerEvent = function (event) {
+    // 会话隔离：跟踪所有进行中的会话
+    const eventSessionId = event.session_id;
+    const isCurrentSession = !eventSessionId || eventSessionId === this.sessionId;
+
+    // 维护进行中会话集合
+    if (!this._processingSessions) {
+        this._processingSessions = new Set();
+    }
+    if (event.type === 'processing_start' && eventSessionId) {
+        this._processingSessions.add(eventSessionId);
+        this.loadSidebarHistory();
+    }
+    if ((event.type === 'processing_end' || event.type === 'error' || event.type === 'cancelled') && eventSessionId) {
+        this._processingSessions.delete(eventSessionId);
+        this.loadSidebarHistory();
+    }
+
+    // 非当前会话的事件只更新状态，缓冲渲染事件供切换时回放
+    if (!isCurrentSession) {
+        if (eventSessionId && this._sessionDOMCache[eventSessionId]) {
+            // 缓存中有该会话的 DOM，缓冲事件供恢复时回放
+            if (!this._sessionEventBuffer) this._sessionEventBuffer = {};
+            if (!this._sessionEventBuffer[eventSessionId]) this._sessionEventBuffer[eventSessionId] = [];
+            this._sessionEventBuffer[eventSessionId].push(event);
+            // processing_end 时清除 DOM 缓存，下次切回从服务器加载完整历史
+            if (event.type === 'processing_end') {
+                delete this._sessionDOMCache[eventSessionId];
+                delete this._sessionEventBuffer[eventSessionId];
+            }
+        }
+        return;
+    }
+
     switch (event.type) {
         case 'connected':
             break;
@@ -1008,6 +1041,7 @@ FKTeamsChat.prototype.handleError = function (event) {
     `;
     this.messagesContainer.appendChild(errorEl);
     this.scrollToBottom();
+    this.hideChatLoading();
     this.isProcessing = false;
     this.updateStatus('connected', '已连接');
     this.updateSendButtonState();

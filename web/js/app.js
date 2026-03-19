@@ -7,7 +7,6 @@ class FKTeamsChat {
     this.ws = null;
     this.sessionId = "default";
     this._hasLoadedSession = false;
-    this._activeFilename = null;
     this.mode = "supervisor";
     this.isProcessing = false;
     this.currentMessageElement = null;
@@ -24,6 +23,8 @@ class FKTeamsChat {
     this.activeNotifications = []; // 活动的通知列表
     this.notificationStyleAdded = false; // 标记样式是否已添加
     this.files = []; // 存储文件列表
+    this._sessionDOMCache = {}; // 会话DOM缓存，用于切换时保存/恢复UI状态
+    this._sessionEventBuffer = {}; // 非当前会话的事件缓冲，切回时回放
     this.fileSuggestions = null; // 文件建议弹窗
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
@@ -293,11 +294,6 @@ class FKTeamsChat {
       this.reconnectAttempts = 0;
       // 加载侧边栏历史会话列表
       this.loadSidebarHistory();
-      // 首次连接时自动创建新会话，避免携带残留历史
-      if (!this._initialSessionCreated) {
-        this._initialSessionCreated = true;
-        this.createNewSession(true);
-      }
     };
 
     this.ws.onclose = () => {

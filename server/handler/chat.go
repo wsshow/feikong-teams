@@ -5,7 +5,6 @@ import (
 	"fkteams/agents"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
-	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
@@ -16,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -127,7 +127,7 @@ func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents 
 
 // chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）
 func chatHistoryPath(sessionID string) string {
-	return filepath.Join(historyDir, common.ChatHistoryPrefix+filepath.Base(sessionID))
+	return filepath.Join(historyDir, filepath.Base(sessionID), "history.json")
 }
 
 // --- 执行后处理 ---
@@ -139,15 +139,84 @@ func saveHistory(recorder *fkevent.HistoryRecorder, filePath, sessionID string) 
 	}
 }
 
-// finishChat 保存历史、提取记忆、清理资源
-func finishChat(recorder *fkevent.HistoryRecorder, sessionID string) {
+// updateSessionTitleAndStatus 更新会话标题（仅当标题为默认值时）和状态
+func updateSessionTitleAndStatus(sessionID, userInput, status string) {
+	sessionDir := sessionDirPath(sessionID)
+	meta, err := fkevent.LoadMetadata(sessionDir)
+	if err != nil {
+		return
+	}
+	if userInput != "" && isDefaultTitle(meta.Title) {
+		meta.Title = truncateTitle(userInput)
+	}
+	meta.Status = status
+	meta.UpdatedAt = time.Now()
+	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		log.Printf("failed to update session metadata: session=%s, err=%v", sessionID, err)
+	}
+}
+
+// finishChat 保存历史、更新元数据、提取记忆、清理资源
+func finishChat(recorder *fkevent.HistoryRecorder, sessionID, userInput string) {
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+	ensureSessionMetadata(sessionID, userInput)
 	if g.MemoryManager != nil {
 		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 	}
 	if err := g.Cleaner.ExecuteAndClear(); err != nil {
 		log.Printf("failed to cleanup resources: %v", err)
 	}
+}
+
+// ensureSessionMetadata 确保会话元数据存在，不存在则创建，已存在则更新 UpdatedAt
+// 如果提供了 userInput 且当前标题是默认时间戳格式，则更新为用户输入（截断）
+func ensureSessionMetadata(sessionID, userInput string) {
+	sessionDir := sessionDirPath(sessionID)
+	now := time.Now()
+	meta, err := fkevent.LoadMetadata(sessionDir)
+	if err != nil {
+		// 首次创建
+		title := "未命名会话"
+		if userInput != "" {
+			title = truncateTitle(userInput)
+		}
+		meta = &fkevent.SessionMetadata{
+			ID:        sessionID,
+			Title:     title,
+			Status:    "completed",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+	} else {
+		meta.UpdatedAt = now
+		meta.Status = "completed"
+		// 如果标题仍是默认时间戳格式且有用户输入，则更新
+		if userInput != "" && isDefaultTitle(meta.Title) {
+			meta.Title = truncateTitle(userInput)
+		}
+	}
+	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		log.Printf("failed to save metadata: session=%s, err=%v", sessionID, err)
+	}
+}
+
+// isDefaultTitle 检查标题是否为默认标题
+func isDefaultTitle(title string) bool {
+	if title == "未命名会话" {
+		return true
+	}
+	_, err := time.Parse("2006-01-02 15:04:05", title)
+	return err == nil
+}
+
+// truncateTitle 截断标题，最多 50 个字符（按 rune 处理，对中文安全）
+func truncateTitle(s string) string {
+	const maxLen = 50
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
 }
 
 // isConnectionClosed 检查是否为连接断开导致的错误
@@ -164,7 +233,7 @@ func isConnectionClosed(ctx context.Context, err error) bool {
 // --- HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *fkevent.HistoryRecorder, writeJSON func(any) error, approvalCh <-chan int) engine.InterruptHandler {
+func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan int) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(approvalCh)
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		msg := extractInterruptMessage(interrupts)
@@ -175,8 +244,9 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, writeJSON func(any
 			Content:    msg,
 		})
 		_ = writeJSON(map[string]any{
-			"type":    "approval_required",
-			"message": msg,
+			"type":       "approval_required",
+			"session_id": sessionID,
+			"message":    msg,
 		})
 
 		result, err := channelHandler(ctx, interrupts)
@@ -232,14 +302,16 @@ func approvalDecisionText(result map[string]any) string {
 // --- WebSocket 事件回调 ---
 
 // wsEventCallback 构建 WebSocket 模式的事件回调
-func wsEventCallback(recorder *fkevent.HistoryRecorder, writeJSON func(any) error) func(fkevent.Event) error {
+func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error) func(fkevent.Event) error {
 	return func(event fkevent.Event) error {
 		// interrupted 由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
 		if event.Type == "action" && event.ActionType == "interrupted" {
 			return nil
 		}
 		recorder.RecordEvent(event)
-		return writeJSON(convertEventForWS(event))
+		data := convertEventForWS(event)
+		data["session_id"] = sessionID
+		return writeJSON(data)
 	}
 }
 
@@ -262,10 +334,12 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 
 	tm.mu.Lock()
 	tm.taskCancel = taskCancel
+	tm.activeSessionID = sessionID
 	tm.mu.Unlock()
 	defer func() {
 		tm.mu.Lock()
 		tm.taskCancel = nil
+		tm.activeSessionID = ""
 		tm.mu.Unlock()
 	}()
 
@@ -290,7 +364,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 
 	// 装配 context
 	taskCtx = fkevent.WithNonInteractive(taskCtx)
-	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallback(recorder, writeJSON))
+	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallback(recorder, sessionID, writeJSON))
 	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
@@ -311,28 +385,34 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		tm.mu.Unlock()
 	}()
 
+	// 更新会话标题（首次提交时从默认标题更新为用户输入）和状态
+	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+
 	_ = writeJSON(map[string]any{
-		"type":    "processing_start",
-		"message": "开始处理您的请求...",
+		"type":       "processing_start",
+		"session_id": sessionID,
+		"message":    "开始处理您的请求...",
 	})
 
 	// 执行
-	interruptHandler := buildInterruptHandler(recorder, writeJSON, approvalCh)
+	interruptHandler := buildInterruptHandler(recorder, sessionID, writeJSON, approvalCh)
 	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 	if err != nil {
 		if isConnectionClosed(taskCtx, err) {
 			log.Printf("task cancelled or connection closed: session=%s", sessionID)
 			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+			ensureSessionMetadata(sessionID, userDisplayText)
 			return
 		}
 		log.Printf("error processing event: %v", err)
-		_ = writeJSON(map[string]any{"type": "error", "error": err.Error()})
+		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 	}
 
-	finishChat(recorder, sessionID)
+	finishChat(recorder, sessionID, userDisplayText)
 	_ = writeJSON(map[string]any{
-		"type":    "processing_end",
-		"message": "处理完成",
+		"type":       "processing_end",
+		"session_id": sessionID,
+		"message":    "处理完成",
 	})
 }
 

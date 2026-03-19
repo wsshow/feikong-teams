@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fkteams/common"
 	"fkteams/fkevent"
 	"log"
 	"net/http"
@@ -14,27 +13,35 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const historyDir = "history/chat_history/"
+const historyDir = "sessions/"
 
-// HistoryFileInfo 历史文件信息
-type HistoryFileInfo struct {
-	Filename    string    `json:"filename"`
-	DisplayName string    `json:"display_name"`
-	SessionID   string    `json:"session_id"`
-	Size        int64     `json:"size"`
-	ModTime     time.Time `json:"mod_time"`
+// SessionInfo 会话信息
+type SessionInfo struct {
+	SessionID string    `json:"session_id"`
+	Title     string    `json:"title"`
+	Status    string    `json:"status"`
+	Size      int64     `json:"size"`
+	ModTime   time.Time `json:"mod_time"`
 }
 
-// validateFilename 校验文件名安全性
-func validateFilename(filename string) bool {
-	return filename != "" && !strings.Contains(filename, "..") && !strings.Contains(filename, "/")
+// validateSessionID 校验会话 ID 安全性（禁止路径穿越）
+func validateSessionID(sessionID string) bool {
+	return sessionID != "" &&
+		!strings.Contains(sessionID, "..") &&
+		!strings.Contains(sessionID, "/") &&
+		!strings.Contains(sessionID, "\\")
 }
 
-// ListHistoryFilesHandler 列出所有历史文件
-func ListHistoryFilesHandler() gin.HandlerFunc {
+// sessionDirPath 返回会话目录路径
+func sessionDirPath(sessionID string) string {
+	return filepath.Join(historyDir, filepath.Base(sessionID))
+}
+
+// ListSessionsHandler 列出所有历史会话
+func ListSessionsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, err := os.Stat(historyDir); os.IsNotExist(err) {
-			OK(c, gin.H{"files": []HistoryFileInfo{}})
+			OK(c, gin.H{"sessions": []SessionInfo{}})
 			return
 		}
 
@@ -44,148 +51,185 @@ func ListHistoryFilesHandler() gin.HandlerFunc {
 			return
 		}
 
-		files := make([]HistoryFileInfo, 0, len(entries))
+		files := make([]SessionInfo, 0, len(entries))
 		for _, entry := range entries {
-			if entry.IsDir() {
+			if !entry.IsDir() {
 				continue
 			}
-			info, err := entry.Info()
-			if err != nil {
-				continue
+			sessionID := entry.Name()
+			sessionDir := filepath.Join(historyDir, sessionID)
+
+			// 读取元数据
+			title := sessionID
+			status := "active"
+			meta, metaErr := fkevent.LoadMetadata(sessionDir)
+			if metaErr == nil {
+				title = meta.Title
+				status = meta.Status
 			}
-			filename := entry.Name()
-			files = append(files, HistoryFileInfo{
-				Filename:    filename,
-				DisplayName: formatDisplayName(filename),
-				SessionID:   extractSessionID(filename),
-				Size:        info.Size(),
-				ModTime:     info.ModTime(),
+
+			// 获取 history.json 大小和时间
+			histFile := filepath.Join(sessionDir, "history.json")
+			var size int64
+			var modTime time.Time
+			if info, err := os.Stat(histFile); err == nil {
+				size = info.Size()
+				modTime = info.ModTime()
+			}
+			// history.json 不存在时使用 metadata 时间
+			if modTime.IsZero() && metaErr == nil && !meta.UpdatedAt.IsZero() {
+				modTime = meta.UpdatedAt
+			}
+
+			files = append(files, SessionInfo{
+				SessionID: sessionID,
+				Title:     title,
+				Status:    status,
+				Size:      size,
+				ModTime:   modTime,
 			})
 		}
 
-		OK(c, gin.H{"files": files})
+		OK(c, gin.H{"sessions": files})
 	}
 }
 
-// LoadHistoryFileHandler 加载指定的历史文件
-func LoadHistoryFileHandler() gin.HandlerFunc {
+// CreateSessionHandler 创建新会话（仅创建元数据目录）
+func CreateSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		filename := c.Param("filename")
-		if !validateFilename(filename) {
-			Fail(c, http.StatusBadRequest, "invalid filename")
+		var req struct {
+			SessionID string `json:"session_id" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if !validateSessionID(req.SessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
 			return
 		}
 
-		filePath := filepath.Join(historyDir, filename)
-		data, err := os.ReadFile(filePath)
+		sessionDir := sessionDirPath(req.SessionID)
+		if _, err := os.Stat(sessionDir); err == nil {
+			// 会话已存在，直接返回成功
+			OK(c, gin.H{"session_id": req.SessionID, "message": "session already exists"})
+			return
+		}
+
+		now := time.Now()
+		meta := &fkevent.SessionMetadata{
+			ID:        req.SessionID,
+			Title:     "未命名会话",
+			Status:    "idle",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to create session")
+			return
+		}
+
+		OK(c, gin.H{"session_id": req.SessionID, "message": "session created"})
+	}
+}
+
+// GetSessionHandler 加载指定会话的历史记录
+func GetSessionHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		if !validateSessionID(sessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+
+		histFile := filepath.Join(sessionDirPath(sessionID), "history.json")
+		data, err := os.ReadFile(histFile)
 		if err != nil {
 			if os.IsNotExist(err) {
-				Fail(c, http.StatusNotFound, "file not found")
+				Fail(c, http.StatusNotFound, "session not found")
 			} else {
-				Fail(c, http.StatusInternalServerError, "failed to read file")
+				Fail(c, http.StatusInternalServerError, "failed to read history")
 			}
 			return
 		}
 
 		var histData fkevent.HistoryData
 		if err := json.Unmarshal(data, &histData); err != nil {
-			Fail(c, http.StatusInternalServerError, "failed to parse file")
+			Fail(c, http.StatusInternalServerError, "failed to parse history")
 			return
 		}
 
 		OK(c, gin.H{
-			"filename":   filename,
-			"session_id": extractSessionID(filename),
+			"session_id": sessionID,
 			"messages":   histData.Messages,
 		})
 	}
 }
 
-// DeleteHistoryFileHandler 删除指定的历史文件
-func DeleteHistoryFileHandler() gin.HandlerFunc {
+// DeleteSessionHandler 删除指定的会话目录
+func DeleteSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		filename := c.Param("filename")
-		if !validateFilename(filename) {
-			Fail(c, http.StatusBadRequest, "invalid filename")
+		sessionID := c.Param("sessionID")
+		if !validateSessionID(sessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
 			return
 		}
 
-		filePath := filepath.Join(historyDir, filename)
-		if err := os.Remove(filePath); err != nil {
-			if os.IsNotExist(err) {
-				Fail(c, http.StatusNotFound, "file not found")
-			} else {
-				Fail(c, http.StatusInternalServerError, "failed to delete file")
-			}
+		sessionDir := sessionDirPath(sessionID)
+		if _, err := os.Stat(sessionDir); os.IsNotExist(err) {
+			Fail(c, http.StatusNotFound, "session not found")
 			return
 		}
 
-		log.Printf("deleted history file: %s", filename)
-		OK(c, gin.H{"message": "file deleted"})
+		if err := os.RemoveAll(sessionDir); err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to delete session")
+			return
+		}
+
+		log.Printf("deleted session directory: %s", sessionID)
+		OK(c, gin.H{"message": "session deleted"})
 	}
 }
 
-// RenameHistoryFileHandler 重命名历史文件
-func RenameHistoryFileHandler() gin.HandlerFunc {
+// RenameSessionHandler 更新会话的标题
+func RenameSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			OldFilename string `json:"old_filename" binding:"required"`
-			NewFilename string `json:"new_filename" binding:"required"`
+			SessionID string `json:"session_id" binding:"required"`
+			Title     string `json:"title" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request body")
 			return
 		}
-		if !validateFilename(req.OldFilename) || !validateFilename(req.NewFilename) {
-			Fail(c, http.StatusBadRequest, "invalid filename")
+		if !validateSessionID(req.SessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
 			return
 		}
 
-		oldPath := filepath.Join(historyDir, req.OldFilename)
-		newPath := filepath.Join(historyDir, req.NewFilename)
-
-		if _, err := os.Stat(oldPath); os.IsNotExist(err) {
-			Fail(c, http.StatusNotFound, "source file not found")
-			return
-		}
-		if _, err := os.Stat(newPath); err == nil {
-			Fail(c, http.StatusConflict, "target filename already exists")
-			return
-		}
-
-		if err := os.Rename(oldPath, newPath); err != nil {
-			Fail(c, http.StatusInternalServerError, "failed to rename file")
+		sessionDir := sessionDirPath(req.SessionID)
+		meta, err := fkevent.LoadMetadata(sessionDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				Fail(c, http.StatusNotFound, "session not found")
+			} else {
+				Fail(c, http.StatusInternalServerError, "failed to read metadata")
+			}
 			return
 		}
 
-		log.Printf("renamed history file: %s -> %s", req.OldFilename, req.NewFilename)
+		meta.Title = req.Title
+		meta.UpdatedAt = time.Now()
+		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to save metadata")
+			return
+		}
+
+		log.Printf("renamed session %s title to: %s", req.SessionID, req.Title)
 		OK(c, gin.H{
-			"message":      "file renamed",
-			"new_filename": req.NewFilename,
+			"message":    "session renamed",
+			"session_id": req.SessionID,
+			"title":      req.Title,
 		})
 	}
-}
-
-// extractSessionID 从文件名中提取 session_id
-func extractSessionID(filename string) string {
-	prefix := common.ChatHistoryPrefix
-	if strings.HasPrefix(filename, prefix) {
-		sessionID := strings.TrimPrefix(filename, prefix)
-		if idx := strings.LastIndex(sessionID, "."); idx > 0 {
-			sessionID = sessionID[:idx]
-		}
-		return sessionID
-	}
-	return filename
-}
-
-// formatDisplayName 格式化显示名称
-func formatDisplayName(filename string) string {
-	sessionID := extractSessionID(filename)
-	if len(sessionID) == 15 && sessionID[8] == '_' {
-		if t, err := time.Parse("20060102_150405", sessionID); err == nil {
-			return t.Format("2006-01-02 15:04:05")
-		}
-	}
-	return sessionID
 }

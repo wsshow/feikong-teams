@@ -65,15 +65,15 @@ func ChatHandler() gin.HandlerFunc {
 		recorder.RecordUserInput(userDisplayText)
 
 		if req.Stream {
-			handleStreamChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID)
+			handleStreamChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID, userDisplayText)
 		} else {
-			handleSyncChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID)
+			handleSyncChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID, userDisplayText)
 		}
 	}
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID string) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID, userDisplayText string) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -104,7 +104,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 		log.Printf("error processing event: %v", err)
 	}
 
-	finishChat(recorder, sessionID)
+	finishChat(recorder, sessionID, userDisplayText)
 
 	data, _ := json.Marshal(map[string]string{"type": "processing_end", "message": "处理完成"})
 	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
@@ -112,7 +112,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID string) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID, userDisplayText string) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
@@ -133,7 +133,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 		log.Printf("error processing event: %v", err)
 	}
 
-	finishChat(recorder, sessionID)
+	finishChat(recorder, sessionID, userDisplayText)
 
 	var content strings.Builder
 	for _, e := range events {

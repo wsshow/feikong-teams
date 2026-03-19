@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/common"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/memory"
@@ -11,6 +10,7 @@ import (
 	"fkteams/tui"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pterm/pterm"
@@ -88,17 +88,18 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "list_chat_history":
-		ListChatHistoryFiles(true)
+		ListSessions(true)
 		return ResultHandled
 
 	case "save_chat_history":
 		recorder := getCliRecorder()
-		historyFile := CLIHistoryDir + common.ChatHistoryPrefix + activeSessionID
+		historyFile := filepath.Join(CLIHistoryDir, activeSessionID, "history.json")
 		err := recorder.SaveToFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		} else {
 			pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
+			saveCliSessionMetadata(activeSessionID, "")
 		}
 		return ResultHandled
 
@@ -160,7 +161,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultHandled
 
 	case "load_chat_history":
-		handleLoadChatHistory()
+		handleLoadSession()
 		return ResultHandled
 
 	case "list_schedule":
@@ -183,8 +184,8 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 	}
 }
 
-// ListChatHistoryFiles 列出所有可用的聊天历史文件，interactive 表示是否在交互模式中调用
-func ListChatHistoryFiles(interactive ...bool) {
+// ListSessions 列出所有可用的聊天历史会话，interactive 表示是否在交互模式中调用
+func ListSessions(interactive ...bool) {
 	entries, err := os.ReadDir(CLIHistoryDir)
 	if err != nil {
 		pterm.Error.Printfln("读取历史目录失败: %v", err)
@@ -197,19 +198,24 @@ func ListChatHistoryFiles(interactive ...bool) {
 
 	count := 0
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if !entry.IsDir() {
 			continue
 		}
-		name := entry.Name()
-		if !strings.HasPrefix(name, common.ChatHistoryPrefix) {
-			continue
+		sessionID := entry.Name()
+		sessionDir := filepath.Join(CLIHistoryDir, sessionID)
+
+		// 读取标题
+		title := sessionID
+		if meta, err := fkevent.LoadMetadata(sessionDir); err == nil {
+			title = meta.Title
 		}
-		sessionID := strings.TrimPrefix(name, common.ChatHistoryPrefix)
-		info, _ := entry.Info()
-		if info != nil {
-			pterm.Printf("  %s  (%s, %d bytes)\n", sessionID, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
+
+		// 获取 history.json 信息
+		histFile := filepath.Join(sessionDir, "history.json")
+		if info, err := os.Stat(histFile); err == nil {
+			pterm.Printf("  %s  [%s]  (%s, %d bytes)\n", sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
 		} else {
-			pterm.Printf("  %s\n", sessionID)
+			pterm.Printf("  %s  [%s]\n", sessionID, title)
 		}
 		count++
 	}
@@ -227,9 +233,9 @@ func ListChatHistoryFiles(interactive ...bool) {
 	pterm.Println()
 }
 
-// loadChatHistory 加载指定 session ID 的聊天历史
-func loadChatHistory(sessionID string) {
-	historyFile := CLIHistoryDir + common.ChatHistoryPrefix + sessionID
+// loadSession 加载指定 session ID 的聊天历史
+func loadSession(sessionID string) {
+	historyFile := filepath.Join(CLIHistoryDir, sessionID, "history.json")
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		pterm.Error.Printfln("历史文件不存在: %s", historyFile)
 		pterm.Info.Println("使用 list_chat_history 查看可用的会话")
@@ -367,8 +373,8 @@ func handleCancelSchedule() {
 	}
 }
 
-// handleLoadChatHistory 交互式选择并加载聊天历史
-func handleLoadChatHistory() {
+// handleLoadSession 交互式选择并加载聊天历史
+func handleLoadSession() {
 	historyEntries, err := os.ReadDir(CLIHistoryDir)
 	if err != nil {
 		pterm.Error.Printfln("读取历史目录失败: %v", err)
@@ -377,13 +383,21 @@ func handleLoadChatHistory() {
 
 	var items []tui.SelectItem
 	for _, entry := range historyEntries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), common.ChatHistoryPrefix) {
+		if !entry.IsDir() {
 			continue
 		}
-		sessionID := strings.TrimPrefix(entry.Name(), common.ChatHistoryPrefix)
-		label := sessionID
-		if info, _ := entry.Info(); info != nil {
-			label = fmt.Sprintf("%s (%s, %d bytes)", sessionID, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
+		sessionID := entry.Name()
+		sessionDir := filepath.Join(CLIHistoryDir, sessionID)
+
+		title := sessionID
+		if meta, err := fkevent.LoadMetadata(sessionDir); err == nil {
+			title = meta.Title
+		}
+
+		label := title
+		histFile := filepath.Join(sessionDir, "history.json")
+		if info, err := os.Stat(histFile); err == nil {
+			label = fmt.Sprintf("%s (%s, %d bytes)", title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
 		}
 		items = append(items, tui.SelectItem{Label: label, Value: sessionID})
 	}
@@ -399,7 +413,7 @@ func handleLoadChatHistory() {
 		return
 	}
 
-	loadChatHistory(selected)
+	loadSession(selected)
 }
 
 // printMemoryEntries 打印记忆条目列表

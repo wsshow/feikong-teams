@@ -17,7 +17,7 @@ func sessionCommand() *ucli.Command {
 				Name:  "list",
 				Usage: "列出所有可用的聊天历史会话",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
-					cli.ListChatHistoryFiles()
+					cli.ListSessions()
 					return nil
 				},
 			},

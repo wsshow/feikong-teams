@@ -260,9 +260,9 @@ data: {"type":"processing_end","message":"处理完成"}
 
 ---
 
-### GET /api/fkteams/history/files
+### GET /api/fkteams/sessions
 
-列出所有聊天历史文件。
+列出所有聊天历史会话。
 
 **成功响应** (200)：
 
@@ -271,11 +271,11 @@ data: {"type":"processing_end","message":"处理完成"}
   "code": 0,
   "message": "success",
   "data": {
-    "files": [
+    "sessions": [
       {
-        "filename": "fkteams_chat_history_20250101_120000",
-        "display_name": "2025-01-01 12:00:00",
-        "session_id": "20250101_120000",
+        "session_id": "550e8400-e29b-41d4-a716-446655440000",
+        "title": "2025-01-01 12:00:00",
+        "status": "active",
         "size": 2048,
         "mod_time": "2025-01-01T12:00:00Z"
       }
@@ -284,25 +284,27 @@ data: {"type":"processing_end","message":"处理完成"}
 }
 ```
 
-| 字段           | 说明                |
-| -------------- | ------------------- |
-| `filename`     | 原始文件名          |
-| `display_name` | 格式化的显示名称    |
-| `session_id`   | 提取的会话 ID       |
-| `size`         | 文件大小（字节）    |
-| `mod_time`     | 修改时间（RFC3339） |
+| 字段         | 说明                 |
+| ------------ | -------------------- |
+| `session_id` | 会话 ID（UUID）      |
+| `title`      | 会话标题             |
+| `status`     | 会话状态             |
+| `size`       | 历史文件大小（字节） |
+| `mod_time`   | 修改时间（RFC3339）  |
 
 ---
 
-### GET /api/fkteams/history/files/:filename
+### POST /api/fkteams/sessions
 
-加载指定的历史文件内容。
+创建新的会话（生成 metadata）。
 
-**路径参数**：
+**请求 Body**：
 
-| 参数       | 类型   | 说明       |
-| ---------- | ------ | ---------- |
-| `filename` | string | 历史文件名 |
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
 
 **成功响应** (200)：
 
@@ -311,8 +313,40 @@ data: {"type":"processing_end","message":"处理完成"}
   "code": 0,
   "message": "success",
   "data": {
-    "filename": "fkteams_chat_history_20250101_120000",
-    "session_id": "20250101_120000",
+    "message": "session created",
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
+
+**失败响应**：
+
+| 状态码 | message                  |
+| ------ | ------------------------ |
+| 400    | invalid request body     |
+| 400    | invalid session ID       |
+| 500    | failed to create session |
+
+---
+
+### GET /api/fkteams/sessions/:sessionID
+
+加载指定会话的历史记录。
+
+**路径参数**：
+
+| 参数        | 类型   | 说明            |
+| ----------- | ------ | --------------- |
+| `sessionID` | string | 会话 ID（UUID） |
+
+**成功响应** (200)：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
     "messages": []
   }
 }
@@ -320,23 +354,23 @@ data: {"type":"processing_end","message":"处理完成"}
 
 **失败响应**：
 
-| 状态码 | message                   | 说明                 |
-| ------ | ------------------------- | -------------------- |
-| 400    | invalid filename          | 文件名含 `..` 或 `/` |
-| 404    | file not found            | 文件不存在           |
-| 500    | failed to read/parse file | 读取或解析失败       |
+| 状态码 | message                      | 说明                   |
+| ------ | ---------------------------- | ---------------------- |
+| 400    | invalid session ID           | 会话 ID 含 `..` 或 `/` |
+| 404    | session not found            | 会话不存在             |
+| 500    | failed to read/parse history | 读取或解析失败         |
 
 ---
 
-### DELETE /api/fkteams/history/files/:filename
+### DELETE /api/fkteams/sessions/:sessionID
 
-删除指定的历史文件。
+删除指定的会话目录（包括历史记录和元数据）。
 
 **路径参数**：
 
-| 参数       | 类型   | 说明       |
-| ---------- | ------ | ---------- |
-| `filename` | string | 历史文件名 |
+| 参数        | 类型   | 说明            |
+| ----------- | ------ | --------------- |
+| `sessionID` | string | 会话 ID（UUID） |
 
 **成功响应** (200)：
 
@@ -345,31 +379,31 @@ data: {"type":"processing_end","message":"处理完成"}
   "code": 0,
   "message": "success",
   "data": {
-    "message": "file deleted"
+    "message": "session deleted"
   }
 }
 ```
 
 **失败响应**：
 
-| 状态码 | message               |
-| ------ | --------------------- |
-| 400    | invalid filename      |
-| 404    | file not found        |
-| 500    | failed to delete file |
+| 状态码 | message                  |
+| ------ | ------------------------ |
+| 400    | invalid session ID       |
+| 404    | session not found        |
+| 500    | failed to delete session |
 
 ---
 
-### POST /api/fkteams/history/files/rename
+### POST /api/fkteams/sessions/rename
 
-重命名历史文件。
+更新会话的标题。
 
 **请求 Body**：
 
 ```json
 {
-  "old_filename": "string",
-  "new_filename": "string"
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "title": "新的会话标题"
 }
 ```
 
@@ -380,20 +414,20 @@ data: {"type":"processing_end","message":"处理完成"}
   "code": 0,
   "message": "success",
   "data": {
-    "message": "file renamed",
-    "new_filename": "new_name"
+    "message": "session renamed",
+    "session_id": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "新的会话标题"
   }
 }
 ```
 
 **失败响应**：
 
-| 状态码 | message                                 |
-| ------ | --------------------------------------- |
-| 400    | invalid request body / invalid filename |
-| 404    | source file not found                   |
-| 409    | target filename already exists          |
-| 500    | failed to rename file                   |
+| 状态码 | message                                   |
+| ------ | ----------------------------------------- |
+| 400    | invalid request body / invalid session ID |
+| 404    | session not found                         |
+| 500    | failed to read/save metadata              |
 
 ---
 
@@ -641,15 +675,13 @@ data: {"type":"processing_end","message":"处理完成"}
 | ------------ | --------------------------------- |
 | `session_id` | 要清除的会话 ID，默认 `"default"` |
 
-**特殊值**：`session_id = "__memory_only__"` — 仅清空所有会话的内存历史（不删除文件），用于新建会话。
-
 **服务器响应**：`{"type": "history_cleared"}` 或 `{"type": "error"}`
 
-#### load_history — 加载历史文件
+#### load_history — 加载历史会话
 
-| 字段      | 说明                           |
-| --------- | ------------------------------ |
-| `message` | 要加载的历史文件名（不含路径） |
+| 字段      | 说明                         |
+| --------- | ---------------------------- |
+| `message` | 要加载的会话 ID（UUID 格式） |
 
 **服务器响应**：
 
@@ -657,8 +689,7 @@ data: {"type":"processing_end","message":"处理完成"}
 {
   "type": "history_loaded",
   "message": "历史记录已加载",
-  "filename": "fkteams_chat_history_xxx",
-  "session_id": "xxx",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
   "messages": []
 }
 ```
@@ -673,16 +704,16 @@ data: {"type":"processing_end","message":"处理完成"}
 
 #### 连接与控制消息
 
-| type               | 说明       | 附加字段                                        |
-| ------------------ | ---------- | ----------------------------------------------- |
-| `connected`        | 连接建立   | `message`                                       |
-| `error`            | 错误通知   | `error`                                         |
-| `pong`             | 心跳响应   | —                                               |
-| `cancelled`        | 任务已取消 | `message`                                       |
-| `history_cleared`  | 历史已清除 | `message`                                       |
-| `history_loaded`   | 历史已加载 | `message`、`filename`、`session_id`、`messages` |
-| `processing_start` | 开始处理   | `message`                                       |
-| `processing_end`   | 处理完成   | `message`                                       |
+| type               | 说明       | 附加字段                            |
+| ------------------ | ---------- | ----------------------------------- |
+| `connected`        | 连接建立   | `message`                           |
+| `error`            | 错误通知   | `error`                             |
+| `pong`             | 心跳响应   | —                                   |
+| `cancelled`        | 任务已取消 | `message`                           |
+| `history_cleared`  | 历史已清除 | `message`                           |
+| `history_loaded`   | 历史已加载 | `message`、`session_id`、`messages` |
+| `processing_start` | 开始处理   | `message`                           |
+| `processing_end`   | 处理完成   | `message`                           |
 
 #### Agent 事件消息
 

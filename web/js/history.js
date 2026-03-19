@@ -5,38 +5,35 @@
 // ===== 新增会话 =====
 
 FKTeamsChat.prototype.createNewSession = function (silent) {
-    // 生成基于时间戳的会话ID
-    const now = new Date();
-    const ts = now.getFullYear().toString() +
-        (now.getMonth() + 1).toString().padStart(2, '0') +
-        now.getDate().toString().padStart(2, '0') + '_' +
-        now.getHours().toString().padStart(2, '0') +
-        now.getMinutes().toString().padStart(2, '0') +
-        now.getSeconds().toString().padStart(2, '0');
-    const newSessionId = `session_${ts}`;
+    // 保存当前会话的 DOM 状态
+    this._saveSessionDOM();
+
+    // 生成基于 UUID 的会话ID
+    const newSessionId = crypto.randomUUID();
 
     this.sessionId = newSessionId;
     this.sessionIdInput.value = newSessionId;
     this._hasLoadedSession = true;
-    this._activeFilename = null; // 重置活动文件名，防止侧边栏高亮错误
     this.currentAgent = null; // 重置当前智能体，防止新会话继承上一个 @agent
 
-    // 通知后端清空内存中的历史记录，防止新会话携带旧历史
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this._suppressHistoryClearedNotification = true;
-        this.ws.send(JSON.stringify({
-            type: 'clear_history',
-            session_id: '__memory_only__'
-        }));
-    }
+    // 同步处理状态
+    this.isProcessing = false;
+    this.updateStatus('connected', '已连接');
+    this.updateSendButtonState();
 
     this.clearChatUI();
-    if (!silent) {
-        this.showNotification(`已创建新会话: ${newSessionId}`, 'success');
-    }
+    this.hideChatLoading();
 
-    // 刷新侧边栏并高亮新会话
-    this.loadSidebarHistory();
+    // 后台创建会话 metadata 并刷新侧边栏
+    this.fetchWithAuth('/api/fkteams/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: newSessionId })
+    }).then(() => {
+        this.loadSidebarHistory();
+    }).catch(err => {
+        console.error('Error creating session:', err);
+    });
 };
 
 // ===== 侧边栏历史会话 =====
@@ -45,19 +42,19 @@ FKTeamsChat.prototype.loadSidebarHistory = async function () {
     if (!this.sidebarSessionList) return;
 
     try {
-        const response = await this.fetchWithAuth('/api/fkteams/history/files');
+        const response = await this.fetchWithAuth('/api/fkteams/sessions');
         if (!response.ok) {
             this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">加载失败</div>';
             return;
         }
 
         const result = await response.json();
-        if (result.code !== 0 || !result.data || !result.data.files) {
+        if (result.code !== 0 || !result.data || !result.data.sessions) {
             this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">暂无会话记录</div>';
             return;
         }
 
-        this.renderSidebarSessions(result.data.files);
+        this.renderSidebarSessions(result.data.sessions);
     } catch (error) {
         console.error('Error loading sidebar history:', error);
         this.sidebarSessionList.innerHTML = '<div class="sidebar-session-empty">加载失败</div>';
@@ -80,15 +77,26 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
     files.forEach(file => {
         const item = document.createElement('div');
         item.className = 'sidebar-session-item';
-        item.setAttribute('data-filename', file.filename);
+        item.setAttribute('data-session-id', file.session_id);
 
-        // 判断是否是当前活动会话（仅在用户明确加载过会话时高亮）
-        if (this._hasLoadedSession) {
-            const standardFilename = `fkteams_chat_history_${this.sessionId}`;
-            const directFilename = this._activeFilename || standardFilename;
-            if (file.filename === standardFilename || file.filename === directFilename) {
-                item.classList.add('active');
-            }
+        // 判断是否是当前活动会话
+        if (this._hasLoadedSession && file.session_id === this.sessionId) {
+            item.classList.add('active');
+        }
+
+        // 判断是否正在处理中（优先用实时状态，其次用后端 status）
+        const isProcessing = (this._processingSessions && this._processingSessions.has(file.session_id))
+            || file.status === 'processing';
+        if (isProcessing) {
+            item.classList.add('processing');
+        }
+
+        // 状态文本
+        let statusHtml = '';
+        if (isProcessing) {
+            statusHtml = '<span class="session-status-label processing">处理中</span>';
+        } else if (file.status === 'completed') {
+            statusHtml = '<span class="session-status-label completed">已完成</span>';
         }
 
         item.innerHTML = `
@@ -96,8 +104,8 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
             <div class="sidebar-session-info">
-                <div class="sidebar-session-name">${this.escapeHtml(file.display_name)}</div>
-                <div class="sidebar-session-time">${this.formatTime(file.mod_time)}</div>
+                <div class="sidebar-session-name">${this.escapeHtml(file.title)}</div>
+                <div class="sidebar-session-time">${this.formatTime(file.mod_time)}${statusHtml ? ' · ' + statusHtml : ''}</div>
             </div>
             <div class="sidebar-session-actions">
                 <button class="sidebar-session-action-btn rename-action">
@@ -118,58 +126,127 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
         item.addEventListener('click', (e) => {
             // 如果点击的是操作按钮，不加载会话
             if (e.target.closest('.sidebar-session-action-btn')) return;
-            this.loadSidebarSession(file.filename);
+            this.loadSidebarSession(file.session_id);
         });
 
         // 重命名按钮
         item.querySelector('.rename-action').addEventListener('click', (e) => {
             e.stopPropagation();
-            this.renameHistoryFile(file.filename);
+            this.renameSession(file.session_id, file.title);
         });
 
         // 删除按钮
         item.querySelector('.delete-action').addEventListener('click', (e) => {
             e.stopPropagation();
-            this.deleteHistoryFile(file.filename);
+            this.deleteSession(file.session_id);
         });
 
         this.sidebarSessionList.appendChild(item);
     });
 };
 
-FKTeamsChat.prototype.loadSidebarSession = function (filename) {
-    // 从文件名提取 session ID
-    const prefix = 'fkteams_chat_history_';
-    let sessionId = filename;
-    if (filename.startsWith(prefix)) {
-        sessionId = filename.substring(prefix.length);
+FKTeamsChat.prototype.loadSidebarSession = function (sessionId) {
+    // 如果已经是当前会话，不需要切换
+    if (this.sessionId === sessionId && this._hasLoadedSession) {
+        return;
     }
 
-    // 更新 session ID，同时记录当前活动的文件名
+    // 保存当前会话的 DOM 状态
+    this._saveSessionDOM();
+
     this.sessionId = sessionId;
-    this._activeFilename = filename;
     this._hasLoadedSession = true;
     this.sessionIdInput.value = sessionId;
 
-    // 加载历史文件
-    this.loadHistoryFile(filename);
+    // 同步处理状态
+    const isSessionProcessing = this._processingSessions && this._processingSessions.has(sessionId);
+    this.isProcessing = isSessionProcessing;
+    if (isSessionProcessing) {
+        this.updateStatus('processing', '处理中...');
+    } else {
+        this.updateStatus('connected', '已连接');
+    }
+    this.updateSendButtonState();
+
+    // 尝试从 DOM 缓存恢复
+    if (this._restoreSessionDOM(sessionId)) {
+        this.updateSidebarSessionActive();
+        return;
+    }
+
+    // 缓存中没有，从服务器加载历史
+    this.loadSession(sessionId);
 
     // 更新侧边栏高亮
     this.updateSidebarSessionActive();
+};
+
+// 保存当前会话的 DOM 到缓存（使用 DOM 节点保留引用）
+FKTeamsChat.prototype._saveSessionDOM = function () {
+    if (!this.sessionId || !this._hasLoadedSession) return;
+    // 不缓存欢迎页面（空会话）
+    if (this.messagesContainer.querySelector('.welcome-message')) return;
+
+    // 将所有子节点移到 DocumentFragment 保留 DOM 引用
+    const fragment = document.createDocumentFragment();
+    while (this.messagesContainer.firstChild) {
+        fragment.appendChild(this.messagesContainer.firstChild);
+    }
+
+    this._sessionDOMCache[this.sessionId] = {
+        fragment: fragment,
+        scrollTop: this.mainContent ? this.mainContent.scrollTop : 0,
+        currentMessageElement: this.currentMessageElement,
+        hasToolCallAfterMessage: this.hasToolCallAfterMessage,
+        userQuestions: [...this.userQuestions],
+        currentAgent: this.currentAgent
+    };
+};
+
+// 从缓存恢复会话 DOM，成功返回 true
+FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
+    const cached = this._sessionDOMCache[sessionId];
+    if (!cached || !cached.fragment) return false;
+
+    // 清空当前内容，恢复缓存的 DOM 节点
+    this.messagesContainer.innerHTML = '';
+    this.messagesContainer.appendChild(cached.fragment);
+    this.currentMessageElement = cached.currentMessageElement;
+    this.hasToolCallAfterMessage = cached.hasToolCallAfterMessage;
+    this.userQuestions = cached.userQuestions || [];
+    this.currentAgent = cached.currentAgent || null;
+    this.updateQuickNav();
+    this.hideChatLoading();
+
+    // 删除已恢复的缓存
+    delete this._sessionDOMCache[sessionId];
+
+    // 回放缓冲的事件（切换期间未渲染的流式内容等）
+    if (this._sessionEventBuffer && this._sessionEventBuffer[sessionId]) {
+        const events = this._sessionEventBuffer[sessionId];
+        delete this._sessionEventBuffer[sessionId];
+        for (const event of events) {
+            this.handleServerEvent(event);
+        }
+    }
+
+    // 恢复滚动位置
+    if (this.mainContent && cached.scrollTop) {
+        requestAnimationFrame(() => {
+            this.mainContent.scrollTop = cached.scrollTop;
+        });
+    }
+    return true;
 };
 
 FKTeamsChat.prototype.updateSidebarSessionActive = function () {
     if (!this.sidebarSessionList) return;
     if (!this._hasLoadedSession) return;
 
-    // 尝试两种匹配方式：带前缀的标准文件名 和 直接文件名
-    const standardFilename = `fkteams_chat_history_${this.sessionId}`;
-    const directFilename = this._activeFilename || standardFilename;
-
     const items = this.sidebarSessionList.querySelectorAll('.sidebar-session-item');
     items.forEach(item => {
-        const itemFilename = item.getAttribute('data-filename');
-        if (itemFilename === standardFilename || itemFilename === directFilename) {
+        const itemSessionId = item.getAttribute('data-session-id');
+        if (itemSessionId === this.sessionId) {
             item.classList.add('active');
         } else {
             item.classList.remove('active');
@@ -188,22 +265,22 @@ FKTeamsChat.prototype.showHistoryModal = async function () {
         if (!this._historySearchBound) {
             this._historySearchBound = true;
             this.historySearchInput.addEventListener('input', () => {
-                this.filterHistoryList();
+                this.filterSessionList();
             });
         }
     }
-    await this.loadHistoryFiles();
+    await this.loadSessions();
 };
 
 FKTeamsChat.prototype.hideHistoryModal = function () {
     this.historyModal.style.display = 'none';
 };
 
-FKTeamsChat.prototype.loadHistoryFiles = async function () {
+FKTeamsChat.prototype.loadSessions = async function () {
     this.historyList.innerHTML = '<div class="history-loading">加载中...</div>';
 
     try {
-        const response = await this.fetchWithAuth('/api/fkteams/history/files');
+        const response = await this.fetchWithAuth('/api/fkteams/sessions');
         if (!response.ok) {
             throw new Error('加载失败');
         }
@@ -213,15 +290,15 @@ FKTeamsChat.prototype.loadHistoryFiles = async function () {
             throw new Error(result.message || '加载失败');
         }
         // 缓存文件列表用于搜索过滤
-        this._historyFiles = result.data.files || [];
-        this.renderHistoryList(this._historyFiles);
+        this._sessionList = result.data.sessions || [];
+        this.renderSessionList(this._sessionList);
     } catch (error) {
         console.error('Error loading history files:', error);
         this.historyList.innerHTML = '<div class="history-error">加载历史文件失败</div>';
     }
 };
 
-FKTeamsChat.prototype.renderHistoryList = function (files) {
+FKTeamsChat.prototype.renderSessionList = function (files) {
     if (!files || files.length === 0) {
         this.historyList.innerHTML = '<div class="history-empty">暂无历史记录</div>';
         return;
@@ -231,9 +308,9 @@ FKTeamsChat.prototype.renderHistoryList = function (files) {
     files.sort((a, b) => new Date(b.mod_time) - new Date(a.mod_time));
 
     const listHTML = files.map(file => `
-        <div class="history-item" data-filename="${this.escapeHtml(file.filename)}">
+        <div class="history-item" data-session-id="${this.escapeHtml(file.session_id)}">
             <div class="history-item-info">
-                <div class="history-item-name">${this.escapeHtml(file.display_name)}</div>
+                <div class="history-item-name">${this.escapeHtml(file.title)}</div>
                 <div class="history-item-meta">
                     <span class="history-item-time">${this.formatTime(file.mod_time)}</span>
                     <span class="history-item-size">${this.formatSize(file.size)}</span>
@@ -252,12 +329,12 @@ FKTeamsChat.prototype.renderHistoryList = function (files) {
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </button>
-                <button class="history-action-btn rename-btn" data-tooltip="重命名该文件">
+                <button class="history-action-btn rename-btn" data-tooltip="重命名该会话">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                     </svg>
                 </button>
-                <button class="history-action-btn delete-btn" data-tooltip="删除该文件">
+                <button class="history-action-btn delete-btn" data-tooltip="删除该会话">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -273,64 +350,60 @@ FKTeamsChat.prototype.renderHistoryList = function (files) {
     this.historyList.querySelectorAll('.load-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const item = e.target.closest('.history-item');
-            const filename = item.dataset.filename;
-            this.loadHistoryFile(filename);
+            const sessionId = item.dataset.sessionId;
+            this.loadSession(sessionId);
         });
     });
 
     this.historyList.querySelectorAll('.export-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const item = e.target.closest('.history-item');
-            const filename = item.dataset.filename;
-            this.exportHistoryFile(filename);
+            const sessionId = item.dataset.sessionId;
+            this.exportSession(sessionId);
         });
     });
 
     this.historyList.querySelectorAll('.rename-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const item = e.target.closest('.history-item');
-            const filename = item.dataset.filename;
-            this.renameHistoryFile(filename);
+            const sessionId = item.dataset.sessionId;
+            // 从 DOM 获取当前显示名用于编辑提示
+            const title = item.querySelector('.history-item-name')?.textContent || sessionId;
+            this.renameSession(sessionId, title);
         });
     });
 
     this.historyList.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const item = e.target.closest('.history-item');
-            const filename = item.dataset.filename;
-            this.deleteHistoryFile(filename);
+            const sessionId = item.dataset.sessionId;
+            this.deleteSession(sessionId);
         });
     });
 };
 
 // ===== 历史记录搜索过滤 =====
-FKTeamsChat.prototype.filterHistoryList = function () {
+FKTeamsChat.prototype.filterSessionList = function () {
     const query = (this.historySearchInput?.value || '').trim().toLowerCase();
-    if (!this._historyFiles) return;
+    if (!this._sessionList) return;
 
     if (!query) {
-        this.renderHistoryList(this._historyFiles);
+        this.renderSessionList(this._sessionList);
         return;
     }
 
-    const filtered = this._historyFiles.filter(file => {
-        const name = (file.display_name || file.filename || '').toLowerCase();
+    const filtered = this._sessionList.filter(file => {
+        const name = (file.title || file.session_id || '').toLowerCase();
         return name.includes(query);
     });
 
-    this.renderHistoryList(filtered);
+    this.renderSessionList(filtered);
 };
 
 // ===== 导出单个历史会话 =====
-FKTeamsChat.prototype.exportHistoryFile = async function (filename) {
+FKTeamsChat.prototype.exportSession = async function (sessionId) {
     try {
-        // 从文件名提取会话ID
-        let sessionId = filename;
-        if (sessionId.startsWith('fkteams_chat_history_')) {
-            sessionId = sessionId.substring('fkteams_chat_history_'.length);
-        }
-
-        const response = await this.fetchWithAuth(`/api/fkteams/history/files/${encodeURIComponent(filename)}`);
+        const response = await this.fetchWithAuth(`/api/fkteams/sessions/${encodeURIComponent(sessionId)}`);
         if (!response.ok) {
             throw new Error('无法获取历史文件');
         }
@@ -341,14 +414,14 @@ FKTeamsChat.prototype.exportHistoryFile = async function (filename) {
         }
 
         const messages = result.data?.messages || [];
-        this.generateExportHTML(sessionId, messages, filename);
+        this.generateExportHTML(sessionId, messages);
     } catch (error) {
         console.error('Error exporting history file:', error);
         this.showNotification('导出失败: ' + error.message, 'error');
     }
 };
 
-FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, filename) {
+FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages) {
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
     const exportFilename = `fkteams_chat_${sessionId}_${timestamp}.html`;
 
@@ -591,13 +664,13 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages, f
     this.showNotification(`对话记录已导出为 ${exportFilename}`, 'success');
 };
 
-FKTeamsChat.prototype.loadHistoryFile = function (filename) {
-    // 通过 WebSocket 加载历史文件
+FKTeamsChat.prototype.loadSession = function (sessionId) {
+    // 通过 WebSocket 加载历史
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.showChatLoading();
         this.ws.send(JSON.stringify({
             type: 'load_history',
-            message: filename
+            message: sessionId
         }));
         this.hideHistoryModal();
     } else {
@@ -619,40 +692,29 @@ FKTeamsChat.prototype.hideChatLoading = function () {
 
 FKTeamsChat.prototype.checkAndLoadSessionHistory = async function (sessionId) {
     try {
-        // 构造文件名
-        const filename = `fkteams_chat_history_${sessionId}`;
-
-        // 检查文件是否存在
-        const response = await this.fetchWithAuth('/api/fkteams/history/files');
+        // 检查会话是否存在
+        const response = await this.fetchWithAuth('/api/fkteams/sessions');
         if (!response.ok) {
-            // 如果无法获取文件列表，只清空界面不删除历史
             this.clearChatUI();
             return;
         }
 
         const result = await response.json();
-        if (result.code !== 0 || !result.data || !result.data.files) {
-            // 如果没有历史文件，只清空界面不删除历史
+        if (result.code !== 0 || !result.data || !result.data.sessions) {
             this.clearChatUI();
             return;
         }
 
-        // 查找是否存在该会话的历史文件
-        const fileExists = result.data.files.some(file =>
-            file.filename === filename || file === filename
-        );
+        // 查找是否存在该会话
+        const fileExists = result.data.sessions.some(file => file.session_id === sessionId);
 
         if (fileExists) {
-            // 存在历史记录，加载它
-            this.loadHistoryFile(filename);
+            this.loadSession(sessionId);
         } else {
-            // 不存在历史记录，只清空界面显示新会话
             this.clearChatUI();
-            this.showNotification(`已切换到新会话: ${sessionId}`, 'success');
         }
     } catch (error) {
         console.error('Error checking session history:', error);
-        // 出错时只清空界面，不删除历史
         this.clearChatUI();
     }
 };
@@ -674,10 +736,6 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
         this.sessionId = event.session_id;
         this.sessionIdInput.value = event.session_id;
         this._hasLoadedSession = true;
-        // 记录活动文件名（如果事件中包含）
-        if (event.filename) {
-            this._activeFilename = event.filename;
-        }
         this.loadSidebarHistory();
     }
 
@@ -797,10 +855,6 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
                 }
             }
         });
-
-        this.showNotification(`已加载 ${event.messages.length} 条历史消息`, 'success');
-    } else {
-        this.showNotification('历史记录为空', 'info');
     }
 
     this.scrollToBottom();
@@ -1029,9 +1083,9 @@ FKTeamsChat.prototype.renderSingleAction = function (action, agentName) {
     this.messagesContainer.appendChild(actionEl);
 };
 
-FKTeamsChat.prototype.deleteHistoryFile = function (filename) {
-    this.currentDeleteFilename = filename;
-    this.deleteFilenameSpan.textContent = filename;
+FKTeamsChat.prototype.deleteSession = function (sessionId) {
+    this.currentDeleteSessionId = sessionId;
+    this.deleteFilenameSpan.textContent = sessionId;
     this.showDeleteModal();
 };
 
@@ -1044,17 +1098,17 @@ FKTeamsChat.prototype.showDeleteModal = function () {
 
 FKTeamsChat.prototype.hideDeleteModal = function () {
     this.deleteModal.style.display = 'none';
-    this.currentDeleteFilename = null;
+    this.currentDeleteSessionId = null;
 };
 
 FKTeamsChat.prototype.confirmDelete = async function () {
-    const filename = this.currentDeleteFilename;
+    const sessionId = this.currentDeleteSessionId;
     this.hideDeleteModal();
 
-    if (!filename) return;
+    if (!sessionId) return;
 
     try {
-        const response = await this.fetchWithAuth(`/api/fkteams/history/files/${encodeURIComponent(filename)}`, {
+        const response = await this.fetchWithAuth(`/api/fkteams/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'DELETE'
         });
 
@@ -1069,30 +1123,32 @@ FKTeamsChat.prototype.confirmDelete = async function () {
 
         this.showNotification('删除成功', 'success');
 
+        // 清除 DOM 缓存和事件缓冲
+        delete this._sessionDOMCache[sessionId];
+        if (this._sessionEventBuffer) delete this._sessionEventBuffer[sessionId];
+
         // 如果删除的是当前活动会话，切回欢迎页面
-        const standardFilename = `fkteams_chat_history_${this.sessionId}`;
-        if (this._hasLoadedSession && (filename === standardFilename || filename === this._activeFilename)) {
+        if (this._hasLoadedSession && sessionId === this.sessionId) {
             this.sessionId = 'default';
             this.sessionIdInput.value = 'default';
             this._hasLoadedSession = false;
-            this._activeFilename = null;
             this.clearChatUI();
         }
 
         // 刷新历史弹窗列表（如果弹窗已打开）
         if (this.historyModal && this.historyModal.style.display !== 'none') {
-            await this.loadHistoryFiles();
+            await this.loadSessions();
         }
         await this.loadSidebarHistory();
     } catch (error) {
-        console.error('Error deleting file:', error);
+        console.error('Error deleting session:', error);
         this.showNotification(error.message || '删除失败', 'error');
     }
 };
 
-FKTeamsChat.prototype.renameHistoryFile = async function (filename) {
-    this.currentRenameFilename = filename;
-    this.renameInput.value = filename;
+FKTeamsChat.prototype.renameSession = async function (sessionId, currentTitle) {
+    this.currentRenameSessionId = sessionId;
+    this.renameInput.value = currentTitle || sessionId;
     this.showRenameModal();
 };
 
@@ -1106,27 +1162,27 @@ FKTeamsChat.prototype.showRenameModal = function () {
 
 FKTeamsChat.prototype.hideRenameModal = function () {
     this.renameModal.style.display = 'none';
-    this.currentRenameFilename = null;
+    this.currentRenameSessionId = null;
 };
 
 FKTeamsChat.prototype.confirmRename = async function () {
-    const newName = this.renameInput.value.trim();
-    const oldFilename = this.currentRenameFilename;
+    const newTitle = this.renameInput.value.trim();
+    const sessionId = this.currentRenameSessionId;
 
-    if (!newName || newName === oldFilename) {
+    if (!newTitle || !sessionId) {
         this.hideRenameModal();
         return;
     }
 
     try {
-        const response = await this.fetchWithAuth('/api/fkteams/history/files/rename', {
+        const response = await this.fetchWithAuth('/api/fkteams/sessions/rename', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                old_filename: oldFilename,
-                new_filename: newName
+                session_id: sessionId,
+                title: newTitle
             })
         });
 
@@ -1142,16 +1198,18 @@ FKTeamsChat.prototype.confirmRename = async function () {
 
         this.showNotification('重命名成功', 'success');
         this.hideRenameModal();
-        await this.loadHistoryFiles();
+        await this.loadSessions();
         await this.loadSidebarHistory();
     } catch (error) {
-        console.error('Error renaming file:', error);
+        console.error('Error renaming session:', error);
         this.showNotification(error.message || '重命名失败', 'error');
     }
 };
 
 FKTeamsChat.prototype.formatTime = function (timeString) {
+    if (!timeString) return '';
     const date = new Date(timeString);
+    if (isNaN(date.getTime()) || date.getFullYear() < 2000) return '';
     const now = new Date();
     const diff = now - date;
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));

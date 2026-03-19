@@ -3,15 +3,19 @@ package common
 
 import (
 	"os"
+
+	"github.com/google/uuid"
 )
 
 const (
 	// DefaultWorkspaceDir 默认工作目录
 	DefaultWorkspaceDir = "./workspace"
-
-	// ChatHistoryPrefix 聊天历史文件前缀
-	ChatHistoryPrefix = "fkteams_chat_history_"
 )
+
+// GenerateSessionID 生成基于 UUID v4 的会话 ID
+func GenerateSessionID() string {
+	return uuid.New().String()
+}
 
 // WorkspaceDir 返回工作目录，优先使用 FEIKONG_WORKSPACE_DIR 环境变量
 func WorkspaceDir() string {

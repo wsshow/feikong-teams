@@ -13,6 +13,7 @@ import (
 	"fkteams/tools/approval"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -129,7 +130,7 @@ func (e *QueryExecutor) SetCallbackBuilder(cb func(*fkevent.HistoryRecorder) fun
 // CLI 模式会话常量
 const (
 	CLISessionID  = "cli"
-	CLIHistoryDir = "./history/chat_history/"
+	CLIHistoryDir = "./sessions/"
 )
 
 // activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
@@ -138,9 +139,9 @@ var activeSessionID = CLISessionID
 // resumeSessionID 恢复会话的 ID，由 -r 参数设置
 var resumeSessionID string
 
-// NewDirectSessionID 生成基于时间戳的唯一会话 ID
+// NewDirectSessionID 生成基于 UUID 的唯一会话 ID
 func NewDirectSessionID() string {
-	return time.Now().Format("20060102_150405")
+	return common.GenerateSessionID()
 }
 
 // SetResumeSessionID 设置要恢复的会话 ID
@@ -165,6 +166,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	recorder := getCliRecorder()
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(input)
+
+	// 用第一次输入更新会话标题
+	saveCliSessionMetadata(activeSessionID, input)
 
 	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)
@@ -312,13 +316,15 @@ func FlushSessionMemory() {
 // AutoSaveCLIHistory 自动保存 CLI 模式的聊天历史（由 --save 参数控制）
 func AutoSaveCLIHistory() {
 	recorder := getCliRecorder()
-	historyFile := CLIHistoryDir + common.ChatHistoryPrefix + activeSessionID
+	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, "history.json")
 
 	pterm.Info.Println("正在自动保存聊天历史...")
 	if err := recorder.SaveToFile(historyFile); err != nil {
 		pterm.Error.Printfln("保存聊天历史失败: %v", err)
 	} else {
 		pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
+		// 保存元数据
+		saveCliSessionMetadata(activeSessionID, "")
 	}
 
 	htmlFilePath, err := SaveChatHistoryToHTML()
@@ -327,4 +333,52 @@ func AutoSaveCLIHistory() {
 	} else {
 		pterm.Success.Printfln("成功保存聊天历史到网页文件: %s", htmlFilePath)
 	}
+}
+
+// saveCliSessionMetadata 保存 CLI 会话元数据
+// 如果提供了 userInput 且当前标题是默认时间戳格式，则更新为用户输入
+func saveCliSessionMetadata(sessionID, userInput string) {
+	sessionDir := filepath.Join(CLIHistoryDir, sessionID)
+	now := time.Now()
+	meta, err := fkevent.LoadMetadata(sessionDir)
+	if err != nil {
+		title := "未命名会话"
+		if userInput != "" {
+			title = truncateTitle(userInput)
+		}
+		meta = &fkevent.SessionMetadata{
+			ID:        sessionID,
+			Title:     title,
+			Status:    "active",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+	} else {
+		meta.UpdatedAt = now
+		if userInput != "" && isDefaultTitle(meta.Title) {
+			meta.Title = truncateTitle(userInput)
+		}
+	}
+	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		log.Printf("failed to save CLI session metadata: %v", err)
+	}
+}
+
+// isDefaultTitle 检查标题是否为默认标题
+func isDefaultTitle(title string) bool {
+	if title == "未命名会话" {
+		return true
+	}
+	_, err := time.Parse("2006-01-02 15:04:05", title)
+	return err == nil
+}
+
+// truncateTitle 截断标题，最多 50 个字符（对中文安全）
+func truncateTitle(s string) string {
+	const maxLen = 50
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
 }

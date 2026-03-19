@@ -16,9 +16,10 @@ var (
 
 // taskManager 任务取消管理（每个连接一个）
 type taskManager struct {
-	mu         sync.Mutex
-	taskCancel context.CancelFunc
-	approvalCh chan int // HITL 审批通道
+	mu              sync.Mutex
+	taskCancel      context.CancelFunc
+	approvalCh      chan int // HITL 审批通道
+	activeSessionID string   // 当前正在处理的会话 ID
 }
 
 var (

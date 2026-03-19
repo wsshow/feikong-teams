@@ -102,12 +102,13 @@ func WebSocketHandler() gin.HandlerFunc {
 
 			case "cancel":
 				tm.mu.Lock()
+				sid := tm.activeSessionID
 				if tm.taskCancel != nil {
 					tm.taskCancel()
 					tm.taskCancel = nil
 				}
 				tm.mu.Unlock()
-				_ = writeJSON(map[string]any{"type": "cancelled", "message": "任务已取消"})
+				_ = writeJSON(map[string]any{"type": "cancelled", "session_id": sid, "message": "任务已取消"})
 
 			case "approval":
 				tm.mu.Lock()
@@ -136,27 +137,16 @@ func WebSocketHandler() gin.HandlerFunc {
 	}
 }
 
-// sessionMemoryOnly 特殊 sessionID 标记，仅清空内存历史
-const sessionMemoryOnly = "__memory_only__"
-
-// handleClearHistory 清除指定会话的历史文件
+// handleClearHistory 清除指定会话的历史
 func handleClearHistory(wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
 		sessionID = "default"
 	}
 
-	if sessionID == sessionMemoryOnly {
-		fkevent.GlobalSessionManager.ClearAll()
-		log.Println("[SessionManager] cleared all in-memory session histories (new session)")
-		_ = writeJSON(map[string]any{"type": "history_cleared", "message": "内存历史已清除"})
-		return
-	}
-
-	filePath := chatHistoryPath(sessionID)
-
-	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-		log.Printf("failed to delete history file: %v", err)
+	sessionDir := sessionDirPath(sessionID)
+	if err := os.RemoveAll(sessionDir); err != nil {
+		log.Printf("failed to delete session directory: %v", err)
 		_ = writeJSON(map[string]any{"type": "error", "error": "清除历史失败"})
 	} else {
 		fkevent.GlobalSessionManager.Remove(sessionID)
@@ -165,29 +155,38 @@ func handleClearHistory(wsMsg WSMessage, writeJSON func(any) error) {
 	}
 }
 
-// handleLoadHistory 加载指定的历史文件
+// handleLoadHistory 加载指定的历史会话
 func handleLoadHistory(wsMsg WSMessage, writeJSON func(any) error) {
-	filename := wsMsg.Message
-	if !validateFilename(filename) {
-		_ = writeJSON(map[string]any{"type": "error", "error": "无效的文件名"})
+	sessionID := wsMsg.Message
+	if !validateSessionID(sessionID) {
+		_ = writeJSON(map[string]any{"type": "error", "error": "无效的会话 ID"})
 		return
 	}
 
-	filePath := filepath.Join(historyDir, filename)
-	sessionID := extractSessionID(filename)
+	filePath := filepath.Join(sessionDirPath(sessionID), "history.json")
+
+	// 历史文件不存在时返回空会话（新建会话尚无历史）
+	if _, statErr := os.Stat(filePath); os.IsNotExist(statErr) {
+		_ = writeJSON(map[string]any{
+			"type":       "history_loaded",
+			"message":    "历史记录已加载",
+			"session_id": sessionID,
+			"messages":   []any{},
+		})
+		return
+	}
 
 	recorder, err := fkevent.GlobalSessionManager.LoadForSession(sessionID, filePath)
 	if err != nil {
-		log.Printf("failed to load history file: %v", err)
+		log.Printf("failed to load session: %v", err)
 		_ = writeJSON(map[string]any{"type": "error", "error": fmt.Sprintf("加载历史失败: %v", err)})
 		return
 	}
 
-	log.Printf("[SessionManager] loaded history file: %s (session=%s)", filename, sessionID)
+	log.Printf("[SessionManager] loaded session: %s", sessionID)
 	_ = writeJSON(map[string]any{
 		"type":       "history_loaded",
 		"message":    "历史记录已加载",
-		"filename":   filename,
 		"session_id": sessionID,
 		"messages":   recorder.GetMessages(),
 	})

@@ -1,10 +1,48 @@
 package fkevent
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
 )
+
+// SessionMetadata 会话元数据，存储于 metadata.json
+type SessionMetadata struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SaveMetadata 保存会话元数据到指定目录
+func SaveMetadata(sessionDir string, meta *SessionMetadata) error {
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return fmt.Errorf("create session dir: %w", err)
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+	return os.WriteFile(filepath.Join(sessionDir, "metadata.json"), data, 0644)
+}
+
+// LoadMetadata 从指定目录加载会话元数据
+func LoadMetadata(sessionDir string) (*SessionMetadata, error) {
+	data, err := os.ReadFile(filepath.Join(sessionDir, "metadata.json"))
+	if err != nil {
+		return nil, err
+	}
+	var meta SessionMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("unmarshal metadata: %w", err)
+	}
+	return &meta, nil
+}
 
 // SessionHistoryManager 按会话 ID 管理独立的 HistoryRecorder，支持并发安全
 type SessionHistoryManager struct {
@@ -35,7 +73,7 @@ func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *Histo
 	}
 
 	recorder := NewHistoryRecorder()
-	filePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
+	filePath := filepath.Join(historyDir, sessionID, "history.json")
 	if err := recorder.LoadFromFile(filePath); err == nil {
 		log.Printf("[SessionManager] loaded session=%s from %s", sessionID, filePath)
 	}
@@ -65,12 +103,6 @@ func (m *SessionHistoryManager) Clear(sessionID string) {
 	if exists {
 		recorder.Clear()
 	}
-}
-
-func (m *SessionHistoryManager) ClearAll() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sessions = make(map[string]*HistoryRecorder)
 }
 
 // LoadForSession 从文件加载历史并替换指定会话的 Recorder
