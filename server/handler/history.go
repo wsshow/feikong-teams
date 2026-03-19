@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const historyDir = "./history/chat_history/"
+const historyDir = "history/chat_history/"
 
 // HistoryFileInfo 历史文件信息
 type HistoryFileInfo struct {

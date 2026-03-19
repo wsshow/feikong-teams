@@ -5,6 +5,7 @@ import (
 	"fkteams/agents"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
+	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
@@ -12,6 +13,7 @@ import (
 	"fkteams/tools/approval"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -64,9 +66,15 @@ func (c *RunnerCache) Clear() {
 
 var globalRunnerCache = NewRunnerCache()
 
+// ClearRunnerCache 清除 runner 缓存
+func ClearRunnerCache() {
+	globalRunnerCache.Clear()
+	log.Println("runner cache cleared")
+}
+
 // getOrCreateRunner 获取或创建 runner（带缓存）
 func getOrCreateRunner(ctx context.Context, mode string) (*adk.Runner, error) {
-	r, err := globalRunnerCache.GetOrCreate(mode, func() (*adk.Runner, error) {
+	return globalRunnerCache.GetOrCreate(mode, func() (*adk.Runner, error) {
 		switch mode {
 		case "roundtable":
 			return runner.CreateLoopAgentRunner(ctx)
@@ -78,39 +86,167 @@ func getOrCreateRunner(ctx context.Context, mode string) (*adk.Runner, error) {
 			return runner.CreateSupervisorRunner(ctx)
 		}
 	})
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("[WebSocket] runner ready: mode=%s", mode)
-	return r, nil
 }
 
 // getOrCreateAgentRunner 获取或创建指定智能体的 runner
-func getOrCreateAgentRunner(ctx context.Context, agentName string) *adk.Runner {
-	r, err := globalRunnerCache.GetOrCreate("agent_"+agentName, func() (*adk.Runner, error) {
+func getOrCreateAgentRunner(ctx context.Context, agentName string) (*adk.Runner, error) {
+	return globalRunnerCache.GetOrCreate("agent_"+agentName, func() (*adk.Runner, error) {
 		agentInfo := agents.GetAgentByName(agentName)
 		if agentInfo == nil {
 			return nil, fmt.Errorf("agent not found: %s", agentName)
 		}
-		agent := agentInfo.Creator(ctx)
-		return runner.CreateAgentRunner(ctx, agent), nil
+		return runner.CreateAgentRunner(ctx, agentInfo.Creator(ctx)), nil
 	})
-	if err != nil {
-		log.Printf("[WebSocket] %v", err)
-		return nil
+}
+
+// resolveRunner 按 agentName 或 mode 获取 runner
+func resolveRunner(ctx context.Context, mode, agentName string) (*adk.Runner, error) {
+	if agentName != "" {
+		return getOrCreateAgentRunner(ctx, agentName)
 	}
-	log.Printf("[WebSocket] agent runner ready: agent=%s", agentName)
-	return r
+	return getOrCreateRunner(ctx, mode)
 }
 
-// ClearRunnerCache 清除 runner 缓存
-func ClearRunnerCache() {
-	globalRunnerCache.Clear()
-	log.Println("[WebSocket] runner cache cleared")
+// --- 聊天输入构建 ---
+
+// buildChatInput 构建输入消息（含历史），支持多模态
+func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents []WSContentPart) (messages []adk.Message, displayText string) {
+	if len(contents) > 0 {
+		parts := convertWSContentParts(contents)
+		displayText = chatutil.ExtractTextFromParts(parts)
+		if displayText == "" {
+			displayText = message
+		}
+		messages = chatutil.BuildMultimodalInputMessages(recorder, displayText, parts)
+	} else {
+		displayText = message
+		messages = chatutil.BuildInputMessages(recorder, message)
+	}
+	return
 }
 
-// handleChatMessage 处理聊天消息
-func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage, writeJSON func(interface{}) error) {
+// chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）
+func chatHistoryPath(sessionID string) string {
+	return filepath.Join(historyDir, common.ChatHistoryPrefix+filepath.Base(sessionID))
+}
+
+// --- 执行后处理 ---
+
+// saveHistory 保存聊天历史到文件
+func saveHistory(recorder *fkevent.HistoryRecorder, filePath, sessionID string) {
+	if err := recorder.SaveToFile(filePath); err != nil {
+		log.Printf("failed to save history: session=%s, err=%v", sessionID, err)
+	}
+}
+
+// finishChat 保存历史、提取记忆、清理资源
+func finishChat(recorder *fkevent.HistoryRecorder, sessionID string) {
+	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+	if g.MemoryManager != nil {
+		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+	}
+	if err := g.Cleaner.ExecuteAndClear(); err != nil {
+		log.Printf("failed to cleanup resources: %v", err)
+	}
+}
+
+// isConnectionClosed 检查是否为连接断开导致的错误
+func isConnectionClosed(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "closed network connection") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset")
+}
+
+// --- HITL 中断处理器 ---
+
+// buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
+func buildInterruptHandler(recorder *fkevent.HistoryRecorder, writeJSON func(any) error, approvalCh <-chan int) engine.InterruptHandler {
+	channelHandler := engine.ChannelHandler(approvalCh)
+	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+		msg := extractInterruptMessage(interrupts)
+
+		recorder.RecordEvent(fkevent.Event{
+			Type:       "action",
+			ActionType: "approval_required",
+			Content:    msg,
+		})
+		_ = writeJSON(map[string]any{
+			"type":    "approval_required",
+			"message": msg,
+		})
+
+		result, err := channelHandler(ctx, interrupts)
+
+		if err == nil {
+			if text := approvalDecisionText(result); text != "" {
+				recorder.RecordEvent(fkevent.Event{
+					Type:       "action",
+					ActionType: "approval_decision",
+					Content:    text,
+				})
+			}
+		}
+
+		return result, err
+	}
+}
+
+func extractInterruptMessage(interrupts []*adk.InterruptCtx) string {
+	var infos []string
+	for _, ic := range interrupts {
+		if ic.IsRootCause && ic.Info != nil {
+			if s, ok := ic.Info.(fmt.Stringer); ok {
+				infos = append(infos, s.String())
+			} else {
+				infos = append(infos, fmt.Sprintf("%v", ic.Info))
+			}
+		}
+	}
+	if len(infos) > 0 {
+		return strings.Join(infos, "\n")
+	}
+	return "需要审批"
+}
+
+func approvalDecisionText(result map[string]any) string {
+	for _, v := range result {
+		switch v {
+		case 0:
+			return "已拒绝"
+		case 1:
+			return "已允许（一次）"
+		case 2:
+			return "已允许（该项）"
+		case 3:
+			return "已全部允许"
+		}
+		break
+	}
+	return ""
+}
+
+// --- WebSocket 事件回调 ---
+
+// wsEventCallback 构建 WebSocket 模式的事件回调
+func wsEventCallback(recorder *fkevent.HistoryRecorder, writeJSON func(any) error) func(fkevent.Event) error {
+	return func(event fkevent.Event) error {
+		// interrupted 由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
+		if event.Type == "action" && event.ActionType == "interrupted" {
+			return nil
+		}
+		recorder.RecordEvent(event)
+		return writeJSON(convertEventForWS(event))
+	}
+}
+
+// --- WebSocket 聊天处理 ---
+
+// handleChatMessage 处理 WebSocket 聊天消息
+func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
 		sessionID = "default"
@@ -139,79 +275,25 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	default:
 	}
 
-	// 获取该会话的 HistoryRecorder（自动从文件加载或创建新的）
-	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-
-	// 构建输入消息（含历史），支持多模态
-	var inputMessages []adk.Message
-	var userDisplayText string
-
-	if len(wsMsg.Contents) > 0 {
-		// 多模态输入
-		parts := convertWSContentParts(wsMsg.Contents)
-		userDisplayText = chatutil.ExtractTextFromParts(parts)
-		if userDisplayText == "" {
-			userDisplayText = wsMsg.Message
-		}
-		inputMessages = chatutil.BuildMultimodalInputMessages(recorder, userDisplayText, parts)
-	} else {
-		// 纯文本输入
-		userDisplayText = wsMsg.Message
-		inputMessages = chatutil.BuildInputMessages(recorder, wsMsg.Message)
+	// 获取 runner
+	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
+	if err != nil {
+		_ = writeJSON(map[string]any{"type": "error", "error": err.Error()})
+		return
 	}
 
+	// 构建输入消息
+	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(userDisplayText)
 
-	// 获取 runner
-	var r *adk.Runner
-	if wsMsg.AgentName != "" {
-		r = getOrCreateAgentRunner(taskCtx, wsMsg.AgentName)
-		if r == nil {
-			_ = writeJSON(map[string]interface{}{
-				"type":  "error",
-				"error": fmt.Sprintf("agent not found: %s", wsMsg.AgentName),
-			})
-			return
-		}
-		log.Printf("using specified agent: %s", wsMsg.AgentName)
-	} else {
-		var err error
-		r, err = getOrCreateRunner(taskCtx, mode)
-		if err != nil {
-			_ = writeJSON(map[string]interface{}{
-				"type":  "error",
-				"error": fmt.Sprintf("failed to create runner: %v", err),
-			})
-			return
-		}
-	}
-
-	defer func() {
-		if err := g.Cleaner.ExecuteAndClear(); err != nil {
-			fmt.Printf("failed to cleanup resources: %v\n", err)
-		}
-	}()
-
-	// 标记为非交互模式（禁止终端 TUI）
+	// 装配 context
 	taskCtx = fkevent.WithNonInteractive(taskCtx)
-
-	// 绑定事件回调（使用会话级别的 recorder）
-	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
-		// interrupted 事件由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
-		if event.Type == "action" && event.ActionType == "interrupted" {
-			return nil
-		}
-		recorder.RecordEvent(event)
-		return writeJSON(convertEventForWS(event))
-	})
-
-	// 设置摘要持久化回调
+	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallback(recorder, writeJSON))
 	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
-
-	// 注入统一审批注册表
 	taskCtx = approval.WithRegistry(taskCtx, approval.NewRegistry(
 		approval.StoreConfig{Name: approval.StoreCommand},
 		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
@@ -229,120 +311,36 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 		tm.mu.Unlock()
 	}()
 
-	_ = writeJSON(map[string]interface{}{
+	_ = writeJSON(map[string]any{
 		"type":    "processing_start",
 		"message": "开始处理您的请求...",
 	})
 
-	// 使用 engine 执行（支持 HITL 中断→恢复循环）
-	historyFilePath := fmt.Sprintf("%sfkteams_chat_history_%s", historyDir, sessionID)
-
-	// 构建 HITL 中断处理器：先通知前端，再等待审批
-	channelHandler := engine.ChannelHandler(approvalCh)
-	interruptHandler := func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
-		// 提取中断信息发送给前端
-		var infos []string
-		for _, ic := range interrupts {
-			if ic.IsRootCause && ic.Info != nil {
-				if s, ok := ic.Info.(fmt.Stringer); ok {
-					infos = append(infos, s.String())
-				} else {
-					infos = append(infos, fmt.Sprintf("%v", ic.Info))
-				}
-			}
-		}
-		msg := "需要审批"
-		if len(infos) > 0 {
-			msg = strings.Join(infos, "\n")
-		}
-
-		// 记录审批请求到历史（不走 callback 避免重复 WebSocket 推送）
-		recorder.RecordEvent(fkevent.Event{
-			Type:       "action",
-			ActionType: "approval_required",
-			Content:    msg,
-		})
-
-		_ = writeJSON(map[string]interface{}{
-			"type":    "approval_required",
-			"message": msg,
-		})
-
-		result, err := channelHandler(ctx, interrupts)
-
-		// 记录审批决定
-		if err == nil {
-			var decisionText string
-			for _, v := range result {
-				switch v {
-				case 0:
-					decisionText = "已拒绝"
-				case 1:
-					decisionText = "已允许（一次）"
-				case 2:
-					decisionText = "已允许（该项）"
-				case 3:
-					decisionText = "已全部允许"
-				}
-				break
-			}
-			if decisionText != "" {
-				// 记录审批决定到历史（不走 callback，前端已在 sendApprovalDecision 中处理展示）
-				recorder.RecordEvent(fkevent.Event{
-					Type:       "action",
-					ActionType: "approval_decision",
-					Content:    decisionText,
-				})
-			}
-		}
-
-		return result, err
-	}
-
-	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
+	// 执行
+	interruptHandler := buildInterruptHandler(recorder, writeJSON, approvalCh)
+	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "closed network connection") ||
-			strings.Contains(errMsg, "broken pipe") ||
-			strings.Contains(errMsg, "connection reset") ||
-			taskCtx.Err() != nil {
-			log.Printf("task cancelled or connection closed: session=%s, saving history...", sessionID)
-			saveHistory(recorder, historyFilePath, sessionID)
+		if isConnectionClosed(taskCtx, err) {
+			log.Printf("task cancelled or connection closed: session=%s", sessionID)
+			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 			return
 		}
 		log.Printf("error processing event: %v", err)
-		_ = writeJSON(map[string]interface{}{
-			"type":  "error",
-			"error": errMsg,
-		})
+		_ = writeJSON(map[string]any{"type": "error", "error": err.Error()})
 	}
 
-	// 保存聊天历史
-	saveHistory(recorder, historyFilePath, sessionID)
-
-	// 异步提取记忆
-	if g.MemoryManager != nil {
-		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
-	}
-
-	_ = writeJSON(map[string]interface{}{
+	finishChat(recorder, sessionID)
+	_ = writeJSON(map[string]any{
 		"type":    "processing_end",
 		"message": "处理完成",
 	})
 }
 
-// saveHistory 保存聊天历史到文件
-func saveHistory(recorder *fkevent.HistoryRecorder, filePath, sessionID string) {
-	if err := recorder.SaveToFile(filePath); err != nil {
-		log.Printf("failed to save chat history: session=%s, err=%v", sessionID, err)
-	} else {
-		log.Printf("chat history saved: %s", filePath)
-	}
-}
+// --- 事件/内容转换 ---
 
 // convertEventForWS 将事件转换为前端可用的格式
-func convertEventForWS(event fkevent.Event) map[string]interface{} {
-	result := map[string]interface{}{
+func convertEventForWS(event fkevent.Event) map[string]any {
+	result := map[string]any{
 		"type":       event.Type,
 		"agent_name": event.AgentName,
 	}
@@ -356,9 +354,9 @@ func convertEventForWS(event fkevent.Event) map[string]interface{} {
 		result["reasoning_content"] = event.ReasoningContent
 	}
 	if len(event.ToolCalls) > 0 {
-		toolCalls := make([]map[string]interface{}, 0, len(event.ToolCalls))
+		toolCalls := make([]map[string]any, 0, len(event.ToolCalls))
 		for _, tc := range event.ToolCalls {
-			toolCall := map[string]interface{}{"name": tc.Function.Name}
+			toolCall := map[string]any{"name": tc.Function.Name}
 			if tc.Function.Arguments != "" {
 				toolCall["arguments"] = tc.Function.Arguments
 			}
