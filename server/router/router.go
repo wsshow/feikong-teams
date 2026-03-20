@@ -44,39 +44,49 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		// 聊天 API
 		apiV1.POST("/chat", handler.ChatHandler())
 
-		// 文件列表 API
-		apiV1.GET("/files", handler.GetFilesHandler())
-
-		// 文件下载 API
-		apiV1.GET("/files/download", handler.DownloadFileHandler())
-
-		// 文件上传 API
-		apiV1.POST("/files/upload", handler.UploadFileHandler())
-
-		// 文件分片上传 API
-		apiV1.POST("/files/upload/chunk", handler.UploadChunkHandler())
+		// 文件管理 API
+		files := apiV1.Group("/files")
+		{
+			files.GET("", handler.GetFilesHandler())
+			files.GET("/download", handler.DownloadFileHandler())
+			files.POST("/upload", handler.UploadFileHandler())
+			files.POST("/upload/chunk", handler.UploadChunkHandler())
+			files.DELETE("", handler.DeleteFileHandler())
+		}
 
 		// 文件预览链接 API
-		apiV1.POST("/preview", handler.CreatePreviewLinkHandler())
-		apiV1.GET("/preview", handler.ListPreviewLinksHandler())
-		apiV1.GET("/preview/:linkId", handler.PreviewFileHandler())
-		apiV1.DELETE("/preview/:linkId", handler.DeletePreviewLinkHandler())
+		preview := apiV1.Group("/preview")
+		{
+			preview.POST("", handler.CreatePreviewLinkHandler())
+			preview.GET("", handler.ListPreviewLinksHandler())
+			preview.GET("/:linkId", handler.PreviewFileHandler())
+			preview.DELETE("/:linkId", handler.DeletePreviewLinkHandler())
+		}
 
 		// 会话管理 API
-		apiV1.GET("/sessions", handler.ListSessionsHandler())
-		apiV1.POST("/sessions", handler.CreateSessionHandler())
-		apiV1.GET("/sessions/:sessionID", handler.GetSessionHandler())
-		apiV1.DELETE("/sessions/:sessionID", handler.DeleteSessionHandler())
-		apiV1.POST("/sessions/rename", handler.RenameSessionHandler())
+		sessions := apiV1.Group("/sessions")
+		{
+			sessions.GET("", handler.ListSessionsHandler())
+			sessions.POST("", handler.CreateSessionHandler())
+			sessions.GET("/:sessionID", handler.GetSessionHandler())
+			sessions.DELETE("/:sessionID", handler.DeleteSessionHandler())
+			sessions.POST("/rename", handler.RenameSessionHandler())
+		}
 
 		// 定时任务管理 API
-		apiV1.GET("/schedules", handler.GetScheduleTasksHandler())
-		apiV1.POST("/schedules/:id/cancel", handler.CancelScheduleTaskHandler())
+		schedules := apiV1.Group("/schedules")
+		{
+			schedules.GET("", handler.GetScheduleTasksHandler())
+			schedules.POST("/:id/cancel", handler.CancelScheduleTaskHandler())
+		}
 
 		// 长期记忆管理 API
-		apiV1.GET("/memory", handler.GetMemoryListHandler())
-		apiV1.DELETE("/memory", handler.DeleteMemoryHandler())
-		apiV1.POST("/memory/clear", handler.ClearMemoryHandler())
+		memory := apiV1.Group("/memory")
+		{
+			memory.GET("", handler.GetMemoryListHandler())
+			memory.DELETE("", handler.DeleteMemoryHandler())
+			memory.POST("/clear", handler.ClearMemoryHandler())
+		}
 	}
 }
 

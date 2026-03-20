@@ -416,3 +416,67 @@ func DownloadFileHandler() gin.HandlerFunc {
 		c.FileAttachment(fullPath, fileName)
 	}
 }
+
+// DeleteFileHandler 删除工作目录中的文件或空目录
+// JSON body: {"path": "相对路径"}
+func DeleteFileHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
+		if baseDir == "" {
+			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+			return
+		}
+
+		var req struct {
+			Path string `json:"path" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "缺少 path 参数")
+			return
+		}
+
+		cleanPath := filepath.Clean(req.Path)
+		if strings.Contains(cleanPath, "..") {
+			Fail(c, http.StatusBadRequest, "无效的文件路径")
+			return
+		}
+
+		fullPath := filepath.Join(baseDir, cleanPath)
+		absBase, _ := filepath.Abs(baseDir)
+		absFull, _ := filepath.Abs(fullPath)
+		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) || absFull == absBase {
+			Fail(c, http.StatusBadRequest, "无效的文件路径")
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusNotFound, "文件或目录不存在")
+			return
+		}
+
+		if info.IsDir() {
+			// 只允许删除空目录
+			entries, err := os.ReadDir(fullPath)
+			if err != nil {
+				Fail(c, http.StatusInternalServerError, "读取目录失败")
+				return
+			}
+			if len(entries) > 0 {
+				Fail(c, http.StatusBadRequest, "目录非空，无法删除")
+				return
+			}
+			if err := os.Remove(fullPath); err != nil {
+				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除目录失败: %v", err))
+				return
+			}
+		} else {
+			if err := os.Remove(fullPath); err != nil {
+				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除文件失败: %v", err))
+				return
+			}
+		}
+
+		OK(c, nil)
+	}
+}
