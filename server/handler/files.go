@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,24 +25,51 @@ type FileInfo struct {
 	ModTime int64  `json:"mod_time"`
 }
 
+// getWorkspaceDir 获取工作目录并返回绝对路径
+func getWorkspaceDir() (string, string, error) {
+	baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
+	if baseDir == "" {
+		return "", "", fmt.Errorf("FEIKONG_WORKSPACE_DIR 未配置")
+	}
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", "", fmt.Errorf("解析工作目录失败")
+	}
+	return baseDir, absBase, nil
+}
+
+// resolveAndValidatePath 解析相对路径并校验是否在 baseDir 内
+// 返回完整路径和清理后的相对路径
+func resolveAndValidatePath(baseDir, absBase, subPath string) (string, string, error) {
+	if subPath == "" {
+		return baseDir, "", nil
+	}
+	cleanPath := filepath.Clean(subPath)
+	if strings.Contains(cleanPath, "..") {
+		return "", "", fmt.Errorf("无效的路径")
+	}
+	fullPath := filepath.Join(baseDir, cleanPath)
+	absFull, _ := filepath.Abs(fullPath)
+	if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
+		return "", "", fmt.Errorf("无效的路径")
+	}
+	return fullPath, cleanPath, nil
+}
+
 // GetFilesHandler 获取指定目录下的文件和文件夹列表
 func GetFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		subPath := c.Query("path")
-		fullPath := baseDir
-		if subPath != "" {
-			cleanPath := filepath.Clean(subPath)
-			if strings.Contains(cleanPath, "..") {
-				Fail(c, http.StatusBadRequest, "无效的路径")
-				return
-			}
-			fullPath = filepath.Join(baseDir, cleanPath)
+		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		info, err := os.Stat(fullPath)
@@ -100,24 +128,17 @@ func GetFilesHandler() gin.HandlerFunc {
 // UploadFileHandler 处理文件上传（支持多文件），将文件保存到工作目录
 func UploadFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 
-		absBase, _ := filepath.Abs(baseDir)
-
-		// 验证目标子目录
 		subPath := c.PostForm("path")
-		targetDir := baseDir
-		if subPath != "" {
-			cleanPath := filepath.Clean(subPath)
-			if strings.Contains(cleanPath, "..") {
-				Fail(c, http.StatusBadRequest, "无效的路径")
-				return
-			}
-			targetDir = filepath.Join(baseDir, cleanPath)
+		targetDir, _, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		// 确保目标目录存在
@@ -204,13 +225,11 @@ var chunkUploads = struct {
 // 参数: file(分片内容), uploadId(上传标识), chunkIndex(分片序号,0-based), totalChunks(总分片数), fileName(文件名), path(可选子目录)
 func UploadChunkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
-
-		absBase, _ := filepath.Abs(baseDir)
 
 		uploadID := c.PostForm("uploadId")
 		chunkIndexStr := c.PostForm("chunkIndex")
@@ -248,14 +267,10 @@ func UploadChunkHandler() gin.HandlerFunc {
 
 		// 验证目标子目录
 		subPath := c.PostForm("path")
-		targetDir := baseDir
-		if subPath != "" {
-			cleanPath := filepath.Clean(subPath)
-			if strings.Contains(cleanPath, "..") {
-				Fail(c, http.StatusBadRequest, "无效的路径")
-				return
-			}
-			targetDir = filepath.Join(baseDir, cleanPath)
+		targetDir, _, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		// 确保最终路径在 baseDir 内
@@ -330,12 +345,14 @@ func UploadChunkHandler() gin.HandlerFunc {
 
 		for i := 0; i < totalChunks; i++ {
 			chunkFile := filepath.Join(chunkDir, fmt.Sprintf("%d", i))
-			data, err := os.ReadFile(chunkFile)
+			src, err := os.Open(chunkFile)
 			if err != nil {
 				Fail(c, http.StatusInternalServerError, fmt.Sprintf("读取分片 %d 失败", i))
 				return
 			}
-			if _, err := outFile.Write(data); err != nil {
+			_, writeErr := io.Copy(outFile, src)
+			src.Close()
+			if writeErr != nil {
 				Fail(c, http.StatusInternalServerError, fmt.Sprintf("写入分片 %d 失败", i))
 				return
 			}
@@ -376,9 +393,9 @@ func sanitizeUploadID(id string) string {
 // Query: path(文件相对路径)
 func DownloadFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 
@@ -388,17 +405,9 @@ func DownloadFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		cleanPath := filepath.Clean(filePath)
-		if strings.Contains(cleanPath, "..") {
-			Fail(c, http.StatusBadRequest, "无效的文件路径")
-			return
-		}
-
-		fullPath := filepath.Join(baseDir, cleanPath)
-		absBase, _ := filepath.Abs(baseDir)
-		absFull, _ := filepath.Abs(fullPath)
-		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
-			Fail(c, http.StatusBadRequest, "无效的文件路径")
+		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, filePath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
@@ -417,34 +426,35 @@ func DownloadFileHandler() gin.HandlerFunc {
 	}
 }
 
-// DeleteFileHandler 删除工作目录中的文件或空目录
-// JSON body: {"path": "相对路径"}
+// DeleteFileHandler 删除工作目录中的文件或目录
+// JSON body: {"path": "相对路径", "force": false}
+// force 为 true 时可删除非空目录
 func DeleteFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		var req struct {
-			Path string `json:"path" binding:"required"`
+			Path  string `json:"path" binding:"required"`
+			Force bool   `json:"force"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "缺少 path 参数")
 			return
 		}
 
-		cleanPath := filepath.Clean(req.Path)
-		if strings.Contains(cleanPath, "..") {
-			Fail(c, http.StatusBadRequest, "无效的文件路径")
+		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, req.Path)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		fullPath := filepath.Join(baseDir, cleanPath)
-		absBase, _ := filepath.Abs(baseDir)
+		// 不允许删除根工作目录
 		absFull, _ := filepath.Abs(fullPath)
-		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) || absFull == absBase {
+		if absFull == absBase {
 			Fail(c, http.StatusBadRequest, "无效的文件路径")
 			return
 		}
@@ -456,17 +466,16 @@ func DeleteFileHandler() gin.HandlerFunc {
 		}
 
 		if info.IsDir() {
-			// 只允许删除空目录
 			entries, err := os.ReadDir(fullPath)
 			if err != nil {
 				Fail(c, http.StatusInternalServerError, "读取目录失败")
 				return
 			}
-			if len(entries) > 0 {
-				Fail(c, http.StatusBadRequest, "目录非空，无法删除")
+			if len(entries) > 0 && !req.Force {
+				Fail(c, http.StatusBadRequest, "目录非空，请设置 force:true 确认删除")
 				return
 			}
-			if err := os.Remove(fullPath); err != nil {
+			if err := os.RemoveAll(fullPath); err != nil {
 				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除目录失败: %v", err))
 				return
 			}
