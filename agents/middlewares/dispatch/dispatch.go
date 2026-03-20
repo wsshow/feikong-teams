@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultMaxConcurrency = 3
-	defaultTaskTimeout    = 5 * time.Minute
+	defaultTaskTimeout    = 30 * time.Minute
 	defaultMaxIterations  = 60
 )
 
@@ -27,7 +27,7 @@ type Config struct {
 	ToolNames      []string                   // 工具名称，通过 tools.GetToolsByName 解析
 	Tools          []tool.BaseTool            // 工具实例，与 ToolNames 合并
 	MaxConcurrency int                        // 最大并发数（默认 3）
-	TaskTimeout    time.Duration              // 单任务超时（默认 5min）
+	TaskTimeout    time.Duration              // 单任务超时（默认 30min）
 }
 
 func (c *Config) defaults() {
