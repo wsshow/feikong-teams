@@ -371,3 +371,48 @@ func sanitizeUploadID(id string) string {
 	h := sha256.Sum256([]byte(id))
 	return hex.EncodeToString(h[:16])
 }
+
+// DownloadFileHandler 下载工作目录中的文件
+// Query: path(文件相对路径)
+func DownloadFileHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
+		if baseDir == "" {
+			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
+			return
+		}
+
+		filePath := c.Query("path")
+		if filePath == "" {
+			Fail(c, http.StatusBadRequest, "缺少 path 参数")
+			return
+		}
+
+		cleanPath := filepath.Clean(filePath)
+		if strings.Contains(cleanPath, "..") {
+			Fail(c, http.StatusBadRequest, "无效的文件路径")
+			return
+		}
+
+		fullPath := filepath.Join(baseDir, cleanPath)
+		absBase, _ := filepath.Abs(baseDir)
+		absFull, _ := filepath.Abs(fullPath)
+		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
+			Fail(c, http.StatusBadRequest, "无效的文件路径")
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusNotFound, "文件不存在")
+			return
+		}
+		if info.IsDir() {
+			Fail(c, http.StatusBadRequest, "不支持下载目录")
+			return
+		}
+
+		fileName := filepath.Base(fullPath)
+		c.FileAttachment(fullPath, fileName)
+	}
+}
