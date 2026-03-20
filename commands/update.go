@@ -16,7 +16,7 @@ func updateCommand() *ucli.Command {
 			if err := loadEnv(); err != nil {
 				return nil
 			}
-			return update.SelfUpdate("wsshow", "feikong-teams")
+			return update.SelfUpdate("fkteams", "wsshow", "feikong-teams")
 		},
 	}
 }

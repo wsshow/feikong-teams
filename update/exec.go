@@ -13,8 +13,8 @@ import (
 	"github.com/pterm/pterm"
 )
 
-func SelfUpdate(owner string, repo string) (err error) {
-	up := NewUpdater()
+func SelfUpdate(name, owner, repo string) (err error) {
+	up := NewUpdater(name)
 	info := version.Get()
 	// 检查更新
 	latest, yes, err := up.CheckForUpdates(semver.MustParse(info.Version), owner, repo)

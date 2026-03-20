@@ -33,11 +33,13 @@ func (a Asset) IsCompressedFile() bool {
 	return a.ContentType == "application/zip" || a.ContentType == "application/x-gzip"
 }
 
-type Updater struct{}
+type Updater struct {
+	name string // 可执行文件名称（不含扩展名）
+}
 
 // NewUpdater creates a new Updater instance.
-func NewUpdater() *Updater {
-	return new(Updater)
+func NewUpdater(name string) *Updater {
+	return &Updater{name: name}
 }
 
 // CheckForUpdates verifies if newer version exists.
@@ -192,19 +194,18 @@ func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) 
 	}); err != nil {
 		return "", err
 	}
-	// locateTargetFile 在解压目录中查找 fkteams 可执行文件
-	target := fmt.Sprintf("fkteams_%s_%s", CapitalizeOS(), GetNormalizedArch())
+	// locateTargetFile 在解压目录中查找可执行文件
 	fis, _ := os.ReadDir(dstDir)
 	for _, fi := range fis {
 		if fi.IsDir() {
 			continue
 		}
 		name := fi.Name()
-		if name == target || name == target+".exe" {
+		if name == up.name || name == up.name+".exe" {
 			return filepath.Join(dstDir, name), nil
 		}
 	}
-	return "", fmt.Errorf("未在解压目录中找到可执行文件: %s", target)
+	return "", fmt.Errorf("未在解压目录中找到可执行文件: %s", up.name)
 }
 
 // IsHttpSuccess determines if the HTTP status code indicates successful response.
