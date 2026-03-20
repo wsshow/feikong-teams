@@ -50,11 +50,11 @@ FEIKONG_CODER_ENABLED = true
 # 本地命令行助手
 FEIKONG_CMDER_ENABLED = true
 
+# 个人全能助手（带审批以及子任务功能）
+FEIKONG_ASSISTANT_ENABLED = true
+
 # 数据分析师
 FEIKONG_ANALYST_ENABLED = false
-
-# 个人全能助手（带审批功能）
-FEIKONG_ASSISTANT_ENABLED = false
 
 # 全局长期记忆
 FEIKONG_MEMORY_ENABLED = false
