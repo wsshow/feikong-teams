@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -193,17 +192,19 @@ func (up Updater) unarchive(srcFile, dstDir string) (dstFile string, err error) 
 	}); err != nil {
 		return "", err
 	}
-	// locateTargetFile finds the main executable after extraction.
+	// locateTargetFile 在解压目录中查找 fkteams 可执行文件
+	target := fmt.Sprintf("fkteams_%s_%s", CapitalizeOS(), GetNormalizedArch())
 	fis, _ := os.ReadDir(dstDir)
 	for _, fi := range fis {
-		if strings.HasSuffix(fi.Name(), ".md") ||
-			strings.HasSuffix(fi.Name(), ".zip") ||
-			strings.HasSuffix(fi.Name(), "LICENSE") {
+		if fi.IsDir() {
 			continue
 		}
-		return filepath.Join(dstDir, fi.Name()), nil
+		name := fi.Name()
+		if name == target || name == target+".exe" {
+			return filepath.Join(dstDir, name), nil
+		}
 	}
-	return "", nil
+	return "", fmt.Errorf("未在解压目录中找到可执行文件: %s", target)
 }
 
 // IsHttpSuccess determines if the HTTP status code indicates successful response.
