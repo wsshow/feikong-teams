@@ -473,17 +473,8 @@ func handleLoadSession() {
 
 // printMemoryEntries 打印记忆条目列表
 func printMemoryEntries(entries []memory.MemoryEntry) {
-	typeEmoji := map[string]string{
-		"preference": "💡", "fact": "📌", "lesson": "⚠️",
-		"decision": "✅", "insight": "🔍",
-	}
-
 	for i, e := range entries {
-		emoji := typeEmoji[string(e.Type)]
-		if emoji == "" {
-			emoji = "📝"
-		}
-		pterm.Printf("  %d. %s [%s] %s\n", i+1, emoji, e.Type, e.Summary)
+		pterm.Printf("  %d. [%s] %s\n", i+1, e.Type, e.Summary)
 		pterm.Printf("     %s\n", e.Detail)
 		pterm.Printf("     标签: %s | 命中: %d 次 | 创建: %s\n",
 			strings.Join(e.Tags, ", "), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04"))

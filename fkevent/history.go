@@ -585,7 +585,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case "tool_call":
 				if event.ToolCall != nil {
-					md.WriteString(fmt.Sprintf("> **🛠️ 工具调用**: %s\n", event.ToolCall.Name))
+					md.WriteString(fmt.Sprintf("> **工具调用**: %s\n", event.ToolCall.Name))
 					if event.ToolCall.Arguments != "" {
 						md.WriteString(fmt.Sprintf("> - **参数**: `%s`\n", event.ToolCall.Arguments))
 					}

@@ -220,23 +220,23 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 **关键原则**: 工具函数不应该抛出 Go error，而应该将错误信息放在响应结构体的 `ErrorMessage` 字段中。
 
 ```go
-// ❌ 错误做法 - 会导致 Agent 流程中断，用户看到系统级错误
+// 错误做法 - 会导致 Agent 流程中断，用户看到系统级错误
 func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error) {
     if err := someOperation(); err != nil {
         return &Response{
             ErrorMessage: fmt.Sprintf("操作失败: %v", err),
-        }, err  // ❌ 不要返回 error
+        }, err  // 不要返回 error
     }
     return &Response{Success: true}, nil
 }
 
-// ✅ 正确做法 - Agent 可以看到错误信息并继续执行
+// 正确做法 - Agent 可以看到错误信息并继续执行
 func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error) {
     if err := someOperation(); err != nil {
         return &Response{
             Success:      false,
             ErrorMessage: fmt.Sprintf("操作失败: %v，请检查...", err),
-        }, nil  // ✅ 返回 nil
+        }, nil  // 返回 nil
     }
     return &Response{Success: true, Message: "操作成功"}, nil
 }

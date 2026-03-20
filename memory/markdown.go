@@ -18,11 +18,11 @@ var memoryTypeFile = []struct {
 	File  string
 	Title string
 }{
-	{Preference, "preference.md", "💡 用户偏好"},
-	{Fact, "fact.md", "📌 个人信息"},
-	{Lesson, "lesson.md", "⚠️ 避坑记录"},
-	{Decision, "decision.md", "✅ 已确定方案"},
-	{Insight, "insight.md", "🔍 认知洞察"},
+	{Preference, "preference.md", "用户偏好"},
+	{Fact, "fact.md", "个人信息"},
+	{Lesson, "lesson.md", "避坑记录"},
+	{Decision, "decision.md", "已确定方案"},
+	{Insight, "insight.md", "认知洞察"},
 }
 
 // saveAllMarkdown 按类型保存到多个 Markdown 文件

@@ -230,16 +230,16 @@ func FormatTasksForDisplay(tasks []ScheduledTask) string {
 	sb.WriteString(fmt.Sprintf("共 %d 个定时任务:\n\n", len(tasks)))
 
 	for i, t := range tasks {
-		statusIcon := "⏳"
+		statusIcon := "[等待]"
 		switch t.Status {
 		case "completed":
-			statusIcon = "✅"
+			statusIcon = "[完成]"
 		case "running":
-			statusIcon = "🔄"
+			statusIcon = "[运行]"
 		case "failed":
-			statusIcon = "❌"
+			statusIcon = "[失败]"
 		case "cancelled":
-			statusIcon = "🚫"
+			statusIcon = "[取消]"
 		}
 
 		sb.WriteString(fmt.Sprintf("  %s %d. %s\n", statusIcon, i+1, t.Task))

@@ -21,11 +21,11 @@ func BuildMemoryContext(entries []MemoryEntry) string {
 		Type  MemoryType
 		Title string
 	}{
-		{Preference, "💡 用户偏好"},
-		{Fact, "📌 个人信息"},
-		{Lesson, "⚠️ 避坑记录"},
-		{Decision, "✅ 已确定方案"},
-		{Insight, "🔍 认知洞察"},
+		{Preference, "用户偏好"},
+		{Fact, "个人信息"},
+		{Lesson, "避坑记录"},
+		{Decision, "已确定方案"},
+		{Insight, "认知洞察"},
 	}
 
 	var sb strings.Builder
