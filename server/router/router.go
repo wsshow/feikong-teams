@@ -53,6 +53,12 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		// 文件分片上传 API
 		apiV1.POST("/files/upload/chunk", handler.UploadChunkHandler())
 
+		// 文件预览链接 API
+		apiV1.POST("/preview", handler.CreatePreviewLinkHandler())
+		apiV1.GET("/preview", handler.ListPreviewLinksHandler())
+		apiV1.GET("/preview/:linkId", handler.PreviewFileHandler())
+		apiV1.DELETE("/preview/:linkId", handler.DeletePreviewLinkHandler())
+
 		// 会话管理 API
 		apiV1.GET("/sessions", handler.ListSessionsHandler())
 		apiV1.POST("/sessions", handler.CreateSessionHandler())
