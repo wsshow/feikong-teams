@@ -13,16 +13,13 @@ import (
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/joho/godotenv"
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
 
 // chatAction 默认操作：启动交互模式或直接查询模式
 func chatAction(ctx context.Context, cmd *ucli.Command) error {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("加载 .env 文件失败，请确保已创建该文件")
-		fmt.Println("可以使用 generate env 子命令生成示例文件")
+	if err := loadEnv(); err != nil {
 		return nil
 	}
 

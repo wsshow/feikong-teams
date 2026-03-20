@@ -14,7 +14,6 @@ import (
 	"fkteams/runner"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/joho/godotenv"
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
@@ -29,8 +28,7 @@ func agentCommand() *ucli.Command {
 				Name:  "list",
 				Usage: "列出所有可用的 Agent",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
-					if err := godotenv.Load(); err != nil {
-						fmt.Println("加载 .env 文件失败，请确保已创建该文件")
+					if err := loadEnv(); err != nil {
 						return nil
 					}
 					registry := agents.GetRegistry()
@@ -81,9 +79,7 @@ func agentCommand() *ucli.Command {
 
 // agentAction 执行单 Agent 任务
 func agentAction(ctx context.Context, cmd *ucli.Command) error {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("加载 .env 文件失败，请确保已创建该文件")
-		fmt.Println("可以使用 generate env 子命令生成示例文件")
+	if err := loadEnv(); err != nil {
 		return nil
 	}
 
