@@ -1,0 +1,14 @@
+.env
+.git
+.github
+.gitignore
+.DS_Store
+release/
+docs/
+*.md
+*.log
+*.tmp
+*.bak
+*.zip
+LICENSE
+Makefile
