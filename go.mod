@@ -12,7 +12,7 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/cloudwego/eino v0.8.4
+	github.com/cloudwego/eino v0.8.2
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.65
 	github.com/cloudwego/eino-ext/components/model/claude v0.1.15
 	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.2
