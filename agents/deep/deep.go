@@ -3,6 +3,8 @@ package deep
 import (
 	"context"
 	"fkteams/agents/common"
+	"fkteams/agents/retry"
+	rootcommon "fkteams/common"
 	"fkteams/tools"
 	"fmt"
 
@@ -29,16 +31,17 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
+	retryModel := retry.NewRetryChatModel(chatModel, &retry.ModelRetryConfig{
+		MaxRetries:  rootcommon.MaxRetries,
+		IsRetryAble: rootcommon.IsRetryAble,
+	})
+
 	return deep.New(ctx, &deep.Config{
 		Name:         "深度探索者",
 		Description:  "一个能够深入分析问题并协调多个智能体协作解决复杂任务的智能体。",
-		ChatModel:    chatModel,
+		ChatModel:    retryModel,
 		SubAgents:    subAgents,
 		MaxIteration: common.MaxIterations,
-		ModelRetryConfig: &adk.ModelRetryConfig{
-			MaxRetries:  common.MaxRetries,
-			IsRetryAble: common.IsRetryAble,
-		},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,

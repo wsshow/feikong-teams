@@ -2,7 +2,11 @@
 package common
 
 import (
+	"context"
+	"errors"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -10,6 +14,8 @@ import (
 const (
 	// DefaultWorkspaceDir 默认工作目录
 	DefaultWorkspaceDir = "./workspace"
+	// MaxRetries 模型调用最大重试次数
+	MaxRetries = 3
 )
 
 // GenerateSessionID 生成基于 UUID v4 的会话 ID
@@ -67,4 +73,32 @@ FEIKONG_SSH_PASSWORD =
 `
 
 	return os.WriteFile(filePath, []byte(exampleContent), 0644)
+}
+
+// IsRetryAble 判断错误是否可重试（网络错误、HTTP/2 stream 错误、限流等）
+func IsRetryAble(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	msg := err.Error()
+	return strings.Contains(msg, "status code: 429") ||
+		strings.Contains(msg, "status code: 500") ||
+		strings.Contains(msg, "status code: 502") ||
+		strings.Contains(msg, "status code: 503") ||
+		strings.Contains(msg, "status code: 504") ||
+		strings.Contains(msg, "rate limit") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "stream error") ||
+		strings.Contains(msg, "INTERNAL_ERROR") ||
+		strings.Contains(msg, "EOF")
 }

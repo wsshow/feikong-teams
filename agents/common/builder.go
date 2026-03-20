@@ -7,6 +7,8 @@ import (
 	"fkteams/agents/middlewares/summary"
 	"fkteams/agents/middlewares/tools/patch"
 	"fkteams/agents/middlewares/tools/warperror"
+	"fkteams/agents/retry"
+	rootcommon "fkteams/common"
 	"fkteams/tools"
 	"fmt"
 	"time"
@@ -144,17 +146,19 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		b.tools = append(b.tools, resolved...)
 	}
 
+	// 用自定义重试包装模型
+	retryModel := retry.NewRetryChatModel(chatModel, &retry.ModelRetryConfig{
+		MaxRetries:  rootcommon.MaxRetries,
+		IsRetryAble: rootcommon.IsRetryAble,
+	})
+
 	// 构建配置
 	cfg := &adk.ChatModelAgentConfig{
 		Name:          b.name,
 		Description:   b.description,
 		Instruction:   instruction,
-		Model:         chatModel,
+		Model:         retryModel,
 		MaxIterations: MaxIterations,
-		ModelRetryConfig: &adk.ModelRetryConfig{
-			MaxRetries:  MaxRetries,
-			IsRetryAble: IsRetryAble,
-		},
 	}
 
 	// 工具

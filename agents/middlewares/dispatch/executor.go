@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fkteams/agents/retry"
 	rootcommon "fkteams/common"
 	"fkteams/fkevent"
 	"fkteams/tools/approval"
@@ -156,11 +157,15 @@ func (m *middleware) executeOneTask(parentCtx context.Context, index int, task t
 }
 
 func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk.Agent, error) {
+	retryModel := retry.NewRetryChatModel(m.chatModel, &retry.ModelRetryConfig{
+		MaxRetries:  rootcommon.MaxRetries,
+		IsRetryAble: rootcommon.IsRetryAble,
+	})
 	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        name,
 		Description: fmt.Sprintf("执行子任务: %s", desc),
 		Instruction: subAgentInstruction,
-		Model:       m.chatModel,
+		Model:       retryModel,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: m.tools},
 		},
