@@ -47,6 +47,12 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		// 文件列表 API
 		apiV1.GET("/files", handler.GetFilesHandler())
 
+		// 文件上传 API
+		apiV1.POST("/files/upload", handler.UploadFileHandler())
+
+		// 文件分片上传 API
+		apiV1.POST("/files/upload/chunk", handler.UploadChunkHandler())
+
 		// 会话管理 API
 		apiV1.GET("/sessions", handler.ListSessionsHandler())
 		apiV1.POST("/sessions", handler.CreateSessionHandler())
