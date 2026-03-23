@@ -212,6 +212,27 @@ mode = "team"                      # 智能体模式: team(默认), deep, roundt
 
 支持私聊（C2C）和群聊（@机器人）两种消息类型，支持文字、图片、语音、视频、文件等多媒体消息的接收与发送。
 
+#### Discord 机器人
+
+在 `config/config.toml` 中添加 Discord 机器人配置：
+
+```toml
+[channels.discord]
+enabled = true
+token = "your_discord_bot_token"    # Discord Bot Token
+allow_from = ""                     # 允许的用户 ID，逗号分隔（空则允许所有人）
+mode = "team"                      # 智能体模式: team(默认), deep, roundtable, custom 或智能体名称（如 "小助"）
+```
+
+配置步骤：
+1. 前往 [Discord Developer Portal](https://discord.com/developers/applications) 创建应用
+2. 在 Bot 页面添加机器人并复制 Token
+3. 启用 **MESSAGE CONTENT INTENT**（Bot 设置页）
+4. OAuth2 → URL Generator，Scopes 选 `bot`，Permissions 选 `Send Messages` + `Read Message History`
+5. 使用生成的链接邀请机器人到你的服务器
+
+支持私聊（DM）和服务器频道（@机器人）消息，支持文字和文件附件。
+
 ### 5. 运行
 
 #### Web 界面模式（推荐）

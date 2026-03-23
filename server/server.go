@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fkteams/channels"
+	_ "fkteams/channels/discord"
 	_ "fkteams/channels/qq"
 	"fkteams/config"
 	"fkteams/lifecycle"

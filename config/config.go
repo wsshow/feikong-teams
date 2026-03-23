@@ -74,6 +74,14 @@ type ChannelQQ struct {
 	Mode      string `toml:"mode"` // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
 }
 
+// ChannelDiscord Discord 机器人通道配置
+type ChannelDiscord struct {
+	Enabled   bool   `toml:"enabled"`
+	Token     string `toml:"token"`
+	AllowFrom string `toml:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
+	Mode      string `toml:"mode"`       // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+}
+
 // ChannelEntry 统一通道配置条目
 type ChannelEntry struct {
 	Name  string
@@ -83,7 +91,8 @@ type ChannelEntry struct {
 
 // Channels 消息通道配置
 type Channels struct {
-	QQ ChannelQQ `toml:"qq"`
+	QQ      ChannelQQ      `toml:"qq"`
+	Discord ChannelDiscord `toml:"discord"`
 }
 
 // List 返回所有已启用的通道配置（供统一注册使用）
@@ -97,6 +106,16 @@ func (c Channels) List() []ChannelEntry {
 				"app_id":     c.QQ.AppID,
 				"app_secret": c.QQ.AppSecret,
 				"sandbox":    fmt.Sprintf("%v", c.QQ.Sandbox),
+			},
+		})
+	}
+	if c.Discord.Enabled {
+		entries = append(entries, ChannelEntry{
+			Name: "discord",
+			Mode: c.Discord.Mode,
+			Extra: map[string]string{
+				"token":      c.Discord.Token,
+				"allow_from": c.Discord.AllowFrom,
 			},
 		})
 	}
@@ -157,6 +176,11 @@ func GenerateExample() error {
 				AppSecret: "your_app_secret",
 				Sandbox:   true,
 				Mode:      "team",
+			},
+			Discord: ChannelDiscord{
+				Enabled: false,
+				Token:   "your_discord_bot_token",
+				Mode:    "team",
 			},
 		},
 		Custom: Custom{
