@@ -5,11 +5,11 @@ import (
 	"context"
 	"fkteams/config"
 	"fkteams/lifecycle"
+	"fkteams/log"
 	"fkteams/server/handler"
 	"fkteams/server/router"
 	"fkteams/version"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 

@@ -85,11 +85,19 @@ func Unmarshal(filePath string, v any) error {
 	return nil
 }
 
-// Get 加载并返回应用配置
+// Get 加载并返回应用配置（配置文件不存在时使用默认值）
 func Get() (*Config, error) {
 	var config Config
-	err := Unmarshal("config/config.toml", &config)
-	if err != nil {
+	if err := Unmarshal("config/config.toml", &config); err != nil {
+		if os.IsNotExist(err) {
+			return &Config{
+				Server: Server{
+					Host:     "127.0.0.1",
+					Port:     23456,
+					LogLevel: "info",
+				},
+			}, nil
+		}
 		return nil, err
 	}
 	return &config, nil
