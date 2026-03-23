@@ -65,9 +65,48 @@ type MCPServer struct {
 	TransportType string   `toml:"transport_type"`
 }
 
+// ChannelQQ QQ 机器人通道配置
+type ChannelQQ struct {
+	Enabled   bool   `toml:"enabled"`
+	AppID     string `toml:"app_id"`
+	AppSecret string `toml:"app_secret"`
+	Sandbox   bool   `toml:"sandbox"`
+	Mode      string `toml:"mode"` // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+}
+
+// ChannelEntry 统一通道配置条目
+type ChannelEntry struct {
+	Name  string
+	Mode  string
+	Extra map[string]string
+}
+
+// Channels 消息通道配置
+type Channels struct {
+	QQ ChannelQQ `toml:"qq"`
+}
+
+// List 返回所有已启用的通道配置（供统一注册使用）
+func (c Channels) List() []ChannelEntry {
+	var entries []ChannelEntry
+	if c.QQ.Enabled {
+		entries = append(entries, ChannelEntry{
+			Name: "qq",
+			Mode: c.QQ.Mode,
+			Extra: map[string]string{
+				"app_id":     c.QQ.AppID,
+				"app_secret": c.QQ.AppSecret,
+				"sandbox":    fmt.Sprintf("%v", c.QQ.Sandbox),
+			},
+		})
+	}
+	return entries
+}
+
 // Config 应用全局配置
 type Config struct {
 	Server     Server     `toml:"server"`
+	Channels   Channels   `toml:"channels"`
 	Roundtable Roundtable `toml:"roundtable"`
 	Custom     Custom     `toml:"custom"`
 }
@@ -111,6 +150,15 @@ func GenerateExample() error {
 		return fmt.Errorf("无法创建目录 %s: %w", dir, err)
 	}
 	defaultConfig := Config{
+		Channels: Channels{
+			QQ: ChannelQQ{
+				Enabled:   false,
+				AppID:     "your_app_id",
+				AppSecret: "your_app_secret",
+				Sandbox:   true,
+				Mode:      "team",
+			},
+		},
 		Custom: Custom{
 			Moderator: Agent{
 				Name:         "主持人名称",

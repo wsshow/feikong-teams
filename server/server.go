@@ -3,6 +3,8 @@ package server
 
 import (
 	"context"
+	"fkteams/channels"
+	_ "fkteams/channels/qq"
 	"fkteams/config"
 	"fkteams/lifecycle"
 	"fkteams/log"
@@ -148,6 +150,13 @@ func run(mode serverMode, opts *ServeOptions) error {
 		mode:     mode,
 	}
 	app.RegisterService(httpSvc)
+
+	// 注册消息通道
+	if svc, err := channels.Setup(cfg.Channels.List()); err != nil {
+		return fmt.Errorf("setup channels: %w", err)
+	} else if svc != nil {
+		app.RegisterService(svc)
+	}
 
 	app.OnReady(func(ctx context.Context) error {
 		addr := httpSvc.Addr()

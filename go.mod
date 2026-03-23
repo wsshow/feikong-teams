@@ -38,6 +38,7 @@ require (
 	github.com/pterm/pterm v0.12.82
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/afero v1.15.0
+	github.com/tencent-connect/botgo v0.2.1
 	github.com/urfave/cli/v3 v3.7.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	github.com/wsshow/dl v1.0.5
@@ -115,6 +116,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
+	github.com/go-resty/resty/v2 v2.6.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect

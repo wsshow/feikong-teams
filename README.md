@@ -159,6 +159,23 @@ args = ["-y", "@modelcontextprotocol/server-postgres"]
 transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 ```
 
+### 4. 配置 QQ 机器人通道（可选）
+
+在 `config/config.toml` 中添加 QQ 机器人配置，启用后在 `web` 或 `serve` 模式下自动连接 QQ 平台：
+
+```toml
+[channels.qq]
+enabled = true
+app_id = "your_qq_bot_app_id"       # QQ 机器人 AppID
+app_secret = "your_qq_bot_secret"   # QQ 机器人 AppSecret
+sandbox = true                      # 是否使用沙箱环境（开发阶段建议开启）
+mode = "team"                      # 智能体模式: team(默认), deep, roundtable, custom 或智能体名称（如 "小助"）
+```
+
+QQ 机器人支持私聊（C2C）和群聊（@机器人）两种消息类型，支持文字、图片、语音、视频、文件等多媒体消息的接收与发送。收到消息后会自动调用智能体处理并回复。
+
+> 通道抽象层支持扩展更多平台（微信、Telegram 等），只需实现 `channels.Channel` 接口并通过 `channels.RegisterFactory` 注册即可。
+
 **配置说明**：
 
 #### 内置工具列表
@@ -191,7 +208,7 @@ transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 - `base_url`、`api_key`、`model_name`：AI 模型配置
 - `provider`：模型提供者类型（可选），支持 `openai`、`deepseek`、`claude`、`ollama`、`ark`、`gemini`、`qwen`、`openrouter`，不设置时根据 `base_url` 和 `model_name` 自动检测
 
-### 4. 运行
+### 5. 运行
 
 #### Web 界面模式（推荐）
 
@@ -273,7 +290,7 @@ make build
 ./release/fkteams_darwin_arm64 -m group
 ```
 
-### 5. 使用
+### 6. 使用
 
 #### Web 界面使用
 
