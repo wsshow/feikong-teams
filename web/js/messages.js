@@ -696,8 +696,9 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
 
 // 初始化 dispatch 实时进度容器（从 tool_calls 解析得到全部任务）
 FKTeamsChat.prototype._initDispatchProgress = function (tasks) {
-    // 如果已存在则不重复创建
-    if (document.getElementById('dispatch-progress')) return;
+    // 移除旧的进度容器（如有），确保第二批任务能正确创建新容器
+    const old = document.getElementById('dispatch-progress');
+    if (old) old.remove();
 
     const container = document.createElement('div');
     container.id = 'dispatch-progress';
@@ -867,7 +868,7 @@ FKTeamsChat.prototype.handleDispatchProgress = function (event) {
 
     let card = document.getElementById('dispatch-task-' + idx);
     if (!card) {
-        // 动态追加（不应该到这里，但保险起见）
+        // 动态追加：任务列表不完整（回退场景）或新发现的任务
         const cardsWrap = container.querySelector('.dispatch-cards');
         const c = document.createElement('div');
         c.id = 'dispatch-task-' + idx;
@@ -882,8 +883,19 @@ FKTeamsChat.prototype.handleDispatchProgress = function (event) {
                 <div class="dispatch-card-error" style="display:none"></div>
             </div>
         `;
+        // 绑定展开/收起事件（与 _initDispatchProgress 中一致）
+        c.addEventListener('click', function () {
+            const detail = c.querySelector('.dispatch-card-detail');
+            const hasCont = detail.querySelector('.dispatch-card-ops-list').childElementCount > 0
+                || detail.querySelector('.dispatch-card-error').style.display !== 'none';
+            if (!hasCont) return;
+            c.classList.toggle('dispatch-card-expanded');
+            detail.style.display = c.classList.contains('dispatch-card-expanded') ? '' : 'none';
+        });
         cardsWrap.appendChild(c);
         card = c;
+        // 更新 header 中的任务总数
+        this._updateDispatchTotal(container);
     }
 
     const opsListEl = card.querySelector('.dispatch-card-ops-list');
@@ -943,6 +955,23 @@ FKTeamsChat.prototype._updateDispatchCounter = function (container, increment) {
         container.classList.remove('dispatch-progress-live');
         const title = container.querySelector('.dispatch-progress-title');
         if (title) title.textContent = '子任务执行完成，等待汇总...';
+    }
+};
+
+// 根据实际卡片数量更新 header 中的任务总数和标题
+FKTeamsChat.prototype._updateDispatchTotal = function (container) {
+    const cardsWrap = container.querySelector('.dispatch-cards');
+    if (!cardsWrap) return;
+    const actualTotal = cardsWrap.children.length;
+    const counter = container.querySelector('.dispatch-progress-counter');
+    if (counter) {
+        counter.setAttribute('data-total', actualTotal);
+        const done = parseInt(counter.getAttribute('data-done') || '0');
+        counter.textContent = done + '/' + actualTotal;
+    }
+    const title = container.querySelector('.dispatch-progress-title');
+    if (title && !title.textContent.includes('完成')) {
+        title.textContent = '并行分发 ' + actualTotal + ' 个子任务';
     }
 };
 
