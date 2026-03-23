@@ -674,7 +674,16 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages) {
 FKTeamsChat.prototype.loadSession = function (sessionId) {
     // 通过 WebSocket 加载历史
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // 确保 sessionId 已切换，否则 handleServerEvent 的会话隔离会丢弃 history_loaded 事件
+        if (this.sessionId !== sessionId) {
+            this._saveSessionDOM();
+            this.sessionId = sessionId;
+            this._hasLoadedSession = true;
+            this.sessionIdInput.value = sessionId;
+        }
+
         this.showChatLoading();
+        this.messagesContainer.innerHTML = '';
         this.ws.send(JSON.stringify({
             type: 'load_history',
             message: sessionId
