@@ -35,9 +35,6 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 
-release:
-  github:
-
 checksum:
   name_template: "checksums.txt"
 
