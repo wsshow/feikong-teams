@@ -176,6 +176,14 @@
     transform: translateY(-1px);
 }
 
+.sidebar-action-btn.fm-open-btn:hover {
+    background: var(--warning-light);
+    border-color: var(--warning);
+    color: var(--warning);
+    box-shadow: var(--shadow-sketch);
+    transform: translateY(-1px);
+}
+
 /* Sidebar Sessions */
 .sidebar-sessions {
     flex: 1;

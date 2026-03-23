@@ -72,6 +72,7 @@ class FKTeamsChat {
     this.initMobileToolbar();
     this.initSchedule();
     this.initFileUpload();
+    this.initFileManager();
     this.loadAgents();
     this.connect();
   }

@@ -52,6 +52,12 @@
           </svg>
           <span>定时任务</span>
         </button>
+        <button class="sidebar-action-btn fm-open-btn" id="fm-open-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span>文件管理</span>
+        </button>
       </div>
 
       <div class="sidebar-sessions" id="sidebar-sessions">
@@ -326,6 +332,134 @@
         </div>
       </div>
     </div>
+
+    <!-- 文件管理器弹窗 -->
+    <div class="fm-modal" id="fm-modal" style="display: none">
+      <div class="fm-modal-content">
+        <div class="fm-header">
+          <h3>文件管理</h3>
+          <div class="fm-header-actions">
+            <button class="fm-icon-btn" id="fm-refresh-btn" title="刷新">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+            <button class="fm-icon-btn" id="fm-close-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="fm-toolbar">
+          <div class="fm-breadcrumb" id="fm-breadcrumb"></div>
+          <div class="fm-toolbar-actions">
+            <button class="fm-action-btn primary" id="fm-upload-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <span>上传文件</span>
+            </button>
+            <button class="fm-action-btn" id="fm-upload-folder-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <line x1="12" y1="11" x2="12" y2="17" />
+                <polyline points="9 14 12 11 15 14" />
+              </svg>
+              <span>上传文件夹</span>
+            </button>
+            <button class="fm-action-btn" id="fm-download-btn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>下载</span>
+            </button>
+            <button class="fm-action-btn danger" id="fm-delete-btn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              <span>删除</span>
+            </button>
+          </div>
+        </div>
+        <div class="fm-select-bar hidden" id="fm-select-bar">
+          <input type="checkbox" class="fm-select-all-cb" id="fm-select-all-cb" />
+          <span class="fm-select-count" id="fm-select-count">共 0 项</span>
+        </div>
+        <div class="fm-body" id="fm-body">
+          <div class="fm-list" id="fm-list">
+            <div class="fm-empty">点击上方按钮打开文件管理</div>
+          </div>
+          <div class="fm-dropzone" id="fm-dropzone">
+            <span class="fm-dropzone-text">拖拽文件或文件夹到此处上传</span>
+          </div>
+        </div>
+        <div class="fm-upload-bar" id="fm-upload-bar">
+          <div class="fm-upload-info">
+            <div class="fm-upload-text" id="fm-upload-text">准备上传...</div>
+            <div class="fm-upload-progress">
+              <div class="fm-upload-progress-fill" id="fm-upload-progress-fill"></div>
+            </div>
+          </div>
+          <button class="fm-upload-cancel" id="fm-upload-cancel" title="取消上传">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="15" y1="9" x2="9" y2="15" />
+              <line x1="9" y1="9" x2="15" y2="15" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- 隐藏的文件上传 input -->
+      <input type="file" id="fm-file-input" multiple style="display:none" />
+      <input type="file" id="fm-folder-input" webkitdirectory style="display:none" />
+    </div>
+
+    <!-- 文件预览弹窗 -->
+    <div class="fm-preview-modal" id="fm-preview-modal" style="display: none">
+      <div class="fm-preview-content">
+        <div class="fm-preview-header">
+          <h4 id="fm-preview-title">预览</h4>
+          <button class="fm-icon-btn" id="fm-preview-close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="fm-preview-body" id="fm-preview-body"></div>
+      </div>
+    </div>
+
+    <!-- 文件删除确认弹窗 -->
+    <div class="fm-confirm-modal" id="fm-confirm-modal" style="display: none">
+      <div class="fm-confirm-content">
+        <div class="fm-confirm-header">
+          <h3>确认删除</h3>
+          <button class="fm-icon-btn" id="fm-confirm-close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="fm-confirm-body">
+          <p class="fm-confirm-msg" id="fm-confirm-msg"></p>
+          <p class="fm-confirm-warn" id="fm-confirm-warn"></p>
+        </div>
+        <div class="fm-confirm-footer">
+          <button class="fm-confirm-cancel-btn" id="fm-confirm-cancel">取消</button>
+          <button class="fm-confirm-ok-btn" id="fm-confirm-ok">删除</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/js/app.js"></script>
@@ -334,6 +468,7 @@
   <script src="/static/js/navigation.js"></script>
   <script src="/static/js/agents.js"></script>
   <script src="/static/js/files.js"></script>
+  <script src="/static/js/filemanager.js"></script>
   <script src="/static/js/schedule.js"></script>
 </body>
 
