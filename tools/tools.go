@@ -105,3 +105,12 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		return nil, fmt.Errorf("tool %s not found", name)
 	}
 }
+
+// BuiltinToolNames 返回所有内置工具组名称
+func BuiltinToolNames() []string {
+	return []string{
+		"file", "git", "excel", "todo", "ssh",
+		"command", "scheduler", "search", "fetch", "doc",
+		"uv", "bun",
+	}
+}

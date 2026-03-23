@@ -21,6 +21,7 @@ func Root() *ucli.Command {
 			initCommand(),
 			generateCommand(),
 			agentCommand(),
+			toolCommand(),
 		},
 		Flags: []ucli.Flag{
 			&ucli.StringFlag{

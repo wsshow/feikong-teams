@@ -48,3 +48,15 @@ func GetToolsByName(toolName string) ([]tool.BaseTool, error) {
 	}
 	return nil, fmt.Errorf("MCP tool %s not found", toolName)
 }
+
+// GetAllToolGroups 返回所有 MCP 工具组
+func GetAllToolGroups() (DictToolGroup, error) {
+	if cachedTools == nil {
+		var err error
+		cachedTools, err = getAllMCPTools()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cachedTools, nil
+}
