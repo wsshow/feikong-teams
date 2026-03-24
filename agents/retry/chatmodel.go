@@ -1,10 +1,10 @@
+// Package retry 提供 ChatModel 的重试包装器，支持 Generate 和 Stream 的自动重试。
 package retry
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"reflect"
 	"time"
@@ -18,10 +18,10 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-var (
-	ErrExceedMaxRetries = errors.New("exceeds max retries")
-)
+// ErrExceedMaxRetries 所有重试次数耗尽时返回的哨兵错误，可通过 errors.Is 匹配
+var ErrExceedMaxRetries = errors.New("exceeds max retries")
 
+// RetryExhaustedError 重试耗尽时的详细错误，包含最后一次的原始错误
 type RetryExhaustedError struct {
 	LastErr      error
 	TotalRetries int
@@ -38,24 +38,7 @@ func (e *RetryExhaustedError) Unwrap() error {
 	return ErrExceedMaxRetries
 }
 
-type WillRetryError struct {
-	ErrStr       string
-	RetryAttempt int
-	err          error
-}
-
-func (e *WillRetryError) Error() string {
-	return e.ErrStr
-}
-
-func (e *WillRetryError) Unwrap() error {
-	return e.err
-}
-
-func init() {
-	schema.RegisterName[*WillRetryError]("chatmodel_will_retry_error")
-}
-
+// ModelRetryConfig 重试配置
 type ModelRetryConfig struct {
 	MaxRetries  int
 	IsRetryAble func(ctx context.Context, err error) bool
@@ -66,6 +49,7 @@ func defaultIsRetryAble(_ context.Context, err error) bool {
 	return err != nil
 }
 
+// defaultBackoff 指数退避 + 随机抖动，基础 100ms，上限 10s
 func defaultBackoff(_ context.Context, attempt int) time.Duration {
 	baseDelay := 100 * time.Millisecond
 	maxDelay := 10 * time.Second
@@ -87,24 +71,15 @@ func defaultBackoff(_ context.Context, attempt int) time.Duration {
 	return delay + jitter
 }
 
-func genErrWrapper(ctx context.Context, config ModelRetryConfig, info streamRetryInfo) func(error) error {
-	return func(err error) error {
-		isRetryAble := config.IsRetryAble == nil || config.IsRetryAble(ctx, err)
-		hasRetriesLeft := info.attempt < config.MaxRetries
-
-		if isRetryAble && hasRetriesLeft {
-			return &WillRetryError{ErrStr: err.Error(), RetryAttempt: info.attempt, err: err}
-		}
-		return err
-	}
-}
-
+// retryChatModel 为 ToolCallingChatModel 添加自动重试能力。
+// Generate 对完整请求重试；Stream 仅对初始连接失败重试，流建立后直接返回以保持流式输出。
 type retryChatModel struct {
 	inner                 model.ToolCallingChatModel
 	config                *ModelRetryConfig
 	innerHandlesCallbacks bool
 }
 
+// NewRetryChatModel 创建带重试能力的 ChatModel 包装器
 func NewRetryChatModel(inner model.ToolCallingChatModel, config *ModelRetryConfig) *retryChatModel {
 	innerHandlesCallbacks := false
 	if ch, ok := inner.(components.Checker); ok {
@@ -125,6 +100,7 @@ func (r *retryChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingC
 	return &retryChatModel{inner: newInner, config: r.config, innerHandlesCallbacks: innerHandlesCallbacks}, nil
 }
 
+// Generate 带重试的非流式生成，失败时按退避策略重试
 func (r *retryChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	isRetryAble := r.config.IsRetryAble
 	if isRetryAble == nil {
@@ -180,17 +156,7 @@ func (r *retryChatModel) generateWithProxyCallbacks(ctx context.Context,
 	return out, nil
 }
 
-type streamRetryKey struct{}
-
-type streamRetryInfo struct {
-	attempt int // first request is 0, first retry is 1
-}
-
-func getStreamRetryInfo(ctx context.Context) (*streamRetryInfo, bool) {
-	info, ok := ctx.Value(streamRetryKey{}).(*streamRetryInfo)
-	return info, ok
-}
-
+// Stream 带重试的流式生成。仅在建立连接阶段重试，流成功建立后直接返回以保持真正的流式输出。
 func (r *retryChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	*schema.StreamReader[*schema.Message], error) {
 
@@ -203,12 +169,8 @@ func (r *retryChatModel) Stream(ctx context.Context, input []*schema.Message, op
 		backoffFunc = defaultBackoff
 	}
 
-	retryInfo := &streamRetryInfo{}
-	ctx = context.WithValue(ctx, streamRetryKey{}, retryInfo)
-
 	var lastErr error
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
-		retryInfo.attempt = attempt
 		var stream *schema.StreamReader[*schema.Message]
 		var err error
 
@@ -230,25 +192,7 @@ func (r *retryChatModel) Stream(ctx context.Context, input []*schema.Message, op
 			continue
 		}
 
-		copies := stream.Copy(2)
-		checkCopy := copies[0]
-		returnCopy := copies[1]
-
-		streamErr := consumeStreamForError(checkCopy)
-		if streamErr == nil {
-			return returnCopy, nil
-		}
-
-		returnCopy.Close()
-		if !isRetryAble(ctx, streamErr) {
-			return nil, streamErr
-		}
-
-		lastErr = streamErr
-		if attempt < r.config.MaxRetries {
-			log.Warnf("retrying ChatModel.Stream (attempt %d/%d): %v", attempt+1, r.config.MaxRetries, streamErr)
-			time.Sleep(backoffFunc(ctx, attempt+1))
-		}
+		return stream, nil
 	}
 
 	return nil, &RetryExhaustedError{LastErr: lastErr, TotalRetries: r.config.MaxRetries}
@@ -273,19 +217,6 @@ func (r *retryChatModel) streamWithProxyCallbacks(ctx context.Context,
 	return schema.StreamReaderWithConvert(out, func(o *model.CallbackOutput) (*schema.Message, error) {
 		return o.Message, nil
 	}), nil
-}
-
-func consumeStreamForError(stream *schema.StreamReader[*schema.Message]) error {
-	defer stream.Close()
-	for {
-		_, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-	}
 }
 
 func (r *retryChatModel) GetType() string {
