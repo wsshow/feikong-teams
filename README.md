@@ -21,6 +21,21 @@ fkteams（FeiKong Teams，非空团队）是一个开源的多智能体协作 AI
 
 ![命令行模式](./docs/images/fkteams_cli.png)
 
+## 功能特性
+
+- **多智能体协作**：内置多个专业智能体（代码、搜索、命令行、数据分析、SSH 等），由统御智能体智能调度
+- **四种工作模式**：团队模式、深度模式、圆桌会议模式、自定义模式
+- **双界面支持**：现代化 Web 界面 + 命令行界面
+- **MCP 工具生态**：完整支持 MCP 协议，轻松接入外部工具
+- **自定义智能体**：通过配置文件灵活创建专业智能体
+- **聊天通道集成**：支持接入 QQ、Discord 等即时通讯平台
+- **长期记忆**：跨会话自动记忆，助手越用越顺手
+- **多模态输入**：支持文本、图片、音频、视频和文件
+- **推理模型支持**：流式展示思考过程（DeepSeek-R1、o1/o3 等）
+- **Skills 技能系统**：动态加载技能提升特定任务表现
+- **定时任务**：自然语言设置定时任务，后台静默执行
+- **子任务并行**：小助智能体支持多子任务并行处理
+
 ## 快速开始
 
 > **快速体验**：如果你已经有预编译的可执行文件，只需要配置环境变量并运行 `./fkteams web` 即可立即体验 Web 界面！
@@ -34,987 +49,89 @@ cd feikong-teams
 
 ### 2. 配置环境变量
 
-复制 `.env.example` 为 `.env` 并配置：
-
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，填写必要的配置：
+编辑 `.env` 文件，填写基本配置：
 
 ```env
-# 模型配置
+# 模型配置（必填）
 FEIKONG_OPENAI_API_KEY=your_api_key_here
 FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
 FEIKONG_OPENAI_MODEL=gpt-5
-
-# 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
-# FEIKONG_PROVIDER=openai
-
-# 网络搜索工具配置（可选）
-FEIKONG_PROXY_URL=http://127.0.0.1:7890
-
-# 工作目录配置, 默认为: ./workspace
-FEIKONG_WORKSPACE_DIR = ./workspace
-
-# 代码助手
-FEIKONG_CODER_ENABLED = true
-
-# 本地命令行助手
-FEIKONG_CMDER_ENABLED = true
-
-# 数据分析师
-FEIKONG_ANALYST_ENABLED = false
-
-# 个人全能助手（带审批以及子任务功能）
-FEIKONG_ASSISTANT_ENABLED = true
-
-# 全局长期记忆
-FEIKONG_MEMORY_ENABLED = false
-
-# SSH 访问者智能体配置（可选）
-FEIKONG_SSH_VISITOR_ENABLED=true # 设置为 true 启用小访智能体
-FEIKONG_SSH_HOST=ip:port
-FEIKONG_SSH_USERNAME=your_ssh_user
-FEIKONG_SSH_PASSWORD=your_ssh_password
-
-# Web 页面登录认证（可选，设置 ENABLED=true 后启用）
-FEIKONG_LOGIN_ENABLED=true
-FEIKONG_LOGIN_SECRET=your_random_secret_key
-FEIKONG_LOGIN_USERNAME=admin
-FEIKONG_LOGIN_PASSWORD=your_password
 ```
 
-### 3. 配置圆桌会议成员（可选）
+> 完整配置项请参考 [配置指南](./docs/configuration.md)
 
-生成示例配置文件：
+### 3. 运行
 
 ```bash
-./fkteams generate config
-```
-
-编辑 `config/config.toml` 配置圆桌会议成员、MCP 服务和自定义智能体：
-
-```toml
-[server]
-port = 23456        # Web服务器端口
-log_level = "info"  # 日志级别
-
-# 圆桌会议配置
-[roundtable]
-max_iterations = 2  # 讨论轮数
-
-[[roundtable.members]]
-index = 0
-name = '深度求索'
-desc = '深度求索聊天模型，擅长逻辑分析'
-base_url = 'https://api.deepseek.com/v1'
-api_key = 'your_deepseek_api_key'
-model_name = 'deepseek-chat'
-
-[[roundtable.members]]
-index = 1
-name = '克劳德'
-desc = '克劳德聊天模型，擅长创意思维'
-base_url = 'https://api.anthropic.com/v1'
-api_key = 'your_claude_api_key'
-model_name = 'claude-3-sonnet'
-
-# 自定义智能体配置
-[custom]
-
-# 配置自定义智能体
-[[custom.agents]]
-name = "数据分析师"
-desc = "专业的数据分析智能体"
-system_prompt = """你是一个专业的数据分析师，擅长数据处理和可视化。
-你需要：
-1. 分析用户提供的数据
-2. 使用合适的工具进行数据处理
-3. 生成可视化图表
-4. 给出专业的分析建议
-"""
-base_url = "https://api.openai.com/v1"
-api_key = "your_api_key"
-model_name = "gpt-4"
-tools = ["file", "command", "mcp-filesystem"]  # 可使用内置工具和MCP工具
-
-# 配置 MCP 服务
-[[custom.mcp_servers]]
-name = "filesystem"  # MCP服务名称，使用时需加前缀：mcp-filesystem
-desc = "文件系统操作工具"
-enabled = true
-timeout = 30
-url = "http://127.0.0.1:3000/mcp"
-transport_type = "http"  # 支持 http, sse, stdio
-
-[[custom.mcp_servers]]
-name = "database"
-desc = "数据库操作工具"
-enabled = true
-timeout = 30
-command = "npx"  # 或 "uvx" for Python
-env_vars = ["DATABASE_URL=postgresql://localhost/mydb"]
-args = ["-y", "@modelcontextprotocol/server-postgres"]
-transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
-```
-
-**配置说明**：
-
-#### 内置工具列表
-
-- `file` - 文件读写操作（限制在 workspace 目录），支持 unified diff 批量修改
-- `git` - Git 仓库操作
-- `excel` - Excel 文件处理
-- `command` - 命令执行（带安全审批），危险命令需用户确认后才执行
-- `ssh` - SSH 远程连接
-- `search` - 网络搜索（DuckDuckGo）
-- `todo` - 待办事项管理
-- `uv` - Python uv 脚本工具
-- `bun` - JavaScript bun 脚本工具
-
-#### MCP 工具使用
-
-- MCP 工具在配置时需要添加 `mcp-` 前缀
-- 例如：名为 `filesystem` 的 MCP 服务，在工具列表中写作 `mcp-filesystem`
-- 支持三种连接方式：
-  - **HTTP**：连接远程 HTTP MCP 服务
-  - **SSE**：通过 Server-Sent Events 连接
-  - **Stdio**：启动本地 MCP 进程并通过标准输入输出通信
-
-#### 自定义智能体配置要点
-
-- `name`：智能体名称，用于标识
-- `desc`：智能体描述，帮助用户了解其能力
-- `system_prompt`：系统提示词，定义智能体的行为和能力
-- `tools`：工具列表，可包含内置工具和 MCP 工具
-- `base_url`、`api_key`、`model_name`：AI 模型配置
-- `provider`：模型提供者类型（可选），支持 `openai`、`deepseek`、`claude`、`ollama`、`ark`、`gemini`、`qwen`、`openrouter`，不设置时根据 `base_url` 和 `model_name` 自动检测
-
-### 4. 配置聊天通道（可选）
-
-聊天通道允许将智能体接入外部即时通讯平台，在 `web` 或 `serve` 模式下自动连接并处理消息。
-
-通道抽象层支持扩展多种平台（QQ、微信、Telegram 等），只需实现 `channels.Channel` 接口并通过 `channels.RegisterFactory` 注册即可。每个通道可独立配置运行模式。
-
-#### QQ 机器人
-
-> 1. 前往 [QQ 开放平台](https://q.qq.com/#) 注册并创建机器人应用
-> 2. 应用审核通过后，在凭据页面复制 AppID 和 AppSecret
-> 3. 新机器人默认处于**沙箱模式**，需在沙箱配置中添加测试用户和群才能交互
-
-在 `config/config.toml` 中添加配置：
-
-```toml
-[channels.qq]
-enabled = true
-app_id = "your_qq_bot_app_id"       # QQ 机器人 AppID
-app_secret = "your_qq_bot_secret"   # QQ 机器人 AppSecret
-sandbox = true                      # 是否使用沙箱环境（开发阶段建议开启）
-mode = "team"                      # 智能体模式: team(默认), deep, roundtable, custom 或智能体名称（如 "小助"）
-```
-
-| 消息类型 | 描述           | 触发条件         |
-| -------- | -------------- | ---------------- |
-| C2C      | 私聊（一对一） | 用户发送任意消息 |
-| GroupAT  | 群聊           | 用户必须 @机器人 |
-
-支持文字、图片、语音、视频、文件等多媒体消息的接收与发送。使用 WebSocket 模式实时通信，token 自动刷新。
-
-#### Discord 机器人
-
-> 1. 前往 [Discord Developer Portal](https://discord.com/developers/applications) 创建应用
-> 2. 在 Bot 页面添加机器人并复制 Token
-> 3. 启用 **MESSAGE CONTENT INTENT**（Bot 设置页）
-> 4. OAuth2 → URL Generator，Scopes 选 `bot`，Permissions 选 `Send Messages` + `Read Message History`
-> 5. 使用生成的链接邀请机器人到你的服务器
-
-在 `config/config.toml` 中添加配置：
-
-```toml
-[channels.discord]
-enabled = true
-token = "your_discord_bot_token"    # Discord Bot Token
-allow_from = ""                     # 允许的用户 ID，逗号分隔（空则允许所有人）
-mode = "team"                      # 智能体模式: team(默认), deep, roundtable, custom 或智能体名称（如 "小助"）
-```
-
-支持私聊（DM）和服务器频道（@机器人）消息，支持文字和文件附件。需要网络代理时设置环境变量 `FEIKONG_PROXY_URL`。
-
-### 5. 运行
-
-#### Web 界面模式（推荐）
-
-启动 Web 服务器，通过浏览器访问：
-
-```bash
-# 使用预编译版本
-./release/fkteams_darwin_arm64 web
-
-# 或直接编译运行
+# Web 界面模式（推荐）
 go run main.go web
-```
 
-启动后访问 `http://localhost:23456` 即可使用 Web 界面。
-
-Web 界面特性：
-
-- 实时聊天界面，支持流式输出显示
-- 智能滚动控制和历史消息浏览
-- 完整的 Markdown 渲染支持
-- 一键导出对话历史为 HTML 文件
-- 响应式设计，支持移动端访问
-- 可折叠侧边栏和模式切换
-- 可选的登录认证（通过环境变量配置）
-
-#### 纯 API 服务模式
-
-启动不带 Web 界面的纯 API 服务，适合作为后端接口独立部署：
-
-```bash
-# 使用预编译版本
-./release/fkteams_darwin_arm64 serve
-
-# 或直接编译运行
-go run main.go serve
-
-# 指定监听地址和端口
-go run main.go serve --host 0.0.0.0 --port 8080
-```
-
-提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。详细接口文档请参考 [API 文档](./docs/API.md)。
-
-#### 命令行模式
-
-适合开发者和高级用户：
-
-```bash
-# 默认启动团队模式
+# 命令行模式
 go run main.go
 
-# 启动深度分析模式
-go run main.go -m deep
-
-# 启动自定义会议模式
-go run main.go -m custom
-
-# 启动多智能体讨论模式
-go run main.go -m group
-```
-
-#### 编译后运行
-
-```bash
+# 编译后运行
 make build
-
-# Web界面模式
 ./release/fkteams_darwin_arm64 web
-
-# 默认启动团队模式
-./release/fkteams_darwin_arm64
-
-# 启动深度分析模式
-./release/fkteams_darwin_arm64 -m deep
-
-# 启动自定义会议模式
-./release/fkteams_darwin_arm64 -m custom
-
-# 启动多智能体讨论模式
-./release/fkteams_darwin_arm64 -m group
 ```
 
-### 6. 使用
-
-#### Web 界面使用
-
-1. 启动 Web 服务：`./fkteams web`
-2. 打开浏览器访问：`http://localhost:23456`
-3. 在聊天界面输入你的问题或任务
-4. 实时查看 AI 助手的回复和工具调用过程
-5. 使用侧边栏切换工作模式（团队/深度/自定义/讨论）
-6. 点击“新建会话”按钮创建新的对话会话
-7. 通过侧边栏历史会话列表快速切换历史对话
-8. 点击“管理历史”按钮打开历史记录管理面板（支持搜索、导出、重命名、删除）
-
-#### 命令行使用
-
-启动后，在命令行输入你的问题或任务：
-
-```
-请输入您的问题: 帮我写几篇相互关联的小小说，然后创建一个网站来展示这些小说。
-```
-
-#### 常用命令（命令行模式）
-
-| 命令                             | 说明                                                  |
-| -------------------------------- | ----------------------------------------------------- |
-| `quit` / `q`                     | 退出程序                                              |
-| `list_agents`                    | 列出所有可用的智能体                                  |
-| `@智能体名 [查询内容]`           | 切换到指定智能体并可选执行查询                        |
-| `switch_work_mode`               | 切换工作模式（团队模式/深度模式/自定义模式/讨论模式） |
-| `save_chat_history`              | 保存聊天历史到当前会话文件                            |
-| `list_chat_history`              | 列出所有可用的聊天历史会话                            |
-| `load_chat_history <session_id>` | 加载指定的聊天历史会话                                |
-| `clear_chat_history`             | 清空当前聊天历史                                      |
-| `save_chat_history_to_markdown`  | 导出聊天历史为 Markdown 文件                          |
-| `clear_todo`                     | 清空待办事项                                          |
-| `help`                           | 显示帮助信息                                          |
-
-#### 智能体切换功能
-
-从交互模式下，你可以直接与单个智能体对话，无需启动整个团队：
-
-```
-# 列出所有可用的智能体
-list_agents
-
-# 切换到小析（数据分析专家）
-@小析
-
-# 切换并直接提问
-@小码 帮我创建一个 Python 脚本
-
-# 切换到小搜并搜索信息
-@小搜 查找最新的 Go 语言教程
-```
-
-**可用智能体列表**：
-
-- `@小析` - 数据分析专家，擅长使用 Excel 和 Python 脚本从复杂数据中提取有价值的信息
-- `@小码` - 代码专家，擅长读写和处理代码文件，能够帮助用户完成各种编程任务
-- `@小令` - 命令行专家，擅长通过命令行操作完成任务，能够根据操作系统环境执行合适的命令
-- `@小搜` - 情报搜索专家，擅长中英文双语检索并优先使用官方/权威来源输出可靠结论
-- `@小访` - 远程访问专家，擅长通过 SSH 连接远程服务器，执行命令、传输文件和管理远程系统
-- `@小天` - 讲故事专家，擅长编写引人入胜的故事
-- `@小简` - 总结专家，擅长将冗长的信息提炼为简洁的摘要
-- `@小助` - 个人全能助手，集成命令执行（带安全审批）、文件操作、待办管理、定时任务、搜索和网页抓取，支持子任务并行执行，可同时分派多个子任务并行处理以显著提升效率
-
-**提示**：输入 `@` 符号后会自动显示可用的智能体列表供选择。
-
-#### 定时任务功能
-
-统御支持通过自然语言设置定时任务，任务会在后台静默执行，不影响前台交互。
-
-如果时间、频率或执行内容不够明确，统御会先追问必要信息，确认后才会创建可执行的定时任务，不会直接生成含糊的计划。
-
-**使用示例**：
-
-```
-# 一次性任务
-请输入您的问题: 5分钟后帮我搜索一下最新的AI新闻
-
-# 重复任务（统御会自动转换为 cron 表达式）
-请输入您的问题: 每30分钟搜索一次比特币实时价格
-请输入您的问题: 每天早上9点搜索最新的AI新闻
-请输入您的问题: 工作日每天下午5点生成日报
-
-# 信息不明确时，统御会先澄清
-请输入您的问题: 下周提醒我看一下项目进度
-# 统御会追问：下周哪一天、几点提醒？
-
-请输入您的问题: 定期帮我搜一下 AI 新闻
-# 统御会追问：需要多久执行一次？从什么时候开始？
-
-# 通过 AI 对话查看/取消/删除定时任务
-请输入您的问题: 列出当前所有定时任务
-请输入您的问题: 取消那个搜索新闻的定时任务
-请输入您的问题: 删除所有已完成的定时任务
-
-# 通过 CLI 命令管理定时任务
-list_schedule
-cancel_schedule
-delete_schedule
-```
-
-- 定时任务在后台静默执行，执行结果保存在 `result/scheduled_tasks/` 目录
-- 支持标准 cron 表达式（重复任务）和一次性定时任务
-- 当时间、频率或任务内容存在歧义时，会先进行必要澄清，再创建任务
-- 终端模式下使用 `list_schedule` 命令查看任务状态
-- 定时任务配置存储在 workspace 同级目录的 `scheduled_tasks.json` 文件中
-
-#### 命令行用法
-
-```bash
-# 默认交互模式
-./fkteams
-
-# 直接查询模式
-./fkteams -q "你的问题"
-
-# 指定工作模式
-./fkteams -m deep
-
-# 恢复历史会话（交互模式）
-./fkteams -r "20260302_091249"
-
-# 恢复历史会话并直接查询
-./fkteams -r "20260302_091249" -q "继续上次的问题"
-```
-
-#### 子命令
-
-| 命令              | 说明                                  |
-| ----------------- | ------------------------------------- |
-| `web`             | 启动 Web 服务器模式（推荐）           |
-| `session list`    | 列出所有可用的聊天历史会话            |
-| `update`          | 检查并更新到最新版本                  |
-| `init`            | 初始化运行环境（安装/升级 uv 等依赖） |
-| `generate env`    | 生成示例 .env 文件                    |
-| `generate config` | 生成示例配置文件                      |
-| `agent`           | 指定单个 Agent 执行任务               |
-| `agent list`      | 列出所有可用的 Agent                  |
-
-#### 全局参数
-
-| 参数        | 简写 | 说明                                                                           |
-| ----------- | ---- | ------------------------------------------------------------------------------ |
-| `--mode`    | `-m` | 工作模式: `team`（团队）、`deep`（深度）、`group`（讨论）或 `custom`（自定义） |
-| `--query`   | `-q` | 直接查询模式，执行完查询后退出                                                 |
-| `--save`    |      | 保存聊天历史（默认不保存，需显式开启，交互模式和直接查询模式均生效）           |
-| `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
-| `--version` | `-v` | 显示版本信息                                                                   |
-
-#### agent 子命令参数
-
-| 参数       | 简写 | 说明                                               |
-| ---------- | ---- | -------------------------------------------------- |
-| `list`     |      | 列出所有可用的 Agent                               |
-| `--name`   | `-n` | Agent 名称（必填，与 list 互斥）                   |
-| `--query`  | `-q` | 直接查询模式，执行完查询后退出                     |
-| `--save`   |      | 保存聊天历史（默认不保存，需显式开启）             |
-| `--format` |      | 输出格式: `default`（格式化）或 `json`（原始JSON） |
-
-全局 `--save` 同样对 `agent` 子命令生效。
-
-```bash
-# 列出所有可用的 Agent
-./fkteams agent list
-
-# 直接查询（默认不保存历史）
-./fkteams agent --name 小搜 --query "搜索最新的 Go 语言新闻"
-
-# JSON 格式输出原始事件
-./fkteams agent -n 小搜 -q "搜索最新的 Go 语言新闻" --format json
-
-# 直接查询并保存历史
-./fkteams agent -n 小搜 -q "搜索最新的 Go 语言新闻" --save
-
-# 交互模式（进入指定 Agent 的对话）
-./fkteams agent -n 小码
-```
-
-## 使用场景示例
-
-### Web 界面模式 - 推荐用法
-
-**适合场景**：
-
-- 日常对话和任务处理
-- 需要查看历史消息的场景
-- 展示给他人或协作使用
-- 移动设备访问
-
-**使用流程**：
-
-1. 启动 Web 服务：`./fkteams web`
-2. 浏览器访问：`http://localhost:23456`
-3. 在界面中选择工作模式（团队模式/深度模式/自定义模式/讨论模式）
-4. 开始对话，实时查看 AI 回复和工具执行过程
-5. 使用“管理历史”功能搜索、导出、管理历史对话
-
-### 命令行模式
-
-**适合场景**：
-
-- 服务器环境下使用
-- 自动化脚本集成
-- 开发和调试
-- 终端重度用户
-
-**使用流程**：
-
-1. 启动：`./fkteams -m team`
-2. 输入任务描述
-3. 查看实时输出和工具调用
-4. 使用内置命令管理历史和模式切换
-
-## 圆桌会议模式详解
-
-### 工作原理
-
-圆桌会议模式模拟了一场专家研讨会：
-
-1. **问题提出**：用户提出问题或任务
-2. **轮流发言**：每个配置的模型依次针对问题发表观点
-3. **观点参考**：后发言的模型可以看到前面模型的观点，并在此基础上补充或提出不同见解
-4. **多轮迭代**：根据 `max_iterations` 配置进行多轮讨论，逐步深化分析
-5. **形成共识**：最终综合各方观点，给出更全面准确的答案
-
-### 适用场景
-
-- **复杂决策**：需要从多角度分析的重要决策
-- **创意头脑风暴**：激发不同模型的创意火花
-- **观点验证**：让多个模型相互验证，减少单一模型的偏见
-- **深度分析**：需要多轮思考才能得出结论的复杂问题
-
-### 配置建议
-
-- 选择不同特点的模型作为讨论成员，以获得更多元的观点
-- `max_iterations` 建议设置为 1-3，过多轮次可能导致观点趋同
-- 可以给每个成员设置描述性的 `desc`，帮助理解其专长
-
-## Skills 指南
-
-### 什么是 Skills？
-
-Skills 是一组指令、脚本和资源的集合，fkteams(统御) 可以动态加载这些 Skills 来提升在特定任务上的表现。Skills 教会 fkteams(统御) 如何以可重复的方式完成特定任务，无论是按照公司的品牌指南创建文档，还是使用组织特定的工作流程分析数据，或者自动化个人任务。
-
-### Skills 配置
-
-skills目录：{FEIKONG_WORKSPACE_DIR}/skills/{用户技能目录}
-
-「用户技能目录」是一个独立的子目录，必须包含: `SKILL.md`
-
-`SKILL.md` 文件示例：
-
-```markdown
----
-name: "数据分析"
-description: "一套用于数据分析的技能，包含数据清洗、统计分析和数据可视化的指令和脚本。"
----
-
-## 具体的数据分析技能描述...
-```
-
-### 推荐的 Skills：
-- https://github.com/anthropics/skills/tree/main/skills/skill-creator
-
-## MCP 工具集成指南
-
-### 什么是 MCP？
-
-Model Context Protocol (MCP) 是一个开放的协议标准，用于 AI 应用与外部工具和数据源的集成。fkteams 完整支持 MCP 协议，可以轻松接入丰富的 MCP 工具生态。
-
-### MCP 服务配置
-
-在 `config/config.toml` 中配置 MCP 服务：
-
-```toml
-[[custom.mcp_servers]]
-name = "filesystem"
-desc = "文件系统操作工具"
-enabled = true          # 是否启用
-timeout = 30           # 超时时间（秒）
-url = "http://127.0.0.1:3000/mcp"
-transport_type = "http"
-
-[[custom.mcp_servers]]
-name = "postgres"
-desc = "PostgreSQL 数据库工具"
-enabled = true
-timeout = 30
-command = "npx"        # 启动命令
-env_vars = ["DATABASE_URL=postgresql://localhost/mydb"]  # 环境变量
-args = ["-y", "@modelcontextprotocol/server-postgres"]   # 命令参数
-transport_type = "stdio"
-```
-
-### 支持的连接方式
-
-1. **HTTP 方式**
-   - 适合：远程 MCP 服务
-   - 配置：设置 `url` 和 `transport_type = "http"`
-
-2. **SSE 方式**
-   - 适合：需要服务器推送的场景
-   - 配置：设置 `url` 和 `transport_type = "sse"`
-
-3. **Stdio 方式**
-   - 适合：本地 MCP 工具
-   - 配置：设置 `command`、`args` 和 `transport_type = "stdio"`
-   - 支持通过 `env_vars` 配置环境变量
-
-### 在自定义智能体中使用 MCP 工具
-
-```toml
-[[custom.agents]]
-name = "数据处理专家"
-desc = "专门处理数据相关任务"
-system_prompt = "你是一个数据处理专家..."
-tools = [
-  "file",              # 内置文件工具
-  "mcp-filesystem",    # MCP 文件系统工具（需加 mcp- 前缀）
-  "mcp-postgres"       # MCP 数据库工具
-]
-base_url = "https://api.openai.com/v1"
-api_key = "your_api_key"
-model_name = "gpt-4"
-```
-
-### MCP 工具命名规则
-
-- MCP 服务在配置文件中使用 `name` 字段定义
-- 在智能体的 `tools` 列表中引用时，需要添加 `mcp-` 前缀
-- 例如：`name = "filesystem"` → 使用时写作 `mcp-filesystem`
-
-### 常用 MCP 服务示例
-
-```toml
-# 文件系统操作
-[[custom.mcp_servers]]
-name = "filesystem"
-desc = "文件系统读写工具"
-enabled = true
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
-transport_type = "stdio"
-
-# GitHub 集成
-[[custom.mcp_servers]]
-name = "github"
-desc = "GitHub API 工具"
-enabled = true
-command = "npx"
-env_vars = ["GITHUB_TOKEN=your_github_token"]
-args = ["-y", "@modelcontextprotocol/server-github"]
-transport_type = "stdio"
-
-# Google Drive
-[[custom.mcp_servers]]
-name = "gdrive"
-desc = "Google Drive 工具"
-enabled = true
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-gdrive"]
-transport_type = "stdio"
-
-# Brave Search
-[[custom.mcp_servers]]
-name = "brave-search"
-desc = "Brave 搜索引擎"
-enabled = true
-command = "npx"
-env_vars = ["BRAVE_API_KEY=your_api_key"]
-args = ["-y", "@modelcontextprotocol/server-brave-search"]
-transport_type = "stdio"
-```
-
-更多 MCP 服务请访问：https://github.com/modelcontextprotocol/servers
-
-## 自定义智能体使用指南
-
-> **重要提示**：自定义智能体只在**自定义会议模式** (`custom`) 下启用。需要使用 `-m custom` 参数启动或在 Web 界面中选择自定义模式。
-
-### 工作模式说明
-
-自定义智能体与其他工作模式的关系：
-
-- **团队模式** (`team`)：使用内置智能体（小搜、小天、小简始终可用；小码、小令、小析、小访需环境变量启用），其中小助支持子任务并行执行，可同时分派多个子任务提升效率
-- **深度模式** (`deep`)：使用深度探索者智能体，能深入分析问题并协调多个智能体解决复杂任务
-- **讨论模式** (`group`)：使用 `[roundtable.members]` 配置的圆桌会议成员
-- **自定义模式** (`custom`)：使用 `[[custom.agents]]` 配置的自定义智能体
-
-### 启动自定义模式
-
-```bash
-# 命令行模式
-./fkteams -m custom
-
-# Web 模式（在侧边栏选择自定义模式）
-./fkteams web
-
-# 直接查询模式
-./fkteams -m custom -q "你的问题"
-
-# 列出所有历史会话
-./fkteams session list
-
-# 恢复历史会话（交互模式）
-./fkteams -r "20260302_091249"
-
-# 恢复历史会话并直接查询
-./fkteams -r "20260302_091249" -q "继续上次的问题"
-```
-
-### 创建自定义智能体
-
-1. **编辑配置文件** `config/config.toml`：
-
-```toml
-[[custom.agents]]
-name = "前端开发专家"
-desc = "专注于前端开发的智能体"
-system_prompt = """你是一个专业的前端开发工程师。
-你擅长：
-- React、Vue、Angular 等现代前端框架
-- HTML、CSS、JavaScript/TypeScript
-- 响应式设计和移动端适配
-- 性能优化和最佳实践
-
-你需要：
-1. 理解用户的前端开发需求
-2. 使用合适的工具创建和修改代码
-3. 确保代码质量和最佳实践
-4. 提供清晰的技术建议
-"""
-base_url = "https://api.openai.com/v1"
-api_key = "your_api_key"
-model_name = "gpt-4"
-tools = ["command", "search"]
-```
-
-2. **启动自定义模式**：
-
-   ```bash
-   # 命令行启动
-   ./fkteams -m custom
-
-   # 或 Web 模式中选择自定义模式
-   ./fkteams web
-   ```
-
-3. **使用说明**：
-   - 自定义模式下会自动加载配置文件中的所有自定义智能体
-   - 主持人智能体会根据任务需求调度合适的自定义智能体
-   - 可以与内置智能体（如小搜、小天）混合使用
-
-### 配置参数说明
-
-| 参数            | 说明                            | 必填 |
-| --------------- | ------------------------------- | ---- |
-| `name`          | 智能体名称                      | ✓    |
-| `desc`          | 智能体描述                      | ✓    |
-| `system_prompt` | 系统提示词，定义智能体的行为    | ✓    |
-| `base_url`      | AI 模型 API 地址                | ✓    |
-| `api_key`       | API 密钥                        | ✓    |
-| `model_name`    | 使用的模型名称                  | ✓    |
-| `tools`         | 工具列表（内置工具和 MCP 工具） | ✗    |
-
-### 系统提示词编写技巧
-
-1. **明确角色定位**：清楚说明智能体的专业领域
-2. **定义能力范围**：列出智能体擅长的具体技能
-3. **设定工作流程**：指导智能体如何处理任务
-4. **强调约束条件**：说明需要遵守的规则和限制
-
-### 工具配置最佳实践
-
-1. **按需选择**：只配置智能体真正需要的工具
-2. **组合使用**：合理搭配内置工具和 MCP 工具
-3. **权限控制**：注意工具的安全性和访问权限
-
-### 使用场景示例
-
-**场景 1：代码审查助手**
-
-```toml
-[[custom.agents]]
-name = "代码审查专家"
-desc = "专业的代码审查和质量分析"
-system_prompt = """你是一个严格的代码审查专家...
-重点关注：代码质量、安全漏洞、性能问题、最佳实践"""
-tools = ["command", "mcp-github"]
-```
-
-**场景 2：DevOps 助手**
-
-```toml
-[[custom.agents]]
-name = "DevOps 工程师"
-desc = "自动化运维和部署专家"
-system_prompt = """你是一个经验丰富的 DevOps 工程师...
-擅长：CI/CD、容器化、监控告警、自动化脚本"""
-tools = ["command", "mcp-github"]
-```
-
-**场景 3：数据分析师**
-
-```toml
-[[custom.agents]]
-name = "数据分析师"
-desc = "数据处理和可视化专家"
-system_prompt = """你是一个数据分析专家...
-能力：数据清洗、统计分析、数据可视化、报告生成"""
-tools = ["command", "mcp-postgres", "mcp-filesystem"]
-```
-
-## 长期记忆
-
-fkteams 内置了全局长期记忆模块，能够跨会话自动记住用户的各类信息，在后续对话中自动召回相关记忆，让助手越用越顺手。
-
-### 工作原理
-
-1. **自动提取**：每次对话结束后，系统在后台异步调用 LLM 从对话中提取五类记忆：
-   - **用户偏好**（preference）：喜好、厌恶、习惯、风格倾向
-   - **个人信息**（fact）：身份、背景、环境、关系等客观事实
-   - **经验教训**（lesson）：踩过的坑、需要避免的做法
-   - **决策结论**（decision）：确定的方案、选定的方向
-   - **认知洞察**（insight）：观点、原则、价值判断
-2. **智能去重**：提取的记忆会与已有记忆自动去重（基于摘要包含关系和标签重叠度）
-3. **BM25 检索**：用户每次提问时，系统基于 BM25 算法从记忆库中召回最相关的条目
-4. **上下文注入**：召回的记忆以结构化格式注入到 Agent 的系统提示词中
-
-### 存储位置
-
-记忆数据持久化在 `{FEIKONG_WORKSPACE_DIR}/memory/index.json`，格式为 JSON，可直接查看和手动编辑。
-
-### 使用说明
-
-在 `.env` 文件中设置以下环境变量来启用长期记忆功能：
-
-```env
-FEIKONG_MEMORY_ENABLED = true
-```
-
-启用后，CLI 模式和 Web 模式均自动工作，无需额外配置。
-
-## 多模态支持
-
-fkteams 支持多模态输入，允许用户在对话中发送文本、图片、音频、视频和文件。
-
-### 支持的内容类型
-
-| 类型           | 说明                                              | 字段                       |
-| -------------- | ------------------------------------------------- | -------------------------- |
-| `text`         | 文本内容                                          | `text`                     |
-| `image_url`    | 图片 URL（支持 `detail` 精度控制: high/low/auto） | `url`, `detail`            |
-| `image_base64` | Base64 编码图片                                   | `base64_data`, `mime_type` |
-| `audio_url`    | 音频 URL                                          | `url`                      |
-| `video_url`    | 视频 URL                                          | `url`                      |
-| `file_url`     | 文件 URL                                          | `url`                      |
-
-### WebSocket 消息格式
-
-通过 WebSocket 发送多模态消息时，使用 `contents` 字段：
-
-```json
-{
-  "type": "chat",
-  "session_id": "default",
-  "contents": [
-    {"type": "text", "text": "这张图片里有什么？"},
-    {"type": "image_url", "url": "https://example.com/cat.jpg", "detail": "high"}
-  ]
-}
-```
-
-也可以使用 Base64 编码的图片：
-
-```json
-{
-  "type": "chat",
-  "session_id": "default",
-  "contents": [
-    {"type": "text", "text": "描述这张图片"},
-    {"type": "image_base64", "base64_data": "...", "mime_type": "image/png"}
-  ]
-}
-```
-
-### HTTP API
-
-HTTP POST `/api/chat` 同样支持 `contents` 字段，格式与 WebSocket 一致。
-
-> **注意**：多模态功能的实际效果取决于所使用的模型是否支持对应的输入类型（如视觉理解需要 GPT-4o、Claude 等多模态模型）。
-
-## 推理模型支持
-
-fkteams 原生支持推理/思考模型（如 DeepSeek-R1、OpenAI o1/o3 等），能够流式展示模型的思考过程。
-
-### 工作方式
-
-- **流式思考输出**：推理模型在生成最终回答前的思考过程，会通过 `reasoning_chunk` 事件实时输出
-- **CLI 模式**：思考内容以灰色斜体显示（[思考] ...），与正式回答区分
-- **Web 模式**：通过 WebSocket 的 `reasoning_chunk` 事件传递，前端可自行定制展示样式
-- **历史记录**：思考内容以 `reasoning` 类型事件记录在对话历史中
-
-### 事件类型
-
-| 事件                                | 说明                             |
-| ----------------------------------- | -------------------------------- |
-| `reasoning_chunk`                   | 推理/思考过程的流式增量内容      |
-| `message`（含 `reasoning_content`） | 非流式完整消息，包含推理内容字段 |
-
-> **注意**：只有支持推理/思考的模型才会产生此类事件，普通模型不受影响。
-
-## 安全说明
-
-- **文件操作限制**：文件操作被限制在工作目录 `workspace/` 下（可通过 `FEIKONG_WORKSPACE_DIR` 配置），防止误操作系统文件
-- **命令执行权限**：小令智能体会根据当前操作系统类型（Windows/Linux/macOS）执行相应的命令
-- **SSH 连接管理**：小访智能体通过 SSH 连接远程服务器，确保连接信息安全存储和使用
-- **MCP 工具隔离**：每个 MCP 服务运行在独立的进程中，可以单独控制启用/禁用
-- **工具权限管理**：自定义智能体只能使用配置中明确指定的工具，避免权限滥用
-- **日志记录**：所有智能体的操作和输出都会被记录，可以主动输出成 markdown 文件，便于审计和调试
-- **工具调用可视化**：所有工具调用都会在终端显示，提供透明度
-- **环境变量保护**：请确保 `.env` 文件和 `config.toml` 不被泄露，避免敏感信息外泄
+启动后访问 `http://localhost:23456` 即可使用。
+
+> 更多运行模式和命令行参数请参考 [使用指南](./docs/usage.md)
+
+## 内置智能体
+
+| 智能体  | 说明                                   |
+| ------- | -------------------------------------- |
+| `@小码` | 代码专家，擅长读写和处理代码文件       |
+| `@小搜` | 情报搜索专家，擅长中英文双语检索       |
+| `@小令` | 命令行专家，根据操作系统执行命令       |
+| `@小析` | 数据分析专家，Excel 和 Python 数据处理 |
+| `@小访` | 远程访问专家，SSH 连接和远程管理       |
+| `@小说` | 讲故事专家，编写引人入胜的故事         |
+| `@小简` | 总结专家，提炼简洁摘要                 |
+| `@小助` | 个人全能助手，支持子任务并行执行       |
+
+## 文档导航
+
+| 文档                                    | 说明                                     |
+| --------------------------------------- | ---------------------------------------- |
+| [配置指南](./docs/configuration.md)     | 环境变量、config.toml、聊天通道配置      |
+| [使用指南](./docs/usage.md)             | 运行模式、CLI 命令、智能体切换、定时任务 |
+| [圆桌会议模式](./docs/roundtable.md)    | 多模型讨论模式的原理和配置               |
+| [Skills 指南](./docs/skills.md)         | 技能系统的使用和配置                     |
+| [MCP 工具集成](./docs/mcp.md)           | MCP 协议集成和常用服务配置               |
+| [自定义智能体](./docs/custom-agents.md) | 创建和配置自定义智能体                   |
+| [高级功能](./docs/advanced-features.md) | 长期记忆、多模态、推理模型支持           |
+| [部署指南](./docs/deployment.md)        | 构建、Docker 部署                        |
+| [安全说明](./docs/security.md)          | 安全机制和注意事项                       |
+| [API 文档](./docs/api.md)               | HTTP/WebSocket API 接口                  |
 
 ## 构建
 
 ```bash
-# 清理构建产物
-make clean
-
-# 构建当前平台
-make build
-
-# 修改 Makefile 中的 os-archs 变量以支持其他平台
-# 例如：os-archs=darwin:arm64 linux:amd64 windows:amd64
+make clean && make build
 ```
 
 ## Docker 部署
 
-### 使用 docker-compose（推荐）
-
-1. 编辑 `docker-compose.yml`，填入模型 API 配置：
-
-```yaml
-environment:
-  - FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
-  - FEIKONG_OPENAI_API_KEY=your_api_key_here
-  - FEIKONG_OPENAI_MODEL=GPT-5
-```
-
-2. 首次启动前，准备配置文件：
-
 ```bash
-# 创建数据目录并复制默认配置
-mkdir -p data/config
-cp release/config/config.toml data/config/config.toml
-```
-
-3. 启动服务：
-
-```bash
+# docker-compose（推荐）
 docker compose up -d
-```
 
-访问 http://localhost:23456 即可使用。
-
-### 使用 docker run
-
-```bash
-# 构建镜像
+# 或 docker run
 docker build -t fkteams .
-
-# 运行容器
-docker run -d \
-  --name fkteams \
-  -p 23456:23456 \
+docker run -d --name fkteams -p 23456:23456 \
   -e FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1 \
   -e FEIKONG_OPENAI_API_KEY=your_api_key_here \
   -e FEIKONG_OPENAI_MODEL=GPT-5 \
-  -v ./data/config:/app/config \
-  -v ./data/workspace:/app/workspace \
-  -v ./data/history:/app/history \
-  -v ./data/sessions:/app/sessions \
   fkteams
 ```
 
-### 说明
-
-- 环境变量通过 `docker-compose.yml` 的 `environment` 或 `docker run -e` 传入，无需 `.env` 文件
-- `config/config.toml` 通过 volume 挂载，可在容器外编辑
-- 数据目录（workspace、history、sessions 等）建议挂载到宿主机以持久化
+> 详细部署配置请参考 [部署指南](./docs/deployment.md)
 
 ## 许可证
 
