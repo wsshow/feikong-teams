@@ -50,7 +50,17 @@ func resolveAndValidatePath(baseDir, absBase, subPath string) (string, string, e
 	}
 	fullPath := filepath.Join(baseDir, cleanPath)
 	absFull, _ := filepath.Abs(fullPath)
-	if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
+	// 解析符号链接后再校验，防止 symlink 逃逸
+	realBase, _ := filepath.EvalSymlinks(absBase)
+	realFull, err := filepath.EvalSymlinks(absFull)
+	if err != nil {
+		// 文件可能不存在，回退到 Abs 校验
+		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
+			return "", "", fmt.Errorf("无效的路径")
+		}
+		return fullPath, cleanPath, nil
+	}
+	if !strings.HasPrefix(realFull, realBase+string(os.PathSeparator)) {
 		return "", "", fmt.Errorf("无效的路径")
 	}
 	return fullPath, cleanPath, nil
@@ -122,6 +132,83 @@ func GetFilesHandler() gin.HandlerFunc {
 		})
 
 		OK(c, fileList)
+	}
+}
+
+// SearchFilesHandler 递归搜索文件名
+func SearchFilesHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		query := strings.TrimSpace(c.Query("q"))
+		if query == "" {
+			Fail(c, http.StatusBadRequest, "搜索关键词不能为空")
+			return
+		}
+
+		queryLower := strings.ToLower(query)
+		const maxResults = 100
+
+		const maxDepth = 10
+
+		var results []FileInfo
+		_ = filepath.WalkDir(absBase, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			// skip hidden files/dirs
+			if strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if len(results) >= maxResults {
+				return filepath.SkipAll
+			}
+
+			rel, err := filepath.Rel(absBase, path)
+			if err != nil || rel == "." {
+				return nil
+			}
+			// 限制搜索深度
+			if d.IsDir() && strings.Count(rel, string(os.PathSeparator)) >= maxDepth {
+				return filepath.SkipDir
+			}
+
+			if strings.Contains(strings.ToLower(d.Name()), queryLower) {
+				info, err := d.Info()
+				if err != nil {
+					return nil
+				}
+				results = append(results, FileInfo{
+					Name:    d.Name(),
+					Path:    rel,
+					IsDir:   d.IsDir(),
+					Size:    info.Size(),
+					ModTime: info.ModTime().Unix(),
+				})
+			}
+			return nil
+		})
+
+		if results == nil {
+			results = []FileInfo{}
+		}
+
+		// 排序：文件夹在前，同类型按名称排序
+		sort.Slice(results, func(i, j int) bool {
+			if results[i].IsDir != results[j].IsDir {
+				return results[i].IsDir
+			}
+			return results[i].Name < results[j].Name
+		})
+
+		OK(c, results)
 	}
 }
 

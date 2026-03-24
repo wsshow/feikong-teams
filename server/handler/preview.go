@@ -2,8 +2,6 @@ package handler
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -16,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // PreviewLink 预览链接信息
@@ -82,13 +81,13 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 默认过期时间 1 天，最长 30 天
+		// 默认过期时间 1 天，最长 30 天；-1 表示永不过期
 		expiresIn := req.ExpiresIn
-		if expiresIn <= 0 {
+		if expiresIn == 0 {
 			expiresIn = 86400
 		}
 		const maxExpiry = 30 * 24 * 3600
-		if expiresIn > maxExpiry {
+		if expiresIn > 0 && expiresIn > maxExpiry {
 			expiresIn = maxExpiry
 		}
 
@@ -100,15 +99,24 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 		}
 
 		now := time.Now()
+		var expiresAt time.Time // 零值表示永不过期
+		if expiresIn >= 0 {
+			expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
+		}
 		entry := &previewLinkEntry{
 			FilePath:  cleanPath,
-			ExpiresAt: now.Add(time.Duration(expiresIn) * time.Second),
+			ExpiresAt: expiresAt,
 			CreatedAt: now,
 		}
 
 		// 密码哈希
 		if req.Password != "" {
-			entry.PasswordHash = hashPassword(req.Password)
+			h := hashPassword(req.Password)
+			if h == "" {
+				Fail(c, http.StatusInternalServerError, "密码处理失败")
+				return
+			}
+			entry.PasswordHash = h
 		}
 
 		previewLinkStore.Lock()
@@ -118,7 +126,7 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 		OK(c, PreviewLink{
 			ID:        linkID,
 			FilePath:  cleanPath,
-			ExpiresAt: entry.ExpiresAt.Unix(),
+			ExpiresAt: expiresAtUnix(entry.ExpiresAt),
 			CreatedAt: entry.CreatedAt.Unix(),
 		})
 	}
@@ -151,8 +159,8 @@ func PreviewFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 检查过期
-		if time.Now().After(entry.ExpiresAt) {
+		// 检查过期（零值表示永不过期）
+		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
 			// 清理过期链接
 			previewLinkStore.Lock()
 			delete(previewLinkStore.m, linkID)
@@ -208,7 +216,9 @@ func PreviewFileHandler() gin.HandlerFunc {
 			disposition = "attachment"
 		}
 		fileName := filepath.Base(entry.FilePath)
-		c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, fileName))
+		// 清理文件名中可能导致 header 注入的字符
+		safeFileName := strings.NewReplacer(`"`, `\"`, "\r", "", "\n", "").Replace(fileName)
+		c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, safeFileName))
 		c.Header("Content-Type", contentType)
 		c.Header("Content-Length", fmt.Sprintf("%d", info.Size()))
 		c.Header("Cache-Control", "private, max-age=0")
@@ -243,6 +253,59 @@ func DeletePreviewLinkHandler() gin.HandlerFunc {
 	}
 }
 
+// PreviewInfoHandler 获取预览链接的文件信息（不需要密码）
+// 返回文件名、大小、类型、是否需要密码、是否可预览等
+func PreviewInfoHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		linkID := c.Param("linkId")
+		if linkID == "" {
+			Fail(c, http.StatusBadRequest, "缺少链接 ID")
+			return
+		}
+
+		previewLinkStore.RLock()
+		entry, exists := previewLinkStore.m[linkID]
+		previewLinkStore.RUnlock()
+
+		if !exists {
+			Fail(c, http.StatusNotFound, "链接不存在或已失效")
+			return
+		}
+
+		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
+			previewLinkStore.Lock()
+			delete(previewLinkStore.m, linkID)
+			previewLinkStore.Unlock()
+			Fail(c, http.StatusGone, "链接已过期")
+			return
+		}
+
+		fileName := filepath.Base(entry.FilePath)
+		contentType := mime.TypeByExtension(filepath.Ext(entry.FilePath))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		// 获取文件大小
+		var fileSize int64
+		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
+		if baseDir != "" {
+			if info, err := os.Stat(filepath.Join(baseDir, entry.FilePath)); err == nil {
+				fileSize = info.Size()
+			}
+		}
+
+		OK(c, gin.H{
+			"file_name":        fileName,
+			"file_size":        fileSize,
+			"content_type":     contentType,
+			"require_password": entry.PasswordHash != "",
+			"previewable":      isPreviewable(contentType),
+			"expires_at":       expiresAtUnix(entry.ExpiresAt),
+		})
+	}
+}
+
 // ListPreviewLinksHandler 列出所有预览链接
 func ListPreviewLinksHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -254,14 +317,14 @@ func ListPreviewLinksHandler() gin.HandlerFunc {
 		expired := make([]string, 0)
 
 		for id, entry := range previewLinkStore.m {
-			if now.After(entry.ExpiresAt) {
+			if !entry.ExpiresAt.IsZero() && now.After(entry.ExpiresAt) {
 				expired = append(expired, id)
 				continue
 			}
 			links = append(links, PreviewLink{
 				ID:        id,
 				FilePath:  entry.FilePath,
-				ExpiresAt: entry.ExpiresAt.Unix(),
+				ExpiresAt: expiresAtUnix(entry.ExpiresAt),
 				CreatedAt: entry.CreatedAt.Unix(),
 			})
 		}
@@ -290,16 +353,26 @@ func generateLinkID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// hashPassword 使用 SHA-256 哈希密码
+// hashPassword 使用 bcrypt 哈希密码
 func hashPassword(password string) string {
-	h := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(h[:])
+	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return ""
+	}
+	return string(h)
 }
 
 // verifyPassword 校验密码
 func verifyPassword(password, hash string) bool {
-	h := hashPassword(password)
-	return subtle.ConstantTimeCompare([]byte(h), []byte(hash)) == 1
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// expiresAtUnix 将过期时间转为 Unix 时间戳，零值（永不过期）返回 0
+func expiresAtUnix(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
 }
 
 // isPreviewable 判断 MIME 类型是否可在浏览器中直接预览

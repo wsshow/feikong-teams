@@ -26,6 +26,16 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 
+		// 文件预览/分享链接不需要验证（有独立的密码校验机制）
+		if strings.HasPrefix(path, "/p/") {
+			c.Next()
+			return
+		}
+		if (c.Request.Method == "GET" || c.Request.Method == "HEAD") && strings.HasPrefix(path, "/api/fkteams/preview/") {
+			c.Next()
+			return
+		}
+
 		// 从 Authorization header、query 参数或 cookie 获取 token
 		token := ""
 		authHeader := c.GetHeader("Authorization")

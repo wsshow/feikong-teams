@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文件预览 - 非空小队</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css" />
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #fdf8f0;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f5f0e8;
+            --bg-hover: #ede7db;
+            --text-primary: #2c2c2c;
+            --text-secondary: #5a5a5a;
+            --text-tertiary: #8a8a8a;
+            --border-color: #c8c0b4;
+            --border-sketch: #9e9585;
+            --accent-primary: #6b7fc6;
+            --accent-secondary: #8b9dd6;
+            --accent-light: #eef0f9;
+            --success: #7db87f;
+            --error: #c66b6b;
+            --error-light: #f9eded;
+            --shadow-sketch: 2px 3px 0px rgba(60, 50, 30, 0.1);
+            --transition: 200ms ease;
+            --font-hand: 'Caveat', 'STKaiti', 'KaiTi', cursive;
+            --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: var(--font-body);
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background-image:
+                radial-gradient(circle at 20% 50%, rgba(180, 160, 130, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(130, 150, 180, 0.03) 0%, transparent 50%);
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-sketch);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 720px;
+            max-height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 6px 0px rgba(60, 50, 30, 0.12);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 2px dashed var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .card-header svg {
+            width: 28px;
+            height: 28px;
+            color: var(--accent-primary);
+            flex-shrink: 0;
+        }
+
+        .card-header h1 {
+            font-family: var(--font-hand);
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .card-body {
+            padding: 24px;
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        /* File info */
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .file-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--accent-light);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .file-icon svg {
+            width: 24px;
+            height: 24px;
+            color: var(--accent-primary);
+        }
+
+        .file-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .file-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* Preview area */
+        .preview-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-tertiary);
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview-area img {
+            max-width: 100%;
+            max-height: 50vh;
+            display: block;
+        }
+
+        .preview-area video,
+        .preview-area audio {
+            max-width: 100%;
+            display: block;
+        }
+
+        .preview-area iframe {
+            width: 100%;
+            height: 50vh;
+            border: none;
+        }
+
+        .preview-area pre {
+            width: 100%;
+            padding: 16px;
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 50vh;
+            overflow: auto;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .preview-area pre code {
+            white-space: pre;
+            word-break: normal;
+        }
+
+        .preview-area .markdown-body {
+            width: 100%;
+            padding: 20px;
+            max-height: 50vh;
+            overflow: auto;
+            background: var(--bg-secondary);
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .preview-area .markdown-body h1,
+        .preview-area .markdown-body h2,
+        .preview-area .markdown-body h3 {
+            margin: 16px 0 8px;
+            font-weight: 600;
+        }
+
+        .preview-area .markdown-body p {
+            margin: 8px 0;
+        }
+
+        .preview-area .markdown-body code {
+            background: var(--bg-tertiary);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .preview-area .markdown-body pre {
+            max-height: none;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+
+        .preview-area .markdown-body pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .preview-area .markdown-body blockquote {
+            border-left: 3px solid var(--border-color);
+            padding-left: 12px;
+            color: var(--text-secondary);
+            margin: 8px 0;
+        }
+
+        .preview-area .markdown-body table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+        }
+
+        .preview-area .markdown-body th,
+        .preview-area .markdown-body td {
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            text-align: left;
+        }
+
+        .preview-area .markdown-body th {
+            background: var(--bg-tertiary);
+        }
+
+        .preview-area .html-sandbox {
+            width: 100%;
+            height: 50vh;
+            border: none;
+            background: white;
+        }
+
+        .preview-msg {
+            text-align: center;
+            padding: 32px 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .preview-msg svg {
+            width: 40px;
+            height: 40px;
+            color: var(--text-tertiary);
+            margin-bottom: 12px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Password */
+        .password-form {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .password-form label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: var(--text-secondary);
+        }
+
+        .password-form svg {
+            width: 40px;
+            height: 40px;
+            color: var(--text-tertiary);
+            margin-bottom: 12px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .password-row {
+            display: flex;
+            gap: 8px;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+
+        .password-row input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .password-row input:focus {
+            border-color: var(--accent-primary);
+            outline: none;
+        }
+
+        .password-error {
+            color: var(--error);
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        /* Buttons */
+        .card-footer {
+            padding: 16px 24px;
+            border-top: 2px dashed var(--border-color);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: 2px solid transparent;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+        }
+
+        .btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.85;
+            box-shadow: var(--shadow-sketch);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+            box-shadow: var(--shadow-sketch);
+        }
+
+        /* States */
+        .loading {
+            color: var(--text-tertiary);
+            font-size: 14px;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .error-state {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .error-state svg {
+            width: 48px;
+            height: 48px;
+            color: var(--error);
+            margin-bottom: 12px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .error-state h2 {
+            font-family: var(--font-hand);
+            font-size: 24px;
+            color: var(--error);
+            margin-bottom: 8px;
+        }
+
+        .error-state p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* Branding */
+        .brand {
+            text-align: center;
+            padding: 16px;
+            font-family: var(--font-hand);
+            font-size: 16px;
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+            }
+
+            .card {
+                border-radius: 12px;
+            }
+
+            .card-header {
+                padding: 16px 18px;
+            }
+
+            .card-header h1 {
+                font-size: 22px;
+            }
+
+            .card-body {
+                padding: 18px;
+            }
+
+            .card-footer {
+                padding: 14px 18px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card" id="app">
+        <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <circle cx="18" cy="19" r="3" />
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+            </svg>
+            <h1>文件分享</h1>
+        </div>
+        <div class="card-body" id="content">
+            <div class="loading">加载中...</div>
+        </div>
+        <div class="card-footer" id="footer" style="display:none">
+            <button class="btn btn-primary" id="download-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                下载文件
+            </button>
+        </div>
+        <div class="brand">非空小队</div>
+    </div>
+
+    <script>
+        (function () {
+            const linkId = location.pathname.split("/").pop();
+            if (!/^[a-f0-9]+$/i.test(linkId)) {
+                document.getElementById("content").innerHTML = '<div class="error-state"><h2>无效的链接</h2></div>';
+                return;
+            }
+            const content = document.getElementById("content");
+            const footer = document.getElementById("footer");
+            const downloadBtn = document.getElementById("download-btn");
+
+            let fileInfo = null;
+            let password = "";
+
+            const escapeHtml = (s) => {
+                const el = document.createElement("div");
+                el.textContent = s;
+                return el.innerHTML;
+            };
+
+            const formatSize = (bytes) => {
+                if (!bytes) return "";
+                const units = ["B", "KB", "MB", "GB"];
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + units[i];
+            };
+
+            const fileUrl = () => {
+                let url = `/api/fkteams/preview/${encodeURIComponent(linkId)}`;
+                if (password) url += `?password=${encodeURIComponent(password)}`;
+                return url;
+            };
+
+            const showError = (title, msg) => {
+                content.innerHTML = `<div class="error-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/>
+          <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <h2>${escapeHtml(title)}</h2>
+        <p>${escapeHtml(msg)}</p>
+      </div>`;
+                footer.style.display = "none";
+            };
+
+            const showFileInfo = () => {
+                const ext = (fileInfo.file_name.split(".").pop() || "").toLowerCase();
+                let typeLabel = fileInfo.content_type;
+                if (typeLabel.length > 40) typeLabel = typeLabel.substring(0, 40) + "...";
+
+                return `<div class="file-info">
+        <div class="file-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <div>
+          <div class="file-name">${escapeHtml(fileInfo.file_name)}</div>
+          <div class="file-meta">${escapeHtml(formatSize(fileInfo.file_size))} · ${escapeHtml(typeLabel)}</div>
+        </div>
+      </div>`;
+            };
+
+            const renderPreview = async () => {
+                const ct = fileInfo.content_type || "";
+                const ext = (fileInfo.file_name.split(".").pop() || "").toLowerCase();
+                const url = fileUrl();
+
+                // Image
+                if (ct.startsWith("image/")) {
+                    content.innerHTML = showFileInfo() + `<div class="preview-area"><img src="${url}" alt="${escapeHtml(fileInfo.file_name)}" /></div>`;
+                    footer.style.display = "flex";
+                    return;
+                }
+
+                // Video
+                if (ct.startsWith("video/")) {
+                    content.innerHTML = showFileInfo() + `<div class="preview-area"><video controls src="${url}"></video></div>`;
+                    footer.style.display = "flex";
+                    return;
+                }
+
+                // Audio
+                if (ct.startsWith("audio/")) {
+                    content.innerHTML = showFileInfo() + `<div class="preview-area"><audio controls src="${url}"></audio></div>`;
+                    footer.style.display = "flex";
+                    return;
+                }
+
+                // PDF
+                if (ct === "application/pdf") {
+                    content.innerHTML = showFileInfo() + `<div class="preview-area"><iframe src="${url}"></iframe></div>`;
+                    footer.style.display = "flex";
+                    return;
+                }
+
+                // Text-like
+                const textExts = [
+                    "txt", "md", "json", "yaml", "yml", "toml", "xml", "html", "css", "js", "ts",
+                    "go", "py", "sh", "bash", "zsh", "rs", "c", "cpp", "h", "hpp",
+                    "java", "kt", "swift", "rb", "php", "sql", "lua", "r", "csv", "log",
+                    "env", "ini", "conf", "cfg", "dockerfile", "makefile", "gitignore"
+                ];
+                // highlight.js 语言映射
+                const hlLangMap = {
+                    js: "javascript", ts: "typescript", py: "python", sh: "bash",
+                    zsh: "bash", rs: "rust", c: "c", cpp: "cpp", h: "c", hpp: "cpp",
+                    kt: "kotlin", rb: "ruby", yml: "yaml", conf: "ini", cfg: "ini",
+                    dockerfile: "dockerfile", makefile: "makefile"
+                };
+                if (ct.startsWith("text/") || ct.startsWith("application/json") || ct.startsWith("application/xml")
+                    || ct.startsWith("application/javascript") || textExts.includes(ext)) {
+                    try {
+                        const resp = await fetch(url);
+                        if (!resp.ok) throw new Error();
+                        const text = await resp.text();
+
+                        // Markdown 渲染
+                        if (ext === "md" && typeof marked !== "undefined") {
+                            content.innerHTML = showFileInfo() + `<div class="preview-area"><div class="markdown-body"></div></div>`;
+                            const mdBody = content.querySelector(".markdown-body");
+                            mdBody.innerHTML = marked.parse(text);
+                            // 代码块高亮
+                            if (typeof hljs !== "undefined") {
+                                mdBody.querySelectorAll("pre code").forEach((block) => hljs.highlightElement(block));
+                            }
+                        }
+                        // HTML 渲染（沙箱 iframe）
+                        else if (ext === "html" || ext === "htm") {
+                            content.innerHTML = showFileInfo() + `<div class="preview-area"><iframe class="html-sandbox" sandbox="allow-same-origin"></iframe></div>`;
+                            const iframe = content.querySelector("iframe");
+                            iframe.srcdoc = text;
+                        }
+                        // 代码文件语法高亮
+                        else if (typeof hljs !== "undefined" && ext !== "txt" && ext !== "csv" && ext !== "log") {
+                            const lang = hlLangMap[ext] || ext;
+                            content.innerHTML = showFileInfo() + `<div class="preview-area"><pre><code></code></pre></div>`;
+                            const codeEl = content.querySelector("code");
+                            codeEl.textContent = text;
+                            if (hljs.getLanguage(lang)) {
+                                codeEl.className = `language-${lang}`;
+                            }
+                            hljs.highlightElement(codeEl);
+                        }
+                        // 纯文本
+                        else {
+                            content.innerHTML = showFileInfo() + `<div class="preview-area"><pre>${escapeHtml(text)}</pre></div>`;
+                        }
+                    } catch {
+                        content.innerHTML = showFileInfo() + `<div class="preview-area"><div class="preview-msg">文件内容加载失败</div></div>`;
+                    }
+                    footer.style.display = "flex";
+                    return;
+                }
+
+                // Not previewable
+                content.innerHTML = showFileInfo() + `<div class="preview-area">
+        <div class="preview-msg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          此文件类型不支持在线预览，请下载后查看
+        </div>
+      </div>`;
+                footer.style.display = "flex";
+            };
+
+            const showPasswordForm = (errorMsg) => {
+                content.innerHTML = showFileInfo() + `<div class="password-form">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <label>此文件需要密码才能访问</label>
+        <div class="password-row">
+          <input type="password" id="pwd-input" placeholder="请输入访问密码" autocomplete="off" />
+          <button class="btn btn-primary" id="pwd-submit">验证</button>
+        </div>
+        ${errorMsg ? `<div class="password-error">${escapeHtml(errorMsg)}</div>` : ""}
+      </div>`;
+
+                const input = document.getElementById("pwd-input");
+                const submit = document.getElementById("pwd-submit");
+                const doSubmit = () => {
+                    password = input.value.trim();
+                    if (!password) return;
+                    tryAccess();
+                };
+                submit.addEventListener("click", doSubmit);
+                input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSubmit(); });
+                input.focus();
+            };
+
+            const tryAccess = async () => {
+                if (fileInfo.require_password && !password) {
+                    showPasswordForm();
+                    return;
+                }
+
+                if (fileInfo.require_password && password) {
+                    try {
+                        const resp = await fetch(fileUrl());
+                        if (resp.status === 401) {
+                            showPasswordForm();
+                            return;
+                        }
+                        if (resp.status === 403) {
+                            showPasswordForm("密码错误，请重新输入");
+                            return;
+                        }
+                        if (!resp.ok) {
+                            showError("访问失败", "文件不可用");
+                            return;
+                        }
+                    } catch {
+                        showError("网络错误", "无法连接服务器");
+                        return;
+                    }
+                }
+
+                renderPreview();
+            };
+
+            // Download
+            downloadBtn.addEventListener("click", () => {
+                const a = document.createElement("a");
+                a.href = fileUrl();
+                a.download = fileInfo ? fileInfo.file_name : "file";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
+
+            // Init: load file info
+            const init = async () => {
+                try {
+                    const resp = await fetch(`/api/fkteams/preview/${encodeURIComponent(linkId)}/info`);
+                    const data = await resp.json();
+
+                    if (resp.status === 404 || resp.status === 410) {
+                        showError(
+                            resp.status === 410 ? "链接已过期" : "链接不存在",
+                            data.message || "该分享链接已失效"
+                        );
+                        return;
+                    }
+                    if (data.code !== 0) {
+                        showError("加载失败", data.message || "无法获取文件信息");
+                        return;
+                    }
+
+                    fileInfo = data.data;
+                    document.title = `${fileInfo.file_name} - 文件分享 - 非空小队`;
+                    tryAccess();
+                } catch {
+                    showError("网络错误", "无法连接服务器");
+                }
+            };
+
+            init();
+        })();
+    </script>
+</body>
+
+</html>

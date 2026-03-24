@@ -48,6 +48,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		files := apiV1.Group("/files")
 		{
 			files.GET("", handler.GetFilesHandler())
+			files.GET("/search", handler.SearchFilesHandler())
 			files.GET("/download", handler.DownloadFileHandler())
 			files.POST("/upload", handler.UploadFileHandler())
 			files.POST("/upload/chunk", handler.UploadChunkHandler())
@@ -60,6 +61,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			preview.POST("", handler.CreatePreviewLinkHandler())
 			preview.GET("", handler.ListPreviewLinksHandler())
 			preview.GET("/:linkId", handler.PreviewFileHandler())
+			preview.GET("/:linkId/info", handler.PreviewInfoHandler())
 			preview.DELETE("/:linkId", handler.DeletePreviewLinkHandler())
 		}
 
@@ -126,6 +128,18 @@ func Init() (*gin.Engine, error) {
 	}
 	r.GET("/", serveIndex)
 	r.GET("/chat", serveIndex)
+
+	// 文件分享预览页面
+	servePreview := func(c *gin.Context) {
+		data, err := webFS.Open("preview.html")
+		if err != nil {
+			c.String(http.StatusNotFound, "Page not found")
+			return
+		}
+		defer data.Close()
+		c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
+	}
+	r.GET("/p/:linkId", servePreview)
 
 	registerAPIRoutes(r, authEnabled)
 	return r, nil

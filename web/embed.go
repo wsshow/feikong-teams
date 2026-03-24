@@ -7,7 +7,7 @@ import (
 
 // FS 嵌入整个 web 目录
 //
-//go:embed css js index.html login.html
+//go:embed css js index.html login.html preview.html
 var FS embed.FS
 
 // GetFS 返回 web 目录的文件系统

@@ -39,15 +39,37 @@ FKTeamsChat.prototype.initFileManager = function () {
     this.fmConfirmWarn = document.getElementById("fm-confirm-warn");
     this.fmConfirmCancel = document.getElementById("fm-confirm-cancel");
     this.fmConfirmOk = document.getElementById("fm-confirm-ok");
+    // Share modal elements
+    this.fmShareModal = document.getElementById("fm-share-modal");
+    this.fmShareClose = document.getElementById("fm-share-close");
+    this.fmShareCancel = document.getElementById("fm-share-cancel");
+    this.fmShareOk = document.getElementById("fm-share-ok");
+    this.fmShareFilename = document.getElementById("fm-share-filename");
+    this.fmSharePassword = document.getElementById("fm-share-password");
+    this.fmShareExpiry = document.getElementById("fm-share-expiry");
+    this.fmShareResult = document.getElementById("fm-share-result");
+    this.fmShareLink = document.getElementById("fm-share-link");
+    this.fmShareCopyBtn = document.getElementById("fm-share-copy-btn");
+    this.fmShareLinksBtn = document.getElementById("fm-share-links-btn");
+    this.fmShareManageBtn = document.getElementById("fm-share-manage-btn");
+    // Share list modal elements
+    this.fmShareListModal = document.getElementById("fm-share-list-modal");
+    this.fmShareListClose = document.getElementById("fm-share-list-close");
+    this.fmShareList = document.getElementById("fm-share-list");
     // File/folder upload inputs (hidden)
     this.fmFileInput = document.getElementById("fm-file-input");
     this.fmFolderInput = document.getElementById("fm-folder-input");
+    // Search elements
+    this.fmSearchInput = document.getElementById("fm-search-input");
+    this.fmSearchClear = document.getElementById("fm-search-clear");
 
     // State
     this.fmCurrentPath = "";
     this.fmFiles = [];
     this.fmSelected = new Set();
     this.fmUploadAbort = null;
+    this.fmSearchQuery = "";
+    this.fmSearchTimer = null;
 
     this._bindFmEvents();
 };
@@ -147,6 +169,71 @@ FKTeamsChat.prototype._bindFmEvents = function () {
             if (e.target === this.fmConfirmModal) this._fmCloseConfirm();
         });
     }
+
+    // Share modal events
+    if (this.fmShareClose) {
+        this.fmShareClose.addEventListener("click", () => this._fmCloseShareDialog());
+    }
+    if (this.fmShareCancel) {
+        this.fmShareCancel.addEventListener("click", () => this._fmCloseShareDialog());
+    }
+    if (this.fmShareModal) {
+        this.fmShareModal.addEventListener("click", (e) => {
+            if (e.target === this.fmShareModal) this._fmCloseShareDialog();
+        });
+    }
+    if (this.fmShareOk) {
+        this.fmShareOk.addEventListener("click", () => this._fmCreateShareLink());
+    }
+    if (this.fmShareCopyBtn) {
+        this.fmShareCopyBtn.addEventListener("click", () => this._fmCopyShareLink());
+    }
+    if (this.fmShareLinksBtn) {
+        this.fmShareLinksBtn.addEventListener("click", () => {
+            this._fmCloseShareDialog();
+            this._fmShowShareList();
+        });
+    }
+    if (this.fmShareManageBtn) {
+        this.fmShareManageBtn.addEventListener("click", () => this._fmShowShareList());
+    }
+    // Share list modal events
+    if (this.fmShareListClose) {
+        this.fmShareListClose.addEventListener("click", () => this._fmCloseShareList());
+    }
+    if (this.fmShareListModal) {
+        this.fmShareListModal.addEventListener("click", (e) => {
+            if (e.target === this.fmShareListModal) this._fmCloseShareList();
+        });
+    }
+
+    // Search events
+    if (this.fmSearchInput) {
+        this.fmSearchInput.addEventListener("input", () => {
+            clearTimeout(this.fmSearchTimer);
+            const q = this.fmSearchInput.value.trim();
+            if (this.fmSearchClear) {
+                this.fmSearchClear.classList.toggle("hidden", !q);
+            }
+            if (!q) {
+                this._fmClearSearch();
+                return;
+            }
+            this.fmSearchTimer = setTimeout(() => this._fmPerformSearch(q), 300);
+        });
+        this.fmSearchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                clearTimeout(this.fmSearchTimer);
+                const q = this.fmSearchInput.value.trim();
+                if (q) this._fmPerformSearch(q);
+            }
+        });
+    }
+    if (this.fmSearchClear) {
+        this.fmSearchClear.addEventListener("click", () => this._fmClearSearch());
+    }
+
     // Drag and drop on file list body
     if (this.fmBody) {
         this.fmBody.addEventListener("dragover", (e) => {
@@ -170,7 +257,11 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     // Keyboard: Escape
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
-            if (this.fmConfirmModal && this.fmConfirmModal.style.display === "flex") {
+            if (this.fmShareModal && this.fmShareModal.style.display === "flex") {
+                this._fmCloseShareDialog();
+            } else if (this.fmShareListModal && this.fmShareListModal.style.display === "flex") {
+                this._fmCloseShareList();
+            } else if (this.fmConfirmModal && this.fmConfirmModal.style.display === "flex") {
                 this._fmCloseConfirm();
             } else if (this.fmPreviewModal && this.fmPreviewModal.style.display === "flex") {
                 this._fmClosePreview();
@@ -188,6 +279,9 @@ FKTeamsChat.prototype.openFileManager = function () {
     this.fmModal.style.display = "flex";
     this.fmCurrentPath = "";
     this.fmSelected.clear();
+    this.fmSearchQuery = "";
+    if (this.fmSearchInput) this.fmSearchInput.value = "";
+    if (this.fmSearchClear) this.fmSearchClear.classList.add("hidden");
     this.fmLoadFiles();
 };
 
@@ -268,6 +362,9 @@ FKTeamsChat.prototype._fmRenderList = function () {
         ${!file.is_dir ? `<button class="fm-item-action-btn preview-action" title="预览">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>` : ""}
+        ${!file.is_dir ? `<button class="fm-item-action-btn share-action" title="分享">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </button>` : ""}
         ${!file.is_dir ? `<button class="fm-item-action-btn download-action" title="下载">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>` : ""}
@@ -307,6 +404,13 @@ FKTeamsChat.prototype._fmRenderList = function () {
             previewBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 this._fmPreviewFile(file);
+            });
+        }
+        const shareBtn = item.querySelector(".share-action");
+        if (shareBtn) {
+            shareBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this._fmShowShareDialog(file);
             });
         }
         const downloadBtn = item.querySelector(".download-action");
@@ -369,6 +473,164 @@ FKTeamsChat.prototype._fmRenderBreadcrumb = function () {
             this.fmBreadcrumb.appendChild(btn);
         });
     }
+};
+
+// ===== 文件搜索 =====
+
+FKTeamsChat.prototype._fmPerformSearch = async function (query) {
+    if (!this.fmList) return;
+    this.fmSearchQuery = query;
+    this.fmList.innerHTML = '<div class="fm-loading">搜索中...</div>';
+    this.fmSelected.clear();
+    this._fmUpdateToolbar();
+
+    try {
+        const resp = await this.fetchWithAuth(
+            `/api/fkteams/files/search?q=${encodeURIComponent(query)}`
+        );
+        if (!resp.ok) {
+            this.fmList.innerHTML = '<div class="fm-empty">搜索失败</div>';
+            return;
+        }
+        const result = await resp.json();
+        if (result.code !== 0) {
+            this.fmList.innerHTML = `<div class="fm-empty">${this.escapeHtml(result.message || "搜索失败")}</div>`;
+            return;
+        }
+
+        const files = result.data || [];
+        this.fmFiles = files;
+        this._fmRenderSearchResults(files, query);
+    } catch (err) {
+        console.error("fm search error:", err);
+        this.fmList.innerHTML = '<div class="fm-empty">搜索失败</div>';
+    }
+};
+
+FKTeamsChat.prototype._fmRenderSearchResults = function (files, query) {
+    if (!this.fmList) return;
+
+    this.fmList.innerHTML = "";
+
+    // hint bar
+    const hint = document.createElement("div");
+    hint.className = "fm-search-hint";
+    hint.innerHTML = `找到 ${files.length} 个结果`;
+    const clearLink = document.createElement("a");
+    clearLink.textContent = "清除搜索";
+    clearLink.addEventListener("click", () => this._fmClearSearch());
+    hint.appendChild(clearLink);
+    this.fmList.appendChild(hint);
+
+    if (files.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "fm-empty";
+        empty.textContent = "未找到匹配的文件";
+        this.fmList.appendChild(empty);
+        this._fmUpdateToolbar();
+        return;
+    }
+
+    files.forEach((file) => {
+        const item = document.createElement("div");
+        item.className = "fm-item" + (this.fmSelected.has(file.path) ? " selected" : "");
+        item.dataset.path = file.path;
+
+        const iconSvg = file.is_dir
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+        // Show path below name for search results
+        const parentPath = file.path.includes("/")
+            ? file.path.substring(0, file.path.lastIndexOf("/"))
+            : "";
+        const pathInfo = parentPath
+            ? `<div class="fm-search-result-path">${this.escapeHtml(parentPath)}</div>`
+            : "";
+
+        item.innerHTML = `
+            <input type="checkbox" class="fm-item-cb" ${this.fmSelected.has(file.path) ? "checked" : ""}>
+            <div class="fm-item-icon ${file.is_dir ? "folder" : "file"}">${iconSvg}</div>
+            <div class="fm-item-info">
+                <div class="fm-item-name">${this.escapeHtml(file.name)}</div>
+                ${pathInfo}
+            </div>
+            <div class="fm-item-meta">
+                <span class="fm-item-size">${file.is_dir ? "" : this._fmFormatSize(file.size)}</span>
+            </div>
+            <div class="fm-item-actions">
+                <button class="fm-item-action-btn" data-action="locate" title="定位到所在目录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></button>
+                ${!file.is_dir ? '<button class="fm-item-action-btn" data-action="preview" title="预览"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>' : ""}
+                ${!file.is_dir ? '<button class="fm-item-action-btn" data-action="share" title="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>' : ""}
+                <button class="fm-item-action-btn" data-action="download" title="下载"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+            </div>`;
+
+        // Click handlers
+        const cb = item.querySelector(".fm-item-cb");
+        if (cb) {
+            cb.addEventListener("click", (e) => e.stopPropagation());
+            cb.addEventListener("change", () => {
+                if (cb.checked) this.fmSelected.add(file.path);
+                else this.fmSelected.delete(file.path);
+                item.classList.toggle("selected", cb.checked);
+                this._fmUpdateToolbar();
+            });
+        }
+
+        item.querySelectorAll(".fm-item-action-btn").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const action = btn.dataset.action;
+                if (action === "download") this._fmDownloadFile(file);
+                else if (action === "preview") this._fmPreviewFile(file);
+                else if (action === "share") this._fmShowShareDialog(file);
+                else if (action === "locate") {
+                    const parentPath = file.is_dir
+                        ? file.path
+                        : (file.path.includes("/") ? file.path.substring(0, file.path.lastIndexOf("/")) : "");
+                    this.fmCurrentPath = parentPath;
+                    this._fmClearSearch();
+                }
+            });
+        });
+
+        // Double-click: navigate into directory, or to file's parent directory
+        item.addEventListener("dblclick", () => {
+            if (file.is_dir) {
+                this.fmCurrentPath = file.path;
+                this._fmClearSearch();
+            } else {
+                // Navigate to the file's parent directory
+                const parentPath = file.path.includes("/")
+                    ? file.path.substring(0, file.path.lastIndexOf("/"))
+                    : "";
+                this.fmCurrentPath = parentPath;
+                this._fmClearSearch();
+            }
+        });
+
+        // Single click: toggle select
+        item.addEventListener("click", (e) => {
+            if (e.target.closest(".fm-item-action-btn") || e.target.closest(".fm-item-cb")) return;
+            const isSelected = this.fmSelected.has(file.path);
+            if (isSelected) this.fmSelected.delete(file.path);
+            else this.fmSelected.add(file.path);
+            item.classList.toggle("selected", !isSelected);
+            if (cb) cb.checked = !isSelected;
+            this._fmUpdateToolbar();
+        });
+
+        this.fmList.appendChild(item);
+    });
+
+    this._fmUpdateToolbar();
+};
+
+FKTeamsChat.prototype._fmClearSearch = function () {
+    this.fmSearchQuery = "";
+    if (this.fmSearchInput) this.fmSearchInput.value = "";
+    if (this.fmSearchClear) this.fmSearchClear.classList.add("hidden");
+    this.fmLoadFiles();
 };
 
 // ===== 选择状态 =====
@@ -768,4 +1030,173 @@ FKTeamsChat.prototype._fmCloseConfirm = function () {
         this.fmConfirmOk.removeEventListener("click", this._fmConfirmHandler);
         this._fmConfirmHandler = null;
     }
+};
+
+// ===== 分享功能 =====
+
+FKTeamsChat.prototype._fmShowShareDialog = function (file) {
+    if (!this.fmShareModal) return;
+    this._fmShareFilePath = file.path;
+    if (this.fmShareFilename) this.fmShareFilename.textContent = file.name;
+    if (this.fmSharePassword) this.fmSharePassword.value = "";
+    if (this.fmShareExpiry) this.fmShareExpiry.value = "86400";
+    if (this.fmShareResult) this.fmShareResult.style.display = "none";
+    if (this.fmShareOk) this.fmShareOk.style.display = "";
+    this.fmShareModal.style.display = "flex";
+};
+
+FKTeamsChat.prototype._fmCloseShareDialog = function () {
+    if (this.fmShareModal) this.fmShareModal.style.display = "none";
+    this._fmShareFilePath = null;
+};
+
+FKTeamsChat.prototype._fmCreateShareLink = async function () {
+    if (!this._fmShareFilePath) return;
+    const btn = this.fmShareOk;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "创建中...";
+    }
+    try {
+        const body = {
+            file_path: this._fmShareFilePath,
+            expires_in: parseInt(this.fmShareExpiry ? this.fmShareExpiry.value : "86400", 10),
+        };
+        const pwd = this.fmSharePassword ? this.fmSharePassword.value.trim() : "";
+        if (pwd) body.password = pwd;
+
+        const resp = await this.fetchWithAuth("/api/fkteams/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data.code !== 0) {
+            this.showNotification(data.message || "创建分享失败", "error");
+            return;
+        }
+        // Show result
+        const linkUrl = `${location.origin}/p/${data.data.id}`;
+        if (this.fmShareLink) this.fmShareLink.value = linkUrl;
+        if (this.fmShareResult) this.fmShareResult.style.display = "";
+        if (btn) btn.style.display = "none";
+    } catch (err) {
+        console.error("share error:", err);
+        this.showNotification("创建分享链接失败", "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "创建分享";
+        }
+    }
+};
+
+FKTeamsChat.prototype._fmCopyToClipboard = function (text, btn) {
+    const showSuccess = () => {
+        if (!btn) return;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => {
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(showSuccess).catch(() => {
+            this._fmFallbackCopy(text);
+            showSuccess();
+        });
+    } else {
+        this._fmFallbackCopy(text);
+        showSuccess();
+    }
+};
+
+FKTeamsChat.prototype._fmFallbackCopy = function (text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (_) { /* ignore */ }
+    document.body.removeChild(ta);
+};
+
+FKTeamsChat.prototype._fmCopyShareLink = function () {
+    const link = this.fmShareLink ? this.fmShareLink.value : "";
+    if (!link) return;
+    this._fmCopyToClipboard(link, this.fmShareCopyBtn);
+};
+
+FKTeamsChat.prototype._fmShowShareList = async function () {
+    if (!this.fmShareListModal || !this.fmShareList) return;
+    this.fmShareListModal.style.display = "flex";
+    this.fmShareList.innerHTML = '<div class="fm-empty">加载中...</div>';
+
+    try {
+        const resp = await this.fetchWithAuth("/api/fkteams/preview");
+        const data = await resp.json();
+        if (data.code !== 0) {
+            this.fmShareList.innerHTML = '<div class="fm-empty">加载失败</div>';
+            return;
+        }
+        const links = data.data || [];
+        if (links.length === 0) {
+            this.fmShareList.innerHTML = '<div class="fm-empty">暂无分享链接</div>';
+            return;
+        }
+        this.fmShareList.innerHTML = "";
+        links.forEach((link) => {
+            const el = document.createElement("div");
+            el.className = "fm-share-list-item";
+            // expires_at === 0 表示永不过期
+            const isNeverExpire = !link.expires_at;
+            const expiresDate = isNeverExpire ? "永不过期" : this._fmFormatTime(link.expires_at);
+            const linkUrl = `${location.origin}/p/${link.id}`;
+            el.innerHTML = `
+                <div class="fm-share-list-info">
+                    <div class="fm-share-list-name">${this.escapeHtml(link.file_path)}</div>
+                    <div class="fm-share-list-meta">过期时间: ${expiresDate}</div>
+                </div>
+                <div class="fm-share-list-actions">
+                    <button class="fm-item-action-btn" title="复制链接" data-link="${this.escapeHtml(linkUrl)}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button class="fm-item-action-btn delete-action" title="删除" data-id="${this.escapeHtml(link.id)}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </div>`;
+            // Copy button
+            const copyBtn = el.querySelector("[data-link]");
+            if (copyBtn) {
+                copyBtn.addEventListener("click", () => {
+                    this._fmCopyToClipboard(copyBtn.dataset.link, copyBtn);
+                });
+            }
+            // Delete button
+            const delBtn = el.querySelector("[data-id]");
+            if (delBtn) {
+                delBtn.addEventListener("click", async () => {
+                    try {
+                        await this.fetchWithAuth(`/api/fkteams/preview/${encodeURIComponent(delBtn.dataset.id)}`, {
+                            method: "DELETE",
+                        });
+                        el.remove();
+                        // Check if list is now empty
+                        if (this.fmShareList && this.fmShareList.children.length === 0) {
+                            this.fmShareList.innerHTML = '<div class="fm-empty">暂无分享链接</div>';
+                        }
+                    } catch (err) {
+                        console.error("delete share error:", err);
+                    }
+                });
+            }
+            this.fmShareList.appendChild(el);
+        });
+    } catch (err) {
+        console.error("load shares error:", err);
+        this.fmShareList.innerHTML = '<div class="fm-empty">加载失败</div>';
+    }
+};
+
+FKTeamsChat.prototype._fmCloseShareList = function () {
+    if (this.fmShareListModal) this.fmShareListModal.style.display = "none";
 };
