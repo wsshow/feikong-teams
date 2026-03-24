@@ -20,13 +20,18 @@ var initializers = []Initializer{
 	&bunInitializer{},
 }
 
+// Names 返回所有可用的初始化器名称
+func Names() []string {
+	names := make([]string, 0, len(initializers))
+	for _, init := range initializers {
+		names = append(names, init.Name())
+	}
+	return names
+}
+
 // Run 让用户选择需要初始化的环境并执行
 func Run() {
-	// 构建选项列表
-	options := make([]string, 0, len(initializers))
-	for _, init := range initializers {
-		options = append(options, init.Name())
-	}
+	options := Names()
 
 	// 交互式多选
 	selectedOptions, _ := pterm.DefaultInteractiveMultiselect.
@@ -39,6 +44,19 @@ func Run() {
 		return
 	}
 
+	runSelected(selectedOptions)
+}
+
+// RunWith 直接初始化指定的环境（非交互模式）
+// 若 names 为空则初始化全部环境
+func RunWith(names []string) {
+	if len(names) == 0 {
+		names = Names()
+	}
+	runSelected(names)
+}
+
+func runSelected(selectedOptions []string) {
 	pterm.Info.Printfln("即将初始化: %v", selectedOptions)
 
 	// 构建 name->initializer 映射用于查找
@@ -48,7 +66,11 @@ func Run() {
 	}
 
 	for _, name := range selectedOptions {
-		init := initMap[name]
+		init, ok := initMap[name]
+		if !ok {
+			pterm.Error.Printfln("未知的环境: %s（可选: %v）", name, Names())
+			continue
+		}
 		pterm.Info.Printfln("[%s] 开始检测...", init.Name())
 		if err := init.Run(); err != nil {
 			pterm.Error.Printfln("[%s] 初始化失败: %v", init.Name(), err)
