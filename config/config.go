@@ -169,6 +169,11 @@ func GenerateExample() error {
 		return fmt.Errorf("无法创建目录 %s: %w", dir, err)
 	}
 	defaultConfig := Config{
+		Server: Server{
+			Host:     "127.0.0.1",
+			Port:     23456,
+			LogLevel: "info",
+		},
 		Channels: Channels{
 			QQ: ChannelQQ{
 				Enabled:   false,
