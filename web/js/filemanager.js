@@ -862,7 +862,39 @@ FKTeamsChat.prototype._fmDownloadFile = function (path) {
 
 FKTeamsChat.prototype._fmDownloadSelected = function () {
     const selected = this._fmGetSelectedFiles();
-    selected.forEach((f) => this._fmDownloadFile(f.path));
+    if (selected.length === 0) return;
+
+    // Single file (non-directory): direct download
+    if (selected.length === 1 && !selected[0].is_dir) {
+        this._fmDownloadFile(selected[0].path);
+        return;
+    }
+
+    // Multiple items or directory: batch zip download
+    const paths = selected.map((f) => f.path);
+    this.fetchWithAuth("/api/fkteams/files/download/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paths }),
+    })
+        .then((resp) => {
+            if (!resp.ok) throw new Error("batch download failed");
+            return resp.blob();
+        })
+        .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "download.zip";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        })
+        .catch((err) => {
+            console.error("batch download error:", err);
+            this.showNotification("下载失败", "error");
+        });
 };
 
 // ===== 删除 =====

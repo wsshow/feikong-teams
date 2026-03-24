@@ -567,6 +567,126 @@ func DownloadFileHandler() gin.HandlerFunc {
 	}
 }
 
+// BatchDownloadHandler 批量下载：将多个文件/文件夹打包为单个 zip
+// JSON body: {"paths": ["path1", "path2", ...]}
+func BatchDownloadHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		var req struct {
+			Paths []string `json:"paths" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.Paths) == 0 {
+			Fail(c, http.StatusBadRequest, "缺少 paths 参数")
+			return
+		}
+
+		// 校验所有路径
+		type validatedPath struct {
+			fullPath string
+			relPath  string
+		}
+		var validated []validatedPath
+		for _, p := range req.Paths {
+			fullPath, cleanPath, err := resolveAndValidatePath(baseDir, absBase, p)
+			if err != nil {
+				Fail(c, http.StatusBadRequest, err.Error())
+				return
+			}
+			if _, err := os.Stat(fullPath); err != nil {
+				Fail(c, http.StatusNotFound, fmt.Sprintf("文件不存在: %s", cleanPath))
+				return
+			}
+			validated = append(validated, validatedPath{fullPath: fullPath, relPath: cleanPath})
+		}
+
+		c.Header("Content-Type", "application/zip")
+		c.Header("Content-Disposition", `attachment; filename="download.zip"`)
+		c.Status(http.StatusOK)
+
+		zw := zip.NewWriter(c.Writer)
+		defer zw.Close()
+
+		for _, vp := range validated {
+			info, err := os.Stat(vp.fullPath)
+			if err != nil {
+				continue
+			}
+
+			if !info.IsDir() {
+				// 单个文件
+				header, err := zip.FileInfoHeader(info)
+				if err != nil {
+					continue
+				}
+				header.Name = vp.relPath
+				header.Method = zip.Deflate
+				w, err := zw.CreateHeader(header)
+				if err != nil {
+					continue
+				}
+				f, err := os.Open(vp.fullPath)
+				if err != nil {
+					continue
+				}
+				_, _ = io.Copy(w, f)
+				f.Close()
+				continue
+			}
+
+			// 目录递归写入
+			_ = filepath.WalkDir(vp.fullPath, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if strings.HasPrefix(d.Name(), ".") {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+
+				rel, err := filepath.Rel(filepath.Dir(vp.fullPath), path)
+				if err != nil {
+					return nil
+				}
+
+				if d.IsDir() {
+					_, _ = zw.Create(rel + "/")
+					return nil
+				}
+
+				fi, err := d.Info()
+				if err != nil {
+					return nil
+				}
+				header, err := zip.FileInfoHeader(fi)
+				if err != nil {
+					return nil
+				}
+				header.Name = rel
+				header.Method = zip.Deflate
+
+				w, err := zw.CreateHeader(header)
+				if err != nil {
+					return nil
+				}
+				f, err := os.Open(path)
+				if err != nil {
+					return nil
+				}
+				defer f.Close()
+				_, _ = io.Copy(w, f)
+				return nil
+			})
+		}
+	}
+}
+
 // DeleteFileHandler 删除工作目录中的文件或目录
 // JSON body: {"path": "相对路径", "force": false}
 // force 为 true 时可删除非空目录

@@ -50,6 +50,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			files.GET("", handler.GetFilesHandler())
 			files.GET("/search", handler.SearchFilesHandler())
 			files.GET("/download", handler.DownloadFileHandler())
+			files.POST("/download/batch", handler.BatchDownloadHandler())
 			files.POST("/upload", handler.UploadFileHandler())
 			files.POST("/upload/chunk", handler.UploadChunkHandler())
 			files.DELETE("", handler.DeleteFileHandler())
