@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -476,7 +477,7 @@ func sanitizeUploadID(id string) string {
 	return hex.EncodeToString(h[:16])
 }
 
-// DownloadFileHandler 下载工作目录中的文件
+// DownloadFileHandler 下载工作目录中的文件（目录自动打包为 zip）
 // Query: path(文件相对路径)
 func DownloadFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -503,13 +504,66 @@ func DownloadFileHandler() gin.HandlerFunc {
 			Fail(c, http.StatusNotFound, "文件不存在")
 			return
 		}
-		if info.IsDir() {
-			Fail(c, http.StatusBadRequest, "不支持下载目录")
+
+		if !info.IsDir() {
+			fileName := filepath.Base(fullPath)
+			c.FileAttachment(fullPath, fileName)
 			return
 		}
 
-		fileName := filepath.Base(fullPath)
-		c.FileAttachment(fullPath, fileName)
+		// 目录：打包为 zip 流式下载
+		dirName := filepath.Base(fullPath)
+		c.Header("Content-Type", "application/zip")
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, dirName))
+		c.Status(http.StatusOK)
+
+		zw := zip.NewWriter(c.Writer)
+		defer zw.Close()
+
+		_ = filepath.WalkDir(fullPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			rel, err := filepath.Rel(fullPath, path)
+			if err != nil || rel == "." {
+				return nil
+			}
+
+			if d.IsDir() {
+				_, _ = zw.Create(rel + "/")
+				return nil
+			}
+
+			fi, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			header, err := zip.FileInfoHeader(fi)
+			if err != nil {
+				return nil
+			}
+			header.Name = rel
+			header.Method = zip.Deflate
+
+			w, err := zw.CreateHeader(header)
+			if err != nil {
+				return nil
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return nil
+			}
+			defer f.Close()
+			_, _ = io.Copy(w, f)
+			return nil
+		})
 	}
 }
 

@@ -365,9 +365,9 @@ FKTeamsChat.prototype._fmRenderList = function () {
         ${!file.is_dir ? `<button class="fm-item-action-btn share-action" title="分享">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         </button>` : ""}
-        ${!file.is_dir ? `<button class="fm-item-action-btn download-action" title="下载">
+        <button class="fm-item-action-btn download-action" title="下载">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        </button>` : ""}
+        </button>
         <button class="fm-item-action-btn delete-action" title="删除">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
@@ -862,9 +862,7 @@ FKTeamsChat.prototype._fmDownloadFile = function (path) {
 
 FKTeamsChat.prototype._fmDownloadSelected = function () {
     const selected = this._fmGetSelectedFiles();
-    // Only download files, not directories
-    const filesToDownload = selected.filter((f) => !f.is_dir);
-    filesToDownload.forEach((f) => this._fmDownloadFile(f.path));
+    selected.forEach((f) => this._fmDownloadFile(f.path));
 };
 
 // ===== 删除 =====
