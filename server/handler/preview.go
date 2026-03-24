@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -19,11 +20,12 @@ import (
 
 // PreviewLink 预览链接信息
 type PreviewLink struct {
-	ID        string `json:"id"`
-	FilePath  string `json:"file_path"`
-	Password  string `json:"password,omitempty"`
-	ExpiresAt int64  `json:"expires_at"`
-	CreatedAt int64  `json:"created_at"`
+	ID        string   `json:"id"`
+	FilePath  string   `json:"file_path"`
+	FilePaths []string `json:"file_paths,omitempty"`
+	Password  string   `json:"password,omitempty"`
+	ExpiresAt int64    `json:"expires_at"`
+	CreatedAt int64    `json:"created_at"`
 }
 
 // previewLinkStore 预览链接存储
@@ -32,16 +34,16 @@ var previewLinkStore = struct {
 	m map[string]*previewLinkEntry
 }{m: make(map[string]*previewLinkEntry)}
 
-// previewLinkEntry 存储条目（密码以哈希形式保存）
+// previewLinkEntry 存储条目
 type previewLinkEntry struct {
-	FilePath     string // 文件在 workspace 内的相对路径
-	PasswordHash string // 密码 SHA-256 哈希 (空字符串表示无密码)
+	FilePaths    []string // 文件在 workspace 内的相对路径列表
+	PasswordHash string   // bcrypt 哈希 (空字符串表示无密码)
 	ExpiresAt    time.Time
 	CreatedAt    time.Time
 }
 
 // CreatePreviewLinkHandler 创建文件预览链接
-// 参数: file_path(文件相对路径), password(可选密码), expires_in(过期时间,秒,默认86400即1天)
+// 参数: file_path(单文件路径) 或 file_paths(多文件路径数组), password(可选密码), expires_in(过期时间,秒)
 func CreatePreviewLinkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
@@ -51,34 +53,47 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 		}
 
 		var req struct {
-			FilePath  string `json:"file_path" binding:"required"`
-			Password  string `json:"password"`
-			ExpiresIn int64  `json:"expires_in"`
+			FilePath  string   `json:"file_path"`
+			FilePaths []string `json:"file_paths"`
+			Password  string   `json:"password"`
+			ExpiresIn int64    `json:"expires_in"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "参数错误")
 			return
 		}
 
-		// 校验文件路径
-		cleanPath := filepath.Clean(req.FilePath)
-		if strings.Contains(cleanPath, "..") {
-			Fail(c, http.StatusBadRequest, "无效的文件路径")
+		// 合并 file_path 和 file_paths
+		paths := req.FilePaths
+		if req.FilePath != "" && len(paths) == 0 {
+			paths = []string{req.FilePath}
+		}
+		if len(paths) == 0 {
+			Fail(c, http.StatusBadRequest, "缺少文件路径")
 			return
 		}
 
-		fullPath := filepath.Join(baseDir, cleanPath)
 		absBase, _ := filepath.Abs(baseDir)
-		absFull, _ := filepath.Abs(fullPath)
-		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
-			Fail(c, http.StatusBadRequest, "无效的文件路径")
-			return
-		}
 
-		info, err := os.Stat(fullPath)
-		if err != nil || info.IsDir() {
-			Fail(c, http.StatusNotFound, "文件不存在")
-			return
+		// 校验所有路径
+		var cleanPaths []string
+		for _, p := range paths {
+			cleanPath := filepath.Clean(p)
+			if strings.Contains(cleanPath, "..") {
+				Fail(c, http.StatusBadRequest, "无效的文件路径")
+				return
+			}
+			fullPath := filepath.Join(baseDir, cleanPath)
+			absFull, _ := filepath.Abs(fullPath)
+			if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
+				Fail(c, http.StatusBadRequest, "无效的文件路径")
+				return
+			}
+			if _, err := os.Stat(fullPath); err != nil {
+				Fail(c, http.StatusNotFound, fmt.Sprintf("文件不存在: %s", cleanPath))
+				return
+			}
+			cleanPaths = append(cleanPaths, cleanPath)
 		}
 
 		// 默认过期时间 1 天，最长 30 天；-1 表示永不过期
@@ -91,7 +106,6 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 			expiresIn = maxExpiry
 		}
 
-		// 生成链接 ID
 		linkID, err := generateLinkID()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, "生成链接失败")
@@ -99,17 +113,16 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 		}
 
 		now := time.Now()
-		var expiresAt time.Time // 零值表示永不过期
+		var expiresAt time.Time
 		if expiresIn >= 0 {
 			expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
 		}
 		entry := &previewLinkEntry{
-			FilePath:  cleanPath,
+			FilePaths: cleanPaths,
 			ExpiresAt: expiresAt,
 			CreatedAt: now,
 		}
 
-		// 密码哈希
 		if req.Password != "" {
 			h := hashPassword(req.Password)
 			if h == "" {
@@ -123,9 +136,16 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 		previewLinkStore.m[linkID] = entry
 		previewLinkStore.Unlock()
 
+		// 响应保持 file_path 兼容
+		filePath := cleanPaths[0]
+		if len(cleanPaths) > 1 {
+			filePath = fmt.Sprintf("%d 个文件", len(cleanPaths))
+		}
+
 		OK(c, PreviewLink{
 			ID:        linkID,
-			FilePath:  cleanPath,
+			FilePath:  filePath,
+			FilePaths: cleanPaths,
 			ExpiresAt: expiresAtUnix(entry.ExpiresAt),
 			CreatedAt: entry.CreatedAt.Unix(),
 		})
@@ -149,7 +169,6 @@ func PreviewFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 查找链接
 		previewLinkStore.RLock()
 		entry, exists := previewLinkStore.m[linkID]
 		previewLinkStore.RUnlock()
@@ -159,9 +178,7 @@ func PreviewFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 检查过期（零值表示永不过期）
 		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
-			// 清理过期链接
 			previewLinkStore.Lock()
 			delete(previewLinkStore.m, linkID)
 			previewLinkStore.Unlock()
@@ -189,8 +206,51 @@ func PreviewFileHandler() gin.HandlerFunc {
 			}
 		}
 
-		// 读取并返回文件
-		fullPath := filepath.Join(baseDir, entry.FilePath)
+		// 多文件或包含目录 → zip 打包下载
+		if len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0])) {
+			c.Header("Content-Type", "application/zip")
+			c.Header("Content-Disposition", `attachment; filename="share.zip"`)
+			c.Status(http.StatusOK)
+
+			zw := zip.NewWriter(c.Writer)
+			defer zw.Close()
+
+			for _, fp := range entry.FilePaths {
+				fullPath := filepath.Join(baseDir, fp)
+				info, err := os.Stat(fullPath)
+				if err != nil {
+					continue
+				}
+				if !info.IsDir() {
+					writeFileToZip(zw, fullPath, fp)
+					continue
+				}
+				// 目录递归写入
+				_ = filepath.WalkDir(fullPath, func(path string, d os.DirEntry, err error) error {
+					if err != nil || strings.HasPrefix(d.Name(), ".") {
+						if d != nil && d.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
+					}
+					rel, err := filepath.Rel(filepath.Dir(fullPath), path)
+					if err != nil {
+						return nil
+					}
+					if d.IsDir() {
+						_, _ = zw.Create(rel + "/")
+						return nil
+					}
+					writeFileToZip(zw, path, rel)
+					return nil
+				})
+			}
+			return
+		}
+
+		// 单文件预览
+		filePath := entry.FilePaths[0]
+		fullPath := filepath.Join(baseDir, filePath)
 		file, err := os.Open(fullPath)
 		if err != nil {
 			Fail(c, http.StatusNotFound, "文件不存在或已被删除")
@@ -204,19 +264,16 @@ func PreviewFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 确定 MIME 类型
-		contentType := mime.TypeByExtension(filepath.Ext(entry.FilePath))
+		contentType := mime.TypeByExtension(filepath.Ext(filePath))
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
 
-		// 设置内联预览（浏览器可直接打开的类型用 inline，否则用 attachment）
 		disposition := "inline"
 		if !isPreviewable(contentType) {
 			disposition = "attachment"
 		}
-		fileName := filepath.Base(entry.FilePath)
-		// 清理文件名中可能导致 header 注入的字符
+		fileName := filepath.Base(filePath)
 		safeFileName := strings.NewReplacer(`"`, `\"`, "\r", "", "\n", "").Replace(fileName)
 		c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, safeFileName))
 		c.Header("Content-Type", contentType)
@@ -257,6 +314,8 @@ func DeletePreviewLinkHandler() gin.HandlerFunc {
 // 返回文件名、大小、类型、是否需要密码、是否可预览等
 func PreviewInfoHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
+
 		linkID := c.Param("linkId")
 		if linkID == "" {
 			Fail(c, http.StatusBadRequest, "缺少链接 ID")
@@ -280,27 +339,46 @@ func PreviewInfoHandler() gin.HandlerFunc {
 			return
 		}
 
-		fileName := filepath.Base(entry.FilePath)
-		contentType := mime.TypeByExtension(filepath.Ext(entry.FilePath))
+		fileName := filepath.Base(entry.FilePaths[0])
+		contentType := mime.TypeByExtension(filepath.Ext(entry.FilePaths[0]))
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
 
+		isMulti := len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0]))
+
 		// 获取文件大小
 		var fileSize int64
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir != "" {
-			if info, err := os.Stat(filepath.Join(baseDir, entry.FilePath)); err == nil {
+		if !isMulti {
+			if info, err := os.Stat(filepath.Join(baseDir, entry.FilePaths[0])); err == nil {
 				fileSize = info.Size()
 			}
+		}
+
+		// 构建文件列表信息
+		var fileList []gin.H
+		for _, fp := range entry.FilePaths {
+			fullPath := filepath.Join(baseDir, fp)
+			info, err := os.Stat(fullPath)
+			fInfo := gin.H{
+				"path":   fp,
+				"name":   filepath.Base(fp),
+				"is_dir": err == nil && info.IsDir(),
+			}
+			if err == nil {
+				fInfo["size"] = info.Size()
+			}
+			fileList = append(fileList, fInfo)
 		}
 
 		OK(c, gin.H{
 			"file_name":        fileName,
 			"file_size":        fileSize,
+			"file_count":       len(entry.FilePaths),
+			"files":            fileList,
 			"content_type":     contentType,
 			"require_password": entry.PasswordHash != "",
-			"previewable":      isPreviewable(contentType),
+			"previewable":      !isMulti && isPreviewable(contentType),
 			"expires_at":       expiresAtUnix(entry.ExpiresAt),
 		})
 	}
@@ -321,9 +399,14 @@ func ListPreviewLinksHandler() gin.HandlerFunc {
 				expired = append(expired, id)
 				continue
 			}
+			filePath := entry.FilePaths[0]
+			if len(entry.FilePaths) > 1 {
+				filePath = fmt.Sprintf("%d 个文件", len(entry.FilePaths))
+			}
 			links = append(links, PreviewLink{
 				ID:        id,
-				FilePath:  entry.FilePath,
+				FilePath:  filePath,
+				FilePaths: entry.FilePaths,
 				ExpiresAt: expiresAtUnix(entry.ExpiresAt),
 				CreatedAt: entry.CreatedAt.Unix(),
 			})
@@ -373,6 +456,34 @@ func expiresAtUnix(t time.Time) int64 {
 		return 0
 	}
 	return t.Unix()
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func writeFileToZip(zw *zip.Writer, fullPath, relPath string) {
+	fi, err := os.Stat(fullPath)
+	if err != nil {
+		return
+	}
+	header, err := zip.FileInfoHeader(fi)
+	if err != nil {
+		return
+	}
+	header.Name = relPath
+	header.Method = zip.Deflate
+	w, err := zw.CreateHeader(header)
+	if err != nil {
+		return
+	}
+	f, err := os.Open(fullPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = io.Copy(w, f)
 }
 
 // isPreviewable 判断 MIME 类型是否可在浏览器中直接预览

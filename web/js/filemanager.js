@@ -24,6 +24,7 @@ FKTeamsChat.prototype.initFileManager = function () {
     this.fmUploadBtn = document.getElementById("fm-upload-btn");
     this.fmDownloadBtn = document.getElementById("fm-download-btn");
     this.fmDeleteBtn = document.getElementById("fm-delete-btn");
+    this.fmShareSelectedBtn = document.getElementById("fm-share-selected-btn");
     this.fmUploadBar = document.getElementById("fm-upload-bar");
     this.fmUploadText = document.getElementById("fm-upload-text");
     this.fmUploadProgressFill = document.getElementById("fm-upload-progress-fill");
@@ -123,6 +124,12 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     }
     if (this.fmDeleteBtn) {
         this.fmDeleteBtn.addEventListener("click", () => this._fmDeleteSelected());
+    }
+    if (this.fmShareSelectedBtn) {
+        this.fmShareSelectedBtn.addEventListener("click", () => {
+            const selected = this._fmGetSelectedFiles();
+            if (selected.length > 0) this._fmShowShareDialog(selected);
+        });
     }
 
     // Select all
@@ -362,9 +369,9 @@ FKTeamsChat.prototype._fmRenderList = function () {
         ${!file.is_dir ? `<button class="fm-item-action-btn preview-action" title="预览">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>` : ""}
-        ${!file.is_dir ? `<button class="fm-item-action-btn share-action" title="分享">
+        <button class="fm-item-action-btn share-action" title="分享">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        </button>` : ""}
+        </button>
         <button class="fm-item-action-btn download-action" title="下载">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
@@ -667,6 +674,7 @@ FKTeamsChat.prototype._fmUpdateToolbar = function () {
     // Batch action buttons
     if (this.fmDownloadBtn) this.fmDownloadBtn.disabled = count === 0;
     if (this.fmDeleteBtn) this.fmDeleteBtn.disabled = count === 0;
+    if (this.fmShareSelectedBtn) this.fmShareSelectedBtn.disabled = count === 0;
 };
 
 // ===== 上传 =====
@@ -1064,10 +1072,15 @@ FKTeamsChat.prototype._fmCloseConfirm = function () {
 
 // ===== 分享功能 =====
 
-FKTeamsChat.prototype._fmShowShareDialog = function (file) {
+FKTeamsChat.prototype._fmShowShareDialog = function (fileOrFiles) {
     if (!this.fmShareModal) return;
-    this._fmShareFilePath = file.path;
-    if (this.fmShareFilename) this.fmShareFilename.textContent = file.name;
+    // Support single file or array of files
+    const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+    this._fmShareFilePaths = files.map((f) => f.path);
+    const displayName = files.length === 1
+        ? files[0].name
+        : `${files.length} 个文件/文件夹`;
+    if (this.fmShareFilename) this.fmShareFilename.textContent = displayName;
     if (this.fmSharePassword) this.fmSharePassword.value = "";
     if (this.fmShareExpiry) this.fmShareExpiry.value = "86400";
     if (this.fmShareResult) this.fmShareResult.style.display = "none";
@@ -1077,11 +1090,11 @@ FKTeamsChat.prototype._fmShowShareDialog = function (file) {
 
 FKTeamsChat.prototype._fmCloseShareDialog = function () {
     if (this.fmShareModal) this.fmShareModal.style.display = "none";
-    this._fmShareFilePath = null;
+    this._fmShareFilePaths = null;
 };
 
 FKTeamsChat.prototype._fmCreateShareLink = async function () {
-    if (!this._fmShareFilePath) return;
+    if (!this._fmShareFilePaths || this._fmShareFilePaths.length === 0) return;
     const btn = this.fmShareOk;
     if (btn) {
         btn.disabled = true;
@@ -1089,9 +1102,14 @@ FKTeamsChat.prototype._fmCreateShareLink = async function () {
     }
     try {
         const body = {
-            file_path: this._fmShareFilePath,
             expires_in: parseInt(this.fmShareExpiry ? this.fmShareExpiry.value : "86400", 10),
         };
+        // Use file_paths for multi-file, file_path for single
+        if (this._fmShareFilePaths.length === 1) {
+            body.file_path = this._fmShareFilePaths[0];
+        } else {
+            body.file_paths = this._fmShareFilePaths;
+        }
         const pwd = this.fmSharePassword ? this.fmSharePassword.value.trim() : "";
         if (pwd) body.password = pwd;
 

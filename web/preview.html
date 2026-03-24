@@ -440,6 +440,64 @@
             flex-shrink: 0;
         }
 
+        /* File list for multi-file share */
+        .file-list {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-tertiary);
+        }
+
+        .file-list-header {
+            padding: 12px 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .file-list-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            border-bottom: 1px solid rgba(200, 192, 180, 0.4);
+            background: var(--bg-secondary);
+            transition: background var(--transition);
+        }
+
+        .file-list-item:last-child {
+            border-bottom: none;
+        }
+
+        .file-list-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .file-list-item svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            color: var(--text-tertiary);
+        }
+
+        .file-list-item .fli-name {
+            flex: 1;
+            font-size: 14px;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+
+        .file-list-item .fli-size {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            white-space: nowrap;
+        }
+
+        .file-list-item svg.fli-dir {
+            color: var(--accent-primary);
+        }
+
         @media (max-width: 640px) {
             body {
                 padding: 12px;
@@ -542,25 +600,49 @@
             };
 
             const showFileInfo = () => {
-                const ext = (fileInfo.file_name.split(".").pop() || "").toLowerCase();
-                let typeLabel = fileInfo.content_type;
+                const isMulti = fileInfo.file_count > 1 || (fileInfo.files && fileInfo.files.some(f => f.is_dir));
+                const displayName = isMulti ? `${fileInfo.file_count} 个文件/文件夹` : fileInfo.file_name;
+                const ext = isMulti ? "" : (fileInfo.file_name.split(".").pop() || "").toLowerCase();
+                let typeLabel = isMulti ? "批量分享" : fileInfo.content_type;
                 if (typeLabel.length > 40) typeLabel = typeLabel.substring(0, 40) + "...";
+                const sizeLabel = isMulti
+                    ? (fileInfo.files || []).reduce((s, f) => s + (f.size || 0), 0)
+                    : fileInfo.file_size;
+
+                const icon = isMulti
+                    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="15" height="14" rx="2"/><path d="M7 7V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-2"/></svg>`
+                    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
 
                 return `<div class="file-info">
-        <div class="file-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-          </svg>
-        </div>
+        <div class="file-icon">${icon}</div>
         <div>
-          <div class="file-name">${escapeHtml(fileInfo.file_name)}</div>
-          <div class="file-meta">${escapeHtml(formatSize(fileInfo.file_size))} · ${escapeHtml(typeLabel)}</div>
+          <div class="file-name">${escapeHtml(displayName)}</div>
+          <div class="file-meta">${escapeHtml(formatSize(sizeLabel))}${sizeLabel ? ' · ' : ''}${escapeHtml(typeLabel)}</div>
         </div>
       </div>`;
             };
 
+            const renderFileList = () => {
+                const files = fileInfo.files || [];
+                const dirIcon = `<svg class="fli-dir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+                const fileIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+                const items = files.map(f => {
+                    const icon = f.is_dir ? dirIcon : fileIcon;
+                    const size = f.is_dir ? '文件夹' : formatSize(f.size);
+                    return `<div class="file-list-item">${icon}<span class="fli-name">${escapeHtml(f.name)}</span><span class="fli-size">${escapeHtml(size)}</span></div>`;
+                }).join("");
+                content.innerHTML = showFileInfo() + `<div class="file-list"><div class="file-list-header">共 ${files.length} 个文件/文件夹</div>${items}</div>`;
+                downloadBtn.querySelector("svg").nextSibling.textContent = "下载全部";
+                footer.style.display = "flex";
+            };
+
             const renderPreview = async () => {
+                // Multi-file or directory share → show file list
+                if (fileInfo.file_count > 1 || (fileInfo.files && fileInfo.files.some(f => f.is_dir))) {
+                    renderFileList();
+                    return;
+                }
+
                 const ct = fileInfo.content_type || "";
                 const ext = (fileInfo.file_name.split(".").pop() || "").toLowerCase();
                 const url = fileUrl();
@@ -723,9 +805,10 @@
 
             // Download
             downloadBtn.addEventListener("click", () => {
+                const isMulti = fileInfo && (fileInfo.file_count > 1 || (fileInfo.files && fileInfo.files.some(f => f.is_dir)));
                 const a = document.createElement("a");
                 a.href = fileUrl();
-                a.download = fileInfo ? fileInfo.file_name : "file";
+                a.download = isMulti ? "files.zip" : (fileInfo ? fileInfo.file_name : "file");
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -750,7 +833,9 @@
                     }
 
                     fileInfo = data.data;
-                    document.title = `${fileInfo.file_name} - 文件分享 - 非空小队`;
+                    const isMulti = fileInfo.file_count > 1 || (fileInfo.files && fileInfo.files.some(f => f.is_dir));
+                    const titleName = isMulti ? `${fileInfo.file_count} 个文件` : fileInfo.file_name;
+                    document.title = `${titleName} - 文件分享 - 非空小队`;
                     tryAccess();
                 } catch {
                     showError("网络错误", "无法连接服务器");
