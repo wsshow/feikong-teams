@@ -100,7 +100,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
 		} else {
 			pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
-			saveCliSessionMetadata(activeSessionID, "")
+			saveCliSessionMetadata(activeSessionID, cliSessionTitle)
 		}
 		return ResultHandled
 

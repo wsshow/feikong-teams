@@ -136,6 +136,9 @@ const (
 // activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
 var activeSessionID = CLISessionID
 
+// cliSessionTitle 缓存第一次用户输入作为会话标题，仅在保存时使用
+var cliSessionTitle string
+
 // resumeSessionID 恢复会话的 ID，由 -r 参数设置
 var resumeSessionID string
 
@@ -167,8 +170,10 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(input)
 
-	// 用第一次输入更新会话标题
-	saveCliSessionMetadata(activeSessionID, input)
+	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）
+	if cliSessionTitle == "" {
+		cliSessionTitle = truncateTitle(input)
+	}
 
 	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)
@@ -323,8 +328,7 @@ func AutoSaveCLIHistory() {
 		pterm.Error.Printfln("保存聊天历史失败: %v", err)
 	} else {
 		pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
-		// 保存元数据
-		saveCliSessionMetadata(activeSessionID, "")
+		saveCliSessionMetadata(activeSessionID, cliSessionTitle)
 	}
 
 	htmlFilePath, err := SaveChatHistoryToHTML()
