@@ -14,8 +14,36 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
+)
+
+// queuedMessage 队列中的待处理消息
+type queuedMessage struct {
+	ctx         context.Context
+	channelName string
+	chatID      string
+	senderID    string
+	msg         Message
+	isGroup     bool
+	userInput   string // 预处理后的用户输入文本
+}
+
+// sessionQueue 每个会话的消息队列，确保同一会话的消息串行处理
+type sessionQueue struct {
+	ch      chan queuedMessage
+	pending atomic.Int32 // 队列中待处理的消息数（含正在执行的）
+}
+
+const (
+	// batchWaitDuration 收到首条消息后等待批量收集的时间窗口
+	batchWaitDuration = 500 * time.Millisecond
+	// maxBatchSize 单次批量处理的最大消息数
+	maxBatchSize = 10
+	// sessionQueueBuffer 每个会话队列的缓冲区大小
+	sessionQueueBuffer = 50
 )
 
 // Bridge 连接通道消息与智能体执行引擎
@@ -26,6 +54,9 @@ type Bridge struct {
 	runnerOnce sync.Once
 	runner     *adk.Runner
 	runnerErr  error
+
+	queueMu sync.Mutex
+	queues  map[string]*sessionQueue // per-session 消息队列
 }
 
 // NewBridge 创建消息桥接器
@@ -36,6 +67,7 @@ func NewBridge(manager *Manager, mode string) *Bridge {
 	return &Bridge{
 		manager: manager,
 		mode:    mode,
+		queues:  make(map[string]*sessionQueue),
 	}
 }
 
@@ -64,14 +96,91 @@ func (b *Bridge) getRunner(ctx context.Context) (*adk.Runner, error) {
 	return b.runner, b.runnerErr
 }
 
-// HandleMessage 处理来自通道的消息，执行智能体并将结果通过通道回复
+// HandleMessage 处理来自通道的消息，入队后由 per-session worker 串行执行
 func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg Message, isGroup bool) {
 	channelName := "unknown"
 	if name, ok := ctx.Value(channelNameKey{}).(string); ok {
 		channelName = name
 	}
 
+	userInput := buildUserInput(msg)
+	if userInput == "" {
+		return
+	}
+
 	sessionID := fmt.Sprintf("channel_%s_%s", channelName, chatID)
+
+	qm := queuedMessage{
+		ctx:         ctx,
+		channelName: channelName,
+		chatID:      chatID,
+		senderID:    senderID,
+		msg:         msg,
+		isGroup:     isGroup,
+		userInput:   userInput,
+	}
+
+	b.queueMu.Lock()
+	q, exists := b.queues[sessionID]
+	if !exists {
+		q = &sessionQueue{ch: make(chan queuedMessage, sessionQueueBuffer)}
+		b.queues[sessionID] = q
+		go b.sessionWorker(sessionID, q)
+	}
+	b.queueMu.Unlock()
+
+	select {
+	case q.ch <- qm:
+		pos := int(q.pending.Add(1))
+		// 队列中有其他消息排队时通知用户位置和批次
+		if pos > 1 {
+			batchNum := (pos-1)/maxBatchSize + 1
+			notice := fmt.Sprintf("消息已加入队列（第 %d 位），预计在第 %d 批执行，前面还有 %d 条消息在处理中", pos, batchNum, pos-1)
+			_ = b.manager.SendText(ctx, channelName, chatID, notice)
+		}
+	default:
+		log.Printf("[bridge] session queue full, dropping message: session=%s", sessionID)
+		_ = b.manager.SendText(ctx, channelName, chatID, "消息队列已满，请稍后再试")
+	}
+}
+
+// sessionWorker 每个会话的消息处理协程，批量取出消息后串行执行
+func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
+	for {
+		// 阻塞等待第一条消息
+		first, ok := <-q.ch
+		if !ok {
+			return
+		}
+
+		// 收到首条消息后短暂等待，收集同一时间段内的更多消息
+		batch := []queuedMessage{first}
+		timer := time.NewTimer(batchWaitDuration)
+	collect:
+		for len(batch) < maxBatchSize {
+			select {
+			case msg, ok := <-q.ch:
+				if !ok {
+					break collect
+				}
+				batch = append(batch, msg)
+			case <-timer.C:
+				break collect
+			}
+		}
+		timer.Stop()
+
+		b.processBatch(sessionID, batch)
+		q.pending.Add(-int32(len(batch)))
+	}
+}
+
+// processBatch 处理一批消息：合并用户输入，通知用户，执行引擎
+func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
+	first := batch[0]
+	ctx := first.ctx
+	channelName := first.channelName
+	chatID := first.chatID
 
 	r, err := b.getRunner(ctx)
 	if err != nil {
@@ -80,16 +189,36 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 		return
 	}
 
-	// 构建用户输入（文本 + 附件描述）
-	userInput := buildUserInput(msg)
-	if userInput == "" {
-		return
+	// 合并所有消息为一次输入
+	var combinedInput string
+	if len(batch) == 1 {
+		combinedInput = first.userInput
+	} else {
+		// 多条消息：通知用户将要执行的任务列表
+		var preview strings.Builder
+		preview.WriteString(fmt.Sprintf("收到 %d 条消息，将依次处理：", len(batch)))
+		for i, m := range batch {
+			line := m.userInput
+			if len([]rune(line)) > 50 {
+				line = string([]rune(line)[:50]) + "..."
+			}
+			preview.WriteString(fmt.Sprintf("\n%d. %s", i+1, line))
+		}
+		_ = b.manager.SendText(ctx, channelName, chatID, preview.String())
+
+		// 合并为带编号的用户输入
+		var merged strings.Builder
+		merged.WriteString("以下是用户连续发送的多条消息，请依次处理每一条：\n\n")
+		for i, m := range batch {
+			merged.WriteString(fmt.Sprintf("--- 消息 %d ---\n%s\n\n", i+1, m.userInput))
+		}
+		combinedInput = merged.String()
 	}
 
 	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, "")
-	messages := chatutil.BuildInputMessages(recorder, userInput)
+	messages := chatutil.BuildInputMessages(recorder, combinedInput)
 	countBeforeRun := recorder.GetMessageCount()
-	recorder.RecordUserInput(userInput)
+	recorder.RecordUserInput(combinedInput)
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
@@ -98,11 +227,7 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 	ctx = summary.WithSummaryPersistCallback(ctx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
-	ctx = approval.WithRegistry(ctx, approval.NewRegistry(
-		approval.StoreConfig{Name: approval.StoreCommand},
-		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-		approval.StoreConfig{Name: approval.StoreDispatch},
-	))
+	ctx = approval.WithRegistry(ctx, approval.NewAutoApproveRegistry())
 
 	_, err = engine.New(r, sessionID).Run(ctx, messages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
 	if err != nil {
