@@ -268,9 +268,16 @@ type replyCollector struct {
 	chatID      string
 
 	mu           sync.Mutex
-	pendingParts []string // 当前智能体的累积流式文本
-	currentAgent string   // 当前流式响应的智能体
-	replied      bool     // 是否已发送过任何回复
+	pendingParts []string          // 当前智能体的累积流式文本
+	pendingCalls []pendingToolCall // 待匹配结果的工具调用（FIFO）
+	currentAgent string            // 当前流式响应的智能体
+	replied      bool              // 是否已发送过任何回复
+}
+
+// pendingToolCall 等待结果的工具调用
+type pendingToolCall struct {
+	name string
+	args string
 }
 
 func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector {
@@ -302,9 +309,33 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 		if event.ActionType == "transfer" {
 			rc.flush()
 		}
-	case "tool_calls_preparing", "tool_calls":
-		// 工具调用前 flush 模型输出的文本
+	case "tool_calls":
+		// 工具调用：flush 之前的文本，记录所有工具调用（等待结果匹配）
 		rc.flush()
+		rc.mu.Lock()
+		for _, tc := range event.ToolCalls {
+			rc.pendingCalls = append(rc.pendingCalls, pendingToolCall{
+				name: tc.Function.Name,
+				args: truncateText(tc.Function.Arguments, 200),
+			})
+		}
+		rc.mu.Unlock()
+	case "tool_calls_preparing":
+		rc.flush()
+	case "tool_result":
+		// 工具调用完成：取出最早的待匹配调用，发送摘要
+		rc.mu.Lock()
+		var call pendingToolCall
+		if len(rc.pendingCalls) > 0 {
+			call = rc.pendingCalls[0]
+			rc.pendingCalls = rc.pendingCalls[1:]
+		}
+		rc.mu.Unlock()
+		if call.name != "" {
+			result := truncateText(event.Content, 200)
+			summary := "[" + call.name + "] " + call.args + "\n-> " + result
+			rc.send(summary)
+		}
 	}
 	return nil
 }
@@ -316,6 +347,16 @@ func (rc *replyCollector) flush() {
 	rc.pendingParts = rc.pendingParts[:0]
 	rc.mu.Unlock()
 	rc.send(text)
+}
+
+// truncateText 截断文本，保留前 maxLen 个字符
+func truncateText(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
 }
 
 // send 发送文本消息（自动分片）
