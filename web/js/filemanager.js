@@ -1199,9 +1199,20 @@ FKTeamsChat.prototype._fmShowShareList = async function () {
             const isNeverExpire = !link.expires_at;
             const expiresDate = isNeverExpire ? "永不过期" : this._fmFormatTime(link.expires_at);
             const linkUrl = `${location.origin}/p/${link.id}`;
+            // 构建显示名称
+            let nameHtml = "";
+            const paths = link.file_paths || [];
+            if (paths.length > 1) {
+                // 批量分享：显示文件数和各文件名
+                const fileNames = paths.map(p => p.split("/").pop());
+                nameHtml = `<div class="fm-share-list-name">${this.escapeHtml(paths.length + " 个文件/文件夹")}</div>`;
+                nameHtml += `<div class="fm-share-list-files">${fileNames.map(n => `<span class="fm-share-file-tag">${this.escapeHtml(n)}</span>`).join("")}</div>`;
+            } else {
+                nameHtml = `<div class="fm-share-list-name">${this.escapeHtml(paths[0] || link.file_path)}</div>`;
+            }
             el.innerHTML = `
                 <div class="fm-share-list-info">
-                    <div class="fm-share-list-name">${this.escapeHtml(link.file_path)}</div>
+                    ${nameHtml}
                     <div class="fm-share-list-meta">过期时间: ${expiresDate}</div>
                 </div>
                 <div class="fm-share-list-actions">

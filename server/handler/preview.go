@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -33,6 +34,70 @@ var previewLinkStore = struct {
 	sync.RWMutex
 	m map[string]*previewLinkEntry
 }{m: make(map[string]*previewLinkEntry)}
+
+const shareFilePath = "share/share.json"
+
+// shareFileEntry JSON 持久化条目
+type shareFileEntry struct {
+	FilePaths    []string `json:"file_paths"`
+	PasswordHash string   `json:"password_hash,omitempty"`
+	ExpiresAt    int64    `json:"expires_at"` // Unix 时间戳，0 表示永不过期
+	CreatedAt    int64    `json:"created_at"`
+}
+
+func init() {
+	loadShareLinks()
+}
+
+func loadShareLinks() {
+	data, err := os.ReadFile(shareFilePath)
+	if err != nil {
+		return
+	}
+	var entries map[string]*shareFileEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return
+	}
+	previewLinkStore.Lock()
+	defer previewLinkStore.Unlock()
+	now := time.Now()
+	for id, e := range entries {
+		var expiresAt time.Time
+		if e.ExpiresAt > 0 {
+			expiresAt = time.Unix(e.ExpiresAt, 0)
+			if now.After(expiresAt) {
+				continue // 跳过已过期
+			}
+		}
+		previewLinkStore.m[id] = &previewLinkEntry{
+			FilePaths:    e.FilePaths,
+			PasswordHash: e.PasswordHash,
+			ExpiresAt:    expiresAt,
+			CreatedAt:    time.Unix(e.CreatedAt, 0),
+		}
+	}
+}
+
+func saveShareLinks() {
+	previewLinkStore.RLock()
+	entries := make(map[string]*shareFileEntry, len(previewLinkStore.m))
+	for id, e := range previewLinkStore.m {
+		entries[id] = &shareFileEntry{
+			FilePaths:    e.FilePaths,
+			PasswordHash: e.PasswordHash,
+			ExpiresAt:    expiresAtUnix(e.ExpiresAt),
+			CreatedAt:    e.CreatedAt.Unix(),
+		}
+	}
+	previewLinkStore.RUnlock()
+
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(shareFilePath), 0755)
+	_ = os.WriteFile(shareFilePath, data, 0644)
+}
 
 // previewLinkEntry 存储条目
 type previewLinkEntry struct {
@@ -135,6 +200,7 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 		previewLinkStore.Lock()
 		previewLinkStore.m[linkID] = entry
 		previewLinkStore.Unlock()
+		saveShareLinks()
 
 		// 响应保持 file_path 兼容
 		filePath := cleanPaths[0]
@@ -182,6 +248,7 @@ func PreviewFileHandler() gin.HandlerFunc {
 			previewLinkStore.Lock()
 			delete(previewLinkStore.m, linkID)
 			previewLinkStore.Unlock()
+			saveShareLinks()
 			Fail(c, http.StatusGone, "链接已过期")
 			return
 		}
@@ -306,6 +373,7 @@ func DeletePreviewLinkHandler() gin.HandlerFunc {
 			return
 		}
 
+		saveShareLinks()
 		OK(c, nil)
 	}
 }
@@ -335,6 +403,7 @@ func PreviewInfoHandler() gin.HandlerFunc {
 			previewLinkStore.Lock()
 			delete(previewLinkStore.m, linkID)
 			previewLinkStore.Unlock()
+			saveShareLinks()
 			Fail(c, http.StatusGone, "链接已过期")
 			return
 		}
@@ -420,6 +489,7 @@ func ListPreviewLinksHandler() gin.HandlerFunc {
 					delete(previewLinkStore.m, id)
 				}
 				previewLinkStore.Unlock()
+				saveShareLinks()
 			}()
 		}
 
