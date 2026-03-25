@@ -12,6 +12,7 @@ import (
 	"fkteams/runner"
 	"fkteams/tools/approval"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,6 +47,8 @@ const (
 	sessionQueueBuffer = 50
 	// sessionIdleTimeout 会话队列空闲超时，超时后 worker 自动退出
 	sessionIdleTimeout = 10 * time.Minute
+	// channelHistoryDir 通道会话历史存储目录，与 Web/CLI 共用
+	channelHistoryDir = "sessions/"
 )
 
 // Bridge 连接通道消息与智能体执行引擎
@@ -240,7 +243,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		combinedInput = merged.String()
 	}
 
-	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, "")
+	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
 	messages := chatutil.BuildInputMessages(recorder, combinedInput)
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(combinedInput)
@@ -261,12 +264,49 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 
 	rc.flush()
 
+	// 持久化会话历史和元数据
+	historyFile := filepath.Join(channelHistoryDir, sessionID, "history.json")
+	if err := recorder.SaveToFile(historyFile); err != nil {
+		log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
+	}
+	saveChannelSessionMetadata(sessionID, combinedInput)
+
 	if g.MemoryManager != nil {
 		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 	}
 
 	if !rc.replied {
 		_ = b.manager.SendText(ctx, channelName, chatID, "...")
+	}
+}
+
+// saveChannelSessionMetadata 保存通道会话的元数据
+func saveChannelSessionMetadata(sessionID, userInput string) {
+	sessionDir := filepath.Join(channelHistoryDir, sessionID)
+	now := time.Now()
+	meta, err := fkevent.LoadMetadata(sessionDir)
+	if err != nil {
+		title := userInput
+		runes := []rune(title)
+		if len(runes) > 50 {
+			title = string(runes[:50]) + "..."
+		}
+		if title == "" {
+			title = "通道会话"
+		}
+		meta = &fkevent.SessionMetadata{
+			ID:        sessionID,
+			Title:     title,
+			Status:    "completed",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+	} else {
+		meta.UpdatedAt = now
+		meta.Status = "completed"
+	}
+	if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+		log.Printf("[bridge] save metadata failed: session=%s, err=%v", sessionID, err)
 	}
 }
 
