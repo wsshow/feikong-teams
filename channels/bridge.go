@@ -206,9 +206,11 @@ func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
 // processBatch 处理一批消息：合并用户输入，通知用户，执行引擎
 func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	first := batch[0]
-	ctx := first.ctx
 	channelName := first.channelName
 	chatID := first.chatID
+
+	// 使用独立 context：入队消息的原始 ctx 可能已被取消（如 typing ctx）
+	ctx := WithChannelName(context.Background(), channelName)
 
 	r, err := b.getRunner(ctx)
 	if err != nil {

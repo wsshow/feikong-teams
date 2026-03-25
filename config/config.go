@@ -82,6 +82,16 @@ type ChannelDiscord struct {
 	Mode      string `toml:"mode"`       // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
 }
 
+// ChannelWeixin 微信机器人通道配置
+type ChannelWeixin struct {
+	Enabled   bool   `toml:"enabled"`
+	BaseURL   string `toml:"base_url"`   // 自定义 API 地址（可选）
+	CredPath  string `toml:"cred_path"`  // 凭证存储路径（可选）
+	LogLevel  string `toml:"log_level"`  // 日志级别: debug, info, warn, error, silent
+	AllowFrom string `toml:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
+	Mode      string `toml:"mode"`       // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+}
+
 // ChannelEntry 统一通道配置条目
 type ChannelEntry struct {
 	Name  string
@@ -93,6 +103,7 @@ type ChannelEntry struct {
 type Channels struct {
 	QQ      ChannelQQ      `toml:"qq"`
 	Discord ChannelDiscord `toml:"discord"`
+	Weixin  ChannelWeixin  `toml:"weixin"`
 }
 
 // List 返回所有已启用的通道配置（供统一注册使用）
@@ -116,6 +127,18 @@ func (c Channels) List() []ChannelEntry {
 			Extra: map[string]string{
 				"token":      c.Discord.Token,
 				"allow_from": c.Discord.AllowFrom,
+			},
+		})
+	}
+	if c.Weixin.Enabled {
+		entries = append(entries, ChannelEntry{
+			Name: "weixin",
+			Mode: c.Weixin.Mode,
+			Extra: map[string]string{
+				"base_url":   c.Weixin.BaseURL,
+				"cred_path":  c.Weixin.CredPath,
+				"log_level":  c.Weixin.LogLevel,
+				"allow_from": c.Weixin.AllowFrom,
 			},
 		})
 	}
@@ -186,6 +209,14 @@ func GenerateExample() error {
 				Enabled: false,
 				Token:   "your_discord_bot_token",
 				Mode:    "team",
+			},
+			Weixin: ChannelWeixin{
+				Enabled:   false,
+				BaseURL:   "https://ilinkai.weixin.qq.com",
+				CredPath:  "channels/weixin/credentials.json",
+				LogLevel:  "info",
+				AllowFrom: "",
+				Mode:      "team",
 			},
 		},
 		Custom: Custom{
