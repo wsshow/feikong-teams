@@ -99,6 +99,7 @@ func CreateSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID string `json:"session_id" binding:"required"`
+			Title     string `json:"title"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request body")
@@ -116,10 +117,20 @@ func CreateSessionHandler() gin.HandlerFunc {
 			return
 		}
 
+		title := req.Title
+		if title == "" {
+			title = "未命名会话"
+		}
+		// 截断标题
+		runes := []rune(title)
+		if len(runes) > 50 {
+			title = string(runes[:50]) + "..."
+		}
+
 		now := time.Now()
 		meta := &fkevent.SessionMetadata{
 			ID:        req.SessionID,
-			Title:     "未命名会话",
+			Title:     title,
 			Status:    "idle",
 			CreatedAt: now,
 			UpdatedAt: now,

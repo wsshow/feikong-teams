@@ -4,7 +4,7 @@
 
 // ===== 新增会话 =====
 
-FKTeamsChat.prototype.createNewSession = function (silent) {
+FKTeamsChat.prototype.createNewSession = function (silent, title) {
     // 保存当前会话的 DOM 状态
     this._saveSessionDOM();
 
@@ -28,7 +28,7 @@ FKTeamsChat.prototype.createNewSession = function (silent) {
     this.fetchWithAuth('/api/fkteams/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: newSessionId })
+        body: JSON.stringify({ session_id: newSessionId, title: title || '' })
     }).then(() => {
         this.loadSidebarHistory();
     }).catch(err => {

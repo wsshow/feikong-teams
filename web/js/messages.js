@@ -2,10 +2,28 @@
  * messages.js - 消息处理与渲染
  */
 
-FKTeamsChat.prototype.sendMessage = function () {
+FKTeamsChat.prototype.sendMessage = async function () {
     const message = this.messageInput.value.trim();
     const hasAttachments = this.attachments && this.attachments.length > 0;
     if ((!message && !hasAttachments) || this.isProcessing) return;
+
+    // 页面刷新后首次发送消息时，先创建新会话（等待完成后再发送消息）
+    if (!this._hasLoadedSession) {
+        const newSessionId = crypto.randomUUID();
+        this.sessionId = newSessionId;
+        this.sessionIdInput.value = newSessionId;
+        this._hasLoadedSession = true;
+        try {
+            await this.fetchWithAuth('/api/fkteams/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: newSessionId, title: message })
+            });
+            this.loadSidebarHistory();
+        } catch (err) {
+            console.error('Error creating session:', err);
+        }
+    }
 
     const welcomeMsg = this.messagesContainer.querySelector('.welcome-message');
     if (welcomeMsg) welcomeMsg.remove();
@@ -181,8 +199,6 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
             this._finalizeFootnotes();
             this.currentMessageElement = null;
             this.hasToolCallAfterMessage = false;
-            // 刷新侧边栏历史列表
-            this.loadSidebarHistory();
             break;
         case 'cancelled':
             this.handleCancelled(event);
