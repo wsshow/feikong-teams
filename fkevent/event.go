@@ -23,6 +23,7 @@ type Event struct {
 	Detail           string            `json:"detail,omitempty"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 推理模型思考内容
 	ToolCalls        []schema.ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string            `json:"tool_call_id,omitempty"` // 工具结果对应的调用 ID
 	ActionType       string            `json:"action_type,omitempty"`
 	Error            string            `json:"error,omitempty"`
 }
@@ -120,6 +121,7 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 		RunPath:          formatRunPath(event.RunPath),
 		Content:          msg.Content,
 		ReasoningContent: msg.ReasoningContent,
+		ToolCallID:       msg.ToolCallID,
 	}
 
 	if len(msg.ToolCalls) > 0 {

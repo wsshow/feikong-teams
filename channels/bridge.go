@@ -44,6 +44,8 @@ const (
 	maxBatchSize = 10
 	// sessionQueueBuffer 每个会话队列的缓冲区大小
 	sessionQueueBuffer = 50
+	// sessionIdleTimeout 会话队列空闲超时，超时后 worker 自动退出
+	sessionIdleTimeout = 10 * time.Minute
 )
 
 // Bridge 连接通道消息与智能体执行引擎
@@ -145,12 +147,35 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 }
 
 // sessionWorker 每个会话的消息处理协程，批量取出消息后串行执行
+// 空闲超时后自动退出并清理队列
 func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
 	for {
-		// 阻塞等待第一条消息
-		first, ok := <-q.ch
-		if !ok {
-			return
+		// 阻塞等待第一条消息，带空闲超时
+		var first queuedMessage
+		var ok bool
+		idleTimer := time.NewTimer(sessionIdleTimeout)
+		select {
+		case first, ok = <-q.ch:
+			idleTimer.Stop()
+			if !ok {
+				return
+			}
+		case <-idleTimer.C:
+			// 空闲超时：加锁后再次检查是否有新消息，避免竞态丢消息
+			b.queueMu.Lock()
+			select {
+			case first, ok = <-q.ch:
+				b.queueMu.Unlock()
+				if !ok {
+					return
+				}
+				// 有新消息，继续处理
+			default:
+				// 确认无消息，安全退出
+				delete(b.queues, sessionID)
+				b.queueMu.Unlock()
+				return
+			}
 		}
 
 		// 收到首条消息后短暂等待，收集同一时间段内的更多消息
@@ -268,10 +293,10 @@ type replyCollector struct {
 	chatID      string
 
 	mu           sync.Mutex
-	pendingParts []string          // 当前智能体的累积流式文本
-	pendingCalls []pendingToolCall // 待匹配结果的工具调用（FIFO）
-	currentAgent string            // 当前流式响应的智能体
-	replied      bool              // 是否已发送过任何回复
+	pendingParts []string                   // 当前智能体的累积流式文本
+	pendingCalls map[string]pendingToolCall // 待匹配结果的工具调用（按 ID 索引）
+	currentAgent string                     // 当前流式响应的智能体
+	replied      bool                       // 是否已发送过任何回复
 }
 
 // pendingToolCall 等待结果的工具调用
@@ -281,7 +306,12 @@ type pendingToolCall struct {
 }
 
 func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector {
-	return &replyCollector{manager: mgr, channelName: channelName, chatID: chatID}
+	return &replyCollector{
+		manager:      mgr,
+		channelName:  channelName,
+		chatID:       chatID,
+		pendingCalls: make(map[string]pendingToolCall),
+	}
 }
 
 // handleEvent 处理引擎产生的各类事件
@@ -310,28 +340,27 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			rc.flush()
 		}
 	case "tool_calls":
-		// 工具调用：flush 之前的文本，记录所有工具调用（等待结果匹配）
+		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
 		rc.flush()
 		rc.mu.Lock()
 		for _, tc := range event.ToolCalls {
-			rc.pendingCalls = append(rc.pendingCalls, pendingToolCall{
+			rc.pendingCalls[tc.ID] = pendingToolCall{
 				name: tc.Function.Name,
 				args: truncateText(tc.Function.Arguments, 200),
-			})
+			}
 		}
 		rc.mu.Unlock()
 	case "tool_calls_preparing":
 		rc.flush()
 	case "tool_result":
-		// 工具调用完成：取出最早的待匹配调用，发送摘要
+		// 工具调用完成：按 ToolCallID 匹配调用，发送摘要
 		rc.mu.Lock()
-		var call pendingToolCall
-		if len(rc.pendingCalls) > 0 {
-			call = rc.pendingCalls[0]
-			rc.pendingCalls = rc.pendingCalls[1:]
+		call, found := rc.pendingCalls[event.ToolCallID]
+		if found {
+			delete(rc.pendingCalls, event.ToolCallID)
 		}
 		rc.mu.Unlock()
-		if call.name != "" {
+		if found {
 			result := truncateText(event.Content, 200)
 			summary := "[" + call.name + "] " + call.args + "\n-> " + result
 			rc.send(summary)
