@@ -57,9 +57,9 @@ cp .env.example .env
 
 ```env
 # 模型配置（必填）
-FEIKONG_OPENAI_API_KEY=your_api_key_here
-FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
-FEIKONG_OPENAI_MODEL=gpt-5
+FEIKONG_API_KEY=your_api_key_here
+FEIKONG_BASE_URL=https://api.openai.com/v1
+FEIKONG_MODEL=gpt-5
 ```
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
@@ -125,9 +125,9 @@ docker compose up -d
 # 或 docker run
 docker build -t fkteams .
 docker run -d --name fkteams -p 23456:23456 \
-  -e FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1 \
-  -e FEIKONG_OPENAI_API_KEY=your_api_key_here \
-  -e FEIKONG_OPENAI_MODEL=GPT-5 \
+  -e FEIKONG_BASE_URL=https://api.openai.com/v1 \
+  -e FEIKONG_API_KEY=your_api_key_here \
+  -e FEIKONG_MODEL=GPT-5 \
   fkteams
 ```
 

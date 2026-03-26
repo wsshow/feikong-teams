@@ -251,7 +251,7 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 | 智能体名称 | 中文 | 小码、小搜 |
 | 包/文件名 | 小写英文 | coder, searcher |
 | 工具函数 | 下划线分隔 | file_read, ssh_execute |
-| 环境变量 | FEIKONG_ 前缀 | FEIKONG_OPENAI_API_KEY |
+| 环境变量 | FEIKONG_ 前缀 | FEIKONG_API_KEY |
 | 提示词模板变量 | 小写未导出 | searcherPromptTemplate |
 | 全局变量 | 完整语义命名 | MemoryManager（非缩写） |
 
@@ -292,9 +292,9 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 
 必需:
 ```bash
-FEIKONG_OPENAI_API_KEY    # API 密钥
-FEIKONG_OPENAI_BASE_URL   # API 地址
-FEIKONG_OPENAI_MODEL      # 模型名称
+FEIKONG_API_KEY    # API 密钥
+FEIKONG_BASE_URL   # API 地址
+FEIKONG_MODEL      # 模型名称
 ```
 
 可选:

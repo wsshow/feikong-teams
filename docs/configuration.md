@@ -12,9 +12,9 @@ cp .env.example .env
 
 ```env
 # 模型配置
-FEIKONG_OPENAI_API_KEY=your_api_key_here
-FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
-FEIKONG_OPENAI_MODEL=gpt-5
+FEIKONG_API_KEY=your_api_key_here
+FEIKONG_BASE_URL=https://api.openai.com/v1
+FEIKONG_MODEL=gpt-5
 
 # 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
 # FEIKONG_PROVIDER=openai

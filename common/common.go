@@ -37,9 +37,9 @@ func GenerateExampleEnv(filePath string) error {
 # 请将此文件复制为 .env 并根据需要进行修改
 
 # 模型配置配置
-FEIKONG_OPENAI_BASE_URL = https://api.openai.com/v1
-FEIKONG_OPENAI_API_KEY = xxxxx
-FEIKONG_OPENAI_MODEL = GPT-5
+FEIKONG_BASE_URL = https://api.openai.com/v1
+FEIKONG_API_KEY = xxxxx
+FEIKONG_MODEL = GPT-5
 
 # 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
 # FEIKONG_PROVIDER = openai

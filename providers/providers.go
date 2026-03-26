@@ -90,11 +90,19 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel,
 func NewChatModelFromEnv(ctx context.Context) (model.ToolCallingChatModel, error) {
 	return NewChatModel(ctx, &Config{
 		Provider:     Type(os.Getenv("FEIKONG_PROVIDER")),
-		APIKey:       os.Getenv("FEIKONG_OPENAI_API_KEY"),
-		BaseURL:      os.Getenv("FEIKONG_OPENAI_BASE_URL"),
-		Model:        os.Getenv("FEIKONG_OPENAI_MODEL"),
+		APIKey:       envWithFallback("FEIKONG_API_KEY", "FEIKONG_OPENAI_API_KEY"),
+		BaseURL:      envWithFallback("FEIKONG_BASE_URL", "FEIKONG_OPENAI_BASE_URL"),
+		Model:        envWithFallback("FEIKONG_MODEL", "FEIKONG_OPENAI_MODEL"),
 		ExtraHeaders: parseExtraHeaders(os.Getenv("FEIKONG_EXTRA_HEADERS")),
 	})
+}
+
+// envWithFallback 优先读取新变量名，为空时回退到旧变量名
+func envWithFallback(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return os.Getenv(fallback)
 }
 
 // Detect 从 BaseURL 或模型名称自动检测提供者类型

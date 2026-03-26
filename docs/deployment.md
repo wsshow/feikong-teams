@@ -21,9 +21,9 @@ make build
 
 ```yaml
 environment:
-  - FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
-  - FEIKONG_OPENAI_API_KEY=your_api_key_here
-  - FEIKONG_OPENAI_MODEL=GPT-5
+  - FEIKONG_BASE_URL=https://api.openai.com/v1
+  - FEIKONG_API_KEY=your_api_key_here
+  - FEIKONG_MODEL=GPT-5
 ```
 
 2. 首次启动前，准备配置文件：
@@ -52,9 +52,9 @@ docker build -t fkteams .
 docker run -d \
   --name fkteams \
   -p 23456:23456 \
-  -e FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1 \
-  -e FEIKONG_OPENAI_API_KEY=your_api_key_here \
-  -e FEIKONG_OPENAI_MODEL=GPT-5 \
+  -e FEIKONG_BASE_URL=https://api.openai.com/v1 \
+  -e FEIKONG_API_KEY=your_api_key_here \
+  -e FEIKONG_MODEL=GPT-5 \
   -v ./data/config:/app/config \
   -v ./data/workspace:/app/workspace \
   -v ./data/history:/app/history \

@@ -7,9 +7,9 @@ services:
       - "23456:23456"
     environment:
       # 模型配置（必填）
-      - FEIKONG_OPENAI_BASE_URL=https://api.openai.com/v1
-      - FEIKONG_OPENAI_API_KEY=your_api_key_here
-      - FEIKONG_OPENAI_MODEL=GPT-5
+      - FEIKONG_BASE_URL=https://api.openai.com/v1
+      - FEIKONG_API_KEY=your_api_key_here
+      - FEIKONG_MODEL=GPT-5
 
       # 网络代理（可选）
       # - FEIKONG_PROXY_URL=http://host.docker.internal:7890
