@@ -26,12 +26,13 @@ func BuildMemoryContext(entries []MemoryEntry) string {
 		{Lesson, "避坑记录"},
 		{Decision, "已确定方案"},
 		{Insight, "认知洞察"},
+		{Experience, "操作经验"},
 	}
 
 	var sb strings.Builder
 	sb.WriteString("<!-- MEMORY_CONTEXT_START -->\n")
 	sb.WriteString("## 长期记忆\n\n")
-	sb.WriteString("以下是关于用户的长期记忆信息，请自然地融入回复中，据此调整回复风格和内容，不要直接引用或复述这些内容。\n\n")
+	sb.WriteString("以下是长期记忆信息，包含用户偏好和历史操作经验。请自然地融入回复中，据此调整回复风格和内容，参考操作经验避免重复踩坑。\n\n")
 
 	hasContent := false
 	for _, tc := range typeConfig {

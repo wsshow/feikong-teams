@@ -11,6 +11,7 @@ const (
 	Lesson     MemoryType = "lesson"     // 错误教训、避坑记录
 	Decision   MemoryType = "decision"   // 重要决策、确定方案
 	Insight    MemoryType = "insight"    // 观点看法、认知原则
+	Experience MemoryType = "experience" // AI 操作经验：遇到的问题及解决方法
 )
 
 // AllMemoryTypes 所有合法记忆类型
@@ -20,6 +21,7 @@ var AllMemoryTypes = map[MemoryType]bool{
 	Lesson:     true,
 	Decision:   true,
 	Insight:    true,
+	Experience: true,
 }
 
 // MemoryEntry 单条记忆
