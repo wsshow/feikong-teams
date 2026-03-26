@@ -15,6 +15,7 @@ import (
 	"fkteams/providers/claude"
 	"fkteams/providers/deepseek"
 	"fkteams/providers/gemini"
+	"fkteams/providers/internal"
 	"fkteams/providers/ollama"
 	"fkteams/providers/openai"
 	"fkteams/providers/openrouter"
@@ -37,14 +38,15 @@ const (
 
 // Config 统一模型配置
 type Config struct {
-	Provider Type   // 提供者类型，为空时自动检测
-	APIKey   string // API 密钥
-	BaseURL  string // API 地址
-	Model    string // 模型名称
+	Provider     Type              // 提供者类型，为空时自动检测
+	APIKey       string            // API 密钥
+	BaseURL      string            // API 地址
+	Model        string            // 模型名称
+	ExtraHeaders map[string]string // 额外 HTTP 请求头（如网关认证等）
 }
 
 // Factory 模型创建函数类型
-type Factory func(ctx context.Context, apiKey, baseURL, modelName string) (model.ToolCallingChatModel, error)
+type Factory func(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel, error)
 
 var factories = map[Type]Factory{}
 
@@ -76,16 +78,22 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel,
 		return nil, fmt.Errorf("未知的模型提供者: %s", t)
 	}
 
-	return f(ctx, cfg.APIKey, cfg.BaseURL, cfg.Model)
+	return f(ctx, &internal.Config{
+		APIKey:       cfg.APIKey,
+		BaseURL:      cfg.BaseURL,
+		Model:        cfg.Model,
+		ExtraHeaders: cfg.ExtraHeaders,
+	})
 }
 
 // NewChatModelFromEnv 从环境变量创建聊天模型
 func NewChatModelFromEnv(ctx context.Context) (model.ToolCallingChatModel, error) {
 	return NewChatModel(ctx, &Config{
-		Provider: Type(os.Getenv("FEIKONG_PROVIDER")),
-		APIKey:   os.Getenv("FEIKONG_OPENAI_API_KEY"),
-		BaseURL:  os.Getenv("FEIKONG_OPENAI_BASE_URL"),
-		Model:    os.Getenv("FEIKONG_OPENAI_MODEL"),
+		Provider:     Type(os.Getenv("FEIKONG_PROVIDER")),
+		APIKey:       os.Getenv("FEIKONG_OPENAI_API_KEY"),
+		BaseURL:      os.Getenv("FEIKONG_OPENAI_BASE_URL"),
+		Model:        os.Getenv("FEIKONG_OPENAI_MODEL"),
+		ExtraHeaders: parseExtraHeaders(os.Getenv("FEIKONG_EXTRA_HEADERS")),
 	})
 }
 
@@ -111,4 +119,24 @@ func Detect(baseURL, modelName string) Type {
 	default:
 		return OpenAI
 	}
+}
+
+// parseExtraHeaders 解析 "Key1:Value1,Key2:Value2" 格式的 header 字符串
+func parseExtraHeaders(s string) map[string]string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	headers := make(map[string]string)
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		k, v, ok := strings.Cut(pair, ":")
+		if ok {
+			headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
 }

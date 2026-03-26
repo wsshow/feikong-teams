@@ -5,13 +5,16 @@ import (
 
 	qwenModel "github.com/cloudwego/eino-ext/components/model/qwen"
 	"github.com/cloudwego/eino/components/model"
+
+	"fkteams/providers/internal"
 )
 
 // New 创建阿里通义千问的聊天模型
-func New(ctx context.Context, apiKey, baseURL, modelName string) (model.ToolCallingChatModel, error) {
+func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel, error) {
 	return qwenModel.NewChatModel(ctx, &qwenModel.ChatModelConfig{
-		APIKey:  apiKey,
-		BaseURL: baseURL,
-		Model:   modelName,
+		APIKey:     cfg.APIKey,
+		BaseURL:    cfg.BaseURL,
+		Model:      cfg.Model,
+		HTTPClient: internal.HTTPClientWithHeaders(cfg.ExtraHeaders),
 	})
 }

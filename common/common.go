@@ -44,6 +44,9 @@ FEIKONG_OPENAI_MODEL = GPT-5
 # 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
 # FEIKONG_PROVIDER = openai
 
+# 额外 HTTP 请求头（用于网关认证等场景，格式: Key1:Value1,Key2:Value2）
+# FEIKONG_EXTRA_HEADERS = X-Custom-Auth:your-token,X-Gateway-Key:your-key
+
 # 配置代理：网络搜索工具、程序更新等
 FEIKONG_PROXY_URL = http://127.0.0.1:7890
 
