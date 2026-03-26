@@ -6,7 +6,7 @@ import (
 )
 
 var storytellerPrompt = `
-# Role: 小天 (Xiao Tian) - 非空小队首席文案与创意官
+# Role: 小说 - 非空小队首席文案与创意官
 
 ## Profile
 - **定位**: 组织内的讲故事专家、创意写作大师。
