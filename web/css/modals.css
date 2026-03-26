@@ -786,6 +786,9 @@
   box-shadow: 4px 6px 0px rgba(60, 50, 30, 0.12);
   width: 90%;
   max-width: 480px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
   animation: sketchSlideUp 0.3s ease;
 }
 
@@ -807,6 +810,9 @@
 
 .approval-modal-body {
   padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .approval-message {
