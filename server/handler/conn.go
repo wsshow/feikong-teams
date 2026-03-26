@@ -14,18 +14,87 @@ var (
 	wsConns   = make(map[*websocket.Conn]context.CancelFunc)
 )
 
-// taskManager 任务取消管理（每个连接一个）
-type taskManager struct {
-	mu              sync.Mutex
-	taskCancel      context.CancelFunc
-	approvalCh      chan int // HITL 审批通道
-	activeSessionID string   // 当前正在处理的会话 ID
+// sessionTask 单个会话的任务状态
+type sessionTask struct {
+	cancel     context.CancelFunc
+	approvalCh chan int
+	id         uint64 // 唯一标识，用于区分同一 session 的新旧任务
+}
+
+// sessionManager 管理一个 WebSocket 连接上的所有并发会话任务
+type sessionManager struct {
+	mu     sync.Mutex
+	tasks  map[string]*sessionTask // key: sessionID
+	nextID uint64
 }
 
 var (
-	taskManagersMu sync.Mutex
-	taskManagers   = make(map[*websocket.Conn]*taskManager)
+	sessionManagersMu sync.Mutex
+	sessionManagers   = make(map[*websocket.Conn]*sessionManager)
 )
+
+// startTask 注册一个新的会话任务。如果该 session 已有运行中的任务则先取消旧任务。
+// 返回任务 ID，用于 removeTask 时识别是否是自己注册的任务。
+func (sm *sessionManager) startTask(sessionID string, cancel context.CancelFunc) uint64 {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if old, exists := sm.tasks[sessionID]; exists && old.cancel != nil {
+		old.cancel()
+	}
+	sm.nextID++
+	id := sm.nextID
+	sm.tasks[sessionID] = &sessionTask{cancel: cancel, id: id}
+	return id
+}
+
+// setApprovalCh 设置指定会话的审批通道（仅当 taskID 匹配时）
+func (sm *sessionManager) setApprovalCh(sessionID string, taskID uint64, ch chan int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if t, exists := sm.tasks[sessionID]; exists && t.id == taskID {
+		t.approvalCh = ch
+	}
+}
+
+// getApprovalCh 获取指定会话的审批通道
+func (sm *sessionManager) getApprovalCh(sessionID string) chan int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if t, exists := sm.tasks[sessionID]; exists {
+		return t.approvalCh
+	}
+	return nil
+}
+
+// cancelTask 取消指定会话的任务
+func (sm *sessionManager) cancelTask(sessionID string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if t, exists := sm.tasks[sessionID]; exists && t.cancel != nil {
+		t.cancel()
+	}
+}
+
+// removeTask 移除已完成的会话任务，仅当 taskID 匹配时才删除（防止误删新任务）
+func (sm *sessionManager) removeTask(sessionID string, taskID uint64) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if t, exists := sm.tasks[sessionID]; exists && t.id == taskID {
+		delete(sm.tasks, sessionID)
+	}
+}
+
+// cancelAll 取消所有运行中的任务
+func (sm *sessionManager) cancelAll() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	for _, t := range sm.tasks {
+		if t.cancel != nil {
+			t.cancel()
+		}
+	}
+	sm.tasks = nil
+}
 
 func registerConn(conn *websocket.Conn, cancel context.CancelFunc) {
 	wsConnsMu.Lock()
@@ -39,27 +108,23 @@ func unregisterConn(conn *websocket.Conn) {
 	wsConnsMu.Unlock()
 }
 
-func getTaskManager(conn *websocket.Conn) *taskManager {
-	taskManagersMu.Lock()
-	defer taskManagersMu.Unlock()
-	if tm, exists := taskManagers[conn]; exists {
-		return tm
+func getSessionManager(conn *websocket.Conn) *sessionManager {
+	sessionManagersMu.Lock()
+	defer sessionManagersMu.Unlock()
+	if sm, exists := sessionManagers[conn]; exists {
+		return sm
 	}
-	tm := &taskManager{}
-	taskManagers[conn] = tm
-	return tm
+	sm := &sessionManager{tasks: make(map[string]*sessionTask)}
+	sessionManagers[conn] = sm
+	return sm
 }
 
-func removeTaskManager(conn *websocket.Conn) {
-	taskManagersMu.Lock()
-	defer taskManagersMu.Unlock()
-	if tm, exists := taskManagers[conn]; exists {
-		tm.mu.Lock()
-		if tm.taskCancel != nil {
-			tm.taskCancel()
-		}
-		tm.mu.Unlock()
-		delete(taskManagers, conn)
+func removeSessionManager(conn *websocket.Conn) {
+	sessionManagersMu.Lock()
+	defer sessionManagersMu.Unlock()
+	if sm, exists := sessionManagers[conn]; exists {
+		sm.cancelAll()
+		delete(sessionManagers, conn)
 	}
 }
 

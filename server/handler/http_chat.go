@@ -13,6 +13,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // ChatRequest HTTP 聊天请求
@@ -41,7 +42,7 @@ func ChatHandler() gin.HandlerFunc {
 
 		sessionID := req.SessionID
 		if sessionID == "" {
-			sessionID = "default"
+			sessionID = uuid.New().String()
 		}
 		mode := req.Mode
 		if mode == "" {

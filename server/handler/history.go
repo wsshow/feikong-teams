@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const historyDir = "sessions/"
@@ -98,12 +99,17 @@ func ListSessionsHandler() gin.HandlerFunc {
 func CreateSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			SessionID string `json:"session_id" binding:"required"`
+			SessionID string `json:"session_id"`
 			Title     string `json:"title"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request body")
 			return
+		}
+
+		// 如果前端未提供 session_id，由后端生成 UUID
+		if req.SessionID == "" {
+			req.SessionID = uuid.New().String()
 		}
 		if !validateSessionID(req.SessionID) {
 			Fail(c, http.StatusBadRequest, "invalid session ID")

@@ -318,11 +318,8 @@ func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJ
 // --- WebSocket 聊天处理 ---
 
 // handleChatMessage 处理 WebSocket 聊天消息
-func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage, writeJSON func(any) error) {
+func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
-	if sessionID == "" {
-		sessionID = "default"
-	}
 	mode := wsMsg.Mode
 	if mode == "" {
 		mode = "supervisor"
@@ -332,16 +329,9 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	taskCtx, taskCancel := context.WithCancel(connCtx)
 	defer taskCancel()
 
-	tm.mu.Lock()
-	tm.taskCancel = taskCancel
-	tm.activeSessionID = sessionID
-	tm.mu.Unlock()
-	defer func() {
-		tm.mu.Lock()
-		tm.taskCancel = nil
-		tm.activeSessionID = ""
-		tm.mu.Unlock()
-	}()
+	// 注册任务（同一 session 的旧任务会被自动取消）
+	taskID := sm.startTask(sessionID, taskCancel)
+	defer sm.removeTask(sessionID, taskID)
 
 	select {
 	case <-taskCtx.Done():
@@ -352,7 +342,7 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 	// 获取 runner
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
-		_ = writeJSON(map[string]any{"type": "error", "error": err.Error()})
+		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 		return
 	}
 
@@ -376,14 +366,8 @@ func handleChatMessage(connCtx context.Context, tm *taskManager, wsMsg WSMessage
 
 	// 初始化 HITL 审批通道
 	approvalCh := make(chan int, 1)
-	tm.mu.Lock()
-	tm.approvalCh = approvalCh
-	tm.mu.Unlock()
-	defer func() {
-		tm.mu.Lock()
-		tm.approvalCh = nil
-		tm.mu.Unlock()
-	}()
+	sm.setApprovalCh(sessionID, taskID, approvalCh)
+	defer sm.setApprovalCh(sessionID, taskID, nil)
 
 	// 更新会话标题（首次提交时从默认标题更新为用户输入）和状态
 	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")

@@ -53,11 +53,11 @@ func WebSocketHandler() gin.HandlerFunc {
 
 		connCtx, connCancel := context.WithCancel(c.Request.Context())
 		registerConn(conn, connCancel)
-		tm := getTaskManager(conn)
+		sm := getSessionManager(conn)
 
 		defer func() {
 			connCancel()
-			removeTaskManager(conn)
+			removeSessionManager(conn)
 			unregisterConn(conn)
 			_ = conn.Close()
 		}()
@@ -98,23 +98,22 @@ func WebSocketHandler() gin.HandlerFunc {
 
 			switch wsMsg.Type {
 			case "chat":
-				go handleChatMessage(connCtx, tm, wsMsg, writeJSON)
+				if wsMsg.SessionID == "" {
+					_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
+					continue
+				}
+				go handleChatMessage(connCtx, sm, wsMsg, writeJSON)
 
 			case "cancel":
-				tm.mu.Lock()
-				sid := tm.activeSessionID
-				if tm.taskCancel != nil {
-					tm.taskCancel()
-					tm.taskCancel = nil
+				sid := wsMsg.SessionID
+				if sid != "" {
+					sm.cancelTask(sid)
 				}
-				tm.mu.Unlock()
 				_ = writeJSON(map[string]any{"type": "cancelled", "session_id": sid, "message": "任务已取消"})
 
 			case "approval":
-				tm.mu.Lock()
-				ch := tm.approvalCh
-				tm.mu.Unlock()
-				if ch != nil {
+				sid := wsMsg.SessionID
+				if ch := sm.getApprovalCh(sid); ch != nil {
 					select {
 					case ch <- wsMsg.Decision:
 					default:
@@ -141,7 +140,8 @@ func WebSocketHandler() gin.HandlerFunc {
 func handleClearHistory(wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
-		sessionID = "default"
+		_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
+		return
 	}
 
 	sessionDir := sessionDirPath(sessionID)

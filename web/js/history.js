@@ -4,12 +4,29 @@
 
 // ===== 新增会话 =====
 
-FKTeamsChat.prototype.createNewSession = function (silent, title) {
+FKTeamsChat.prototype.createNewSession = async function (silent, title) {
     // 保存当前会话的 DOM 状态
     this._saveSessionDOM();
 
-    // 生成基于 UUID 的会话ID
-    const newSessionId = crypto.randomUUID();
+    // 从后端创建会话并获取 UUID
+    let newSessionId;
+    try {
+        const resp = await this.fetchWithAuth('/api/fkteams/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title || '' })
+        });
+        const result = await resp.json();
+        if (result.code !== 0 || !result.data || !result.data.session_id) {
+            this.showNotification('创建会话失败', 'error');
+            return;
+        }
+        newSessionId = result.data.session_id;
+    } catch (err) {
+        console.error('Error creating session:', err);
+        this.showNotification('创建会话失败', 'error');
+        return;
+    }
 
     this.sessionId = newSessionId;
     this.sessionIdInput.value = newSessionId;
@@ -23,17 +40,7 @@ FKTeamsChat.prototype.createNewSession = function (silent, title) {
 
     this.clearChatUI();
     this.hideChatLoading();
-
-    // 后台创建会话 metadata 并刷新侧边栏
-    this.fetchWithAuth('/api/fkteams/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: newSessionId, title: title || '' })
-    }).then(() => {
-        this.loadSidebarHistory();
-    }).catch(err => {
-        console.error('Error creating session:', err);
-    });
+    this.loadSidebarHistory();
 };
 
 // ===== 侧边栏历史会话 =====

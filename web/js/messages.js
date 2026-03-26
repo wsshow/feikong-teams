@@ -9,19 +9,25 @@ FKTeamsChat.prototype.sendMessage = async function () {
 
     // 页面刷新后首次发送消息时，先创建新会话（等待完成后再发送消息）
     if (!this._hasLoadedSession) {
-        const newSessionId = crypto.randomUUID();
-        this.sessionId = newSessionId;
-        this.sessionIdInput.value = newSessionId;
-        this._hasLoadedSession = true;
         try {
-            await this.fetchWithAuth('/api/fkteams/sessions', {
+            const resp = await this.fetchWithAuth('/api/fkteams/sessions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: newSessionId, title: message })
+                body: JSON.stringify({ title: message })
             });
+            const result = await resp.json();
+            if (result.code !== 0 || !result.data || !result.data.session_id) {
+                this.showNotification('创建会话失败', 'error');
+                return;
+            }
+            this.sessionId = result.data.session_id;
+            this.sessionIdInput.value = this.sessionId;
+            this._hasLoadedSession = true;
             this.loadSidebarHistory();
         } catch (err) {
             console.error('Error creating session:', err);
+            this.showNotification('创建会话失败', 'error');
+            return;
         }
     }
 
@@ -153,7 +159,10 @@ FKTeamsChat.prototype.resetToTeamMode = function () {
 FKTeamsChat.prototype.handleServerEvent = function (event) {
     // 会话隔离：跟踪所有进行中的会话
     const eventSessionId = event.session_id;
-    const isCurrentSession = !eventSessionId || eventSessionId === this.sessionId;
+    // 只有明确匹配当前 session_id 的事件才视为当前会话的事件
+    // 没有 session_id 的系统消息（connected/pong/history_cleared/history_loaded）直接放行
+    const isSystemEvent = ['connected', 'pong', 'history_cleared', 'history_loaded'].includes(event.type);
+    const isCurrentSession = isSystemEvent || (eventSessionId && eventSessionId === this.sessionId);
 
     // 维护进行中会话集合
     if (!this._processingSessions) {
@@ -1154,9 +1163,10 @@ FKTeamsChat.prototype.createAssistantMessage = function (agentName, timeInfo = n
 FKTeamsChat.prototype.cancelTask = function () {
     if (!this.isProcessing) return;
 
-    // 发送取消消息
+    // 发送取消消息（带 session_id 以支持多会话并发）
     this.ws.send(JSON.stringify({
-        type: 'cancel'
+        type: 'cancel',
+        session_id: this.sessionId
     }));
 
     this.showNotification('正在取消任务...', 'info');
@@ -1213,6 +1223,7 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({
             type: 'approval',
+            session_id: this.sessionId,
             decision: decision
         }));
     }
