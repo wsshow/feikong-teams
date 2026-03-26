@@ -223,13 +223,13 @@ func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequ
 	case "windows":
 		shell = "powershell"
 		utf8Prefix := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
-		shellArgs = []string{"-NoProfile", "-NonInteractive", "-Command", utf8Prefix + req.Command}
+		shellArgs = []string{"-NonInteractive", "-Command", utf8Prefix + req.Command}
 	case "darwin", "linux":
 		shell = "/bin/bash"
-		shellArgs = []string{"-c", req.Command}
+		shellArgs = []string{"-l", "-c", req.Command}
 	default:
 		shell = "/bin/sh"
-		shellArgs = []string{"-c", req.Command}
+		shellArgs = []string{"-l", "-c", req.Command}
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
