@@ -656,7 +656,7 @@ func (b *Bot) log(level, format string, args ...interface{}) {
 	if b.opts.LogLevel == "silent" {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "[wechatbot] %s\n", fmt.Sprintf(format, args...))
+	fmt.Fprintf(os.Stderr, "[wechatbot] [%s] %s\n", level, fmt.Sprintf(format, args...))
 }
 
 func detectType(items []MessageItem) ContentType {
