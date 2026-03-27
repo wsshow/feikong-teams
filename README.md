@@ -111,7 +111,7 @@ make build
 | [推理模型支持](./docs/reasoning.md)     | 推理/思考模型的流式输出                  |
 | [部署指南](./docs/deployment.md)        | 构建、Docker 部署                        |
 | [安全说明](./docs/security.md)          | 安全机制和注意事项                       |
-| [API 文档](./docs/api.md)               | HTTP/WebSocket API 接口                  |
+| [API 文档](./docs/api/)                 | HTTP/WebSocket API 接口                  |
 
 ## 构建
 
