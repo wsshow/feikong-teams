@@ -74,6 +74,7 @@ class FKTeamsChat {
     this.initFileUpload();
     this.initFileManager();
     this.loadAgents();
+    this.loadVersion();
     this.connect();
   }
 
@@ -289,6 +290,22 @@ class FKTeamsChat {
         this.scrollToBottomBtn.classList.add("sidebar-collapsed");
       }
     }
+  }
+
+  async loadVersion() {
+    try {
+      const resp = await this.fetchWithAuth("/api/fkteams/version");
+      const result = await resp.json();
+      if (result.code === 0 && result.data?.version) {
+        const el = document.getElementById("version-tag");
+        if (el) {
+          el.textContent = "v" + result.data.version;
+          if (result.data.buildDate) {
+            el.setAttribute("data-tooltip", `v${result.data.version} (${result.data.buildDate})`);
+          }
+        }
+      }
+    } catch (_) { }
   }
 
   connect() {
