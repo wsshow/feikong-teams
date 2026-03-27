@@ -105,7 +105,9 @@ make build
 | [Skills 指南](./docs/skills.md)         | 技能系统的使用和配置                     |
 | [MCP 工具集成](./docs/mcp.md)           | MCP 协议集成和常用服务配置               |
 | [自定义智能体](./docs/custom-agents.md) | 创建和配置自定义智能体                   |
-| [高级功能](./docs/advanced-features.md) | 长期记忆、多模态、推理模型支持           |
+| [长期记忆](./docs/memory.md)            | 记忆提取、存储、检索机制                 |
+| [多模态支持](./docs/multimodal.md)      | 图片、音频、视频等多模态输入             |
+| [推理模型支持](./docs/reasoning.md)     | 推理/思考模型的流式输出                  |
 | [部署指南](./docs/deployment.md)        | 构建、Docker 部署                        |
 | [安全说明](./docs/security.md)          | 安全机制和注意事项                       |
 | [API 文档](./docs/api.md)               | HTTP/WebSocket API 接口                  |
