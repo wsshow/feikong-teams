@@ -99,12 +99,13 @@ make build
 
 | 文档                                    | 说明                                     |
 | --------------------------------------- | ---------------------------------------- |
-| [配置指南](./docs/configuration.md)     | 环境变量、config.toml、聊天通道配置      |
+| [配置指南](./docs/configuration.md)     | 环境变量、config.toml 配置               |
 | [使用指南](./docs/usage.md)             | 运行模式、CLI 命令、智能体切换、定时任务 |
 | [圆桌会议模式](./docs/roundtable.md)    | 多模型讨论模式的原理和配置               |
 | [Skills 指南](./docs/skills.md)         | 技能系统的使用和配置                     |
 | [MCP 工具集成](./docs/mcp.md)           | MCP 协议集成和常用服务配置               |
 | [自定义智能体](./docs/custom-agents.md) | 创建和配置自定义智能体                   |
+| [聊天通道](./docs/channels.md)          | QQ、Discord、微信等平台接入              |
 | [长期记忆](./docs/memory.md)            | 记忆提取、存储、检索机制                 |
 | [多模态支持](./docs/multimodal.md)      | 图片、音频、视频等多模态输入             |
 | [推理模型支持](./docs/reasoning.md)     | 推理/思考模型的流式输出                  |

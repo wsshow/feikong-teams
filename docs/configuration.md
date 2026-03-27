@@ -41,16 +41,16 @@ FEIKONG_ANALYST_ENABLED = false
 FEIKONG_ASSISTANT_ENABLED = true
 
 # 全局长期记忆
-FEIKONG_MEMORY_ENABLED = false
+FEIKONG_MEMORY_ENABLED = true
 
 # SSH 访问者智能体配置（可选）
-FEIKONG_SSH_VISITOR_ENABLED=true # 设置为 true 启用小访智能体
+FEIKONG_SSH_VISITOR_ENABLED=false # 设置为 true 启用小访智能体
 FEIKONG_SSH_HOST=ip:port
 FEIKONG_SSH_USERNAME=your_ssh_user
 FEIKONG_SSH_PASSWORD=your_ssh_password
 
 # Web 页面登录认证（可选，设置 ENABLED=true 后启用）
-FEIKONG_LOGIN_ENABLED=true
+FEIKONG_LOGIN_ENABLED=false
 FEIKONG_LOGIN_SECRET=your_random_secret_key
 FEIKONG_LOGIN_USERNAME=admin
 FEIKONG_LOGIN_PASSWORD=your_password
@@ -162,53 +162,3 @@ transport_type = "stdio"  # stdio 方式启动本地 MCP 服务
 - `tools`：工具列表，可包含内置工具和 MCP 工具
 - `base_url`、`api_key`、`model_name`：AI 模型配置
 - `provider`：模型提供者类型（可选），支持 `openai`、`deepseek`、`claude`、`ollama`、`ark`、`gemini`、`qwen`、`openrouter`，不设置时根据 `base_url` 和 `model_name` 自动检测
-
-## 配置聊天通道
-
-聊天通道允许将智能体接入外部即时通讯平台，在 `web` 或 `serve` 模式下自动连接并处理消息。
-
-通道抽象层支持扩展多种平台（QQ、微信、Telegram 等），只需实现 `channels.Channel` 接口并通过 `channels.RegisterFactory` 注册即可。每个通道可独立配置运行模式。
-
-### QQ 机器人
-
-> 1. 前往 [QQ 开放平台](https://q.qq.com/#) 注册并创建机器人应用
-> 2. 应用审核通过后，在凭据页面复制 AppID 和 AppSecret
-> 3. 新机器人默认处于**沙箱模式**，需在沙箱配置中添加测试用户和群才能交互
-
-在 `config/config.toml` 中添加配置：
-
-```toml
-[channels.qq]
-enabled = true
-app_id = "your_qq_bot_app_id"       # QQ 机器人 AppID
-app_secret = "your_qq_bot_secret"   # QQ 机器人 AppSecret
-sandbox = true                      # 是否使用沙箱环境（开发阶段建议开启）
-mode = "team"                      # 智能体模式: team(默认), deep, roundtable, custom 或智能体名称（如 "小助"）
-```
-
-| 消息类型 | 描述           | 触发条件         |
-| -------- | -------------- | ---------------- |
-| C2C      | 私聊（一对一） | 用户发送任意消息 |
-| GroupAT  | 群聊           | 用户必须 @机器人 |
-
-支持文字、图片、语音、视频、文件等多媒体消息的接收与发送。使用 WebSocket 模式实时通信，token 自动刷新。
-
-### Discord 机器人
-
-> 1. 前往 [Discord Developer Portal](https://discord.com/developers/applications) 创建应用
-> 2. 在 Bot 页面添加机器人并复制 Token
-> 3. 启用 **MESSAGE CONTENT INTENT**（Bot 设置页）
-> 4. OAuth2 → URL Generator，Scopes 选 `bot`，Permissions 选 `Send Messages` + `Read Message History`
-> 5. 使用生成的链接邀请机器人到你的服务器
-
-在 `config/config.toml` 中添加配置：
-
-```toml
-[channels.discord]
-enabled = true
-token = "your_discord_bot_token"    # Discord Bot Token
-allow_from = ""                     # 允许的用户 ID，逗号分隔（空则允许所有人）
-mode = "team"                      # 智能体模式: team(默认), deep, roundtable, custom 或智能体名称（如 "小助"）
-```
-
-支持私聊（DM）和服务器频道（@机器人）消息，支持文字和文件附件。需要网络代理时设置环境变量 `FEIKONG_PROXY_URL`。
