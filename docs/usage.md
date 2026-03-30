@@ -233,6 +233,15 @@ delete_schedule
 # 直接查询模式
 ./fkteams -q "你的问题"
 
+# 管道输入模式
+echo "解释一下 Go 的 context 包" | ./fkteams
+
+# 管道传入文件内容
+cat main.go | ./fkteams -q "审查这段代码"
+
+# 管道与 agent 子命令配合
+cat error.log | ./fkteams agent -n 小码 -q "分析这个错误日志"
+
 # 指定工作模式
 ./fkteams -m deep
 
@@ -265,6 +274,29 @@ delete_schedule
 | `--save`    |      | 保存聊天历史（默认不保存，需显式开启，交互模式和直接查询模式均生效）           |
 | `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
 | `--version` | `-v` | 显示版本信息                                                                   |
+
+### 管道输入
+
+支持通过 Unix 管道将内容传递给 fkteams，自动进入非交互模式：
+
+```bash
+# 管道内容作为查询
+echo "帮我解释这段代码的作用" | ./fkteams
+
+# 管道内容 + -q 参数组合（-q 作为指令前缀，管道内容附在其后）
+cat src/main.go | ./fkteams -q "审查以下代码并指出问题:"
+
+# 与 agent 子命令配合
+git diff HEAD~1 | ./fkteams agent -n 小码 -q "审查这次提交的改动"
+
+# 与其他工具链组合
+curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
+```
+
+**规则**：
+- 管道有内容时自动进入非交互（直接查询）模式
+- 同时提供 `-q` 参数时，查询内容为 `-q` 文本 + 换行 + 管道内容
+- 管道为空且无 `-q` 参数时会提示错误
 
 ### agent 子命令参数
 
