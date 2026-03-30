@@ -88,6 +88,10 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 		pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
 	}
 
+	// 回显用户输入
+	fmt.Printf("\n\033[1;90m╭─ [用户]\033[0m\n")
+	fmt.Printf("\033[1;90m╰─▶ %s\033[0m\n", query)
+
 	executor := NewQueryExecutor(r, s.queryState)
 	executor.SetAutoReject(true)
 	executor.SetApproveStores(s.ApproveStores)
