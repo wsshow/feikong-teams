@@ -55,6 +55,49 @@ func (m *AgentMessage) GetTextContent() string {
 	return builder.String()
 }
 
+// maxToolArgLen 工具参数摘要最大长度（rune）
+const maxToolArgLen = 200
+
+// maxToolResultLen 工具结果摘要最大长度（rune）
+const maxToolResultLen = 500
+
+// GetContentWithTools 获取消息中的文本内容和工具调用摘要，按事件顺序拼接
+func (m *AgentMessage) GetContentWithTools() string {
+	var builder strings.Builder
+	for _, event := range m.Events {
+		switch event.Type {
+		case "text":
+			builder.WriteString(event.Content)
+		case "tool_call":
+			if tc := event.ToolCall; tc != nil {
+				builder.WriteString("\n[调用工具: ")
+				builder.WriteString(tc.Name)
+				if tc.Arguments != "" {
+					builder.WriteString("(")
+					builder.WriteString(truncateRunes(tc.Arguments, maxToolArgLen))
+					builder.WriteString(")")
+				}
+				builder.WriteString("]")
+				if tc.Result != "" {
+					builder.WriteString(" → ")
+					builder.WriteString(truncateRunes(tc.Result, maxToolResultLen))
+				}
+				builder.WriteString("\n")
+			}
+		}
+	}
+	return builder.String()
+}
+
+// truncateRunes 按 rune 截断字符串
+func truncateRunes(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
+}
+
 // GetReasoningContent 获取消息中的推理/思考内容
 func (m *AgentMessage) GetReasoningContent() string {
 	var builder strings.Builder
