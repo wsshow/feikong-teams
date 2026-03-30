@@ -91,6 +91,17 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	if query == "" {
 		query = cmd.Root().String("query")
 	}
+	if pipeInput, isPipe := cli.ReadPipeInput(); isPipe {
+		if pipeInput != "" {
+			if query != "" {
+				query = query + "\n" + pipeInput
+			} else {
+				query = pipeInput
+			}
+		} else if query == "" {
+			return fmt.Errorf("检测到管道输入但内容为空，请提供查询内容或使用 -q 参数")
+		}
+	}
 
 	agentInfo := agents.GetAgentByName(agentName)
 	if agentInfo == nil {

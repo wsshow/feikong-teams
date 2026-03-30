@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"io"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -16,6 +18,23 @@ func ExtractAgentMention(input string) (agentName string, query string) {
 		return matches[1], strings.TrimSpace(matches[2])
 	}
 	return "", input
+}
+
+// ReadPipeInput 检测 stdin 是否为管道并读取内容
+// 返回管道内容和是否检测到管道（即使内容为空，isPipe 也可能为 true）
+func ReadPipeInput() (content string, isPipe bool) {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return "", false
+	}
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		return "", false // 终端设备，不是管道
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", true
+	}
+	return strings.TrimSpace(string(data)), true
 }
 
 // WorkMode 工作模式
