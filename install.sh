@@ -64,79 +64,24 @@ get_latest_version() {
     echo "$tag"
 }
 
-# ---- 下载文件（自定义进度条 + 断点续传 + 重试）----
+# ---- 下载文件（断点续传 + 重试）----
 download() {
     local url="$1" dest="$2"
     local max_retries=5 retry_delay=3 attempt=0
-    local bar_width=40
-    local spin_chars=( '|' '/' '-' '\' )
-
-    # 预先获取文件总大小（-L 跟随 GitHub 302 重定向至 CDN）
-    local total_size=0
-    if command -v curl &>/dev/null; then
-        total_size=$(curl -fsSIL --max-time 10 "$url" 2>/dev/null \
-            | grep -i '^content-length:' \
-            | awk '{gsub(/\r/,""); print $2}' | tail -1)
-    elif command -v wget &>/dev/null; then
-        total_size=$(wget --spider --server-response -q "$url" 2>&1 \
-            | grep -i 'Content-Length:' \
-            | awk '{print $2}' | tail -1)
-    fi
-    # 确保是纯数字
-    case "${total_size:-x}" in
-        *[!0-9]*|"") total_size=0 ;;
-    esac
 
     while [ "$attempt" -lt "$max_retries" ]; do
         attempt=$(( attempt + 1 ))
 
-        # 后台下载（支持断点续传）
         if command -v curl &>/dev/null; then
-            curl -fsSL --continue-at - "$url" -o "$dest" &
+            if curl -fL --continue-at - --progress-bar "$url" -o "$dest"; then
+                return 0
+            fi
         elif command -v wget &>/dev/null; then
-            wget --continue -q "$url" -O "$dest" &
+            if wget --continue --show-progress -q "$url" -O "$dest"; then
+                return 0
+            fi
         else
             abort "需要 curl 或 wget 才能下载"
-        fi
-        local dl_pid=$!
-
-        # 自定义进度条：每 0.3s 轮询文件大小
-        local spin_idx=0 cur_mb tot_mb pct filled bar i
-        while kill -0 "$dl_pid" 2>/dev/null; do
-            local current=0
-            if [ -f "$dest" ]; then
-                current=$(wc -c < "$dest" 2>/dev/null | awk '{print $1}') || current=0
-            fi
-            current="${current:-0}"
-            case "${current}" in *[!0-9]*) current=0 ;; esac
-
-            cur_mb=$(awk "BEGIN{printf \"%.1f\", ${current}/1048576}" 2>/dev/null || echo "?")
-
-            if [ "$total_size" -gt 0 ] 2>/dev/null; then
-                pct=$(( current * 100 / total_size ))
-                [ "$pct" -gt 100 ] && pct=100
-                filled=$(( pct * bar_width / 100 ))
-
-                bar="" i=0
-                while [ "$i" -lt "$filled" ]; do bar="${bar}#"; i=$(( i+1 )); done
-                while [ "$i" -lt "$bar_width" ]; do bar="${bar}-"; i=$(( i+1 )); done
-
-                tot_mb=$(awk "BEGIN{printf \"%.1f\", ${total_size}/1048576}" 2>/dev/null || echo "?")
-                printf "\r  [%s] %3d%%  %s MB / %s MB" "$bar" "$pct" "$cur_mb" "$tot_mb" >&2
-            else
-                # 总大小未知：旋转动画 + 已下载量
-                printf "\r  %s  %s MB 已下载" "${spin_chars[$(( spin_idx % 4 ))]}" "$cur_mb" >&2
-                spin_idx=$(( spin_idx + 1 ))
-            fi
-            sleep 0.3
-        done
-
-        wait "$dl_pid"
-        local exit_code=$?
-        printf "\n" >&2
-
-        if [ "$exit_code" -eq 0 ]; then
-            return 0
         fi
 
         if [ "$attempt" -lt "$max_retries" ]; then
