@@ -6,17 +6,33 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 )
 
 const (
-	// DefaultWorkspaceDir 默认工作目录
-	DefaultWorkspaceDir = "./workspace"
 	// MaxRetries 模型调用最大重试次数
 	MaxRetries = 3
 )
+
+// AppDir 返回应用数据目录 ~/.fkteams，支持 FEIKONG_APP_DIR 环境变量覆盖
+func AppDir() string {
+	if d := os.Getenv("FEIKONG_APP_DIR"); d != "" {
+		return d
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".fkteams"
+	}
+	return filepath.Join(home, ".fkteams")
+}
+
+// SessionsDir 返回会话历史存储目录（CLI 与通道共用）
+func SessionsDir() string {
+	return filepath.Join(AppDir(), "sessions")
+}
 
 // GenerateSessionID 生成基于 UUID v4 的会话 ID
 func GenerateSessionID() string {
@@ -28,7 +44,7 @@ func WorkspaceDir() string {
 	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
 		return d
 	}
-	return DefaultWorkspaceDir
+	return filepath.Join(AppDir(), "workspace")
 }
 
 // GenerateExampleEnv 生成示例 .env 环境变量文件

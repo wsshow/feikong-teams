@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"fkteams/common"
+
 	"github.com/natefinch/lumberjack"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -20,7 +22,7 @@ func logger() *zap.SugaredLogger {
 	once.Do(func() {
 		level := readLevel()
 		hook := &lumberjack.Logger{
-			Filename:   filepath.Join("log", "fkteams.log"),
+			Filename:   filepath.Join(common.AppDir(), "log", "fkteams.log"),
 			MaxSize:    10,
 			MaxBackups: 30,
 			MaxAge:     7,

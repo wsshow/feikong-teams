@@ -2,6 +2,7 @@ package fkevent
 
 import (
 	"encoding/json"
+	"fkteams/common"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -663,7 +664,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 func (h *HistoryRecorder) SaveToMarkdownWithTimestamp() (string, error) {
 	timestamp := time.Now().Format("20060102_150405")
-	filePath := fmt.Sprintf("./history/output_history/chat_%s.md", timestamp)
+	filePath := filepath.Join(common.AppDir(), "history", "output_history", fmt.Sprintf("chat_%s.md", timestamp))
 	err := h.SaveToMarkdownFile(filePath)
 	return filePath, err
 }

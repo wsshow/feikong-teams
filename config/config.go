@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"fkteams/common"
+
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -169,7 +171,7 @@ func Unmarshal(filePath string, v any) error {
 // Get 加载并返回应用配置（配置文件不存在时使用默认值）
 func Get() (*Config, error) {
 	var config Config
-	if err := Unmarshal("config/config.toml", &config); err != nil {
+	if err := Unmarshal(filepath.Join(common.AppDir(), "config", "config.toml"), &config); err != nil {
 		if os.IsNotExist(err) {
 			return &Config{
 				Server: Server{
@@ -186,7 +188,7 @@ func Get() (*Config, error) {
 
 // GenerateExample 生成示例配置文件
 func GenerateExample() error {
-	filePath := "config/config.toml"
+	filePath := filepath.Join(common.AppDir(), "config", "config.toml")
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("无法创建目录 %s: %w", dir, err)

@@ -129,9 +129,11 @@ func (e *QueryExecutor) SetCallbackBuilder(cb func(*fkevent.HistoryRecorder) fun
 
 // CLI 模式会话常量
 const (
-	CLISessionID  = "cli"
-	CLIHistoryDir = "./sessions/"
+	CLISessionID = "cli"
 )
+
+// CLIHistoryDir CLI 会话历史存储目录
+var CLIHistoryDir = common.SessionsDir()
 
 // activeSessionID 当前活跃的会话 ID，每次启动时生成新 ID
 var activeSessionID = CLISessionID

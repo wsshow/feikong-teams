@@ -5,6 +5,7 @@ import (
 	"fkteams/agents"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
+	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
@@ -47,9 +48,10 @@ const (
 	sessionQueueBuffer = 50
 	// sessionIdleTimeout 会话队列空闲超时，超时后 worker 自动退出
 	sessionIdleTimeout = 10 * time.Minute
-	// channelHistoryDir 通道会话历史存储目录，与 Web/CLI 共用
-	channelHistoryDir = "sessions/"
 )
+
+// channelHistoryDir 通道会话历史存储目录，与 Web/CLI 共用
+var channelHistoryDir = common.SessionsDir()
 
 // Bridge 连接通道消息与智能体执行引擎
 type Bridge struct {

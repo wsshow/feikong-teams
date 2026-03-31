@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fkteams/common"
 	"fkteams/fkevent"
 	"log"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const historyDir = "sessions/"
+var historyDir = common.SessionsDir()
 
 // SessionInfo 会话信息
 type SessionInfo struct {

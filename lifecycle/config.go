@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"fkteams/common"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -21,13 +22,14 @@ type AppConfig struct {
 
 // DefaultConfig 返回基于环境变量的默认配置
 func DefaultConfig() *AppConfig {
+	appDir := common.AppDir()
 	return &AppConfig{
 		WorkspaceDir:       common.WorkspaceDir(),
 		MemoryEnabled:      os.Getenv("FEIKONG_MEMORY_ENABLED") == "true",
 		SchedulerEnabled:   true,
-		SchedulerOutputDir: "./result/scheduled_tasks/",
-		InputHistoryPath:   "./history/input_history/fkteams_input_history",
-		ChatHistoryDir:     "./history/chat_history/",
+		SchedulerOutputDir: filepath.Join(appDir, "result", "scheduled_tasks"),
+		InputHistoryPath:   filepath.Join(appDir, "history", "input_history", "fkteams_input_history"),
+		ChatHistoryDir:     filepath.Join(appDir, "history", "chat_history"),
 		ExitSignals:        []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP},
 	}
 }
