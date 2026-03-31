@@ -40,6 +40,103 @@ function Get-LatestVersion {
     }
 }
 
+# ---- 自定义进度条下载（支持断点续传 + 重试）----
+function Invoke-DownloadWithProgress {
+    param(
+        [string]$Url,
+        [string]$Dest,
+        [int]$MaxRetries = 5,
+        [int]$RetryDelay  = 3
+    )
+
+    Add-Type -AssemblyName System.Net.Http
+
+    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        # 若文件已存在则尝试断点续传
+        $resumeOffset = 0
+        if (Test-Path $Dest) {
+            $resumeOffset = (Get-Item $Dest).Length
+        }
+
+        try {
+            $handler = [System.Net.Http.HttpClientHandler]::new()
+            $client  = [System.Net.Http.HttpClient]::new($handler)
+            $client.DefaultRequestHeaders.UserAgent.ParseAdd("fkteams-installer/1.0")
+            $client.Timeout = [System.TimeSpan]::FromMinutes(30)
+
+            # 设置 Range 头以支持断点续传
+            if ($resumeOffset -gt 0) {
+                $client.DefaultRequestHeaders.Range = [System.Net.Http.Headers.RangeHeaderValue]::new($resumeOffset, $null)
+            }
+
+            $response = $client.GetAsync(
+                $Url,
+                [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
+            ).GetAwaiter().GetResult()
+
+            # 200: 服务器不支持 Range，重头下载；206: 断点续传
+            $isResume = ($response.StatusCode -eq [System.Net.HttpStatusCode]::PartialContent)
+            if (-not $isResume) {
+                $response.EnsureSuccessStatusCode() | Out-Null
+                $resumeOffset = 0  # 服务器返回 200，忽略已有文件
+            }
+
+            # 计算总大小
+            $totalBytes = [long]0
+            $cr = $response.Content.Headers.ContentRange
+            if ($cr -ne $null -and $cr.HasLength) {
+                $totalBytes = $cr.Length  # Content-Range 提供准确总大小
+            } elseif ($response.Content.Headers.ContentLength -gt 0) {
+                $totalBytes = $response.Content.Headers.ContentLength + $resumeOffset
+            }
+
+            $inStream  = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $fileMode  = if ($isResume) { [System.IO.FileMode]::Append } else { [System.IO.FileMode]::Create }
+            $outStream = [System.IO.FileStream]::new($Dest, $fileMode, [System.IO.FileAccess]::Write)
+            $buffer    = [byte[]]::new(65536)
+            $downloaded = [long]$resumeOffset
+            $lastPct    = -1
+            $barWidth   = 40
+
+            try {
+                while (($bytesRead = $inStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $outStream.Write($buffer, 0, $bytesRead)
+                    $downloaded += $bytesRead
+
+                    if ($totalBytes -gt 0) {
+                        $pct = [int]($downloaded * 100 / $totalBytes)
+                        if ($pct -ne $lastPct) {
+                            $lastPct = $pct
+                            $filled  = [int]($pct * $barWidth / 100)
+                            $empty   = $barWidth - $filled
+                            $bar     = ('#' * $filled) + ('-' * $empty)
+                            $dlMB    = [math]::Round($downloaded / 1MB, 1)
+                            $totMB   = [math]::Round($totalBytes  / 1MB, 1)
+                            Write-Host ("`r  [$bar] {0,3}%  $dlMB MB / $totMB MB" -f $pct) -NoNewline
+                        }
+                    }
+                }
+                Write-Host ""
+                return
+            }
+            finally {
+                $outStream.Dispose()
+                $inStream.Dispose()
+                $client.Dispose()
+            }
+        }
+        catch {
+            if ($attempt -lt $MaxRetries) {
+                Write-Warn "下载出错（第 ${attempt}/${MaxRetries} 次），${RetryDelay}s 后重试..."
+                Start-Sleep -Seconds $RetryDelay
+            }
+            else {
+                Write-Fail "下载失败（已重试 $MaxRetries 次）: $_"
+            }
+        }
+    }
+}
+
 # ---- 将目录添加到用户 PATH ----
 function Add-ToUserPath {
     param([string]$Dir)
@@ -83,7 +180,7 @@ try {
 
     # ---- 下载 ----
     Write-Info "正在下载 $zipName..."
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+    Invoke-DownloadWithProgress -Url $downloadUrl -Dest $zipPath
 
     # ---- 下载 checksums.txt 并校验 ----
     $checksumsUrl  = "https://github.com/$GITHUB_REPO/releases/download/$tag/checksums.txt"

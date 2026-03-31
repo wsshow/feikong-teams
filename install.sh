@@ -64,18 +64,88 @@ get_latest_version() {
     echo "$tag"
 }
 
-# ---- 下载文件 ----
+# ---- 下载文件（自定义进度条 + 断点续传 + 重试）----
 download() {
-    local url="$1"
-    local dest="$2"
+    local url="$1" dest="$2"
+    local max_retries=5 retry_delay=3 attempt=0
+    local bar_width=40
 
+    # 预先获取文件总大小
+    local total_size=0
     if command -v curl &>/dev/null; then
-        curl -fL --progress-bar "$url" -o "$dest"
+        total_size=$(curl -fsSI "$url" 2>/dev/null \
+            | grep -i '^content-length:' \
+            | awk '{gsub(/\r/,""); print $2}' | tail -1)
     elif command -v wget &>/dev/null; then
-        wget --show-progress -q "$url" -O "$dest"
-    else
-        abort "需要 curl 或 wget 才能下载"
+        total_size=$(wget --spider --server-response -q "$url" 2>&1 \
+            | grep -i 'Content-Length:' \
+            | awk '{print $2}' | tail -1)
     fi
+    # 确保是纯数字
+    case "${total_size:-x}" in
+        *[!0-9]*|"") total_size=0 ;;
+    esac
+
+    while [ "$attempt" -lt "$max_retries" ]; do
+        attempt=$(( attempt + 1 ))
+
+        # 后台下载（支持断点续传）
+        if command -v curl &>/dev/null; then
+            curl -fsSL --continue-at - "$url" -o "$dest" &
+        elif command -v wget &>/dev/null; then
+            wget --continue -q "$url" -O "$dest" &
+        else
+            abort "需要 curl 或 wget 才能下载"
+        fi
+        local dl_pid=$!
+
+        # 自定义进度条：每 0.5s 轮询文件大小
+        while kill -0 "$dl_pid" 2>/dev/null; do
+            local current=0
+            if [ -f "$dest" ]; then
+                current=$(wc -c < "$dest" 2>/dev/null | awk '{print $1}') || current=0
+            fi
+            current="${current:-0}"
+            case "${current}" in *[!0-9]*) current=0 ;; esac
+
+            local pct=0 filled=0
+            if [ "$total_size" -gt 0 ] 2>/dev/null; then
+                pct=$(( current * 100 / total_size ))
+                [ "$pct" -gt 100 ] && pct=100
+                filled=$(( pct * bar_width / 100 ))
+            fi
+
+            local bar="" i=0
+            while [ "$i" -lt "$filled" ]; do bar="${bar}#"; i=$(( i+1 )); done
+            while [ "$i" -lt "$bar_width" ]; do bar="${bar}-"; i=$(( i+1 )); done
+
+            local cur_mb tot_str
+            cur_mb=$(awk "BEGIN{printf \"%.1f\", ${current}/1048576}" 2>/dev/null || echo "?")
+            if [ "$total_size" -gt 0 ] 2>/dev/null; then
+                tot_str="$(awk "BEGIN{printf \"%.1f\", ${total_size}/1048576}" 2>/dev/null || echo "?") MB"
+            else
+                tot_str="未知"
+            fi
+
+            printf "\r  [%s] %3d%%  %s MB / %s" "$bar" "$pct" "$cur_mb" "$tot_str" >&2
+            sleep 0.5
+        done
+
+        wait "$dl_pid"
+        local exit_code=$?
+        printf "\n" >&2
+
+        if [ "$exit_code" -eq 0 ]; then
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$max_retries" ]; then
+            warn "下载出错（第 ${attempt}/${max_retries} 次），${retry_delay}s 后重试..."
+            sleep "$retry_delay"
+        fi
+    done
+
+    abort "下载失败，已重试 ${max_retries} 次，请检查网络连接"
 }
 
 # ---- SHA256 校验 ----
@@ -174,7 +244,7 @@ add_to_path() {
 
 # ---- 主流程 ----
 main() {
-    local os arch tag version zip_name download_url tmp_dir
+    local os arch tag version zip_name download_url
 
     os="$(detect_os)"
     arch="$(detect_arch)"
@@ -191,16 +261,16 @@ main() {
     info "平台   : ${os}/${arch}"
     info "安装目录: ${INSTALL_DIR}"
 
-    # 创建临时目录（进程退出时自动清理）
+    # 创建临时目录（tmp_dir 不能用 local，否则 EXIT trap 无法访问）
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "${tmp_dir}"' EXIT
+    trap 'rm -rf "${tmp_dir:-}"' EXIT
 
     # 下载
     info "正在下载 ${zip_name}..."
     download "$download_url" "${tmp_dir}/${zip_name}"
 
     # 下载 checksums.txt 并校验
-    local checksums_url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/checksums.txt"
+    checksums_url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/checksums.txt"
     info "正在验证文件完整性..."
     download "$checksums_url" "${tmp_dir}/checksums.txt"
     verify_checksum "${tmp_dir}/checksums.txt" "${tmp_dir}/${zip_name}"
