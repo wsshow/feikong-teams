@@ -76,20 +76,9 @@ powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/i
 
 > **快速体验**：安装完成后，只需要配置环境变量并运行 `fkteams web` 即可立即体验 Web 界面！
 
-### 1. 克隆项目
+### 1. 配置环境变量
 
-```bash
-git clone https://github.com/wsshow/feikong-teams.git
-cd feikong-teams
-```
-
-### 2. 配置环境变量
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件，填写基本配置：
+将以下内容添加到 `~/.bashrc`、`~/.zshrc` 或 `~/.profile` 中，或在运行目录下创建 `.env` 文件：
 
 ```env
 # 模型配置（必填）
@@ -100,23 +89,33 @@ FEIKONG_MODEL=gpt-5
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
 
-### 3. 运行
+### 2. 运行
 
 ```bash
 # Web 界面模式（推荐）
-go run main.go web
+fkteams web
 
 # 命令行模式
-go run main.go
-
-# 编译后运行
-make build
-./release/fkteams_darwin_arm64 web
+fkteams
 ```
 
 启动后访问 `http://localhost:23456` 即可使用。
 
 > 更多运行模式和命令行参数请参考 [使用指南](./docs/usage.md)
+
+## 从源码构建
+
+```bash
+# 克隆项目
+git clone https://github.com/wsshow/feikong-teams.git
+cd feikong-teams
+
+# 编译
+make build
+
+# Web界面模式
+./release/fkteams_darwin_arm64 web
+```
 
 ## 内置智能体
 

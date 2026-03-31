@@ -2,13 +2,12 @@
 
 ## 配置环境变量
 
-复制 `.env.example` 为 `.env` 并配置：
+环境变量支持两种方式配置：
 
-```bash
-cp .env.example .env
-```
+- **Shell 环境变量**（推荐）：在 `~/.bashrc`、`~/.zshrc` 等 Shell 配置文件中 `export` 相关变量，对所有终端会话生效。
+- **`.env` 文件**：在运行 `fkteams` 的目录下创建 `.env` 文件，程序启动时自动加载。可运行 `fkteams generate env` 生成示例文件。
 
-编辑 `.env` 文件，填写必要的配置：
+必要的配置项：
 
 ```env
 # 模型配置
@@ -25,8 +24,13 @@ FEIKONG_MODEL=gpt-5
 # 网络搜索工具配置（可选）
 FEIKONG_PROXY_URL=http://127.0.0.1:7890
 
-# 工作目录配置, 默认为: ./workspace
-FEIKONG_WORKSPACE_DIR = ./workspace
+# 应用数据目录，默认为: ~/.fkteams/
+# 所有数据（配置、日志、会话、历史记录等）均存储于此目录下
+# FEIKONG_APP_DIR = ~/.fkteams
+
+# 工作目录配置, 默认为: ~/.fkteams/workspace
+# 可单独指定工作目录，覆盖 FEIKONG_APP_DIR 中的 workspace 子目录
+# FEIKONG_WORKSPACE_DIR = /custom/workspace/path
 
 # 代码助手
 FEIKONG_CODER_ENABLED = true
@@ -61,10 +65,10 @@ FEIKONG_LOGIN_PASSWORD=your_password
 生成示例配置文件：
 
 ```bash
-./fkteams generate config
+fkteams generate config
 ```
 
-编辑 `config/config.toml` 配置圆桌会议成员、MCP 服务和自定义智能体：
+编辑 `~/.fkteams/config/config.toml` 配置圆桌会议成员、MCP 服务和自定义智能体：
 
 ```toml
 [server]

@@ -14,8 +14,8 @@ services:
       # 网络代理（可选）
       # - FEIKONG_PROXY_URL=http://host.docker.internal:7890
 
-      # 工作目录
-      - FEIKONG_WORKSPACE_DIR=./workspace
+      # 工作目录（将应用数据目录映射到容器内 /app，与 volumes 挂载路径对应）
+      - FEIKONG_APP_DIR=/app
 
       # 功能开关
       - FEIKONG_CODER_ENABLED=true

@@ -7,11 +7,7 @@
 启动 Web 服务器，通过浏览器访问：
 
 ```bash
-# 使用预编译版本
-./release/fkteams_darwin_arm64 web
-
-# 或直接编译运行
-go run main.go web
+fkteams web
 ```
 
 启动后访问 `http://localhost:23456` 即可使用 Web 界面。
@@ -31,14 +27,10 @@ Web 界面特性：
 启动不带 Web 界面的纯 API 服务，适合作为后端接口独立部署：
 
 ```bash
-# 使用预编译版本
-./release/fkteams_darwin_arm64 serve
-
-# 或直接编译运行
-go run main.go serve
+fkteams serve
 
 # 指定监听地址和端口
-go run main.go serve --host 0.0.0.0 --port 8080
+fkteams serve --host 0.0.0.0 --port 8080
 ```
 
 提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。详细接口文档请参考 [API 文档](./api.md)。
@@ -49,19 +41,19 @@ go run main.go serve --host 0.0.0.0 --port 8080
 
 ```bash
 # 默认启动团队模式
-go run main.go
+fkteams
 
 # 启动深度分析模式
-go run main.go -m deep
+fkteams -m deep
 
 # 启动自定义会议模式
-go run main.go -m custom
+fkteams -m custom
 
 # 启动多智能体讨论模式
-go run main.go -m group
+fkteams -m group
 ```
 
-### 编译后运行
+### 从源码编译运行
 
 ```bash
 make build
@@ -294,6 +286,7 @@ curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
 ```
 
 **规则**：
+
 - 管道有内容时自动进入非交互（直接查询）模式
 - 同时提供 `-q` 参数时，查询内容为 `-q` 文本 + 换行 + 管道内容
 - 管道为空且无 `-q` 参数时会提示错误
