@@ -69,11 +69,12 @@ download() {
     local url="$1" dest="$2"
     local max_retries=5 retry_delay=3 attempt=0
     local bar_width=40
+    local spin_chars=( '|' '/' '-' '\' )
 
-    # 预先获取文件总大小
+    # 预先获取文件总大小（-L 跟随 GitHub 302 重定向至 CDN）
     local total_size=0
     if command -v curl &>/dev/null; then
-        total_size=$(curl -fsSI "$url" 2>/dev/null \
+        total_size=$(curl -fsSIL --max-time 10 "$url" 2>/dev/null \
             | grep -i '^content-length:' \
             | awk '{gsub(/\r/,""); print $2}' | tail -1)
     elif command -v wget &>/dev/null; then
@@ -99,7 +100,8 @@ download() {
         fi
         local dl_pid=$!
 
-        # 自定义进度条：每 0.5s 轮询文件大小
+        # 自定义进度条：每 0.3s 轮询文件大小
+        local spin_idx=0 cur_mb tot_mb pct filled bar i
         while kill -0 "$dl_pid" 2>/dev/null; do
             local current=0
             if [ -f "$dest" ]; then
@@ -108,27 +110,25 @@ download() {
             current="${current:-0}"
             case "${current}" in *[!0-9]*) current=0 ;; esac
 
-            local pct=0 filled=0
+            cur_mb=$(awk "BEGIN{printf \"%.1f\", ${current}/1048576}" 2>/dev/null || echo "?")
+
             if [ "$total_size" -gt 0 ] 2>/dev/null; then
                 pct=$(( current * 100 / total_size ))
                 [ "$pct" -gt 100 ] && pct=100
                 filled=$(( pct * bar_width / 100 ))
-            fi
 
-            local bar="" i=0
-            while [ "$i" -lt "$filled" ]; do bar="${bar}#"; i=$(( i+1 )); done
-            while [ "$i" -lt "$bar_width" ]; do bar="${bar}-"; i=$(( i+1 )); done
+                bar="" i=0
+                while [ "$i" -lt "$filled" ]; do bar="${bar}#"; i=$(( i+1 )); done
+                while [ "$i" -lt "$bar_width" ]; do bar="${bar}-"; i=$(( i+1 )); done
 
-            local cur_mb tot_str
-            cur_mb=$(awk "BEGIN{printf \"%.1f\", ${current}/1048576}" 2>/dev/null || echo "?")
-            if [ "$total_size" -gt 0 ] 2>/dev/null; then
-                tot_str="$(awk "BEGIN{printf \"%.1f\", ${total_size}/1048576}" 2>/dev/null || echo "?") MB"
+                tot_mb=$(awk "BEGIN{printf \"%.1f\", ${total_size}/1048576}" 2>/dev/null || echo "?")
+                printf "\r  [%s] %3d%%  %s MB / %s MB" "$bar" "$pct" "$cur_mb" "$tot_mb" >&2
             else
-                tot_str="未知"
+                # 总大小未知：旋转动画 + 已下载量
+                printf "\r  %s  %s MB 已下载" "${spin_chars[$(( spin_idx % 4 ))]}" "$cur_mb" >&2
+                spin_idx=$(( spin_idx + 1 ))
             fi
-
-            printf "\r  [%s] %3d%%  %s MB / %s" "$bar" "$pct" "$cur_mb" "$tot_str" >&2
-            sleep 0.5
+            sleep 0.3
         done
 
         wait "$dl_pid"
