@@ -49,9 +49,32 @@ fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI
 - **定时任务**：自然语言设置定时任务，后台静默执行
 - **子任务并行**：小助智能体支持多子任务并行处理
 
+## 安装
+
+一键安装脚本会自动下载最新版本并解压到 `~/fkteams`（Windows 为 `%USERPROFILE%\fkteams`），同时将该目录添加到 PATH。
+
+**Linux / macOS**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wsshow/feikong-teams/main/install.sh | bash
+```
+
+**Windows (PowerShell)**
+
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/install.ps1 | iex"
+```
+
+> 如需自定义安装目录，可在执行前设置环境变量：
+>
+> - Linux/macOS：`export FKTEAMS_INSTALL_DIR=/your/path`
+> - Windows：脚本支持 `-InstallDir` 参数：`irm ... | & { $scriptBlock = [scriptblock]::Create((irm <url>)); & $scriptBlock -InstallDir "D:\fkteams" }`
+
+也可以直接在 [GitHub Releases](https://github.com/wsshow/feikong-teams/releases) 页面手动下载对应平台的压缩包。
+
 ## 快速开始
 
-> **快速体验**：如果你已经有预编译的可执行文件，只需要配置环境变量并运行 `./fkteams web` 即可立即体验 Web 界面！
+> **快速体验**：安装完成后，只需要配置环境变量并运行 `fkteams web` 即可立即体验 Web 界面！
 
 ### 1. 克隆项目
 
