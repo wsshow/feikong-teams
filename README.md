@@ -6,20 +6,13 @@ fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI
 
 ## 演示图
 
-### Web 界面模式
+|                   审批                    |                    子任务进行中                    |                    子任务完成                     |
+| :---------------------------------------: | :------------------------------------------------: | :-----------------------------------------------: |
+| ![审批](./docs/images/fkteams_web_sp.png) | ![子任务进行中](./docs/images/fkteams_web_ing.png) | ![子任务完成](./docs/images/fkteams_web_done.png) |
 
-#### 审批
-![Web审批](./docs/images/fkteams_web_sp.png)
-
-#### 子任务进行中
-![Web子任务进行中](./docs/images/fkteams_web_ing.png)
-
-#### 子任务完成
-![Web子任务完成](./docs/images/fkteams_web_done.png)
-
-### 命令行模式
-
-![命令行模式](./docs/images/fkteams_cli.png)
+|                    并行子任务                     |                    非交互模式                    |
+| :-----------------------------------------------: | :----------------------------------------------: |
+| ![并行子任务](./docs/images/fkteams_cli_task.png) | ![非交互模式](./docs/images/fkteams_cli_fjh.png) |
 
 ## 功能特性
 
