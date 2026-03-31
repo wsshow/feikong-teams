@@ -253,7 +253,10 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
 	ctx = fkevent.WithNonInteractive(ctx)
-	ctx = fkevent.WithCallback(ctx, rc.handleEvent)
+	ctx = fkevent.WithCallback(ctx, func(event fkevent.Event) error {
+		recorder.RecordEvent(event)
+		return rc.handleEvent(event)
+	})
 	ctx = summary.WithSummaryPersistCallback(ctx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
@@ -264,6 +267,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
 	}
 
+	recorder.FinalizeCurrent()
 	rc.flush()
 
 	// 持久化会话历史和元数据
