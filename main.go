@@ -5,6 +5,8 @@ import (
 	"fkteams/commands"
 	"log"
 	"os"
+
+	"github.com/pterm/pterm"
 )
 
 func init() {
@@ -13,6 +15,6 @@ func init() {
 
 func main() {
 	if err := commands.Root().Run(context.Background(), os.Args); err != nil {
-		log.Fatal(err)
+		pterm.Error.Println(err)
 	}
 }
