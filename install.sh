@@ -9,16 +9,17 @@ APP_NAME="fkteams"
 INSTALL_DIR="${FKTEAMS_INSTALL_DIR:-${HOME}/fkteams}"
 
 # ---- 颜色输出 ----
-tty_mkbold() { tty_escape "1;$1"; }
 tty_escape() { printf "\033[%sm" "$1"; }
+tty_mkbold()  { tty_escape "1;$1"; }
 tty_blue="$(tty_mkbold 34)"
 tty_green="$(tty_mkbold 32)"
 tty_yellow="$(tty_mkbold 33)"
 tty_red="$(tty_mkbold 31)"
+tty_bold="$(tty_mkbold 39)"
 tty_reset="$(tty_escape 0)"
 
-info()    { printf "${tty_blue}==>${tty_reset} ${tty_mkbold 39}%s${tty_reset}\n" "$*"; }
-success() { printf "${tty_green}==>${tty_reset} ${tty_mkbold 39}%s${tty_reset}\n" "$*"; }
+info()    { printf "${tty_blue}==>${tty_reset} ${tty_bold}%s${tty_reset}\n" "$*"; }
+success() { printf "${tty_green}==>${tty_reset} ${tty_bold}%s${tty_reset}\n" "$*"; }
 warn()    { printf "${tty_yellow}警告${tty_reset}: %s\n" "$*" >&2; }
 abort()   { printf "${tty_red}错误${tty_reset}: %s\n" "$*" >&2; exit 1; }
 
@@ -69,9 +70,9 @@ download() {
     local dest="$2"
 
     if command -v curl &>/dev/null; then
-        curl -fsSL --progress-bar "$url" -o "$dest"
+        curl -fL --progress-bar "$url" -o "$dest"
     elif command -v wget &>/dev/null; then
-        wget -q --show-progress "$url" -O "$dest"
+        wget --show-progress -q "$url" -O "$dest"
     else
         abort "需要 curl 或 wget 才能下载"
     fi
