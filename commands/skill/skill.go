@@ -21,8 +21,9 @@ func Command(loadEnv func() error) *ucli.Command {
 		Usage: "技能管理",
 		Commands: []*ucli.Command{
 			{
-				Name:  "list",
-				Usage: "列出本地已安装的技能",
+				Name:    "list",
+				Aliases: []string{"ls"},
+				Usage:   "列出本地已安装的技能",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
 					if err := loadEnv(); err != nil {
 						return nil
@@ -32,6 +33,7 @@ func Command(loadEnv func() error) *ucli.Command {
 			},
 			searchCommand(),
 			installCommand(),
+			removeCommand(),
 		},
 	}
 }
