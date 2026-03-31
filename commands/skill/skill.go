@@ -31,6 +31,7 @@ func Command(loadEnv func() error) *ucli.Command {
 				},
 			},
 			searchCommand(),
+			installCommand(),
 		},
 	}
 }
@@ -80,9 +81,9 @@ func listSkills() error {
 		if desc == "" {
 			desc = "(无描述)"
 		}
-		pterm.Bold.Printf("  %s", s.Name)
-		if s.Name != s.Dir {
-			pterm.FgGray.Printf("  [%s]", s.Dir)
+		pterm.Bold.Printf("  %s", s.Dir)
+		if s.Name != "" && s.Name != s.Dir {
+			pterm.FgGray.Printf("  %s", s.Name)
 		}
 		fmt.Println()
 		pterm.FgGray.Printfln("    %s", desc)

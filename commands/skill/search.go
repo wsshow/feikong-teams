@@ -25,6 +25,10 @@ func searchCommand() *ucli.Command {
 				Value: 10,
 				Usage: "每页数量",
 			},
+			&ucli.StringSliceFlag{
+				Name:  "provider",
+				Usage: "指定后端（可多次指定），可选: " + strings.Join(ProviderNames(), ", "),
+			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
 			keyword := cmd.Args().First()
@@ -33,14 +37,16 @@ func searchCommand() *ucli.Command {
 			}
 			page := int(cmd.Int("page"))
 			size := int(cmd.Int("size"))
-			return searchSkills(ctx, keyword, page, size)
+			providers, err := GetProvidersByNames(cmd.StringSlice("provider"))
+			if err != nil {
+				return err
+			}
+			return searchSkills(ctx, keyword, page, size, providers)
 		},
 	}
 }
 
-func searchSkills(ctx context.Context, keyword string, page, size int) error {
-	providers := GetProviders()
-
+func searchSkills(ctx context.Context, keyword string, page, size int, providers []Provider) error {
 	for _, p := range providers {
 		resp, err := p.Search(ctx, keyword, page, size)
 		if err != nil {
@@ -59,9 +65,12 @@ func searchSkills(ctx context.Context, keyword string, page, size int) error {
 		for i, s := range resp.Skills {
 			idx := (page-1)*size + i + 1
 
-			// 第一行：序号 + 名称 + 版本 + 统计
+			// 第一行：序号 + 名称 + slug + 版本
 			pterm.FgWhite.Printf("  %2d. ", idx)
 			pterm.Bold.Print(s.Name)
+			if s.Slug != "" && s.Slug != s.Name {
+				pterm.FgCyan.Printf(" (%s)", s.Slug)
+			}
 			if s.Version != "" {
 				pterm.FgGray.Printf(" v%s", s.Version)
 			}
