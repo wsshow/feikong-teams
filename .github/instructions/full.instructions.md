@@ -282,9 +282,9 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 - `g.Cleaner`: 资源清理器（SSH 连接、数据库等退出前统一清理）
 - `g.MemoryManager`: 全局长期记忆管理器
 
-公共常量定义在 `common/common.go`:
-- `DefaultWorkspaceDir`: 默认工作目录 `"./workspace"`
-- `WorkspaceDir()`: 获取工作目录（优先读配置文件，回退环境变量）
+公共函数定义在 `common/common.go`:
+- `AppDir()`: 应用数据目录（默认 `~/.fkteams`，支持 `FEIKONG_APP_DIR` 环境变量覆盖）
+- `WorkspaceDir()`: 工作目录（固定为 `~/.fkteams/workspace`）
 - `GenerateSessionID()`: 生成 UUID v4 会话 ID
 
 ### 配置管理
@@ -324,7 +324,6 @@ secret = "your_jwt_secret"
 仅保留用于 Docker 等场景的环境变量回退:
 ```bash
 FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
-FEIKONG_WORKSPACE_DIR      # 工作目录 (默认 ~/.fkteams/workspace)
 FEIKONG_PROXY_URL          # 代理地址 (配置文件优先)
 ```
 

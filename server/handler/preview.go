@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fkteams/common"
 	"fmt"
 	"io"
 	"mime"
@@ -111,11 +112,7 @@ type previewLinkEntry struct {
 // 参数: file_path(单文件路径) 或 file_paths(多文件路径数组), password(可选密码), expires_in(过期时间,秒)
 func CreatePreviewLinkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
-			return
-		}
+		baseDir := common.WorkspaceDir()
 
 		var req struct {
 			FilePath  string   `json:"file_path"`
@@ -223,11 +220,7 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 // Query: password(如果链接设置了密码)
 func PreviewFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-		if baseDir == "" {
-			Fail(c, http.StatusInternalServerError, "FEIKONG_WORKSPACE_DIR 未配置")
-			return
-		}
+		baseDir := common.WorkspaceDir()
 
 		linkID := c.Param("linkId")
 		if linkID == "" {
@@ -382,7 +375,7 @@ func DeletePreviewLinkHandler() gin.HandlerFunc {
 // 返回文件名、大小、类型、是否需要密码、是否可预览等
 func PreviewInfoHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
+		baseDir := common.WorkspaceDir()
 
 		linkID := c.Param("linkId")
 		if linkID == "" {

@@ -98,7 +98,7 @@ fkteams skill install video-frames --version 1.0.0
 fkteams skill install video-frames --provider SkillHub
 ```
 
-技能将安装到 `{FEIKONG_WORKSPACE_DIR}/skills/<slug>/` 目录下。如果技能已存在，将覆盖安装。
+技能将安装到 `~/.fkteams/skills/<slug>/` 目录下。如果技能已存在，将覆盖安装。
 
 ### 移除技能
 

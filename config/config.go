@@ -47,13 +47,6 @@ type Proxy struct {
 	URL string `toml:"url"`
 }
 
-// ==================== 工作区 ====================
-
-// Workspace 工作区配置
-type Workspace struct {
-	Dir string `toml:"dir,omitempty"` // 留空使用默认 ~/.fkteams/workspace
-}
-
 // ==================== 记忆 ====================
 
 // Memory 长期记忆配置
@@ -233,7 +226,6 @@ type Custom struct {
 type Config struct {
 	Models     []ModelConfig `toml:"models"`
 	Proxy      Proxy         `toml:"proxy"`
-	Workspace  Workspace     `toml:"workspace"`
 	Memory     Memory        `toml:"memory"`
 	Server     Server        `toml:"server"`
 	Agents     Agents        `toml:"agents"`
@@ -263,14 +255,8 @@ func (c *Config) ProxyURL() string {
 	return os.Getenv("FEIKONG_PROXY_URL")
 }
 
-// WorkspaceDir 返回工作区目录（配置文件优先，环境变量回退，最后使用默认值）
+// WorkspaceDir 返回工作区目录（固定为 ~/.fkteams/workspace）
 func (c *Config) WorkspaceDir() string {
-	if c != nil && c.Workspace.Dir != "" {
-		return c.Workspace.Dir
-	}
-	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
-		return d
-	}
 	return filepath.Join(common.AppDir(), "workspace")
 }
 

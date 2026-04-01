@@ -39,11 +39,8 @@ func GenerateSessionID() string {
 	return uuid.New().String()
 }
 
-// WorkspaceDir 返回工作目录，优先使用 FEIKONG_WORKSPACE_DIR 环境变量
+// WorkspaceDir 返回工作目录（固定为 ~/.fkteams/workspace）
 func WorkspaceDir() string {
-	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
-		return d
-	}
 	return filepath.Join(AppDir(), "workspace")
 }
 

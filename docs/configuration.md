@@ -28,10 +28,6 @@ FEIKONG_PROXY_URL=http://127.0.0.1:7890
 # 所有数据（配置、日志、会话、历史记录等）均存储于此目录下
 # FEIKONG_APP_DIR = ~/.fkteams
 
-# 工作目录配置, 默认为: ~/.fkteams/workspace
-# 可单独指定工作目录，覆盖 FEIKONG_APP_DIR 中的 workspace 子目录
-# FEIKONG_WORKSPACE_DIR = /custom/workspace/path
-
 # 代码助手
 FEIKONG_CODER_ENABLED = true
 

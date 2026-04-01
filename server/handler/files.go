@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
+	"fkteams/common"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,10 +29,7 @@ type FileInfo struct {
 
 // getWorkspaceDir 获取工作目录并返回绝对路径
 func getWorkspaceDir() (string, string, error) {
-	baseDir := os.Getenv("FEIKONG_WORKSPACE_DIR")
-	if baseDir == "" {
-		return "", "", fmt.Errorf("FEIKONG_WORKSPACE_DIR 未配置")
-	}
+	baseDir := common.WorkspaceDir()
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", "", fmt.Errorf("解析工作目录失败")

@@ -42,7 +42,7 @@ fkteams 内置了全局长期记忆模块，能够跨会话自动记住用户的
 
 ## 存储位置
 
-记忆数据按类型持久化在 `{FEIKONG_WORKSPACE_DIR}/memory/` 目录下，每种类型对应一个 Markdown 文件（如 `preference.md`、`fact.md` 等），可直接查看和手动编辑。
+记忆数据按类型持久化在 `~/.fkteams/workspace/memory/` 目录下，每种类型对应一个 Markdown 文件（如 `preference.md`、`fact.md` 等），可直接查看和手动编辑。
 
 ## 使用说明
 
