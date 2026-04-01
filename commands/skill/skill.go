@@ -15,7 +15,7 @@ import (
 )
 
 // Command 创建 skill 子命令
-func Command(loadEnv func() error) *ucli.Command {
+func Command(initConfig func() error) *ucli.Command {
 	return &ucli.Command{
 		Name:  "skill",
 		Usage: "技能管理",
@@ -25,8 +25,8 @@ func Command(loadEnv func() error) *ucli.Command {
 				Aliases: []string{"ls"},
 				Usage:   "列出本地已安装的技能",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
-					if err := loadEnv(); err != nil {
-						return nil
+					if err := initConfig(); err != nil {
+						return err
 					}
 					return listSkills()
 				},

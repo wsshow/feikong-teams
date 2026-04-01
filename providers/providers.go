@@ -86,7 +86,7 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel,
 	})
 }
 
-// NewChatModelFromEnv 从环境变量创建聊天模型
+// NewChatModelFromEnv 从环境变量创建聊天模型（兼容旧版本，优先使用配置文件）
 func NewChatModelFromEnv(ctx context.Context) (model.ToolCallingChatModel, error) {
 	return NewChatModel(ctx, &Config{
 		Provider:     Type(os.Getenv("FEIKONG_PROVIDER")),

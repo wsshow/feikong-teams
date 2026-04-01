@@ -12,7 +12,6 @@ import (
 	"fkteams/agents/summarizer"
 	"fkteams/agents/visitor"
 	"fkteams/config"
-	"os"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
@@ -36,6 +35,7 @@ var (
 func initRegistry() {
 	registryOnce.Do(func() {
 		ctx := context.Background()
+		cfg := config.Get()
 
 		type agentCreator struct {
 			name    string
@@ -49,24 +49,24 @@ func initRegistry() {
 			{"summarizer", summarizer.NewAgent},
 		}
 
-		// 可选智能体（根据环境变量启用）
-		if os.Getenv("FEIKONG_ANALYST_ENABLED") == "true" {
+		// 可选智能体（根据配置文件启用）
+		if cfg.Agents.Analyst {
 			creators = append(creators, agentCreator{"analyst", analyst.NewAgent})
 		}
 
-		if os.Getenv("FEIKONG_CODER_ENABLED") == "true" {
+		if cfg.Agents.Coder {
 			creators = append(creators, agentCreator{"coder", coder.NewAgent})
 		}
 
-		if os.Getenv("FEIKONG_CMDER_ENABLED") == "true" {
+		if cfg.Agents.Cmder {
 			creators = append(creators, agentCreator{"cmder", cmder.NewAgent})
 		}
 
-		if os.Getenv("FEIKONG_SSH_VISITOR_ENABLED") == "true" {
+		if cfg.Agents.SSHVisitor.Enabled {
 			creators = append(creators, agentCreator{"visitor", visitor.NewAgent})
 		}
 
-		if os.Getenv("FEIKONG_ASSISTANT_ENABLED") == "true" {
+		if cfg.Agents.Assistant {
 			creators = append(creators, agentCreator{"assistant", assistantagent.NewAgent})
 		}
 
@@ -96,10 +96,7 @@ func initRegistry() {
 
 // loadCustomAgents 从配置文件加载自定义智能体并添加到注册表
 func loadCustomAgents(ctx context.Context) {
-	cfg, err := config.Get()
-	if err != nil {
-		return
-	}
+	cfg := config.Get()
 
 	if len(cfg.Custom.Agents) == 0 {
 		return
@@ -119,17 +116,23 @@ func loadCustomAgents(ctx context.Context) {
 			pterm.Warning.Printfln("自定义智能体 \"%s\" 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
 		}
 
+		mc := cfg.ResolveModel(agentCfg.Model)
+		var model custom.Model
+		if mc != nil {
+			model = custom.Model{
+				Provider: mc.Provider,
+				Name:     mc.Model,
+				APIKey:   mc.APIKey,
+				BaseURL:  mc.BaseURL,
+			}
+		}
+
 		agent, err := custom.NewAgent(ctx, custom.Config{
 			Name:         agentCfg.Name,
 			Description:  agentCfg.Desc,
 			SystemPrompt: agentCfg.SystemPrompt,
-			Model: custom.Model{
-				Provider: agentCfg.Provider,
-				Name:     agentCfg.ModelName,
-				APIKey:   agentCfg.APIKey,
-				BaseURL:  agentCfg.BaseURL,
-			},
-			ToolNames: agentCfg.Tools,
+			Model:        model,
+			ToolNames:    agentCfg.Tools,
 		})
 		if err != nil {
 			pterm.Warning.Printfln("初始化自定义智能体 \"%s\" 失败: %v", agentCfg.Name, err)

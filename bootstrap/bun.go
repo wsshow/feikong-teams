@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fkteams/config"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,7 +80,7 @@ func (b *bunInitializer) upgrade() error {
 
 // configureMirror 当 FEIKONG_PROXY_URL 不为空时，配置 bun 国内镜像源
 func (b *bunInitializer) configureMirror() {
-	proxyURL := os.Getenv("FEIKONG_PROXY_URL")
+	proxyURL := config.Get().ProxyURL()
 	if proxyURL == "" {
 		return
 	}

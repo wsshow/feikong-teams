@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fkteams/config"
 	"fkteams/server"
 
 	ucli "github.com/urfave/cli/v3"
@@ -25,8 +26,8 @@ func serveCommand() *ucli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
-			if err := loadEnv(); err != nil {
-				return nil
+			if err := config.Init(); err != nil {
+				return err
 			}
 			return server.RunServe(server.ServeOptions{
 				Host: cmd.String("host"),

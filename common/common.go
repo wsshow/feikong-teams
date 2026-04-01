@@ -47,53 +47,6 @@ func WorkspaceDir() string {
 	return filepath.Join(AppDir(), "workspace")
 }
 
-// GenerateExampleEnv 生成示例 .env 环境变量文件
-func GenerateExampleEnv(filePath string) error {
-	exampleContent := `# 这是一个示例的环境变量配置文件
-# 请将此文件复制为 .env 并根据需要进行修改
-
-# 模型配置配置
-FEIKONG_BASE_URL = https://api.openai.com/v1
-FEIKONG_API_KEY = xxxxx
-FEIKONG_MODEL = GPT-5
-
-# 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
-# FEIKONG_PROVIDER = openai
-
-# 额外 HTTP 请求头（用于网关认证等场景，格式: Key1:Value1,Key2:Value2）
-# FEIKONG_EXTRA_HEADERS = X-Custom-Auth:your-token,X-Gateway-Key:your-key
-
-# 配置代理：网络搜索工具、程序更新等
-FEIKONG_PROXY_URL = http://127.0.0.1:7890
-
-# 工作目录配置, 默认为: ./workspace
-FEIKONG_WORKSPACE_DIR = ./workspace
-
-# 代码助手
-FEIKONG_CODER_ENABLED = true
-
-# 本地命令行助手
-FEIKONG_CMDER_ENABLED = true
-
-# 个人全能助手（带审批以及子任务功能）
-FEIKONG_ASSISTANT_ENABLED = true
-
-# 数据分析师
-FEIKONG_ANALYST_ENABLED = false
-
-# 全局长期记忆
-FEIKONG_MEMORY_ENABLED = false
-
-# SSH 远程服务器配置
-FEIKONG_SSH_VISITOR_ENABLED = false
-FEIKONG_SSH_HOST =
-FEIKONG_SSH_USERNAME = 
-FEIKONG_SSH_PASSWORD =
-`
-
-	return os.WriteFile(filePath, []byte(exampleContent), 0644)
-}
-
 // IsRetryAble 判断错误是否可重试（网络错误、HTTP/2 stream 错误、限流等）
 func IsRetryAble(ctx context.Context, err error) bool {
 	if err == nil {

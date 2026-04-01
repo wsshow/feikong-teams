@@ -116,10 +116,7 @@ type ServeOptions struct {
 
 // run 启动服务的公共逻辑
 func run(mode serverMode, opts *ServeOptions) error {
-	cfg, err := config.Get()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
+	cfg := config.Get()
 
 	app := lifecycle.New()
 	appCfg := app.Config()

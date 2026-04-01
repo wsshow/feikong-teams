@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fkteams/common"
+	"fkteams/config"
 	"fkteams/g"
 	"fkteams/tools/command"
 	"fkteams/tools/doc"
@@ -18,7 +19,6 @@ import (
 	"fkteams/tools/ssh"
 	"fkteams/tools/todo"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -62,11 +62,12 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return todoTools.GetTools()
 	case "ssh":
-		host := os.Getenv("FEIKONG_SSH_HOST")
-		username := os.Getenv("FEIKONG_SSH_USERNAME")
-		password := os.Getenv("FEIKONG_SSH_PASSWORD")
+		sshCfg := config.Get().Agents.SSHVisitor
+		host := sshCfg.Host
+		username := sshCfg.Username
+		password := sshCfg.Password
 		if host == "" || username == "" || password == "" {
-			return nil, fmt.Errorf("SSH 连接信息未配置。请设置以下环境变量：FEIKONG_SSH_HOST, FEIKONG_SSH_USERNAME, FEIKONG_SSH_PASSWORD")
+			return nil, fmt.Errorf("SSH 连接信息未配置，请在配置文件 [agents.ssh_visitor] 中设置 host, username, password")
 		}
 		sshTools, err := ssh.NewSSHTools(host, username, password)
 		if err != nil {

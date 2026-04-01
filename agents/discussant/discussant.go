@@ -4,19 +4,19 @@ import (
 	"context"
 	"fkteams/agents/common"
 	"fkteams/config"
-	"fkteams/providers"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
 )
 
 func NewAgent(ctx context.Context, member config.TeamMember) (adk.Agent, error) {
-	chatModel, err := common.NewChatModelWithConfig(&providers.Config{
-		Provider: providers.Type(member.Provider),
-		APIKey:   member.APIKey,
-		BaseURL:  member.BaseURL,
-		Model:    member.ModelName,
-	})
+	cfg := config.Get()
+	modelCfg := cfg.ResolveModel(member.Model)
+	if modelCfg == nil {
+		return nil, fmt.Errorf("模型 %q 未在配置文件中定义", member.Model)
+	}
+
+	chatModel, err := common.NewChatModelWithModelConfig(modelCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}

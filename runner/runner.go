@@ -19,6 +19,20 @@ import (
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 )
 
+// resolveCustomModel 从配置文件解析自定义智能体的模型配置
+func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Model {
+	mc := cfg.ResolveModel(agent.Model)
+	if mc == nil {
+		return custom.Model{}
+	}
+	return custom.Model{
+		Provider: mc.Provider,
+		Name:     mc.Model,
+		APIKey:   mc.APIKey,
+		BaseURL:  mc.BaseURL,
+	}
+}
+
 // newRunner 用共享配置创建 Runner
 func newRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
 	return adk.NewRunner(ctx, adk.RunnerConfig{
@@ -75,10 +89,7 @@ func CreateDeepAgentsRunner(ctx context.Context) (*adk.Runner, error) {
 
 // CreateLoopAgentRunner 创建 LoopAgent 模式的 Runner
 func CreateLoopAgentRunner(ctx context.Context) (*adk.Runner, error) {
-	teamConfig, err := config.Get()
-	if err != nil {
-		return nil, fmt.Errorf("获取配置失败: %w", err)
-	}
+	teamConfig := config.Get()
 
 	var subAgents []adk.Agent
 	for _, member := range teamConfig.Roundtable.Members {
@@ -104,26 +115,19 @@ func CreateLoopAgentRunner(ctx context.Context) (*adk.Runner, error) {
 
 // CreateCustomSupervisorRunner 创建自定义 Supervisor 模式的 Runner
 func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
-	cfg, err := config.Get()
-	if err != nil {
-		return nil, fmt.Errorf("获取配置失败: %w", err)
-	}
+	cfg := config.Get()
 
 	var moderatorAgent adk.Agent
 	var subAgents []adk.Agent
+	var err error
 
 	if cfg.Custom.Moderator.Name != "" {
 		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
 			Name:         cfg.Custom.Moderator.Name,
 			Description:  cfg.Custom.Moderator.Desc,
 			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
-			Model: custom.Model{
-				Provider: cfg.Custom.Moderator.Provider,
-				Name:     cfg.Custom.Moderator.ModelName,
-				APIKey:   cfg.Custom.Moderator.APIKey,
-				BaseURL:  cfg.Custom.Moderator.BaseURL,
-			},
-			ToolNames: cfg.Custom.Moderator.Tools,
+			Model:        resolveCustomModel(cfg, cfg.Custom.Moderator),
+			ToolNames:    cfg.Custom.Moderator.Tools,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建自定义主持人失败: %w", err)
@@ -140,13 +144,8 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 			Name:         customAgent.Name,
 			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
-			Model: custom.Model{
-				Provider: customAgent.Provider,
-				Name:     customAgent.ModelName,
-				APIKey:   customAgent.APIKey,
-				BaseURL:  customAgent.BaseURL,
-			},
-			ToolNames: customAgent.Tools,
+			Model:        resolveCustomModel(cfg, customAgent),
+			ToolNames:    customAgent.Tools,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建自定义智能体 %s 失败: %w", customAgent.Name, err)
@@ -167,26 +166,19 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 
 // PrintCustomAgentsInfo 打印自定义模式的智能体信息
 func PrintCustomAgentsInfo(ctx context.Context) error {
-	cfg, err := config.Get()
-	if err != nil {
-		return fmt.Errorf("获取配置失败: %w", err)
-	}
+	cfg := config.Get()
 
 	var moderatorAgent adk.Agent
 	var subAgents []adk.Agent
+	var err error
 
 	if cfg.Custom.Moderator.Name != "" {
 		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
 			Name:         cfg.Custom.Moderator.Name,
 			Description:  cfg.Custom.Moderator.Desc,
 			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
-			Model: custom.Model{
-				Provider: cfg.Custom.Moderator.Provider,
-				Name:     cfg.Custom.Moderator.ModelName,
-				APIKey:   cfg.Custom.Moderator.APIKey,
-				BaseURL:  cfg.Custom.Moderator.BaseURL,
-			},
-			ToolNames: cfg.Custom.Moderator.Tools,
+			Model:        resolveCustomModel(cfg, cfg.Custom.Moderator),
+			ToolNames:    cfg.Custom.Moderator.Tools,
 		})
 		if err != nil {
 			return fmt.Errorf("创建自定义主持人失败: %w", err)
@@ -203,13 +195,8 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 			Name:         customAgent.Name,
 			Description:  customAgent.Desc,
 			SystemPrompt: customAgent.SystemPrompt,
-			Model: custom.Model{
-				Provider: customAgent.Provider,
-				Name:     customAgent.ModelName,
-				APIKey:   customAgent.APIKey,
-				BaseURL:  customAgent.BaseURL,
-			},
-			ToolNames: customAgent.Tools,
+			Model:        resolveCustomModel(cfg, customAgent),
+			ToolNames:    customAgent.Tools,
 		})
 		if err != nil {
 			return fmt.Errorf("创建自定义智能体 %s 失败: %w", customAgent.Name, err)
@@ -229,10 +216,7 @@ func PrintCustomAgentsInfo(ctx context.Context) error {
 
 // PrintLoopAgentsInfo 打印多智能体讨论模式的智能体信息
 func PrintLoopAgentsInfo(ctx context.Context) error {
-	teamConfig, err := config.Get()
-	if err != nil {
-		return fmt.Errorf("获取配置失败: %w", err)
-	}
+	teamConfig := config.Get()
 
 	var subAgents []adk.Agent
 	for _, member := range teamConfig.Roundtable.Members {

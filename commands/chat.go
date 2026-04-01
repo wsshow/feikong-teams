@@ -5,6 +5,7 @@ import (
 	"context"
 	"fkteams/cli"
 	commonPkg "fkteams/common"
+	"fkteams/config"
 	"fkteams/lifecycle"
 	"fkteams/runner"
 	"fkteams/version"
@@ -19,8 +20,8 @@ import (
 
 // chatAction 默认操作：启动交互模式或直接查询模式
 func chatAction(ctx context.Context, cmd *ucli.Command) error {
-	if err := loadEnv(); err != nil {
-		return nil
+	if err := config.Init(); err != nil {
+		return err
 	}
 
 	workMode := cmd.String("mode")

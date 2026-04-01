@@ -9,6 +9,7 @@ import (
 	"fkteams/agents"
 	"fkteams/cli"
 	commonPkg "fkteams/common"
+	"fkteams/config"
 	"fkteams/fkevent"
 	"fkteams/lifecycle"
 	"fkteams/runner"
@@ -28,8 +29,8 @@ func agentCommand() *ucli.Command {
 				Name:  "list",
 				Usage: "列出所有可用的 Agent",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
-					if err := loadEnv(); err != nil {
-						return nil
+					if err := config.Init(); err != nil {
+						return err
 					}
 					registry := agents.GetRegistry()
 					if len(registry) == 0 {
@@ -79,8 +80,8 @@ func agentCommand() *ucli.Command {
 
 // agentAction 执行单 Agent 任务
 func agentAction(ctx context.Context, cmd *ucli.Command) error {
-	if err := loadEnv(); err != nil {
-		return nil
+	if err := config.Init(); err != nil {
+		return err
 	}
 
 	agentName := cmd.String("name")

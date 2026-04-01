@@ -2,18 +2,18 @@ package search
 
 import (
 	"context"
+	"fkteams/config"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 )
 
 func NewDuckDuckGoTool(ctx context.Context) (tool.InvokableTool, error) {
-	// 1. 获取自定义代理环境变量
-	proxyStr := os.Getenv("FEIKONG_PROXY_URL")
+	// 1. 获取代理配置
+	proxyStr := config.Get().ProxyURL()
 
 	var proxyFunc func(*http.Request) (*url.URL, error)
 

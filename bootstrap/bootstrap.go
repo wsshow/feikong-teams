@@ -1,7 +1,7 @@
 package bootstrap
 
 import (
-	"os"
+	"fkteams/config"
 
 	"github.com/pterm/pterm"
 )
@@ -84,7 +84,7 @@ func runSelected(selectedOptions []string) {
 
 // appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量
 func appendProxyEnv(env []string) []string {
-	proxyURL := os.Getenv("FEIKONG_PROXY_URL")
+	proxyURL := config.Get().ProxyURL()
 	if proxyURL == "" {
 		return env
 	}

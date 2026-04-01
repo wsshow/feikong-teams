@@ -4,6 +4,7 @@ package common
 import (
 	"context"
 	rootcommon "fkteams/common"
+	"fkteams/config"
 	"fkteams/providers"
 
 	"github.com/cloudwego/eino/components/model"
@@ -16,14 +17,31 @@ const (
 	MaxRetries = rootcommon.MaxRetries
 )
 
-// WorkspaceDir 返回工作目录，优先使用 FEIKONG_WORKSPACE_DIR 环境变量
+// WorkspaceDir 返回工作目录
 func WorkspaceDir() string {
-	return rootcommon.WorkspaceDir()
+	return config.Get().WorkspaceDir()
 }
 
-// NewChatModel 使用环境变量配置创建聊天模型
+// NewChatModel 使用配置文件的 default 模型创建聊天模型
 func NewChatModel() (model.ToolCallingChatModel, error) {
+	cfg := config.Get()
+	modelCfg := cfg.ResolveModel("default")
+	if modelCfg != nil && modelCfg.APIKey != "" {
+		return NewChatModelWithModelConfig(modelCfg)
+	}
+	// 回退到环境变量（兼容未配置 config.toml 的场景）
 	return providers.NewChatModelFromEnv(context.Background())
+}
+
+// NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
+func NewChatModelWithModelConfig(mc *config.ModelConfig) (model.ToolCallingChatModel, error) {
+	return providers.NewChatModel(context.Background(), &providers.Config{
+		Provider:     providers.Type(mc.Provider),
+		APIKey:       mc.APIKey,
+		BaseURL:      mc.BaseURL,
+		Model:        mc.Model,
+		ExtraHeaders: mc.ParseExtraHeaders(),
+	})
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型

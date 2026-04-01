@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fkteams/config"
 	"fmt"
 
 	"fkteams/tools"
@@ -21,8 +22,8 @@ func toolCommand() *ucli.Command {
 				Name:  "list",
 				Usage: "列出所有可用的工具",
 				Action: func(ctx context.Context, cmd *ucli.Command) error {
-					if err := loadEnv(); err != nil {
-						return nil
+					if err := config.Init(); err != nil {
+						return err
 					}
 					return listTools()
 				},

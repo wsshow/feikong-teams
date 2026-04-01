@@ -2,11 +2,11 @@ package fetch
 
 import (
 	"context"
+	"fkteams/config"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -228,7 +228,7 @@ func extractHTMLBody(html string) (string, error) {
 
 // createHTTPClient 创建HTTP客户端
 func createHTTPClient(timeoutSec int) *http.Client {
-	proxyStr := os.Getenv("FEIKONG_PROXY_URL")
+	proxyStr := config.Get().ProxyURL()
 	var proxyFunc func(*http.Request) (*url.URL, error)
 
 	if proxyStr != "" {

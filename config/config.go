@@ -5,67 +5,100 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"fkteams/common"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
+// ==================== 模型池 ====================
+
+// ModelConfig 可复用的模型配置，通过 Name 引用
+type ModelConfig struct {
+	Name         string `toml:"name"`
+	Provider     string `toml:"provider,omitempty"`
+	BaseURL      string `toml:"base_url"`
+	APIKey       string `toml:"api_key"`
+	Model        string `toml:"model"`
+	ExtraHeaders string `toml:"extra_headers,omitempty"` // 格式: Key1:Value1,Key2:Value2
+}
+
+// ParseExtraHeaders 解析额外请求头字符串为 map
+func (m *ModelConfig) ParseExtraHeaders() map[string]string {
+	if m.ExtraHeaders == "" {
+		return nil
+	}
+	headers := make(map[string]string)
+	for _, pair := range strings.Split(m.ExtraHeaders, ",") {
+		parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
+		if len(parts) == 2 {
+			headers[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+	return headers
+}
+
+// ==================== 代理 ====================
+
+// Proxy 网络代理配置
+type Proxy struct {
+	URL string `toml:"url"`
+}
+
+// ==================== 工作区 ====================
+
+// Workspace 工作区配置
+type Workspace struct {
+	Dir string `toml:"dir,omitempty"` // 留空使用默认 ~/.fkteams/workspace
+}
+
+// ==================== 记忆 ====================
+
+// Memory 长期记忆配置
+type Memory struct {
+	Enabled bool `toml:"enabled"`
+}
+
+// ==================== 服务器 ====================
+
+// ServerAuth Web 认证配置
+type ServerAuth struct {
+	Enabled  bool   `toml:"enabled"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
+	Secret   string `toml:"secret"`
+}
+
 // Server 服务端配置
 type Server struct {
+	Host     string     `toml:"host"`
+	Port     int        `toml:"port"`
+	LogLevel string     `toml:"log_level"`
+	Auth     ServerAuth `toml:"auth"`
+}
+
+// ==================== 智能体 ====================
+
+// SSHVisitor SSH 远程访问智能体配置
+type SSHVisitor struct {
+	Enabled  bool   `toml:"enabled"`
 	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
-	LogLevel string `toml:"log_level"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
 }
 
-// TeamMember 圆桌讨论模式的成员配置
-type TeamMember struct {
-	Index     int    `toml:"index"`
-	Name      string `toml:"name"`
-	Desc      string `toml:"desc"`
-	Provider  string `toml:"provider,omitempty"`
-	BaseURL   string `toml:"base_url"`
-	APIKey    string `toml:"api_key"`
-	ModelName string `toml:"model_name"`
+// Agents 内置智能体开关
+type Agents struct {
+	Coder      bool       `toml:"coder"`
+	Cmder      bool       `toml:"cmder"`
+	Assistant  bool       `toml:"assistant"`
+	Analyst    bool       `toml:"analyst"`
+	SSHVisitor SSHVisitor `toml:"ssh_visitor"`
 }
 
-// Roundtable 圆桌讨论模式配置
-type Roundtable struct {
-	Members       []TeamMember `toml:"members"`
-	MaxIterations int          `toml:"max_iterations"`
-}
-
-// Custom 自定义会议模式配置
-type Custom struct {
-	Moderator  Agent       `toml:"moderator"`
-	Agents     []Agent     `toml:"agents"`
-	MCPServers []MCPServer `toml:"mcp_servers"`
-}
-
-// Agent 自定义智能体配置
-type Agent struct {
-	Name         string   `toml:"name"`
-	Desc         string   `toml:"desc"`
-	SystemPrompt string   `toml:"system_prompt"`
-	Provider     string   `toml:"provider,omitempty"`
-	BaseURL      string   `toml:"base_url"`
-	APIKey       string   `toml:"api_key"`
-	ModelName    string   `toml:"model_name"`
-	Tools        []string `toml:"tools,omitempty"`
-}
-
-// MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
-type MCPServer struct {
-	Name          string   `toml:"name"`
-	Desc          string   `toml:"desc"`
-	Enabled       bool     `toml:"enabled"`
-	Timeout       int      `toml:"timeout"`
-	URL           string   `toml:"url,omitempty"`
-	Command       string   `toml:"command,omitempty"`  // Command: "uvx" or "npx"
-	EnvVars       []string `toml:"env_vars,omitempty"` // Environment variables for stdio
-	Args          []string `toml:"args,omitempty"`     // Command arguments array
-	TransportType string   `toml:"transport_type"`
-}
+// ==================== 通道 ====================
 
 // ChannelQQ QQ 机器人通道配置
 type ChannelQQ struct {
@@ -147,12 +180,144 @@ func (c Channels) List() []ChannelEntry {
 	return entries
 }
 
+// ==================== 圆桌讨论 ====================
+
+// TeamMember 圆桌讨论模式的成员配置
+type TeamMember struct {
+	Index int    `toml:"index"`
+	Name  string `toml:"name"`
+	Desc  string `toml:"desc"`
+	Model string `toml:"model"` // 引用 models 中的 name
+}
+
+// Roundtable 圆桌讨论模式配置
+type Roundtable struct {
+	Members       []TeamMember `toml:"members"`
+	MaxIterations int          `toml:"max_iterations"`
+}
+
+// ==================== 自定义模式 ====================
+
+// CustomAgent 自定义智能体配置
+type CustomAgent struct {
+	Name         string   `toml:"name"`
+	Desc         string   `toml:"desc"`
+	SystemPrompt string   `toml:"system_prompt"`
+	Model        string   `toml:"model"` // 引用 models 中的 name
+	Tools        []string `toml:"tools,omitempty"`
+}
+
+// MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
+type MCPServer struct {
+	Name          string   `toml:"name"`
+	Desc          string   `toml:"desc"`
+	Enabled       bool     `toml:"enabled"`
+	Timeout       int      `toml:"timeout"`
+	URL           string   `toml:"url,omitempty"`
+	Command       string   `toml:"command,omitempty"`  // Command: "uvx" or "npx"
+	EnvVars       []string `toml:"env_vars,omitempty"` // Environment variables for stdio
+	Args          []string `toml:"args,omitempty"`     // Command arguments array
+	TransportType string   `toml:"transport_type"`
+}
+
+// Custom 自定义会议模式配置
+type Custom struct {
+	Moderator  CustomAgent   `toml:"moderator"`
+	Agents     []CustomAgent `toml:"agents"`
+	MCPServers []MCPServer   `toml:"mcp_servers"`
+}
+
+// ==================== 全局配置 ====================
+
 // Config 应用全局配置
 type Config struct {
-	Server     Server     `toml:"server"`
-	Channels   Channels   `toml:"channels"`
-	Roundtable Roundtable `toml:"roundtable"`
-	Custom     Custom     `toml:"custom"`
+	Models     []ModelConfig `toml:"models"`
+	Proxy      Proxy         `toml:"proxy"`
+	Workspace  Workspace     `toml:"workspace"`
+	Memory     Memory        `toml:"memory"`
+	Server     Server        `toml:"server"`
+	Agents     Agents        `toml:"agents"`
+	Channels   Channels      `toml:"channels"`
+	Roundtable Roundtable    `toml:"roundtable"`
+	Custom     Custom        `toml:"custom"`
+}
+
+// ResolveModel 通过名称查找模型配置，空名称返回 "default" 模型
+func (c *Config) ResolveModel(name string) *ModelConfig {
+	if name == "" {
+		name = "default"
+	}
+	for i := range c.Models {
+		if c.Models[i].Name == name {
+			return &c.Models[i]
+		}
+	}
+	return nil
+}
+
+// ProxyURL 返回代理 URL（配置文件优先，环境变量回退）
+func (c *Config) ProxyURL() string {
+	if c != nil && c.Proxy.URL != "" {
+		return c.Proxy.URL
+	}
+	return os.Getenv("FEIKONG_PROXY_URL")
+}
+
+// WorkspaceDir 返回工作区目录（配置文件优先，环境变量回退，最后使用默认值）
+func (c *Config) WorkspaceDir() string {
+	if c != nil && c.Workspace.Dir != "" {
+		return c.Workspace.Dir
+	}
+	if d := os.Getenv("FEIKONG_WORKSPACE_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(common.AppDir(), "workspace")
+}
+
+// ==================== 全局单例 ====================
+
+var (
+	globalConfig     *Config
+	globalConfigOnce sync.Once
+	globalConfigErr  error
+)
+
+// Init 初始化全局配置（应在启动时调用一次）
+func Init() error {
+	globalConfigOnce.Do(func() {
+		globalConfig, globalConfigErr = load()
+	})
+	return globalConfigErr
+}
+
+// Get 返回全局配置（未初始化时返回默认值）
+func Get() *Config {
+	if globalConfig == nil {
+		return defaultConfig()
+	}
+	return globalConfig
+}
+
+// load 从文件加载配置
+func load() (*Config, error) {
+	var config Config
+	if err := Unmarshal(filepath.Join(common.AppDir(), "config", "config.toml"), &config); err != nil {
+		if os.IsNotExist(err) {
+			return defaultConfig(), nil
+		}
+		return nil, err
+	}
+	return &config, nil
+}
+
+func defaultConfig() *Config {
+	return &Config{
+		Server: Server{
+			Host:     "127.0.0.1",
+			Port:     23456,
+			LogLevel: "info",
+		},
+	}
 }
 
 // Unmarshal 从 TOML 文件反序列化配置
@@ -161,29 +326,7 @@ func Unmarshal(filePath string, v any) error {
 	if err != nil {
 		return err
 	}
-	err = toml.Unmarshal(data, v)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// Get 加载并返回应用配置（配置文件不存在时使用默认值）
-func Get() (*Config, error) {
-	var config Config
-	if err := Unmarshal(filepath.Join(common.AppDir(), "config", "config.toml"), &config); err != nil {
-		if os.IsNotExist(err) {
-			return &Config{
-				Server: Server{
-					Host:     "127.0.0.1",
-					Port:     23456,
-					LogLevel: "info",
-				},
-			}, nil
-		}
-		return nil, err
-	}
-	return &config, nil
+	return toml.Unmarshal(data, v)
 }
 
 // GenerateExample 生成示例配置文件
@@ -193,11 +336,51 @@ func GenerateExample() error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("无法创建目录 %s: %w", dir, err)
 	}
-	defaultConfig := Config{
+	exampleConfig := Config{
+		Models: []ModelConfig{
+			{
+				Name:     "default",
+				Provider: "openai",
+				BaseURL:  "https://api.openai.com/v1",
+				APIKey:   "xxxxx",
+				Model:    "GPT-5",
+			},
+			{
+				Name:     "deepseek",
+				Provider: "deepseek",
+				BaseURL:  "https://api.deepseek.com/v1",
+				APIKey:   "xxxxx",
+				Model:    "deepseek-chat",
+			},
+		},
+		Proxy: Proxy{
+			URL: "http://127.0.0.1:7890",
+		},
+		Memory: Memory{
+			Enabled: false,
+		},
 		Server: Server{
 			Host:     "127.0.0.1",
 			Port:     23456,
 			LogLevel: "info",
+			Auth: ServerAuth{
+				Enabled:  false,
+				Username: "admin",
+				Password: "admin",
+				Secret:   "your_jwt_secret_here",
+			},
+		},
+		Agents: Agents{
+			Coder:     true,
+			Cmder:     true,
+			Assistant: true,
+			Analyst:   false,
+			SSHVisitor: SSHVisitor{
+				Enabled:  false,
+				Host:     "",
+				Username: "",
+				Password: "",
+			},
 		},
 		Channels: Channels{
 			QQ: ChannelQQ{
@@ -221,23 +404,31 @@ func GenerateExample() error {
 				Mode:      "team",
 			},
 		},
+		Roundtable: Roundtable{
+			Members: []TeamMember{
+				{
+					Index: 0,
+					Name:  "Deepseek Chat",
+					Desc:  "深度求索聊天模型",
+					Model: "deepseek",
+				},
+			},
+			MaxIterations: 2,
+		},
 		Custom: Custom{
-			Moderator: Agent{
+			Moderator: CustomAgent{
 				Name:         "主持人名称",
 				Desc:         "主持人描述",
 				SystemPrompt: "你是一个公正的主持人，负责引导讨论。",
-				BaseURL:      "https://api.example.com/v1",
-				APIKey:       "your_api_key_here",
+				Model:        "default",
 			},
-			Agents: []Agent{
+			Agents: []CustomAgent{
 				{
 					Name:         "智能体名称",
 					Desc:         "智能体描述",
 					SystemPrompt: "你是一个有帮助的助手。",
-					BaseURL:      "https://api.example.com/v1",
-					APIKey:       "your_api_key_here",
-					ModelName:    "模型名称",
-					Tools:        []string{"工具名称，例如：command", "MCP工具要求添加【mcp-】前缀，例如：mcp-服务名称"},
+					Model:        "default",
+					Tools:        []string{"command", "mcp-服务名称"},
 				},
 			},
 			MCPServers: []MCPServer{
@@ -261,22 +452,8 @@ func GenerateExample() error {
 				},
 			},
 		},
-		Roundtable: Roundtable{
-			Members: []TeamMember{
-				{
-					Index:     0,
-					Name:      "Deepseek Chat",
-					Desc:      "深度求索聊天模型",
-					Provider:  "deepseek",
-					BaseURL:   "https://api.deepseek.com/v1",
-					APIKey:    "xxx",
-					ModelName: "deepseek-chat",
-				},
-			},
-			MaxIterations: 2,
-		},
 	}
-	data, err := toml.Marshal(defaultConfig)
+	data, err := toml.Marshal(exampleConfig)
 	if err != nil {
 		return err
 	}

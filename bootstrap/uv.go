@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fkteams/config"
 	"fmt"
 	"os"
 	"os/exec"
@@ -75,7 +76,7 @@ func (u *uvInitializer) upgrade(uvPath string) error {
 
 // configureMirror 当 FEIKONG_PROXY_URL 不为空时，配置 uv 国内镜像源
 func (u *uvInitializer) configureMirror() {
-	proxyURL := os.Getenv("FEIKONG_PROXY_URL")
+	proxyURL := config.Get().ProxyURL()
 	if proxyURL == "" {
 		return
 	}
