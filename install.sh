@@ -6,7 +6,7 @@ set -euo pipefail
 
 GITHUB_REPO="wsshow/feikong-teams"
 APP_NAME="fkteams"
-INSTALL_DIR="${FKTEAMS_INSTALL_DIR:-${HOME}/fkteams}"
+INSTALL_DIR="${FKTEAMS_INSTALL_DIR:-${HOME}/.fkteams/bin}"
 
 # ---- 颜色输出 ----
 tty_escape() { printf "\033[%sm" "$1"; }

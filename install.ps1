@@ -2,7 +2,7 @@
 # 用法: powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/install.ps1 | iex"
 
 param(
-    [string]$InstallDir = "$env:USERPROFILE\fkteams"
+    [string]$InstallDir = $(if ($env:FKTEAMS_INSTALL_DIR) { $env:FKTEAMS_INSTALL_DIR } else { "$env:USERPROFILE\.fkteams\bin" })
 )
 
 $ErrorActionPreference = "Stop"
