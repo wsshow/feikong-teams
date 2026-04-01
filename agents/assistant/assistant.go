@@ -19,6 +19,6 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithToolNames("command", "file", "search", "fetch").
 		WithDispatch(nil).
 		WithSummary().
-		WithSkills(safeDir).
+		WithSkills().
 		Build(ctx)
 }

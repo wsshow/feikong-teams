@@ -57,7 +57,7 @@ func installCommand() *ucli.Command {
 
 func installSkill(ctx context.Context, slug, version string, provider Provider) error {
 
-	skillsDir := filepath.Join(commonPkg.WorkspaceDir(), "skills")
+	skillsDir := filepath.Join(commonPkg.AppDir(), "skills")
 	targetDir := filepath.Join(skillsDir, slug)
 
 	// 检查是否已安装

@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"fkteams/agents/middlewares/fkfs"
+	"fkteams/common"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,8 +23,8 @@ func ensureDir(path string) error {
 	return err
 }
 
-func New(ctx context.Context, safeDir string) (skillsMiddleware adk.ChatModelAgentMiddleware, err error) {
-	skillsDirPath := filepath.Join(safeDir, "skills")
+func New(ctx context.Context) (skillsMiddleware adk.ChatModelAgentMiddleware, err error) {
+	skillsDirPath := filepath.Join(common.AppDir(), "skills")
 
 	if err := ensureDir(skillsDirPath); err != nil {
 		return skillsMiddleware, fmt.Errorf("无法创建或访问目录 %s: %w", skillsDirPath, err)

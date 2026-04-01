@@ -33,7 +33,7 @@ func generateCommand() *ucli.Command {
 					if err := config.GenerateExample(); err != nil {
 						return err
 					}
-					fmt.Println("成功生成示例配置文件: config/config.toml")
+					fmt.Printf("成功生成示例配置文件: %s/config/config.toml\n", common.AppDir())
 					return nil
 				},
 			},

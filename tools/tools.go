@@ -87,13 +87,13 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	case "doc":
 		return doc.GetTools()
 	case "uv":
-		uvTools, err := uv.NewUVTools(workspacePath())
+		uvTools, err := uv.NewUVTools(common.AppDir())
 		if err != nil {
 			return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
 		}
 		return uvTools.GetTools()
 	case "bun":
-		bunTools, err := bun.NewBunTools(workspacePath())
+		bunTools, err := bun.NewBunTools(common.AppDir())
 		if err != nil {
 			return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
 		}

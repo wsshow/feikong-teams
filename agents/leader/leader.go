@@ -15,6 +15,6 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplateVar("workspace_dir", safeDir).
 		WithToolNames("todo", "file", "scheduler").
 		WithSummary().
-		WithSkills(safeDir).
+		WithSkills().
 		Build(ctx)
 }

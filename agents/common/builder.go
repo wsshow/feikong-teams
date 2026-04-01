@@ -39,7 +39,6 @@ type AgentBuilder struct {
 	// 便捷中间件标记
 	enableSummary  bool
 	enableSkills   bool
-	skillsDir      string
 	enableDispatch bool
 	dispatchConfig *dispatch.Config
 }
@@ -102,9 +101,8 @@ func (b *AgentBuilder) WithSummary() *AgentBuilder {
 }
 
 // WithSkills 启用 skills 中间件
-func (b *AgentBuilder) WithSkills(workspaceDir string) *AgentBuilder {
+func (b *AgentBuilder) WithSkills() *AgentBuilder {
 	b.enableSkills = true
-	b.skillsDir = workspaceDir
 	return b
 }
 
@@ -196,7 +194,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	cfg.Handlers = append(cfg.Handlers, patchMiddleware)
 
 	if b.enableSkills {
-		skillsMiddleware, err := skills.New(ctx, b.skillsDir)
+		skillsMiddleware, err := skills.New(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("init skills middleware: %w", err)
 		}

@@ -6,7 +6,7 @@ Skills 是一组指令、脚本和资源的集合，fkteams(统御) 可以动态
 
 ## Skills 配置
 
-skills目录：`{FEIKONG_WORKSPACE_DIR}/skills/{用户技能目录}`
+skills目录：`{FEIKONG_APP_DIR}/skills/{用户技能目录}`
 
 「用户技能目录」是一个独立的子目录，必须包含: `SKILL.md`
 

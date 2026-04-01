@@ -45,7 +45,7 @@ type localSkillInfo struct {
 }
 
 func listSkills() error {
-	skillsDir := filepath.Join(commonPkg.WorkspaceDir(), "skills")
+	skillsDir := filepath.Join(commonPkg.AppDir(), "skills")
 
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
