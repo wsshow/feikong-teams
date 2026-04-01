@@ -252,7 +252,6 @@ cat error.log | ./fkteams agent -n 小码 -q "分析这个错误日志"
 | `session list`    | 列出所有可用的聊天历史会话            |
 | `update`          | 检查并更新到最新版本                  |
 | `init`            | 初始化运行环境（安装/升级 uv 等依赖） |
-| `generate env`    | 生成示例 .env 文件                    |
 | `generate config` | 生成示例配置文件                      |
 | `agent`           | 指定单个 Agent 执行任务               |
 | `agent list`      | 列出所有可用的 Agent                  |

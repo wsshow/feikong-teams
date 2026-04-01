@@ -325,6 +325,12 @@ secret = "your_jwt_secret"
 ```bash
 FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
 FEIKONG_PROXY_URL          # 代理地址 (配置文件优先)
+# 以下为 NewChatModelFromEnv 回退（未配置 config.toml 时使用）
+FEIKONG_API_KEY            # 模型 API Key
+FEIKONG_BASE_URL           # 模型 Base URL
+FEIKONG_MODEL              # 模型名称
+FEIKONG_PROVIDER           # 模型提供者类型 (可选，自动检测)
+FEIKONG_EXTRA_HEADERS      # 额外 HTTP 请求头 (格式: Key1:Value1,Key2:Value2)
 ```
 
 ## Web 服务

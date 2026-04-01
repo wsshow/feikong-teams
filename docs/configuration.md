@@ -1,70 +1,77 @@
 # 配置指南
 
-## 配置环境变量
+## 配置文件
 
-环境变量支持两种方式配置：
-
-- **Shell 环境变量**（推荐）：在 `~/.bashrc`、`~/.zshrc` 等 Shell 配置文件中 `export` 相关变量，对所有终端会话生效。
-- **`.env` 文件**：在运行 `fkteams` 的目录下创建 `.env` 文件，程序启动时自动加载。可运行 `fkteams generate env` 生成示例文件。
-
-必要的配置项：
-
-```env
-# 模型配置
-FEIKONG_API_KEY=your_api_key_here
-FEIKONG_BASE_URL=https://api.openai.com/v1
-FEIKONG_MODEL=gpt-5
-
-# 模型提供者类型（可选，自动检测）: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
-# FEIKONG_PROVIDER=openai
-
-# 额外 HTTP 请求头（用于网关认证等，格式: Key1:Value1,Key2:Value2）
-# FEIKONG_EXTRA_HEADERS=X-Custom-Auth:your-token,X-Gateway-Key:your-key
-
-# 网络搜索工具配置（可选）
-FEIKONG_PROXY_URL=http://127.0.0.1:7890
-
-# 应用数据目录，默认为: ~/.fkteams/
-# 所有数据（配置、日志、会话、历史记录等）均存储于此目录下
-# FEIKONG_APP_DIR = ~/.fkteams
-
-# 代码助手
-FEIKONG_CODER_ENABLED = true
-
-# 本地命令行助手
-FEIKONG_CMDER_ENABLED = true
-
-# 数据分析师
-FEIKONG_ANALYST_ENABLED = false
-
-# 个人全能助手（带审批以及子任务功能）
-FEIKONG_ASSISTANT_ENABLED = true
-
-# 全局长期记忆
-FEIKONG_MEMORY_ENABLED = true
-
-# SSH 访问者智能体配置（可选）
-FEIKONG_SSH_VISITOR_ENABLED=false # 设置为 true 启用小访智能体
-FEIKONG_SSH_HOST=ip:port
-FEIKONG_SSH_USERNAME=your_ssh_user
-FEIKONG_SSH_PASSWORD=your_ssh_password
-
-# Web 页面登录认证（可选，设置 ENABLED=true 后启用）
-FEIKONG_LOGIN_ENABLED=false
-FEIKONG_LOGIN_SECRET=your_random_secret_key
-FEIKONG_LOGIN_USERNAME=admin
-FEIKONG_LOGIN_PASSWORD=your_password
-```
-
-## 配置圆桌会议成员
-
-生成示例配置文件：
+运行以下命令生成示例配置文件：
 
 ```bash
 fkteams generate config
 ```
 
-编辑 `~/.fkteams/config/config.toml` 配置圆桌会议成员、MCP 服务和自定义智能体：
+编辑 `~/.fkteams/config/config.toml` 进行配置。
+
+### 模型配置（必填）
+
+```toml
+[[models]]
+name = "default"
+provider = "openai"  # 可选，自动检测。支持: openai, deepseek, claude, ollama, ark, gemini, qwen, openrouter
+base_url = "https://api.openai.com/v1"
+api_key = "your_api_key_here"
+model = "gpt-5"
+# extra_headers = "X-Custom-Auth:your-token,X-Gateway-Key:your-key"  # 额外 HTTP 请求头（可选）
+```
+
+### 代理配置（可选）
+
+```toml
+[proxy]
+url = "http://127.0.0.1:7890"
+```
+
+### 智能体开关
+
+```toml
+[agents]
+coder = true           # 代码助手
+cmder = true           # 本地命令行助手
+assistant = true       # 个人全能助手（带审批以及子任务功能）
+analyst = false        # 数据分析师
+
+[agents.ssh_visitor]   # SSH 访问者智能体（可选）
+enabled = false
+host = "ip:port"
+username = "your_ssh_user"
+password = "your_ssh_password"
+```
+
+### 记忆配置
+
+```toml
+[memory]
+enabled = true  # 全局长期记忆
+```
+
+### Web 认证（可选）
+
+```toml
+[server.auth]
+enabled = false
+username = "admin"
+password = "your_password"
+secret = "your_jwt_secret"
+```
+
+### 环境变量（仅用于 Docker 等场景的回退）
+
+```bash
+FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
+FEIKONG_PROXY_URL          # 代理地址 (配置文件优先)
+```
+
+## 配置圆桌会议成员
+
+在 `~/.fkteams/config/config.toml` 中配置圆桌会议成员、MCP 服务和自定义智能体：
 
 ```toml
 [server]

@@ -74,17 +74,23 @@ powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/i
 
 ## 快速开始
 
-> **快速体验**：安装完成后，只需要配置环境变量并运行 `fkteams web` 即可立即体验 Web 界面！
+> **快速体验**：安装完成后，只需要生成配置文件并运行 `fkteams web` 即可立即体验 Web 界面！
 
-### 1. 配置环境变量
+### 1. 生成配置文件
 
-将以下内容添加到 `~/.bashrc`、`~/.zshrc` 或 `~/.profile` 中，或在运行目录下创建 `.env` 文件：
+```bash
+fkteams generate config
+```
 
-```env
-# 模型配置（必填）
-FEIKONG_API_KEY=your_api_key_here
-FEIKONG_BASE_URL=https://api.openai.com/v1
-FEIKONG_MODEL=gpt-5
+编辑 `~/.fkteams/config/config.toml`，填写模型配置：
+
+```toml
+[[models]]
+name = "default"
+provider = "openai"
+base_url = "https://api.openai.com/v1"
+api_key = "your_api_key_here"
+model = "gpt-5"
 ```
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)

@@ -46,10 +46,11 @@ fkteams 内置了全局长期记忆模块，能够跨会话自动记住用户的
 
 ## 使用说明
 
-在 `.env` 文件中设置以下环境变量来启用长期记忆功能：
+在配置文件 `~/.fkteams/config/config.toml` 中启用长期记忆功能：
 
-```env
-FEIKONG_MEMORY_ENABLED = true
+```toml
+[memory]
+enabled = true
 ```
 
 启用后，CLI 模式和 Web 模式均自动工作，无需额外配置。
