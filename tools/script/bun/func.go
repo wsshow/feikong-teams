@@ -13,25 +13,33 @@ import (
 
 // BunTools 基于 bun 的 JavaScript 脚本执行工具实例
 type BunTools struct {
-	// workDir 是工作目录，存放项目和脚本
+	// envDir 是环境目录，存放 package.json 和 node_modules
+	envDir string
+	// workDir 是脚本执行的工作目录（CWD）
 	workDir string
 	// bunPath 是 bun 命令的路径
 	bunPath string
 }
 
 // NewBunTools 创建一个新的 bun 工具实例
-// workDir 是工作目录，用于存放项目和脚本
-func NewBunTools(workDir string) (*BunTools, error) {
+// envDir 存放项目环境，workDir 作为脚本执行的工作目录
+func NewBunTools(envDir, workDir string) (*BunTools, error) {
 	// 转换为绝对路径
-	absPath, err := filepath.Abs(workDir)
+	absEnvDir, err := filepath.Abs(envDir)
+	if err != nil {
+		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
+	}
+	absWorkDir, err := filepath.Abs(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
 	}
 
 	// 检查目录是否存在，如果不存在则创建
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(absPath, 0755); err != nil {
-			return nil, fmt.Errorf("无法创建目录 %s: %w", absPath, err)
+	for _, dir := range []string{absEnvDir, absWorkDir} {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, fmt.Errorf("无法创建目录 %s: %w", dir, err)
+			}
 		}
 	}
 
@@ -42,7 +50,8 @@ func NewBunTools(workDir string) (*BunTools, error) {
 	}
 
 	return &BunTools{
-		workDir: absPath,
+		envDir:  absEnvDir,
+		workDir: absWorkDir,
 		bunPath: bunPath,
 	}, nil
 }
@@ -50,7 +59,7 @@ func NewBunTools(workDir string) (*BunTools, error) {
 // executeCommand 执行命令并返回输出
 func (bt *BunTools) executeCommand(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = bt.workDir
+	cmd.Dir = bt.envDir
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -75,7 +84,7 @@ type InitEnvResponse struct {
 
 // InitEnv 初始化 JavaScript 项目环境
 func (bt *BunTools) InitEnv(ctx context.Context, req *InitEnvRequest) (*InitEnvResponse, error) {
-	packageJSONPath := filepath.Join(bt.workDir, "package.json")
+	packageJSONPath := filepath.Join(bt.envDir, "package.json")
 
 	// 检查是否已存在 package.json
 	if _, err := os.Stat(packageJSONPath); err == nil {
@@ -137,7 +146,7 @@ func (bt *BunTools) InstallPackage(ctx context.Context, req *InstallPackageReque
 
 	// 如果不是全局安装，检查 package.json 是否存在
 	if !req.Global {
-		packageJSONPath := filepath.Join(bt.workDir, "package.json")
+		packageJSONPath := filepath.Join(bt.envDir, "package.json")
 		if _, err := os.Stat(packageJSONPath); os.IsNotExist(err) {
 			return &InstallPackageResponse{
 				Success:      false,
@@ -199,7 +208,7 @@ func (bt *BunTools) RemovePackage(ctx context.Context, req *RemovePackageRequest
 
 	// 如果不是全局删除，检查 package.json 是否存在
 	if !req.Global {
-		packageJSONPath := filepath.Join(bt.workDir, "package.json")
+		packageJSONPath := filepath.Join(bt.envDir, "package.json")
 		if _, err := os.Stat(packageJSONPath); os.IsNotExist(err) {
 			return &RemovePackageResponse{
 				Success:      false,
@@ -254,7 +263,7 @@ type ListPackageResponse struct {
 func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*ListPackageResponse, error) {
 	// 如果不是全局列表，检查 package.json 是否存在
 	if !req.Global {
-		packageJSONPath := filepath.Join(bt.workDir, "package.json")
+		packageJSONPath := filepath.Join(bt.envDir, "package.json")
 		if _, err := os.Stat(packageJSONPath); os.IsNotExist(err) {
 			return &ListPackageResponse{
 				Success:      false,
@@ -264,7 +273,7 @@ func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*
 	}
 
 	// 读取 package.json 获取依赖列表
-	packageJSONPath := filepath.Join(bt.workDir, "package.json")
+	packageJSONPath := filepath.Join(bt.envDir, "package.json")
 	data, err := os.ReadFile(packageJSONPath)
 	if err != nil {
 		return &ListPackageResponse{
@@ -316,9 +325,9 @@ type CleanEnvResponse struct {
 
 // CleanEnv 清理 JavaScript 环境
 func (bt *BunTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanEnvResponse, error) {
-	nodeModulesPath := filepath.Join(bt.workDir, "node_modules")
-	packageJSONPath := filepath.Join(bt.workDir, "package.json")
-	bunLockPath := filepath.Join(bt.workDir, "bun.lockb")
+	nodeModulesPath := filepath.Join(bt.envDir, "node_modules")
+	packageJSONPath := filepath.Join(bt.envDir, "package.json")
+	bunLockPath := filepath.Join(bt.envDir, "bun.lockb")
 
 	// 删除 node_modules
 	if _, err := os.Stat(nodeModulesPath); err == nil {
@@ -402,7 +411,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 		}
 	} else if req.ScriptContent != "" {
 		// 创建临时脚本文件
-		tempFile, err := os.CreateTemp(bt.workDir, "script_*.js")
+		tempFile, err := os.CreateTemp(bt.envDir, "script_*.js")
 		if err != nil {
 			return &RunScriptResponse{
 				Success:      false,
@@ -506,11 +515,11 @@ type GetEnvInfoResponse struct {
 func (bt *BunTools) GetEnvInfo(ctx context.Context, req *GetEnvInfoRequest) (*GetEnvInfoResponse, error) {
 	resp := &GetEnvInfoResponse{
 		Success: true,
-		WorkDir: bt.workDir,
+		WorkDir: bt.envDir,
 	}
 
 	// 检查 package.json 是否存在
-	packageJSONPath := filepath.Join(bt.workDir, "package.json")
+	packageJSONPath := filepath.Join(bt.envDir, "package.json")
 	if _, err := os.Stat(packageJSONPath); os.IsNotExist(err) {
 		resp.Initialized = false
 		resp.ErrorMessage = "项目未初始化，请先调用 init_env 初始化环境"
@@ -530,7 +539,7 @@ func (bt *BunTools) GetEnvInfo(ctx context.Context, req *GetEnvInfoRequest) (*Ge
 	}
 
 	// 检查 node_modules 是否存在
-	nodeModulesPath := filepath.Join(bt.workDir, "node_modules")
+	nodeModulesPath := filepath.Join(bt.envDir, "node_modules")
 	if _, err := os.Stat(nodeModulesPath); err == nil {
 		resp.HasNodeModules = true
 	}

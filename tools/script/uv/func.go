@@ -15,7 +15,9 @@ import (
 
 // UVTools 基于 uv 的 Python 脚本执行工具实例
 type UVTools struct {
-	// workDir 是工作目录，存放虚拟环境和脚本
+	// envDir 是环境目录，存放虚拟环境
+	envDir string
+	// workDir 是脚本执行的工作目录（CWD）
 	workDir string
 	// venvPath 是虚拟环境的路径
 	venvPath string
@@ -24,18 +26,24 @@ type UVTools struct {
 }
 
 // NewUVTools 创建一个新的 uv 工具实例
-// workDir 是工作目录，用于存放虚拟环境和脚本
-func NewUVTools(workDir string) (*UVTools, error) {
+// envDir 存放虚拟环境，workDir 作为脚本执行的工作目录
+func NewUVTools(envDir, workDir string) (*UVTools, error) {
 	// 转换为绝对路径
-	absPath, err := filepath.Abs(workDir)
+	absEnvDir, err := filepath.Abs(envDir)
+	if err != nil {
+		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
+	}
+	absWorkDir, err := filepath.Abs(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
 	}
 
 	// 检查目录是否存在，如果不存在则创建
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(absPath, 0755); err != nil {
-			return nil, fmt.Errorf("无法创建目录 %s: %w", absPath, err)
+	for _, dir := range []string{absEnvDir, absWorkDir} {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, fmt.Errorf("无法创建目录 %s: %w", dir, err)
+			}
 		}
 	}
 
@@ -45,10 +53,11 @@ func NewUVTools(workDir string) (*UVTools, error) {
 		return nil, fmt.Errorf("未找到 uv 命令，请先安装 uv: https://github.com/astral-sh/uv （可以使用 ./fkteams init 安装）")
 	}
 
-	venvPath := filepath.Join(absPath, ".venv")
+	venvPath := filepath.Join(absEnvDir, ".venv")
 
 	return &UVTools{
-		workDir:  absPath,
+		envDir:   absEnvDir,
+		workDir:  absWorkDir,
 		venvPath: venvPath,
 		uvPath:   uvPath,
 	}, nil
@@ -57,7 +66,7 @@ func NewUVTools(workDir string) (*UVTools, error) {
 // executeCommand 执行命令并返回输出
 func (ut *UVTools) executeCommand(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = ut.workDir
+	cmd.Dir = ut.envDir
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -430,7 +439,7 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 		}
 	} else if req.ScriptContent != "" {
 		// 创建临时脚本文件
-		tempFile, err := os.CreateTemp(ut.workDir, "script_*.py")
+		tempFile, err := os.CreateTemp(ut.envDir, "script_*.py")
 		if err != nil {
 			return &RunScriptResponse{
 				Success:      false,

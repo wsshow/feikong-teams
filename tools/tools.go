@@ -19,6 +19,7 @@ import (
 	"fkteams/tools/todo"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -27,6 +28,11 @@ import (
 // workspacePath 返回工作区目录路径
 func workspacePath() string {
 	return common.WorkspaceDir()
+}
+
+// runtimeDir 返回脚本运行时环境目录
+func runtimeDir() string {
+	return filepath.Join(common.AppDir(), "runtime")
 }
 
 func GetToolsByName(name string) ([]tool.BaseTool, error) {
@@ -87,13 +93,13 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 	case "doc":
 		return doc.GetTools()
 	case "uv":
-		uvTools, err := uv.NewUVTools(common.AppDir())
+		uvTools, err := uv.NewUVTools(runtimeDir(), workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
 		}
 		return uvTools.GetTools()
 	case "bun":
-		bunTools, err := bun.NewBunTools(common.AppDir())
+		bunTools, err := bun.NewBunTools(runtimeDir(), workspacePath())
 		if err != nil {
 			return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
 		}
