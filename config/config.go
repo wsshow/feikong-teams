@@ -284,6 +284,36 @@ func Get() *Config {
 	return globalConfig
 }
 
+// EnsureDefaultModel 检查是否配置了默认模型，未配置时返回引导信息
+func ensureDefaultModel() error {
+	cfg := Get()
+	// 配置文件中有 default 模型
+	if mc := cfg.ResolveModel("default"); mc != nil && mc.APIKey != "" {
+		return nil
+	}
+	// 环境变量回退
+	if os.Getenv("FEIKONG_API_KEY") != "" {
+		return nil
+	}
+	configPath := filepath.Join(common.AppDir(), "config", "config.toml")
+	return fmt.Errorf("未配置默认模型，请先完成配置后再使用\n\n"+
+		"  方式一：生成配置文件并编辑\n"+
+		"    fkteams generate config\n"+
+		"    编辑 %s\n\n"+
+		"  方式二：设置环境变量\n"+
+		"    export FEIKONG_API_KEY=your_api_key\n"+
+		"    export FEIKONG_BASE_URL=https://api.openai.com/v1\n"+
+		"    export FEIKONG_MODEL=gpt-5", configPath)
+}
+
+// InitAndValidate 初始化配置并校验必要参数
+func InitAndValidate() error {
+	if err := Init(); err != nil {
+		return err
+	}
+	return ensureDefaultModel()
+}
+
 // load 从文件加载配置
 func load() (*Config, error) {
 	var config Config

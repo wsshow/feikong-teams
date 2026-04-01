@@ -80,7 +80,7 @@ func agentCommand() *ucli.Command {
 
 // agentAction 执行单 Agent 任务
 func agentAction(ctx context.Context, cmd *ucli.Command) error {
-	if err := config.Init(); err != nil {
+	if err := config.InitAndValidate(); err != nil {
 		return err
 	}
 
