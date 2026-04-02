@@ -12,6 +12,10 @@ func ParseMultiFileDiff(text string) (*MultiFileDiff, error) {
 		return &MultiFileDiff{}, nil
 	}
 
+	// 统一换行符，移除 \r
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+
 	lines := strings.Split(text, "\n")
 	// 移除末尾空行
 	for len(lines) > 0 && lines[len(lines)-1] == "" {
@@ -196,8 +200,16 @@ func parseHunk(lines []string, start int) (*Hunk, int, error) {
 			i++
 			continue
 		default:
-			// 遇到非预期字符，hunk 结束
-			done = true
+			// LLM 常见问题：上下文行缺少空格前缀（如 tab 开头或完全无前缀）
+			// 当两侧都有剩余行时，将整行视为上下文行（不去掉首字符）
+			if oldRemaining > 0 && newRemaining > 0 {
+				hunk.Lines = append(hunk.Lines, DiffLine{Kind: OpEqual, Text: line})
+				oldRemaining--
+				newRemaining--
+			} else {
+				// 无法判断类型，结束 hunk
+				done = true
+			}
 		}
 		if done {
 			break
