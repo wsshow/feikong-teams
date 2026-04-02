@@ -20,7 +20,7 @@
 
 ## POST /api/fkteams/login
 
-> 仅在认证启用时可用（`FEIKONG_LOGIN_ENABLED=true` 时注册该路由）
+> 仅在认证启用时可用（`config.toml` 中 `[server.auth] enabled = true` 时注册该路由）
 
 用户登录获取 Token。
 

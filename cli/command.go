@@ -280,7 +280,7 @@ func ListAvailableAgents() {
 // handleListMemory 列出所有长期记忆条目
 func handleListMemory() {
 	if g.MemoryManager == nil {
-		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		pterm.Error.Println("长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 		return
 	}
 
@@ -304,7 +304,7 @@ func handleListMemory() {
 // handleDeleteMemory 交互式选择并删除记忆条目
 func handleDeleteMemory() {
 	if g.MemoryManager == nil {
-		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		pterm.Error.Println("长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 		return
 	}
 
@@ -485,7 +485,7 @@ func printMemoryEntries(entries []memory.MemoryEntry) {
 // handleClearMemory 清空所有长期记忆
 func handleClearMemory() {
 	if g.MemoryManager == nil {
-		pterm.Error.Println("长期记忆未启用，请设置 FEIKONG_MEMORY_ENABLED=true")
+		pterm.Error.Println("长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 		return
 	}
 

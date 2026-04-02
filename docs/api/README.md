@@ -42,14 +42,15 @@
 
 ### 认证机制
 
-通过环境变量控制是否启用：
+通过配置文件 `config.toml` 控制是否启用：
 
-| 环境变量                 | 说明                         |
-| ------------------------ | ---------------------------- |
-| `FEIKONG_LOGIN_ENABLED`  | `true` 启用认证              |
-| `FEIKONG_LOGIN_SECRET`   | Token 签名密钥（启用时必填） |
-| `FEIKONG_LOGIN_USERNAME` | 登录用户名                   |
-| `FEIKONG_LOGIN_PASSWORD` | 登录密码                     |
+```toml
+[server.auth]
+enabled = true
+username = "admin"
+password = "your_password"
+secret = "your_jwt_secret"  # Token 签名密钥（启用时必填）
+```
 
 **Token 传递方式**（优先级从高到低）：
 

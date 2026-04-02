@@ -6,7 +6,7 @@ services:
     ports:
       - "23456:23456"
     environment:
-      # 模型配置（必填）
+      # 模型配置（必填，若已挂载 config/config.toml 则以配置文件为准）
       - FEIKONG_BASE_URL=https://api.openai.com/v1
       - FEIKONG_API_KEY=your_api_key_here
       - FEIKONG_MODEL=GPT-5
@@ -14,27 +14,8 @@ services:
       # 网络代理（可选）
       # - FEIKONG_PROXY_URL=http://host.docker.internal:7890
 
-      # 工作目录（将应用数据目录映射到容器内 /app，与 volumes 挂载路径对应）
+      # 应用数据目录（与 volumes 挂载路径对应）
       - FEIKONG_APP_DIR=/app
-
-      # 功能开关
-      - FEIKONG_CODER_ENABLED=true
-      - FEIKONG_CMDER_ENABLED=true
-      - FEIKONG_ASSISTANT_ENABLED=true
-      - FEIKONG_ANALYST_ENABLED=false
-      - FEIKONG_MEMORY_ENABLED=false
-
-      # SSH 远程配置（可选）
-      # - FEIKONG_SSH_VISITOR_ENABLED=false
-      # - FEIKONG_SSH_HOST=
-      # - FEIKONG_SSH_USERNAME=
-      # - FEIKONG_SSH_PASSWORD=
-
-      # 登录认证（可选）
-      # - FEIKONG_LOGIN_ENABLED=false
-      # - FEIKONG_LOGIN_SECRET=
-      # - FEIKONG_LOGIN_USERNAME=
-      # - FEIKONG_LOGIN_PASSWORD=
     volumes:
       # 持久化数据目录
       - ./data/config:/app/config
