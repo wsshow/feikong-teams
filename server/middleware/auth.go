@@ -3,6 +3,7 @@ package middleware
 import (
 	"fkteams/server/handler"
 	"fkteams/web"
+	"log"
 	"net/http"
 	"strings"
 
@@ -52,6 +53,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		if token == "" || !handler.ValidateToken(token) {
+			log.Printf("auth failed: ip=%s, path=%s", c.ClientIP(), path)
 			// API 请求返回 401
 			if strings.HasPrefix(path, "/api/") || path == "/ws" {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{

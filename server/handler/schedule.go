@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fkteams/tools/scheduler"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ func GetScheduleTasksHandler() gin.HandlerFunc {
 		statusFilter := c.Query("status")
 		tasks, err := s.GetTasks(statusFilter)
 		if err != nil {
+			log.Printf("failed to get schedule tasks: %v", err)
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -47,6 +49,7 @@ func CancelScheduleTaskHandler() gin.HandlerFunc {
 
 		resp, err := s.ScheduleCancel(c, &scheduler.ScheduleCancelRequest{TaskID: taskID})
 		if err != nil {
+			log.Printf("failed to cancel schedule task: id=%s, err=%v", taskID, err)
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}

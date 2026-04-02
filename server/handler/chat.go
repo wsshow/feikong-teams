@@ -342,6 +342,7 @@ func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMess
 	// 获取 runner
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
+		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
 		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 		return
 	}
@@ -388,7 +389,7 @@ func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMess
 			ensureSessionMetadata(sessionID, userDisplayText)
 			return
 		}
-		log.Printf("error processing event: %v", err)
+		log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
 		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 	}
 

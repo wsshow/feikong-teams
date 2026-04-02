@@ -52,6 +52,7 @@ func ChatHandler() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		r, err := resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
+			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
 			status := http.StatusInternalServerError
 			if req.AgentName != "" {
 				status = http.StatusBadRequest

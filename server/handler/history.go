@@ -49,6 +49,7 @@ func ListSessionsHandler() gin.HandlerFunc {
 
 		entries, err := os.ReadDir(historyDir)
 		if err != nil {
+			log.Printf("failed to read history dir: %v", err)
 			Fail(c, http.StatusInternalServerError, "failed to read directory")
 			return
 		}
@@ -143,6 +144,7 @@ func CreateSessionHandler() gin.HandlerFunc {
 			UpdatedAt: now,
 		}
 		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+			log.Printf("failed to create session %s: %v", req.SessionID, err)
 			Fail(c, http.StatusInternalServerError, "failed to create session")
 			return
 		}
@@ -166,6 +168,7 @@ func GetSessionHandler() gin.HandlerFunc {
 			if os.IsNotExist(err) {
 				Fail(c, http.StatusNotFound, "session not found")
 			} else {
+				log.Printf("failed to read history: session=%s, err=%v", sessionID, err)
 				Fail(c, http.StatusInternalServerError, "failed to read history")
 			}
 			return
@@ -200,6 +203,7 @@ func DeleteSessionHandler() gin.HandlerFunc {
 		}
 
 		if err := os.RemoveAll(sessionDir); err != nil {
+			log.Printf("failed to delete session %s: %v", sessionID, err)
 			Fail(c, http.StatusInternalServerError, "failed to delete session")
 			return
 		}
@@ -231,6 +235,7 @@ func RenameSessionHandler() gin.HandlerFunc {
 			if os.IsNotExist(err) {
 				Fail(c, http.StatusNotFound, "session not found")
 			} else {
+				log.Printf("failed to load metadata: session=%s, err=%v", req.SessionID, err)
 				Fail(c, http.StatusInternalServerError, "failed to read metadata")
 			}
 			return
@@ -239,6 +244,7 @@ func RenameSessionHandler() gin.HandlerFunc {
 		meta.Title = req.Title
 		meta.UpdatedAt = time.Now()
 		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+			log.Printf("failed to save metadata: session=%s, err=%v", req.SessionID, err)
 			Fail(c, http.StatusInternalServerError, "failed to save metadata")
 			return
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fkteams/config"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -98,6 +99,7 @@ func LoginHandler() gin.HandlerFunc {
 		expectedPass := auth.Password
 
 		if req.Username != expectedUser || req.Password != expectedPass {
+			log.Printf("login failed: username=%s, ip=%s", req.Username, c.ClientIP())
 			Fail(c, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}

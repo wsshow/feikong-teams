@@ -7,6 +7,7 @@ import (
 	"fkteams/common"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -93,6 +94,7 @@ func GetFilesHandler() gin.HandlerFunc {
 
 		entries, err := os.ReadDir(fullPath)
 		if err != nil {
+			log.Printf("failed to read dir: path=%s, err=%v", fullPath, err)
 			Fail(c, http.StatusInternalServerError, "读取目录失败")
 			return
 		}
@@ -370,6 +372,7 @@ func UploadChunkHandler() gin.HandlerFunc {
 		// 分片临时目录
 		chunkDir := filepath.Join(os.TempDir(), "fkteams-chunks", sanitizeUploadID(uploadID))
 		if err := os.MkdirAll(chunkDir, 0755); err != nil {
+			log.Printf("failed to create chunk dir: path=%s, err=%v", chunkDir, err)
 			Fail(c, http.StatusInternalServerError, "创建临时目录失败")
 			return
 		}
@@ -383,6 +386,7 @@ func UploadChunkHandler() gin.HandlerFunc {
 
 		chunkPath := filepath.Join(chunkDir, fmt.Sprintf("%d", chunkIndex))
 		if err := c.SaveUploadedFile(file, chunkPath); err != nil {
+			log.Printf("failed to save chunk: path=%s, err=%v", chunkPath, err)
 			Fail(c, http.StatusInternalServerError, "保存分片失败")
 			return
 		}
@@ -727,6 +731,7 @@ func DeleteFileHandler() gin.HandlerFunc {
 		if info.IsDir() {
 			entries, err := os.ReadDir(fullPath)
 			if err != nil {
+				log.Printf("failed to read dir for delete: path=%s, err=%v", fullPath, err)
 				Fail(c, http.StatusInternalServerError, "读取目录失败")
 				return
 			}
@@ -735,11 +740,13 @@ func DeleteFileHandler() gin.HandlerFunc {
 				return
 			}
 			if err := os.RemoveAll(fullPath); err != nil {
+				log.Printf("failed to delete dir: path=%s, err=%v", fullPath, err)
 				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除目录失败: %v", err))
 				return
 			}
 		} else {
 			if err := os.Remove(fullPath); err != nil {
+				log.Printf("failed to delete file: path=%s, err=%v", fullPath, err)
 				Fail(c, http.StatusInternalServerError, fmt.Sprintf("删除文件失败: %v", err))
 				return
 			}
