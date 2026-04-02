@@ -218,8 +218,10 @@ func (ft *FileTools) FileRead(ctx context.Context, req *FileReadRequest) (*FileR
 	if req.StartLine == 0 && req.EndLine == 0 {
 		// 超过限制时截断，只返回前 N 行
 		if totalLines > maxDefaultLines {
+			content := strings.Join(lines[:maxDefaultLines], "\n")
+			content += fmt.Sprintf("\n\n... 已截断，用 start_line=%d 继续读取剩余 %d 行", maxDefaultLines+1, totalLines-maxDefaultLines)
 			return &FileReadResponse{
-				Content:    strings.Join(lines[:maxDefaultLines], "\n"),
+				Content:    content,
 				TotalLines: totalLines,
 				ReadRange:  fmt.Sprintf("1-%d", maxDefaultLines),
 				Truncated:  true,
@@ -302,7 +304,7 @@ func (ft *FileTools) FileWrite(ctx context.Context, req *FileWriteRequest) (*Fil
 	totalLines := countLines(req.Content)
 
 	return &FileWriteResponse{
-		Message:    fmt.Sprintf("成功写入 %d 字节到文件 %s", len(req.Content), req.Filepath),
+		Message:    fmt.Sprintf("已写入 %s (%d 行)", req.Filepath, totalLines),
 		TotalLines: totalLines,
 	}, nil
 }
@@ -358,7 +360,7 @@ func (ft *FileTools) FileAppend(ctx context.Context, req *FileAppendRequest) (*F
 	totalLines := countLines(newContent)
 
 	return &FileAppendResponse{
-		Message:    fmt.Sprintf("成功追加 %d 字节到文件 %s", len(req.Content), req.Filepath),
+		Message:    fmt.Sprintf("已追加到 %s (共 %d 行)", req.Filepath, totalLines),
 		TotalLines: totalLines,
 	}, nil
 }
@@ -696,13 +698,13 @@ func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileE
 	matchCount := strings.Count(original, req.OldString)
 	if matchCount == 0 {
 		return &FileEditResponse{
-			ErrorMessage: fmt.Sprintf("未找到匹配文本，请检查 old_string 是否正确 (文件共 %d 行)", countLines(original)),
+			ErrorMessage: fmt.Sprintf("未找到匹配文本。请先用 file_read 确认文件内容，确保 old_string 的缩进和空白完全一致 (文件共 %d 行)", countLines(original)),
 			TotalLines:   countLines(original),
 		}, nil
 	}
 	if matchCount > 1 {
 		return &FileEditResponse{
-			ErrorMessage: fmt.Sprintf("找到 %d 处匹配，请包含更多上下文确保唯一匹配 (文件共 %d 行)", matchCount, countLines(original)),
+			ErrorMessage: fmt.Sprintf("找到 %d 处匹配，old_string 不唯一。请包含更多上下文行使其唯一 (文件共 %d 行)", matchCount, countLines(original)),
 			TotalLines:   countLines(original),
 		}, nil
 	}
@@ -713,7 +715,7 @@ func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileE
 	}
 
 	return &FileEditResponse{
-		Message:    fmt.Sprintf("成功编辑文件 %s", req.Filepath),
+		Message:    fmt.Sprintf("已编辑 %s (%d 行)", req.Filepath, countLines(newContent)),
 		TotalLines: countLines(newContent),
 	}, nil
 }
