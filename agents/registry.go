@@ -45,6 +45,7 @@ func initRegistry() {
 		// 基础智能体（始终可用）
 		creators := []agentCreator{
 			{"cmder", cmder.NewAgent},
+			{"coder", coder.NewAgent},
 			{"storyteller", storyteller.NewAgent},
 			{"summarizer", summarizer.NewAgent},
 		}
@@ -56,10 +57,6 @@ func initRegistry() {
 
 		if cfg.Agents.Analyst {
 			creators = append(creators, agentCreator{"analyst", analyst.NewAgent})
-		}
-
-		if cfg.Agents.Coder {
-			creators = append(creators, agentCreator{"coder", coder.NewAgent})
 		}
 
 		if cfg.Agents.SSHVisitor.Enabled {

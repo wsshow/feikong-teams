@@ -84,7 +84,6 @@ type SSHVisitor struct {
 
 // Agents 内置智能体开关
 type Agents struct {
-	Coder      bool       `toml:"coder"`
 	Searcher   bool       `toml:"searcher"`
 	Assistant  bool       `toml:"assistant"`
 	Analyst    bool       `toml:"analyst"`
@@ -387,7 +386,6 @@ func GenerateExample() error {
 			},
 		},
 		Agents: Agents{
-			Coder:     true,
 			Searcher:  true,
 			Assistant: true,
 			Analyst:   false,

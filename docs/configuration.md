@@ -33,7 +33,6 @@ url = "http://127.0.0.1:7890"
 
 ```toml
 [agents]
-coder = true           # 代码助手
 searcher = true        # 搜索专家
 assistant = true       # 个人全能助手（带审批以及子任务功能）
 analyst = false        # 数据分析师
