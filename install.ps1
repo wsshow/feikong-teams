@@ -36,6 +36,9 @@ function Get-LatestVersion {
         return $release.tag_name
     }
     catch {
+        if ($_.Exception.Response.StatusCode -eq 403) {
+            Write-Fail "GitHub API 速率限制，请稍后重试"
+        }
         Write-Fail "无法获取最新版本信息，请检查网络连接: $_"
     }
 }
@@ -84,7 +87,7 @@ function Invoke-DownloadWithProgress {
             # 计算总大小
             $totalBytes = [long]0
             $cr = $response.Content.Headers.ContentRange
-            if ($cr -ne $null -and $cr.HasLength) {
+            if ($null -ne $cr -and $cr.HasLength) {
                 $totalBytes = $cr.Length  # Content-Range 提供准确总大小
             } elseif ($response.Content.Headers.ContentLength -gt 0) {
                 $totalBytes = $response.Content.Headers.ContentLength + $resumeOffset
@@ -122,7 +125,6 @@ function Invoke-DownloadWithProgress {
             finally {
                 $outStream.Dispose()
                 $inStream.Dispose()
-                $client.Dispose()
             }
         }
         catch {
@@ -133,6 +135,9 @@ function Invoke-DownloadWithProgress {
             else {
                 Write-Fail "下载失败（已重试 $MaxRetries 次）: $_"
             }
+        }
+        finally {
+            if ($null -ne $client) { $client.Dispose() }
         }
     }
 }
@@ -188,7 +193,7 @@ try {
     Write-Info "正在验证文件完整性..."
     Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsPath -UseBasicParsing
 
-    $expectedLine = Get-Content $checksumsPath | Where-Object { $_ -match "\s$([regex]::Escape($zipName))$" }
+    $expectedLine = Get-Content $checksumsPath | Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($zipName))$" }
     if ($expectedLine) {
         $expectedHash = ($expectedLine -split "\s+")[0].ToUpper()
         $actualHash   = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToUpper()
