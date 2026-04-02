@@ -410,6 +410,74 @@ func (ft *FileTools) FileList(ctx context.Context, req *FileListRequest) (*FileL
 	}, nil
 }
 
+// GlobRequest 文件模式搜索请求
+type GlobRequest struct {
+	Pattern string `json:"pattern" jsonschema:"description=glob 模式，如 **/*.go 或 src/**/*.{js,ts},required"`
+	Path    string `json:"path,omitempty" jsonschema:"description=搜索目录，默认为工作目录"`
+}
+
+// GlobResponse 文件模式搜索响应
+type GlobResponse struct {
+	Files        []string `json:"files,omitempty" jsonschema:"description=匹配的文件路径列表"`
+	TotalFiles   int      `json:"total_files" jsonschema:"description=匹配文件总数"`
+	Truncated    bool     `json:"truncated,omitempty" jsonschema:"description=结果是否被截断"`
+	ErrorMessage string   `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// Glob 按 glob 模式搜索文件路径
+func (ft *FileTools) Glob(ctx context.Context, req *GlobRequest) (*GlobResponse, error) {
+	if req.Pattern == "" {
+		return &GlobResponse{ErrorMessage: "pattern is required"}, nil
+	}
+
+	searchPath := req.Path
+	if searchPath == "" {
+		searchPath = "."
+	}
+
+	rp, err := ft.resolvePath(ctx, searchPath)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := rp.fs.Stat(rp.path)
+	if err != nil {
+		return &GlobResponse{ErrorMessage: fmt.Sprintf("路径不存在: %v", err)}, nil
+	}
+	if !info.IsDir() {
+		return &GlobResponse{ErrorMessage: fmt.Sprintf("路径不是目录: %s", searchPath)}, nil
+	}
+
+	const maxFiles = 100
+	var files []string
+	truncated := false
+
+	_ = afero.Walk(rp.fs, rp.path, func(path string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil || fi.IsDir() {
+			return walkErr
+		}
+		if len(files) >= maxFiles {
+			truncated = true
+			return fmt.Errorf("max reached")
+		}
+
+		matched, _ := filepath.Match(req.Pattern, fi.Name())
+		if !matched {
+			matched, _ = filepath.Match(req.Pattern, path)
+		}
+		if matched {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	return &GlobResponse{
+		Files:      files,
+		TotalFiles: len(files),
+		Truncated:  truncated,
+	}, nil
+}
+
 // GrepRequest 搜索请求
 type GrepRequest struct {
 	Pattern  string `json:"pattern" jsonschema:"description=搜索模式,required"`
