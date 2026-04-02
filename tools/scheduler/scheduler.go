@@ -46,23 +46,23 @@ type TaskExecutor interface {
 
 var (
 	globalScheduler *Scheduler
-	schedulerOnce   sync.Once
+	schedulerMu     sync.Mutex
 )
 
-// InitGlobal 初始化全局调度器（幂等）
+// InitGlobal 初始化全局调度器（幂等，失败后可重试）
 func InitGlobal(baseDir string) (*Scheduler, error) {
-	var initErr error
-	schedulerOnce.Do(func() {
-		s, err := newScheduler(baseDir)
-		if err != nil {
-			initErr = err
-			return
-		}
-		globalScheduler = s
-	})
-	if initErr != nil {
-		return nil, initErr
+	schedulerMu.Lock()
+	defer schedulerMu.Unlock()
+
+	if globalScheduler != nil {
+		return globalScheduler, nil
 	}
+
+	s, err := newScheduler(baseDir)
+	if err != nil {
+		return nil, err
+	}
+	globalScheduler = s
 	return globalScheduler, nil
 }
 
@@ -75,6 +75,10 @@ func newScheduler(baseDir string) (*Scheduler, error) {
 	absPath, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	if err := os.MkdirAll(absPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create scheduler directory: %w", err)
 	}
 
 	filePath := filepath.Join(absPath, "scheduled_tasks.json")
