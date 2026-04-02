@@ -13,6 +13,6 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplate(cmderPromptTemplate).
 		WithTemplateVar("os_type", runtime.GOOS).
 		WithTemplateVar("os_arch", runtime.GOARCH).
-		WithToolNames("command", "uv").
+		WithToolNames("command").
 		Build(ctx)
 }
