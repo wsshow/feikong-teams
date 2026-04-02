@@ -307,6 +307,62 @@ func (ft *FileTools) FileWrite(ctx context.Context, req *FileWriteRequest) (*Fil
 	}, nil
 }
 
+// FileAppendRequest 追加写入文件请求
+type FileAppendRequest struct {
+	Filepath string `json:"filepath" jsonschema:"description=要追加写入的文件路径,required"`
+	Content  string `json:"content" jsonschema:"description=要追加的内容,required"`
+}
+
+// FileAppendResponse 追加写入文件响应
+type FileAppendResponse struct {
+	Message      string `json:"message" jsonschema:"description=操作结果消息"`
+	TotalLines   int    `json:"total_lines" jsonschema:"description=追加后文件总行数"`
+	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+}
+
+// FileAppend 追加内容到文件末尾（文件不存在则创建）
+func (ft *FileTools) FileAppend(ctx context.Context, req *FileAppendRequest) (*FileAppendResponse, error) {
+	if req.Filepath == "" {
+		return &FileAppendResponse{
+			ErrorMessage: "filepath 参数是必需的",
+		}, nil
+	}
+
+	rp, err := ft.resolvePath(ctx, req.Filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 自动创建父目录
+	dir := filepath.Dir(rp.path)
+	if dir != "." {
+		if err := rp.fs.MkdirAll(dir, 0755); err != nil {
+			return &FileAppendResponse{
+				ErrorMessage: fmt.Sprintf("创建目录失败: %v", err),
+			}, nil
+		}
+	}
+
+	// 读取已有内容
+	existing, _ := afero.ReadFile(rp.fs, rp.path)
+
+	// 追加新内容
+	newContent := string(existing) + req.Content
+	err = afero.WriteFile(rp.fs, rp.path, []byte(newContent), 0644)
+	if err != nil {
+		return &FileAppendResponse{
+			ErrorMessage: fmt.Sprintf("追加写入文件失败: %v", err),
+		}, nil
+	}
+
+	totalLines := countLines(newContent)
+
+	return &FileAppendResponse{
+		Message:    fmt.Sprintf("成功追加 %d 字节到文件 %s", len(req.Content), req.Filepath),
+		TotalLines: totalLines,
+	}, nil
+}
+
 // FileListRequest 列出目录请求
 type FileListRequest struct {
 	Dirpath string `json:"dirpath" jsonschema:"description=要列出的目录路径,required"`
