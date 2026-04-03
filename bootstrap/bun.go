@@ -44,7 +44,6 @@ func (b *bunInitializer) Run() error {
 	}
 
 	// 如果配置了代理，同步设置 bun 镜像源
-	b.configureMirror()
 	return nil
 }
 
@@ -78,10 +77,10 @@ func (b *bunInitializer) upgrade() error {
 	return cmd.Run()
 }
 
-// configureMirror 当 FEIKONG_PROXY_URL 不为空时，配置 bun 国内镜像源
-func (b *bunInitializer) configureMirror() {
+// ConfigureMirror 当 FEIKONG_PROXY_URL 不为空或 mirror 为 true 时，配置 bun 国内镜像源
+func (b *bunInitializer) ConfigureMirror(mirror bool) {
 	proxyURL := config.Get().ProxyURL()
-	if proxyURL == "" {
+	if proxyURL == "" && !mirror {
 		return
 	}
 

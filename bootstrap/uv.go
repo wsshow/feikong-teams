@@ -44,7 +44,6 @@ func (u *uvInitializer) Run() error {
 	}
 
 	// 如果配置了代理，同步设置 uv 镜像源
-	u.configureMirror()
 	return nil
 }
 
@@ -74,10 +73,10 @@ func (u *uvInitializer) upgrade(uvPath string) error {
 	return cmd.Run()
 }
 
-// configureMirror 当 FEIKONG_PROXY_URL 不为空时，配置 uv 国内镜像源
-func (u *uvInitializer) configureMirror() {
+// ConfigureMirror 当 FEIKONG_PROXY_URL 不为空或 mirror 为 true 时，配置 uv 国内镜像源
+func (u *uvInitializer) ConfigureMirror(mirror bool) {
 	proxyURL := config.Get().ProxyURL()
-	if proxyURL == "" {
+	if proxyURL == "" && !mirror {
 		return
 	}
 

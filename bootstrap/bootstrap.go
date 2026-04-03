@@ -14,6 +14,12 @@ type Initializer interface {
 	Run() error
 }
 
+// MirrorConfigurer 镜像源配置接口，初始化器可选实现
+type MirrorConfigurer interface {
+	// ConfigureMirror 配置镜像源，mirror 为 true 时强制配置
+	ConfigureMirror(mirror bool)
+}
+
 // 注册所有初始化器（有序列表，确保选项顺序一致）
 var initializers = []Initializer{
 	&uvInitializer{},
@@ -30,7 +36,7 @@ func Names() []string {
 }
 
 // Run 让用户选择需要初始化的环境并执行
-func Run() {
+func Run(mirror bool) {
 	options := Names()
 
 	// 交互式多选
@@ -44,19 +50,19 @@ func Run() {
 		return
 	}
 
-	runSelected(selectedOptions)
+	runSelected(selectedOptions, mirror)
 }
 
 // RunWith 直接初始化指定的环境（非交互模式）
 // 若 names 为空则初始化全部环境
-func RunWith(names []string) {
+func RunWith(names []string, mirror bool) {
 	if len(names) == 0 {
 		names = Names()
 	}
-	runSelected(names)
+	runSelected(names, mirror)
 }
 
-func runSelected(selectedOptions []string) {
+func runSelected(selectedOptions []string, mirror bool) {
 	// 尝试加载配置文件以获取代理等设置，配置文件不存在时使用默认值
 	if err := config.Init(); err != nil {
 		pterm.Warning.Printfln("加载配置文件失败（将使用默认设置）: %v", err)
@@ -81,6 +87,9 @@ func runSelected(selectedOptions []string) {
 			pterm.Error.Printfln("[%s] 初始化失败: %v", init.Name(), err)
 		} else {
 			pterm.Success.Printfln("[%s] 初始化完成", init.Name())
+			if mc, ok := init.(MirrorConfigurer); ok {
+				mc.ConfigureMirror(mirror)
+			}
 		}
 	}
 

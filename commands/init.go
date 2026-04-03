@@ -22,17 +22,22 @@ func initCommand() *ucli.Command {
 				Name:  "all",
 				Usage: "初始化全部环境（跳过交互选择）",
 			},
+			&ucli.BoolFlag{
+				Name:  "mirror",
+				Usage: "生成镜像源配置文件（如 uv 的 PyPI 镜像、bun 的 npm 镜像）",
+			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
+			mirror := cmd.Bool("mirror")
 			if cmd.Bool("all") {
-				bootstrap.RunWith(nil)
+				bootstrap.RunWith(nil, mirror)
 				return nil
 			}
 			if envStr := cmd.String("env"); envStr != "" {
-				bootstrap.RunWith(strings.Split(envStr, ","))
+				bootstrap.RunWith(strings.Split(envStr, ","), mirror)
 				return nil
 			}
-			bootstrap.Run()
+			bootstrap.Run(mirror)
 			return nil
 		},
 	}
