@@ -21,9 +21,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino/components/tool"
 )
+
+var cmdCleanupOnce sync.Once
 
 // workspacePath 返回工作区目录路径
 func workspacePath() string {
@@ -73,12 +76,18 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
 		}
-		g.Cleaner.Add(func() error {
+		g.ProcessCleaner.Add(func() error {
 			sshTools.Close()
 			return nil
 		})
 		return sshTools.GetTools()
 	case "command":
+		cmdCleanupOnce.Do(func() {
+			g.ProcessCleaner.Add(func() error {
+				command.TerminateAll()
+				return nil
+			})
+		})
 		return command.NewCommandTools(workspacePath()).GetTools()
 	case "scheduler":
 		s, err := scheduler.InitGlobal(workspacePath())

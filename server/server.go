@@ -8,6 +8,7 @@ import (
 	_ "fkteams/channels/qq"
 	_ "fkteams/channels/weixin"
 	"fkteams/config"
+	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/log"
 	"fkteams/server/handler"
@@ -174,6 +175,7 @@ func run(mode serverMode, opts *ServeOptions) error {
 	})
 
 	app.OnCleanup(func(ctx context.Context) error {
+		g.RunProcessCleanup()
 		fmt.Printf("服务安全退出\n")
 		return nil
 	})

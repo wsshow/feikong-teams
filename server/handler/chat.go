@@ -156,15 +156,12 @@ func updateSessionTitleAndStatus(sessionID, userInput, status string) {
 	}
 }
 
-// finishChat 保存历史、更新元数据、提取记忆、清理资源
+// finishChat 保存历史、更新元数据、提取记忆
 func finishChat(recorder *fkevent.HistoryRecorder, sessionID, userInput string) {
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 	ensureSessionMetadata(sessionID, userInput)
 	if g.MemoryManager != nil {
 		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
-	}
-	if err := g.Cleaner.ExecuteAndClear(); err != nil {
-		log.Printf("failed to cleanup resources: %v", err)
 	}
 }
 

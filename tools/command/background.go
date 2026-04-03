@@ -28,6 +28,20 @@ var (
 	bgTasksMu sync.Mutex
 )
 
+// TerminateAll 终止所有运行中的后台任务，在进程退出时调用
+func TerminateAll() {
+	bgTasksMu.Lock()
+	defer bgTasksMu.Unlock()
+	for id, task := range bgTasks {
+		task.mu.Lock()
+		if !task.done && task.cancel != nil {
+			task.cancel()
+		}
+		task.mu.Unlock()
+		delete(bgTasks, id)
+	}
+}
+
 // cleanStaleTasks 清理过期的后台任务，需在持有 bgTasksMu 时调用
 func cleanStaleTasks() {
 	now := time.Now()

@@ -6,6 +6,7 @@ import (
 	"fkteams/cli"
 	commonPkg "fkteams/common"
 	"fkteams/config"
+	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"
 	"fkteams/version"
@@ -108,6 +109,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	app.OnCleanup(func(ctx context.Context) error {
+		g.RunProcessCleanup()
 		history := inputHistory
 		if session != nil {
 			history = session.InputHistory

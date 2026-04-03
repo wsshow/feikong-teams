@@ -11,6 +11,7 @@ import (
 	commonPkg "fkteams/common"
 	"fkteams/config"
 	"fkteams/fkevent"
+	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"
 
@@ -174,6 +175,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	app.OnCleanup(func(ctx context.Context) error {
+		g.RunProcessCleanup()
 		history := inputHistory
 		if session != nil {
 			history = session.InputHistory

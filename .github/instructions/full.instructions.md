@@ -279,8 +279,9 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 ### 全局变量
 
 定义在 `g/g.go`:
-- `g.Cleaner`: 资源清理器（SSH 连接、数据库等退出前统一清理）
 - `g.MemoryManager`: 全局长期记忆管理器
+- `g.ProcessCleaner`: 进程级资源清理器（终止后台子进程、关闭 SSH 连接等）
+- `g.RunProcessCleanup()`: 执行所有进程级清理函数
 
 公共函数定义在 `common/common.go`:
 - `AppDir()`: 应用数据目录（默认 `~/.fkteams`，支持 `FEIKONG_APP_DIR` 环境变量覆盖）
