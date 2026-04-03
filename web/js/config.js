@@ -28,7 +28,7 @@ FKTeamsChat.prototype.initConfig = function () {
 
     // 添加模型
     document.getElementById("config-add-model").addEventListener("click", () => {
-        this.addModelCard({ name: "", provider: "openai", base_url: "", api_key: "", model: "" });
+        this.addModelCard({ name: "", provider: "openai", base_url: "", api_key: "", model: "" }, true);
     });
 
     // Auth 开关联动
@@ -131,6 +131,24 @@ FKTeamsChat.prototype.fillConfigForm = function (cfg) {
 };
 
 FKTeamsChat.prototype.fillChannelForm = function (ch) {
+    // 动态填充自定义智能体名称到模式选项列表
+    const datalist = document.getElementById("channel-mode-options");
+    if (datalist) {
+        const builtinModes = new Set(["team", "deep", "roundtable", "custom"]);
+        // 移除之前动态添加的自定义选项
+        datalist.querySelectorAll("[data-custom]").forEach((el) => el.remove());
+        // 添加自定义智能体名称
+        (this._configData?.custom?.agents || []).forEach((a) => {
+            if (a.name && !builtinModes.has(a.name)) {
+                const opt = document.createElement("option");
+                opt.value = a.name;
+                opt.textContent = a.name + " (自定义智能体)";
+                opt.setAttribute("data-custom", "true");
+                datalist.appendChild(opt);
+            }
+        });
+    }
+
     // QQ
     document.getElementById("config-qq-enabled").checked = ch.qq?.enabled || false;
     document.getElementById("config-qq-appid").value = ch.qq?.app_id || "";
@@ -155,56 +173,98 @@ FKTeamsChat.prototype.fillChannelForm = function (ch) {
 
 // ===== 模型卡片 =====
 
-FKTeamsChat.prototype.addModelCard = function (m) {
+FKTeamsChat.prototype.addModelCard = function (m, expanded) {
     const card = document.createElement("div");
-    card.className = "config-model-card";
+    card.className = "config-model-card" + (expanded ? " open" : "");
+
+    const displayName = m.name || "未命名模型";
+    const displayModel = m.model || "";
+    const displayProvider = m.provider || "openai";
+
     card.innerHTML = `
-    <button class="config-model-remove" title="删除此模型">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-      </svg>
-    </button>
-    <div class="config-row">
-      <div class="config-field">
-        <label>名称</label>
-        <input type="text" class="config-input model-name" value="${this.escapeHtml(m.name || "")}" placeholder="default" />
+    <div class="config-model-header">
+      <div class="config-model-summary">
+        <span class="config-model-title">${this.escapeHtml(displayName)}</span>
+        <span class="config-model-info">${this.escapeHtml(displayProvider)}${displayModel ? " / " + this.escapeHtml(displayModel) : ""}</span>
       </div>
-      <div class="config-field">
-        <label>Provider</label>
-        <select class="config-select model-provider">
-          <option value="openai" ${m.provider === "openai" ? "selected" : ""}>openai</option>
-          <option value="claude" ${m.provider === "claude" ? "selected" : ""}>claude</option>
-          <option value="deepseek" ${m.provider === "deepseek" ? "selected" : ""}>deepseek</option>
-          <option value="gemini" ${m.provider === "gemini" ? "selected" : ""}>gemini</option>
-          <option value="qwen" ${m.provider === "qwen" ? "selected" : ""}>qwen</option>
-          <option value="ollama" ${m.provider === "ollama" ? "selected" : ""}>ollama</option>
-          <option value="openrouter" ${m.provider === "openrouter" ? "selected" : ""}>openrouter</option>
-          <option value="ark" ${m.provider === "ark" ? "selected" : ""}>ark</option>
-        </select>
+      <div class="config-model-header-actions">
+        <button class="config-model-remove" title="删除此模型">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+        <svg class="config-model-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </div>
     </div>
-    <div class="config-row">
-      <div class="config-field">
-        <label>Base URL</label>
-        <input type="text" class="config-input model-baseurl" value="${this.escapeHtml(m.base_url || "")}" placeholder="https://api.openai.com/v1" />
+    <div class="config-model-body">
+      <div class="config-row">
+        <div class="config-field">
+          <label>名称</label>
+          <input type="text" class="config-input model-name" value="${this.escapeHtml(m.name || "")}" placeholder="default" />
+        </div>
+        <div class="config-field">
+          <label>Provider</label>
+          <select class="config-select model-provider">
+            <option value="openai" ${m.provider === "openai" ? "selected" : ""}>openai</option>
+            <option value="claude" ${m.provider === "claude" ? "selected" : ""}>claude</option>
+            <option value="deepseek" ${m.provider === "deepseek" ? "selected" : ""}>deepseek</option>
+            <option value="gemini" ${m.provider === "gemini" ? "selected" : ""}>gemini</option>
+            <option value="qwen" ${m.provider === "qwen" ? "selected" : ""}>qwen</option>
+            <option value="ollama" ${m.provider === "ollama" ? "selected" : ""}>ollama</option>
+            <option value="openrouter" ${m.provider === "openrouter" ? "selected" : ""}>openrouter</option>
+            <option value="ark" ${m.provider === "ark" ? "selected" : ""}>ark</option>
+          </select>
+        </div>
       </div>
-      <div class="config-field">
-        <label>Model</label>
-        <input type="text" class="config-input model-model" value="${this.escapeHtml(m.model || "")}" placeholder="gpt-4o" />
+      <div class="config-row">
+        <div class="config-field">
+          <label>Base URL</label>
+          <input type="text" class="config-input model-baseurl" value="${this.escapeHtml(m.base_url || "")}" placeholder="https://api.openai.com/v1" />
+        </div>
+        <div class="config-field">
+          <label>Model</label>
+          <input type="text" class="config-input model-model" value="${this.escapeHtml(m.model || "")}" placeholder="gpt-4o" />
+        </div>
       </div>
-    </div>
-    <div class="config-row">
-      <div class="config-field">
-        <label>API Key</label>
-        <input type="password" class="config-input model-apikey" value="${this.escapeHtml(m.api_key || "")}" placeholder="sk-..." autocomplete="new-password" />
-      </div>
-      <div class="config-field">
-        <label>Extra Headers</label>
-        <input type="text" class="config-input model-extraheaders" value="${this.escapeHtml(m.extra_headers || "")}" placeholder="Key1:Value1,Key2:Value2" />
+      <div class="config-row">
+        <div class="config-field">
+          <label>API Key</label>
+          <input type="password" class="config-input model-apikey" value="${this.escapeHtml(m.api_key || "")}" placeholder="sk-..." autocomplete="new-password" />
+        </div>
+        <div class="config-field">
+          <label>Extra Headers</label>
+          <input type="text" class="config-input model-extraheaders" value="${this.escapeHtml(m.extra_headers || "")}" placeholder="Key1:Value1,Key2:Value2" />
+        </div>
       </div>
     </div>
   `;
-    card.querySelector(".config-model-remove").addEventListener("click", () => card.remove());
+
+    // 折叠/展开
+    card.querySelector(".config-model-header").addEventListener("click", (e) => {
+        if (e.target.closest(".config-model-remove")) return;
+        card.classList.toggle("open");
+    });
+
+    // 删除
+    card.querySelector(".config-model-remove").addEventListener("click", (e) => {
+        e.stopPropagation();
+        card.remove();
+    });
+
+    // 实时更新摘要
+    const updateSummary = () => {
+        const name = card.querySelector(".model-name").value.trim() || "未命名模型";
+        const provider = card.querySelector(".model-provider").value;
+        const model = card.querySelector(".model-model").value.trim();
+        card.querySelector(".config-model-title").textContent = name;
+        card.querySelector(".config-model-info").textContent = provider + (model ? " / " + model : "");
+    };
+    card.querySelector(".model-name").addEventListener("input", updateSummary);
+    card.querySelector(".model-provider").addEventListener("change", updateSummary);
+    card.querySelector(".model-model").addEventListener("input", updateSummary);
+
     this.configModelList.appendChild(card);
 };
 
@@ -281,7 +341,13 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
     const overlay = document.createElement("div");
     overlay.className = "agent-edit-overlay";
 
+    const seenNames = new Set(["default"]);
     const modelOptions = (this._configData?.models || [])
+        .filter((m) => {
+            if (!m.name || seenNames.has(m.name)) return false;
+            seenNames.add(m.name);
+            return true;
+        })
         .map((m) => `<option value="${this.escapeHtml(m.name)}" ${agent.model === m.name ? "selected" : ""}>${this.escapeHtml(m.name)}</option>`)
         .join("");
 
@@ -321,7 +387,7 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
       <div class="config-field">
         <label>模型</label>
         <select class="config-select" id="ae-model">
-          <option value="default" ${agent.model === "default" || !agent.model ? "selected" : ""}>default</option>
+          <option value="default" ${agent.model === "default" || !agent.model ? "selected" : ""}>default (系统默认)</option>
           ${modelOptions}
         </select>
       </div>

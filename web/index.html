@@ -781,12 +781,14 @@
                 <div class="config-row">
                   <div class="config-field">
                     <label>模式</label>
-                    <select class="config-select" id="config-qq-mode">
-                      <option value="team">team</option>
-                      <option value="deep">deep</option>
-                      <option value="roundtable">roundtable</option>
-                      <option value="custom">custom</option>
-                    </select>
+                    <input type="text" class="config-input" id="config-qq-mode" list="channel-mode-options"
+                      placeholder="team" />
+                    <datalist id="channel-mode-options">
+                      <option value="team">团队模式</option>
+                      <option value="deep">深度模式</option>
+                      <option value="roundtable">圆桌讨论</option>
+                      <option value="custom">自定义会议</option>
+                    </datalist>
                   </div>
                   <div class="config-field" style="flex: 0;">
                     <label>沙盒</label>
@@ -820,12 +822,8 @@
                 </div>
                 <div class="config-field">
                   <label>模式</label>
-                  <select class="config-select" id="config-discord-mode">
-                    <option value="team">team</option>
-                    <option value="deep">deep</option>
-                    <option value="roundtable">roundtable</option>
-                    <option value="custom">custom</option>
-                  </select>
+                  <input type="text" class="config-input" id="config-discord-mode" list="channel-mode-options"
+                    placeholder="team" />
                 </div>
               </div>
             </div>
@@ -856,12 +854,8 @@
                       id="config-weixin-allowfrom" /></div>
                   <div class="config-field">
                     <label>模式</label>
-                    <select class="config-select" id="config-weixin-mode">
-                      <option value="team">team</option>
-                      <option value="deep">deep</option>
-                      <option value="roundtable">roundtable</option>
-                      <option value="custom">custom</option>
-                    </select>
+                    <input type="text" class="config-input" id="config-weixin-mode" list="channel-mode-options"
+                      placeholder="team" />
                   </div>
                   <div class="config-field">
                     <label>日志级别</label>

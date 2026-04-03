@@ -123,9 +123,9 @@
 
 /* New Session Button */
 .sidebar-top-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
     padding: 8px 12px;
     flex-shrink: 0;
 }
@@ -135,13 +135,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    padding: 8px 10px;
+    gap: 5px;
+    padding: 7px 6px;
     background: transparent;
-    border: 2px solid var(--border-color);
+    border: 1.5px solid var(--border-color);
     border-radius: 10px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 12px;
     font-family: var(--font-hand);
     color: var(--text-secondary);
     transition: all var(--transition);
@@ -149,16 +149,26 @@
 }
 
 .sidebar-action-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
     flex-shrink: 0;
 }
 
+.sidebar-action-btn span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .sidebar-action-btn.new-session-btn {
+    grid-column: 1 / -1;
     background: var(--accent-light);
     border-color: var(--accent-primary);
     color: var(--accent-primary);
     font-weight: 500;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-width: 2px;
 }
 
 .sidebar-action-btn.new-session-btn:hover {
@@ -176,10 +186,26 @@
     transform: translateY(-1px);
 }
 
+.sidebar-action-btn.schedule-manage-btn:hover {
+    background: var(--success-light);
+    border-color: var(--success);
+    color: var(--success);
+    box-shadow: var(--shadow-sketch);
+    transform: translateY(-1px);
+}
+
 .sidebar-action-btn.fm-open-btn:hover {
     background: var(--warning-light);
     border-color: var(--warning);
     color: var(--warning);
+    box-shadow: var(--shadow-sketch);
+    transform: translateY(-1px);
+}
+
+.sidebar-action-btn.config-open-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
     box-shadow: var(--shadow-sketch);
     transform: translateY(-1px);
 }
@@ -560,5 +586,26 @@
     .mode-btn svg {
         width: 12px;
         height: 12px;
+    }
+
+    /* 侧边栏按钮紧凑 */
+    .sidebar-top-actions {
+        gap: 4px;
+        padding: 6px 10px;
+    }
+
+    .sidebar-action-btn {
+        padding: 6px 4px;
+        font-size: 11px;
+    }
+
+    .sidebar-action-btn svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .sidebar-action-btn.new-session-btn {
+        padding: 7px 8px;
+        font-size: 12px;
     }
 }
