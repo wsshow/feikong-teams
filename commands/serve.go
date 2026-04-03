@@ -26,7 +26,7 @@ func serveCommand() *ucli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
-			if err := config.InitAndValidate(); err != nil {
+			if err := config.Init(); err != nil {
 				return err
 			}
 			return server.RunServe(server.ServeOptions{
