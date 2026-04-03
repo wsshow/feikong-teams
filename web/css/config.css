@@ -180,6 +180,7 @@
 .config-input {
     width: 100%;
     padding: 8px 12px;
+    height: 36px;
     border: 1.5px solid var(--border-color);
     border-radius: var(--radius);
     font-size: 13px;
@@ -216,6 +217,7 @@
 .config-select {
     width: 100%;
     padding: 8px 12px;
+    height: 36px;
     border: 1.5px solid var(--border-color);
     border-radius: var(--radius);
     font-size: 13px;
@@ -229,6 +231,130 @@
     outline: none;
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* ===== 自定义下拉选择器 ===== */
+.fk-select {
+    position: relative;
+    width: 100%;
+}
+
+.fk-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px 8px 12px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-family: var(--font-body);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    user-select: none;
+    height: 36px;
+}
+
+.fk-select-trigger:hover {
+    border-color: var(--accent-secondary);
+}
+
+.fk-select.open .fk-select-trigger,
+.fk-select-trigger:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.fk-select-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fk-select-arrow {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--accent-primary);
+    transition: transform 0.2s ease;
+    margin-left: 8px;
+    opacity: 0.8;
+}
+
+.fk-select-arrow svg {
+    width: 16px;
+    height: 16px;
+}
+
+.fk-select.open .fk-select-arrow {
+    transform: rotate(180deg);
+}
+
+.fk-select-dropdown {
+    position: fixed;
+    background: var(--bg-secondary);
+    border: 1.5px solid var(--border-sketch);
+    border-radius: var(--radius);
+    box-shadow: 2px 4px 0px rgba(60, 50, 30, 0.1), 0 8px 20px rgba(0, 0, 0, 0.08);
+    z-index: 10000;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px;
+    animation: fkSelectFadeIn 0.15s ease;
+}
+
+@keyframes fkSelectFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fk-select-option {
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.fk-select-option:hover {
+    background: var(--bg-tertiary);
+}
+
+.fk-select-option.active {
+    background: var(--accent-light);
+    color: var(--accent-primary);
+    font-weight: 500;
+}
+
+.fk-select-option.disabled {
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.fk-select-dropdown::-webkit-scrollbar {
+    width: 4px;
+}
+
+.fk-select-dropdown::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.fk-select-dropdown::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
 }
 
 /* ===== Toggle 开关 ===== */
@@ -847,6 +973,16 @@
     .config-select,
     .config-textarea {
         font-size: 16px;
+    }
+
+    .fk-select-trigger {
+        font-size: 16px;
+        padding: 10px 12px;
+    }
+
+    .fk-select-option {
+        padding: 10px 12px;
+        font-size: 14px;
     }
 
     .config-input.small {

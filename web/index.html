@@ -781,14 +781,12 @@
                 <div class="config-row">
                   <div class="config-field">
                     <label>模式</label>
-                    <input type="text" class="config-input" id="config-qq-mode" list="channel-mode-options"
-                      placeholder="team" />
-                    <datalist id="channel-mode-options">
+                    <select class="config-select channel-mode-select" id="config-qq-mode">
                       <option value="team">团队模式</option>
                       <option value="deep">深度模式</option>
                       <option value="roundtable">圆桌讨论</option>
                       <option value="custom">自定义会议</option>
-                    </datalist>
+                    </select>
                   </div>
                   <div class="config-field" style="flex: 0;">
                     <label>沙盒</label>
@@ -822,8 +820,12 @@
                 </div>
                 <div class="config-field">
                   <label>模式</label>
-                  <input type="text" class="config-input" id="config-discord-mode" list="channel-mode-options"
-                    placeholder="team" />
+                  <select class="config-select channel-mode-select" id="config-discord-mode">
+                    <option value="team">团队模式</option>
+                    <option value="deep">深度模式</option>
+                    <option value="roundtable">圆桌讨论</option>
+                    <option value="custom">自定义会议</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -854,8 +856,12 @@
                       id="config-weixin-allowfrom" /></div>
                   <div class="config-field">
                     <label>模式</label>
-                    <input type="text" class="config-input" id="config-weixin-mode" list="channel-mode-options"
-                      placeholder="team" />
+                    <select class="config-select channel-mode-select" id="config-weixin-mode">
+                      <option value="team">团队模式</option>
+                      <option value="deep">深度模式</option>
+                      <option value="roundtable">圆桌讨论</option>
+                      <option value="custom">自定义会议</option>
+                    </select>
                   </div>
                   <div class="config-field">
                     <label>日志级别</label>
@@ -880,6 +886,7 @@
     </div>
   </div>
 
+  <script src="/static/js/select.js"></script>
   <script src="/static/js/app.js"></script>
   <script src="/static/js/messages.js"></script>
   <script src="/static/js/history.js"></script>

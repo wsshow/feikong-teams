@@ -45,6 +45,9 @@ FKTeamsChat.prototype.initConfig = function () {
     this.configModal.addEventListener("click", (e) => {
         if (e.target === this.configModal) this.closeConfig();
     });
+
+    // 初始化静态下拉选择器为自定义组件
+    initAllCustomSelects(this.configModal);
 };
 
 FKTeamsChat.prototype.openConfig = async function () {
@@ -131,23 +134,41 @@ FKTeamsChat.prototype.fillConfigForm = function (cfg) {
 };
 
 FKTeamsChat.prototype.fillChannelForm = function (ch) {
-    // 动态填充自定义智能体名称到模式选项列表
-    const datalist = document.getElementById("channel-mode-options");
-    if (datalist) {
-        const builtinModes = new Set(["team", "deep", "roundtable", "custom"]);
-        // 移除之前动态添加的自定义选项
-        datalist.querySelectorAll("[data-custom]").forEach((el) => el.remove());
-        // 添加自定义智能体名称
-        (this._configData?.custom?.agents || []).forEach((a) => {
-            if (a.name && !builtinModes.has(a.name)) {
+    // 动态填充智能体名称到通道模式选择框
+    const builtinModes = new Set(["team", "deep", "roundtable", "custom"]);
+    document.querySelectorAll(".channel-mode-select").forEach((sel) => {
+        // 移除之前动态添加的选项
+        sel.querySelectorAll("[data-agent]").forEach((el) => el.remove());
+
+        // 添加系统内置智能体
+        const addedNames = new Set();
+        (this.agents || []).forEach((a) => {
+            const name = a.name || a;
+            if (name && !builtinModes.has(name) && !addedNames.has(name)) {
+                addedNames.add(name);
                 const opt = document.createElement("option");
-                opt.value = a.name;
-                opt.textContent = a.name + " (自定义智能体)";
-                opt.setAttribute("data-custom", "true");
-                datalist.appendChild(opt);
+                opt.value = name;
+                opt.textContent = name;
+                opt.setAttribute("data-agent", "true");
+                sel.appendChild(opt);
             }
         });
-    }
+
+        // 添加自定义智能体名称（去重）
+        (this._configData?.custom?.agents || []).forEach((a) => {
+            if (a.name && !builtinModes.has(a.name) && !addedNames.has(a.name)) {
+                addedNames.add(a.name);
+                const opt = document.createElement("option");
+                opt.value = a.name;
+                opt.textContent = a.name;
+                opt.setAttribute("data-agent", "true");
+                sel.appendChild(opt);
+            }
+        });
+
+        // 更新自定义组件
+        if (sel._customSelect) sel._customSelect.rebuild();
+    });
 
     // QQ
     document.getElementById("config-qq-enabled").checked = ch.qq?.enabled || false;
@@ -205,36 +226,36 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
           <input type="text" class="config-input model-name" value="${this.escapeHtml(m.name || "")}" placeholder="default" />
         </div>
         <div class="config-field">
-          <label>Provider</label>
+          <label>服务商</label>
           <select class="config-select model-provider">
-            <option value="openai" ${m.provider === "openai" ? "selected" : ""}>openai</option>
-            <option value="claude" ${m.provider === "claude" ? "selected" : ""}>claude</option>
-            <option value="deepseek" ${m.provider === "deepseek" ? "selected" : ""}>deepseek</option>
-            <option value="gemini" ${m.provider === "gemini" ? "selected" : ""}>gemini</option>
-            <option value="qwen" ${m.provider === "qwen" ? "selected" : ""}>qwen</option>
-            <option value="ollama" ${m.provider === "ollama" ? "selected" : ""}>ollama</option>
-            <option value="openrouter" ${m.provider === "openrouter" ? "selected" : ""}>openrouter</option>
-            <option value="ark" ${m.provider === "ark" ? "selected" : ""}>ark</option>
+            <option value="openai" ${m.provider === "openai" ? "selected" : ""}>OpenAI</option>
+            <option value="claude" ${m.provider === "claude" ? "selected" : ""}>Claude</option>
+            <option value="deepseek" ${m.provider === "deepseek" ? "selected" : ""}>DeepSeek</option>
+            <option value="gemini" ${m.provider === "gemini" ? "selected" : ""}>Gemini</option>
+            <option value="qwen" ${m.provider === "qwen" ? "selected" : ""}>通义千问</option>
+            <option value="ollama" ${m.provider === "ollama" ? "selected" : ""}>Ollama</option>
+            <option value="openrouter" ${m.provider === "openrouter" ? "selected" : ""}>OpenRouter</option>
+            <option value="ark" ${m.provider === "ark" ? "selected" : ""}>火山方舟</option>
           </select>
         </div>
       </div>
       <div class="config-row">
         <div class="config-field">
-          <label>Base URL</label>
+          <label>接口地址</label>
           <input type="text" class="config-input model-baseurl" value="${this.escapeHtml(m.base_url || "")}" placeholder="https://api.openai.com/v1" />
         </div>
         <div class="config-field">
-          <label>Model</label>
+          <label>模型</label>
           <input type="text" class="config-input model-model" value="${this.escapeHtml(m.model || "")}" placeholder="gpt-4o" />
         </div>
       </div>
       <div class="config-row">
         <div class="config-field">
-          <label>API Key</label>
+          <label>密钥</label>
           <input type="password" class="config-input model-apikey" value="${this.escapeHtml(m.api_key || "")}" placeholder="sk-..." autocomplete="new-password" />
         </div>
         <div class="config-field">
-          <label>Extra Headers</label>
+          <label>额外请求头</label>
           <input type="text" class="config-input model-extraheaders" value="${this.escapeHtml(m.extra_headers || "")}" placeholder="Key1:Value1,Key2:Value2" />
         </div>
       </div>
@@ -266,6 +287,9 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
     card.querySelector(".model-model").addEventListener("input", updateSummary);
 
     this.configModelList.appendChild(card);
+
+    // 转换 select 为自定义组件
+    card.querySelectorAll("select.config-select").forEach((sel) => createCustomSelect(sel));
 };
 
 // ===== 自定义智能体卡片 =====
@@ -407,6 +431,9 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
         const chip = e.target.closest(".config-tool-chip");
         if (chip) chip.classList.toggle("selected");
     });
+
+    // 转换 select 为自定义组件
+    overlay.querySelectorAll("select.config-select").forEach((sel) => createCustomSelect(sel));
 
     // 取消
     overlay.querySelector("#ae-cancel").addEventListener("click", () => {
