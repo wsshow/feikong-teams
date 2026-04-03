@@ -57,6 +57,11 @@ func RunWith(names []string) {
 }
 
 func runSelected(selectedOptions []string) {
+	// 尝试加载配置文件以获取代理等设置，配置文件不存在时使用默认值
+	if err := config.Init(); err != nil {
+		pterm.Warning.Printfln("加载配置文件失败（将使用默认设置）: %v", err)
+	}
+
 	pterm.Info.Printfln("即将初始化: %v", selectedOptions)
 
 	// 构建 name->initializer 映射用于查找
