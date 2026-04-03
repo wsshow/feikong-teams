@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"fkteams/common"
 
@@ -17,12 +18,12 @@ import (
 
 // ModelConfig 可复用的模型配置，通过 Name 引用
 type ModelConfig struct {
-	Name         string `toml:"name"`
-	Provider     string `toml:"provider,omitempty"`
-	BaseURL      string `toml:"base_url"`
-	APIKey       string `toml:"api_key"`
-	Model        string `toml:"model"`
-	ExtraHeaders string `toml:"extra_headers,omitempty"` // 格式: Key1:Value1,Key2:Value2
+	Name         string `toml:"name" json:"name"`
+	Provider     string `toml:"provider,omitempty" json:"provider"`
+	BaseURL      string `toml:"base_url" json:"base_url"`
+	APIKey       string `toml:"api_key" json:"api_key"`
+	Model        string `toml:"model" json:"model"`
+	ExtraHeaders string `toml:"extra_headers,omitempty" json:"extra_headers"` // 格式: Key1:Value1,Key2:Value2
 }
 
 // ParseExtraHeaders 解析额外请求头字符串为 map
@@ -44,79 +45,79 @@ func (m *ModelConfig) ParseExtraHeaders() map[string]string {
 
 // Proxy 网络代理配置
 type Proxy struct {
-	URL string `toml:"url"`
+	URL string `toml:"url" json:"url"`
 }
 
 // ==================== 记忆 ====================
 
 // Memory 长期记忆配置
 type Memory struct {
-	Enabled bool `toml:"enabled"`
+	Enabled bool `toml:"enabled" json:"enabled"`
 }
 
 // ==================== 服务器 ====================
 
 // ServerAuth Web 认证配置
 type ServerAuth struct {
-	Enabled  bool   `toml:"enabled"`
-	Username string `toml:"username"`
-	Password string `toml:"password"`
-	Secret   string `toml:"secret"`
+	Enabled  bool   `toml:"enabled" json:"enabled"`
+	Username string `toml:"username" json:"username"`
+	Password string `toml:"password" json:"password"`
+	Secret   string `toml:"secret" json:"secret"`
 }
 
 // Server 服务端配置
 type Server struct {
-	Host     string     `toml:"host"`
-	Port     int        `toml:"port"`
-	LogLevel string     `toml:"log_level"`
-	Auth     ServerAuth `toml:"auth"`
+	Host     string     `toml:"host" json:"host"`
+	Port     int        `toml:"port" json:"port"`
+	LogLevel string     `toml:"log_level" json:"log_level"`
+	Auth     ServerAuth `toml:"auth" json:"auth"`
 }
 
 // ==================== 智能体 ====================
 
 // SSHVisitor SSH 远程访问智能体配置
 type SSHVisitor struct {
-	Enabled  bool   `toml:"enabled"`
-	Host     string `toml:"host"`
-	Username string `toml:"username"`
-	Password string `toml:"password"`
+	Enabled  bool   `toml:"enabled" json:"enabled"`
+	Host     string `toml:"host" json:"host"`
+	Username string `toml:"username" json:"username"`
+	Password string `toml:"password" json:"password"`
 }
 
 // Agents 内置智能体开关
 type Agents struct {
-	Searcher   bool       `toml:"searcher"`
-	Assistant  bool       `toml:"assistant"`
-	Analyst    bool       `toml:"analyst"`
-	SSHVisitor SSHVisitor `toml:"ssh_visitor"`
+	Searcher   bool       `toml:"searcher" json:"searcher"`
+	Assistant  bool       `toml:"assistant" json:"assistant"`
+	Analyst    bool       `toml:"analyst" json:"analyst"`
+	SSHVisitor SSHVisitor `toml:"ssh_visitor" json:"ssh_visitor"`
 }
 
 // ==================== 通道 ====================
 
 // ChannelQQ QQ 机器人通道配置
 type ChannelQQ struct {
-	Enabled   bool   `toml:"enabled"`
-	AppID     string `toml:"app_id"`
-	AppSecret string `toml:"app_secret"`
-	Sandbox   bool   `toml:"sandbox"`
-	Mode      string `toml:"mode"` // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	AppID     string `toml:"app_id" json:"app_id"`
+	AppSecret string `toml:"app_secret" json:"app_secret"`
+	Sandbox   bool   `toml:"sandbox" json:"sandbox"`
+	Mode      string `toml:"mode" json:"mode"` // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
 }
 
 // ChannelDiscord Discord 机器人通道配置
 type ChannelDiscord struct {
-	Enabled   bool   `toml:"enabled"`
-	Token     string `toml:"token"`
-	AllowFrom string `toml:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
-	Mode      string `toml:"mode"`       // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	Token     string `toml:"token" json:"token"`
+	AllowFrom string `toml:"allow_from" json:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
+	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
 }
 
 // ChannelWeixin 微信机器人通道配置
 type ChannelWeixin struct {
-	Enabled   bool   `toml:"enabled"`
-	BaseURL   string `toml:"base_url"`   // 自定义 API 地址（可选）
-	CredPath  string `toml:"cred_path"`  // 凭证存储路径（可选）
-	LogLevel  string `toml:"log_level"`  // 日志级别: debug, info, warn, error, silent
-	AllowFrom string `toml:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
-	Mode      string `toml:"mode"`       // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	BaseURL   string `toml:"base_url" json:"base_url"`     // 自定义 API 地址（可选）
+	CredPath  string `toml:"cred_path" json:"cred_path"`   // 凭证存储路径（可选）
+	LogLevel  string `toml:"log_level" json:"log_level"`   // 日志级别: debug, info, warn, error, silent
+	AllowFrom string `toml:"allow_from" json:"allow_from"` // 允许的用户 ID，多个用逗号分隔（空则允许所有人）
+	Mode      string `toml:"mode" json:"mode"`             // 运行模式: team(默认), deep, roundtable, custom 或智能体名称
 }
 
 // ChannelEntry 统一通道配置条目
@@ -128,9 +129,9 @@ type ChannelEntry struct {
 
 // Channels 消息通道配置
 type Channels struct {
-	QQ      ChannelQQ      `toml:"qq"`
-	Discord ChannelDiscord `toml:"discord"`
-	Weixin  ChannelWeixin  `toml:"weixin"`
+	QQ      ChannelQQ      `toml:"qq" json:"qq"`
+	Discord ChannelDiscord `toml:"discord" json:"discord"`
+	Weixin  ChannelWeixin  `toml:"weixin" json:"weixin"`
 }
 
 // List 返回所有已启用的通道配置（供统一注册使用）
@@ -176,61 +177,61 @@ func (c Channels) List() []ChannelEntry {
 
 // TeamMember 圆桌讨论模式的成员配置
 type TeamMember struct {
-	Index int    `toml:"index"`
-	Name  string `toml:"name"`
-	Desc  string `toml:"desc"`
-	Model string `toml:"model"` // 引用 models 中的 name
+	Index int    `toml:"index" json:"index"`
+	Name  string `toml:"name" json:"name"`
+	Desc  string `toml:"desc" json:"desc"`
+	Model string `toml:"model" json:"model"` // 引用 models 中的 name
 }
 
 // Roundtable 圆桌讨论模式配置
 type Roundtable struct {
-	Members       []TeamMember `toml:"members"`
-	MaxIterations int          `toml:"max_iterations"`
+	Members       []TeamMember `toml:"members" json:"members"`
+	MaxIterations int          `toml:"max_iterations" json:"max_iterations"`
 }
 
 // ==================== 自定义模式 ====================
 
 // CustomAgent 自定义智能体配置
 type CustomAgent struct {
-	Name         string   `toml:"name"`
-	Desc         string   `toml:"desc"`
-	SystemPrompt string   `toml:"system_prompt"`
-	Model        string   `toml:"model"` // 引用 models 中的 name
-	Tools        []string `toml:"tools,omitempty"`
+	Name         string   `toml:"name" json:"name"`
+	Desc         string   `toml:"desc" json:"desc"`
+	SystemPrompt string   `toml:"system_prompt" json:"system_prompt"`
+	Model        string   `toml:"model" json:"model"` // 引用 models 中的 name
+	Tools        []string `toml:"tools,omitempty" json:"tools"`
 }
 
 // MCPServer MCP 服务配置，支持 HTTP 和 stdio 两种传输方式
 type MCPServer struct {
-	Name          string   `toml:"name"`
-	Desc          string   `toml:"desc"`
-	Enabled       bool     `toml:"enabled"`
-	Timeout       int      `toml:"timeout"`
-	URL           string   `toml:"url,omitempty"`
-	Command       string   `toml:"command,omitempty"`  // Command: "uvx" or "npx"
-	EnvVars       []string `toml:"env_vars,omitempty"` // Environment variables for stdio
-	Args          []string `toml:"args,omitempty"`     // Command arguments array
-	TransportType string   `toml:"transport_type"`
+	Name          string   `toml:"name" json:"name"`
+	Desc          string   `toml:"desc" json:"desc"`
+	Enabled       bool     `toml:"enabled" json:"enabled"`
+	Timeout       int      `toml:"timeout" json:"timeout"`
+	URL           string   `toml:"url,omitempty" json:"url"`
+	Command       string   `toml:"command,omitempty" json:"command"`   // Command: "uvx" or "npx"
+	EnvVars       []string `toml:"env_vars,omitempty" json:"env_vars"` // Environment variables for stdio
+	Args          []string `toml:"args,omitempty" json:"args"`         // Command arguments array
+	TransportType string   `toml:"transport_type" json:"transport_type"`
 }
 
 // Custom 自定义会议模式配置
 type Custom struct {
-	Moderator  CustomAgent   `toml:"moderator"`
-	Agents     []CustomAgent `toml:"agents"`
-	MCPServers []MCPServer   `toml:"mcp_servers"`
+	Moderator  CustomAgent   `toml:"moderator" json:"moderator"`
+	Agents     []CustomAgent `toml:"agents" json:"agents"`
+	MCPServers []MCPServer   `toml:"mcp_servers" json:"mcp_servers"`
 }
 
 // ==================== 全局配置 ====================
 
 // Config 应用全局配置
 type Config struct {
-	Models     []ModelConfig `toml:"models"`
-	Proxy      Proxy         `toml:"proxy"`
-	Memory     Memory        `toml:"memory"`
-	Server     Server        `toml:"server"`
-	Agents     Agents        `toml:"agents"`
-	Channels   Channels      `toml:"channels"`
-	Roundtable Roundtable    `toml:"roundtable"`
-	Custom     Custom        `toml:"custom"`
+	Models     []ModelConfig `toml:"models" json:"models"`
+	Proxy      Proxy         `toml:"proxy" json:"proxy"`
+	Memory     Memory        `toml:"memory" json:"memory"`
+	Server     Server        `toml:"server" json:"server"`
+	Agents     Agents        `toml:"agents" json:"agents"`
+	Channels   Channels      `toml:"channels" json:"channels"`
+	Roundtable Roundtable    `toml:"roundtable" json:"roundtable"`
+	Custom     Custom        `toml:"custom" json:"custom"`
 }
 
 // ResolveModel 通过名称查找模型配置，空名称返回 "default" 模型
@@ -262,25 +263,87 @@ func (c *Config) WorkspaceDir() string {
 // ==================== 全局单例 ====================
 
 var (
-	globalConfig     *Config
-	globalConfigOnce sync.Once
-	globalConfigErr  error
+	globalConfig atomic.Pointer[Config]
+	configOnce   sync.Once
+	configPath   string
+	configMu     sync.Mutex // 保护写操作
 )
+
+func configFilePath() string {
+	return filepath.Join(common.AppDir(), "config", "config.toml")
+}
 
 // Init 初始化全局配置（应在启动时调用一次）
 func Init() error {
-	globalConfigOnce.Do(func() {
-		globalConfig, globalConfigErr = load()
+	var initErr error
+	configOnce.Do(func() {
+		configPath = configFilePath()
+		cfg, err := load()
+		if err != nil {
+			initErr = err
+			return
+		}
+		globalConfig.Store(cfg)
 	})
-	return globalConfigErr
+	return initErr
 }
 
 // Get 返回全局配置（未初始化时返回默认值）
 func Get() *Config {
-	if globalConfig == nil {
-		return defaultConfig()
+	if cfg := globalConfig.Load(); cfg != nil {
+		return cfg
 	}
-	return globalConfig
+	return defaultConfig()
+}
+
+// Reload 重新从文件加载配置（热重载）
+func Reload() error {
+	cfg, err := load()
+	if err != nil {
+		return err
+	}
+	globalConfig.Store(cfg)
+	return nil
+}
+
+// Save 保存配置到文件（先写临时文件再 rename，防数据丢失）
+func Save(cfg *Config) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	filePath := configFilePath()
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	tmpFile := filePath + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp config: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, filePath); err != nil {
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to rename config file: %w", err)
+	}
+
+	// 更新内存中的配置
+	globalConfig.Store(cfg)
+	return nil
+}
+
+// GetToolNames 返回所有可用的工具名列表
+func GetToolNames() []string {
+	return []string{
+		"file", "git", "excel", "todo", "ssh",
+		"command", "scheduler", "search", "fetch", "doc",
+		"uv", "bun",
+	}
 }
 
 // EnsureDefaultModel 检查是否配置了默认模型，未配置时返回引导信息

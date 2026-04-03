@@ -58,6 +58,14 @@
           </svg>
           <span>文件管理</span>
         </button>
+        <button class="sidebar-action-btn config-open-btn" id="config-open-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>系统配置</span>
+        </button>
       </div>
 
       <div class="sidebar-sessions" id="sidebar-sessions">
@@ -567,6 +575,315 @@
         </div>
       </div>
     </div>
+
+    <!-- 系统配置弹窗 -->
+    <div class="config-modal" id="config-modal" style="display: none">
+      <div class="config-modal-content">
+        <div class="config-modal-header">
+          <h3>系统配置</h3>
+          <button class="config-modal-close" id="config-modal-close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="config-tabs" id="config-tabs">
+          <button class="config-tab-btn active" data-tab="models">模型</button>
+          <button class="config-tab-btn" data-tab="general">通用</button>
+          <button class="config-tab-btn" data-tab="agents">智能体</button>
+          <button class="config-tab-btn" data-tab="custom-agents">自定义智能体</button>
+          <button class="config-tab-btn" data-tab="channels">通道</button>
+        </div>
+        <div class="config-panels" id="config-panels">
+          <!-- 模型面板 -->
+          <div class="config-panel active" id="config-panel-models">
+            <div class="config-model-list" id="config-model-list"></div>
+            <button class="config-add-btn" id="config-add-model">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              添加模型
+            </button>
+          </div>
+          <!-- 通用面板 -->
+          <div class="config-panel" id="config-panel-general">
+            <div class="config-section">
+              <div class="config-section-title">代理设置</div>
+              <div class="config-field">
+                <label>代理 URL</label>
+                <input type="text" class="config-input" id="config-proxy-url" placeholder="http://127.0.0.1:7890" />
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">记忆设置</div>
+              <div class="config-toggle-row">
+                <div>
+                  <div class="config-toggle-label">长期记忆</div>
+                  <div class="config-toggle-desc">启用后智能体可以记住跨会话信息</div>
+                </div>
+                <label class="config-toggle">
+                  <input type="checkbox" id="config-memory-enabled" />
+                  <span class="config-toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">服务器配置</div>
+              <div class="config-row">
+                <div class="config-field">
+                  <label>主机地址</label>
+                  <input type="text" class="config-input" id="config-server-host" placeholder="127.0.0.1" />
+                </div>
+                <div class="config-field">
+                  <label>端口</label>
+                  <input type="number" class="config-input small" id="config-server-port" placeholder="23456" />
+                </div>
+                <div class="config-field">
+                  <label>日志级别</label>
+                  <select class="config-select" id="config-server-loglevel">
+                    <option value="debug">debug</option>
+                    <option value="info">info</option>
+                    <option value="warn">warn</option>
+                    <option value="error">error</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">认证配置</div>
+              <div class="config-toggle-row">
+                <div>
+                  <div class="config-toggle-label">启用认证</div>
+                  <div class="config-toggle-desc">需要登录用户名和密码</div>
+                </div>
+                <label class="config-toggle">
+                  <input type="checkbox" id="config-auth-enabled" />
+                  <span class="config-toggle-slider"></span>
+                </label>
+              </div>
+              <div id="config-auth-fields" style="display: none; margin-top: 12px;">
+                <div class="config-row">
+                  <div class="config-field">
+                    <label>用户名</label>
+                    <input type="text" class="config-input" id="config-auth-username" placeholder="admin"
+                      autocomplete="off" />
+                  </div>
+                  <div class="config-field">
+                    <label>密码</label>
+                    <input type="password" class="config-input" id="config-auth-password" placeholder="***"
+                      autocomplete="new-password" />
+                  </div>
+                </div>
+                <div class="config-field">
+                  <label>JWT Secret</label>
+                  <input type="password" class="config-input" id="config-auth-secret" placeholder="***"
+                    autocomplete="new-password" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 智能体面板 -->
+          <div class="config-panel" id="config-panel-agents">
+            <div class="config-section">
+              <div class="config-section-title">内置智能体开关</div>
+              <div class="config-toggle-row">
+                <div>
+                  <div class="config-toggle-label">搜索专家 (小搜)</div>
+                  <div class="config-toggle-desc">启用 DuckDuckGo 搜索和网页抓取能力</div>
+                </div>
+                <label class="config-toggle">
+                  <input type="checkbox" id="config-agent-searcher" />
+                  <span class="config-toggle-slider"></span>
+                </label>
+              </div>
+              <div class="config-toggle-row">
+                <div>
+                  <div class="config-toggle-label">个人助手 (小助)</div>
+                  <div class="config-toggle-desc">全能个人助手，命令执行、搜索、文件管理</div>
+                </div>
+                <label class="config-toggle">
+                  <input type="checkbox" id="config-agent-assistant" />
+                  <span class="config-toggle-slider"></span>
+                </label>
+              </div>
+              <div class="config-toggle-row">
+                <div>
+                  <div class="config-toggle-label">数据分析师 (小析)</div>
+                  <div class="config-toggle-desc">数据分析和 Excel 处理能力</div>
+                </div>
+                <label class="config-toggle">
+                  <input type="checkbox" id="config-agent-analyst" />
+                  <span class="config-toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">SSH 远程访问</div>
+              <div class="config-toggle-row">
+                <div>
+                  <div class="config-toggle-label">SSH 小访</div>
+                  <div class="config-toggle-desc">启用远程服务器访问能力</div>
+                </div>
+                <label class="config-toggle">
+                  <input type="checkbox" id="config-ssh-enabled" />
+                  <span class="config-toggle-slider"></span>
+                </label>
+              </div>
+              <div id="config-ssh-fields" style="display: none; margin-top: 12px;">
+                <div class="config-row">
+                  <div class="config-field">
+                    <label>主机地址</label>
+                    <input type="text" class="config-input" id="config-ssh-host" placeholder="192.168.1.100:22" />
+                  </div>
+                  <div class="config-field">
+                    <label>用户名</label>
+                    <input type="text" class="config-input" id="config-ssh-username" placeholder="root" />
+                  </div>
+                  <div class="config-field">
+                    <label>密码</label>
+                    <input type="password" class="config-input" id="config-ssh-password" placeholder="***"
+                      autocomplete="new-password" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 自定义智能体面板 -->
+          <div class="config-panel" id="config-panel-custom-agents">
+            <div class="agent-cards-grid" id="agent-cards-grid"></div>
+          </div>
+          <!-- 通道面板 -->
+          <div class="config-panel" id="config-panel-channels">
+            <div class="config-collapse" id="config-channel-qq">
+              <div class="config-collapse-header" onclick="this.parentElement.classList.toggle('open')">
+                <span>QQ 机器人</span>
+                <svg class="config-collapse-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+              <div class="config-collapse-body">
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">启用</div>
+                  </div>
+                  <label class="config-toggle"><input type="checkbox" id="config-qq-enabled" /><span
+                      class="config-toggle-slider"></span></label>
+                </div>
+                <div class="config-row">
+                  <div class="config-field"><label>App ID</label><input type="text" class="config-input"
+                      id="config-qq-appid" /></div>
+                  <div class="config-field"><label>App Secret</label><input type="password" class="config-input"
+                      id="config-qq-appsecret" autocomplete="new-password" /></div>
+                </div>
+                <div class="config-row">
+                  <div class="config-field">
+                    <label>模式</label>
+                    <select class="config-select" id="config-qq-mode">
+                      <option value="team">team</option>
+                      <option value="deep">deep</option>
+                      <option value="roundtable">roundtable</option>
+                      <option value="custom">custom</option>
+                    </select>
+                  </div>
+                  <div class="config-field" style="flex: 0;">
+                    <label>沙盒</label>
+                    <label class="config-toggle" style="margin-top:4px"><input type="checkbox"
+                        id="config-qq-sandbox" /><span class="config-toggle-slider"></span></label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="config-collapse" id="config-channel-discord">
+              <div class="config-collapse-header" onclick="this.parentElement.classList.toggle('open')">
+                <span>Discord 机器人</span>
+                <svg class="config-collapse-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+              <div class="config-collapse-body">
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">启用</div>
+                  </div>
+                  <label class="config-toggle"><input type="checkbox" id="config-discord-enabled" /><span
+                      class="config-toggle-slider"></span></label>
+                </div>
+                <div class="config-row">
+                  <div class="config-field"><label>Token</label><input type="password" class="config-input"
+                      id="config-discord-token" autocomplete="new-password" /></div>
+                  <div class="config-field"><label>允许用户 (逗号分隔)</label><input type="text" class="config-input"
+                      id="config-discord-allowfrom" /></div>
+                </div>
+                <div class="config-field">
+                  <label>模式</label>
+                  <select class="config-select" id="config-discord-mode">
+                    <option value="team">team</option>
+                    <option value="deep">deep</option>
+                    <option value="roundtable">roundtable</option>
+                    <option value="custom">custom</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="config-collapse" id="config-channel-weixin">
+              <div class="config-collapse-header" onclick="this.parentElement.classList.toggle('open')">
+                <span>微信机器人</span>
+                <svg class="config-collapse-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+              <div class="config-collapse-body">
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">启用</div>
+                  </div>
+                  <label class="config-toggle"><input type="checkbox" id="config-weixin-enabled" /><span
+                      class="config-toggle-slider"></span></label>
+                </div>
+                <div class="config-row">
+                  <div class="config-field"><label>API 地址</label><input type="text" class="config-input"
+                      id="config-weixin-baseurl" /></div>
+                  <div class="config-field"><label>凭证路径</label><input type="text" class="config-input"
+                      id="config-weixin-credpath" /></div>
+                </div>
+                <div class="config-row">
+                  <div class="config-field"><label>允许用户</label><input type="text" class="config-input"
+                      id="config-weixin-allowfrom" /></div>
+                  <div class="config-field">
+                    <label>模式</label>
+                    <select class="config-select" id="config-weixin-mode">
+                      <option value="team">team</option>
+                      <option value="deep">deep</option>
+                      <option value="roundtable">roundtable</option>
+                      <option value="custom">custom</option>
+                    </select>
+                  </div>
+                  <div class="config-field">
+                    <label>日志级别</label>
+                    <select class="config-select" id="config-weixin-loglevel">
+                      <option value="debug">debug</option>
+                      <option value="info">info</option>
+                      <option value="warn">warn</option>
+                      <option value="error">error</option>
+                      <option value="silent">silent</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="config-modal-footer">
+          <button class="config-btn config-btn-cancel" id="config-cancel-btn">取消</button>
+          <button class="config-btn config-btn-save" id="config-save-btn">保存配置</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/js/app.js"></script>
@@ -577,6 +894,7 @@
   <script src="/static/js/files.js"></script>
   <script src="/static/js/filemanager.js"></script>
   <script src="/static/js/schedule.js"></script>
+  <script src="/static/js/config.js"></script>
 </body>
 
 </html>

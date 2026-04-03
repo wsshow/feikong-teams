@@ -1,0 +1,758 @@
+/* config.css - 配置页面样式 */
+
+/* ===== 配置弹窗 ===== */
+.config-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(44, 44, 44, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: configFadeIn 0.2s ease;
+}
+
+@keyframes configFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.config-modal-content {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 820px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 4px 6px 0px rgba(60, 50, 30, 0.1), 0 8px 32px rgba(0, 0, 0, 0.12);
+    border: 1.5px solid var(--border-sketch);
+    animation: configSlideUp 0.25s ease;
+}
+
+@keyframes configSlideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* ===== 头部 ===== */
+.config-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 0;
+    flex-shrink: 0;
+}
+
+.config-modal-header h3 {
+    font-family: var(--font-hand);
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.config-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    color: var(--text-tertiary);
+    transition: all var(--transition);
+}
+
+.config-modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.config-modal-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* ===== Tab 导航 ===== */
+.config-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 16px 24px 0;
+    border-bottom: 1.5px dashed var(--border-color);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 0;
+}
+
+.config-tab-btn {
+    background: none;
+    border: none;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-family: var(--font-body);
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 8px 8px 0 0;
+    transition: all var(--transition);
+    white-space: nowrap;
+    position: relative;
+}
+
+.config-tab-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.config-tab-btn.active {
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.config-tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1.5px;
+    left: 20%;
+    right: 20%;
+    height: 2.5px;
+    background: var(--accent-primary);
+    border-radius: 2px;
+}
+
+/* ===== Tab 面板 ===== */
+.config-panels {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px 24px;
+    min-height: 0;
+}
+
+.config-panel {
+    display: none;
+}
+
+.config-panel.active {
+    display: block;
+}
+
+/* ===== 表单元素 ===== */
+.config-section {
+    margin-bottom: 24px;
+}
+
+.config-section-title {
+    font-family: var(--font-hand);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.config-field {
+    margin-bottom: 14px;
+}
+
+.config-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.config-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-family: var(--font-body);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.config-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.config-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.config-input.small {
+    width: 120px;
+}
+
+.config-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+}
+
+.config-row .config-field {
+    flex: 1;
+}
+
+.config-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-family: var(--font-body);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.config-select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* ===== Toggle 开关 ===== */
+.config-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.config-toggle-row:last-child {
+    border-bottom: none;
+}
+
+.config-toggle-label {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.config-toggle-desc {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.config-toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.config-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.config-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--border-color);
+    border-radius: 24px;
+    transition: all 0.3s ease;
+    border: 1.5px solid var(--border-sketch);
+}
+
+.config-toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 2px;
+    bottom: 1.5px;
+    background: var(--bg-secondary);
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.config-toggle input:checked+.config-toggle-slider {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.config-toggle input:checked+.config-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+/* ===== 模型卡片 ===== */
+.config-model-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.config-model-card {
+    background: var(--bg-primary);
+    border: 1.5px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    transition: all var(--transition);
+}
+
+.config-model-card:hover {
+    border-color: var(--accent-secondary);
+    box-shadow: var(--shadow-sketch);
+}
+
+.config-model-card .config-row {
+    flex-wrap: wrap;
+}
+
+.config-model-remove {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    padding: 4px;
+    border-radius: 6px;
+    transition: all var(--transition);
+}
+
+.config-model-remove:hover {
+    color: var(--error);
+    background: var(--error-light);
+}
+
+.config-model-remove svg {
+    width: 16px;
+    height: 16px;
+}
+
+.config-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 12px;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.config-add-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: var(--accent-light);
+}
+
+.config-add-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* ===== 自定义智能体卡片 ===== */
+.agent-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.agent-card {
+    background: var(--bg-secondary);
+    border: 1.5px solid var(--border-color);
+    border-radius: 14px;
+    padding: 16px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    overflow: hidden;
+}
+
+.agent-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--accent-primary);
+    border-radius: 14px 0 0 14px;
+}
+
+.agent-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 3px 5px 0px rgba(60, 50, 30, 0.1), 0 8px 20px rgba(0, 0, 0, 0.06);
+    border-color: var(--accent-secondary);
+}
+
+.agent-card-name {
+    font-family: var(--font-hand);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    padding-left: 8px;
+}
+
+.agent-card-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    padding-left: 8px;
+    display: -webkit-box;
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.agent-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding-left: 8px;
+}
+
+.agent-card-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.agent-card-tag.model-tag {
+    background: var(--accent-light);
+    color: var(--accent-primary);
+}
+
+.agent-card-tag.tool-tag {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.agent-card-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity var(--transition);
+}
+
+.agent-card:hover .agent-card-actions {
+    opacity: 1;
+}
+
+.agent-card-action-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    color: var(--text-tertiary);
+    transition: all var(--transition);
+}
+
+.agent-card-action-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.agent-card-action-btn.delete:hover {
+    color: var(--error);
+    background: var(--error-light);
+}
+
+.agent-card-action-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* 新增卡片 */
+.agent-card-add {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    border: 2px dashed var(--border-color);
+    border-radius: 14px;
+    background: none;
+    cursor: pointer;
+    transition: all var(--transition);
+    color: var(--text-tertiary);
+}
+
+.agent-card-add:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: var(--accent-light);
+    transform: translateY(-2px);
+}
+
+.agent-card-add svg {
+    width: 28px;
+    height: 28px;
+    margin-bottom: 6px;
+}
+
+.agent-card-add span {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* ===== 智能体编辑弹窗 ===== */
+.agent-edit-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(44, 44, 44, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agent-edit-panel {
+    background: var(--bg-secondary);
+    border-radius: 14px;
+    width: 90%;
+    max-width: 540px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 24px;
+    box-shadow: 4px 6px 0px rgba(60, 50, 30, 0.1);
+    border: 1.5px solid var(--border-sketch);
+}
+
+.agent-edit-title {
+    font-family: var(--font-hand);
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-primary);
+}
+
+.config-textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-family: var(--font-body);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 80px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.config-textarea:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* 工具多选 */
+.config-tools-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius);
+    background: var(--bg-primary);
+    min-height: 40px;
+}
+
+.config-tool-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--transition);
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.config-tool-chip:hover {
+    border-color: var(--accent-secondary);
+}
+
+.config-tool-chip.selected {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+/* ===== 底部按钮 ===== */
+.config-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1.5px dashed var(--border-color);
+    flex-shrink: 0;
+}
+
+.config-btn {
+    padding: 8px 20px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all var(--transition);
+    border: 1.5px solid var(--border-color);
+}
+
+.config-btn-cancel {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+
+.config-btn-cancel:hover {
+    background: var(--bg-hover);
+}
+
+.config-btn-save {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+.config-btn-save:hover {
+    background: var(--accent-secondary);
+    border-color: var(--accent-secondary);
+}
+
+.config-btn-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.agent-edit-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* ===== 通道折叠面板 ===== */
+.config-collapse {
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.config-collapse-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    user-select: none;
+    transition: background var(--transition);
+}
+
+.config-collapse-header:hover {
+    background: var(--bg-hover);
+}
+
+.config-collapse-arrow {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.2s ease;
+    color: var(--text-tertiary);
+}
+
+.config-collapse.open .config-collapse-arrow {
+    transform: rotate(180deg);
+}
+
+.config-collapse-body {
+    display: none;
+    padding: 14px;
+}
+
+.config-collapse.open .config-collapse-body {
+    display: block;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 768px) {
+    .config-modal-content {
+        width: 96%;
+        max-height: 92vh;
+        border-radius: 12px;
+    }
+
+    .config-tabs {
+        padding: 12px 16px 0;
+    }
+
+    .config-tab-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    .config-panels {
+        padding: 14px 16px;
+    }
+
+    .agent-cards-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .config-row {
+        flex-direction: column;
+    }
+
+    .config-modal-footer {
+        padding: 12px 16px;
+    }
+}

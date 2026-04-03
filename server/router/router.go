@@ -90,6 +90,14 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			memory.DELETE("", handler.DeleteMemoryHandler())
 			memory.POST("/clear", handler.ClearMemoryHandler())
 		}
+
+		// 配置管理 API
+		configGroup := apiV1.Group("/config")
+		{
+			configGroup.GET("", handler.GetConfigHandler())
+			configGroup.PUT("", handler.UpdateConfigHandler())
+			configGroup.GET("/tools", handler.GetToolNamesHandler())
+		}
 	}
 }
 

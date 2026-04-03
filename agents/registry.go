@@ -29,66 +29,72 @@ var (
 	// Registry 智能体注册表
 	Registry     []AgentInfo
 	registryOnce sync.Once
+	registryMu   sync.RWMutex
 )
 
 // initRegistry 初始化注册表（延迟加载）
 func initRegistry() {
 	registryOnce.Do(func() {
-		ctx := context.Background()
-		cfg := config.Get()
-
-		type agentCreator struct {
-			name    string
-			creator func(ctx context.Context) (adk.Agent, error)
-		}
-
-		// 基础智能体（始终可用）
-		creators := []agentCreator{
-			{"cmder", cmder.NewAgent},
-			{"coder", coder.NewAgent},
-			{"storyteller", storyteller.NewAgent},
-			{"summarizer", summarizer.NewAgent},
-		}
-
-		// 可选智能体（根据配置文件启用）
-		if cfg.Agents.Searcher {
-			creators = append(creators, agentCreator{"searcher", searcher.NewAgent})
-		}
-
-		if cfg.Agents.Analyst {
-			creators = append(creators, agentCreator{"analyst", analyst.NewAgent})
-		}
-
-		if cfg.Agents.SSHVisitor.Enabled {
-			creators = append(creators, agentCreator{"visitor", visitor.NewAgent})
-		}
-
-		if cfg.Agents.Assistant {
-			creators = append(creators, agentCreator{"assistant", assistantagent.NewAgent})
-		}
-
-		// 动态构建注册表
-		Registry = make([]AgentInfo, 0, len(creators))
-		for _, c := range creators {
-			agent, err := c.creator(ctx)
-			if err != nil {
-				pterm.Warning.Printfln("初始化智能体 %s 失败: %v", c.name, err)
-				continue
-			}
-			Registry = append(Registry, AgentInfo{
-				Name:        agent.Name(ctx),
-				Description: agent.Description(ctx),
-				Creator: func(cachedAgent adk.Agent) func(ctx context.Context) adk.Agent {
-					return func(ctx context.Context) adk.Agent {
-						return cachedAgent
-					}
-				}(agent),
-			})
-		}
-
-		// 加载配置文件中的自定义智能体
-		loadCustomAgents(ctx)
+		buildRegistry()
 	})
+}
+
+// buildRegistry 构建智能体注册表
+func buildRegistry() {
+	ctx := context.Background()
+	cfg := config.Get()
+
+	type agentCreator struct {
+		name    string
+		creator func(ctx context.Context) (adk.Agent, error)
+	}
+
+	// 基础智能体（始终可用）
+	creators := []agentCreator{
+		{"cmder", cmder.NewAgent},
+		{"coder", coder.NewAgent},
+		{"storyteller", storyteller.NewAgent},
+		{"summarizer", summarizer.NewAgent},
+	}
+
+	// 可选智能体（根据配置文件启用）
+	if cfg.Agents.Searcher {
+		creators = append(creators, agentCreator{"searcher", searcher.NewAgent})
+	}
+
+	if cfg.Agents.Analyst {
+		creators = append(creators, agentCreator{"analyst", analyst.NewAgent})
+	}
+
+	if cfg.Agents.SSHVisitor.Enabled {
+		creators = append(creators, agentCreator{"visitor", visitor.NewAgent})
+	}
+
+	if cfg.Agents.Assistant {
+		creators = append(creators, agentCreator{"assistant", assistantagent.NewAgent})
+	}
+
+	// 动态构建注册表
+	Registry = make([]AgentInfo, 0, len(creators))
+	for _, c := range creators {
+		agent, err := c.creator(ctx)
+		if err != nil {
+			pterm.Warning.Printfln("初始化智能体 %s 失败: %v", c.name, err)
+			continue
+		}
+		Registry = append(Registry, AgentInfo{
+			Name:        agent.Name(ctx),
+			Description: agent.Description(ctx),
+			Creator: func(cachedAgent adk.Agent) func(ctx context.Context) adk.Agent {
+				return func(ctx context.Context) adk.Agent {
+					return cachedAgent
+				}
+			}(agent),
+		})
+	}
+
+	// 加载配置文件中的自定义智能体
+	loadCustomAgents(ctx)
 }
 
 // loadCustomAgents 从配置文件加载自定义智能体并添加到注册表
@@ -151,12 +157,16 @@ func loadCustomAgents(ctx context.Context) {
 // GetRegistry 获取智能体注册表
 func GetRegistry() []AgentInfo {
 	initRegistry()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	return Registry
 }
 
 // GetAgentByName 根据名字获取智能体
 func GetAgentByName(name string) *AgentInfo {
 	initRegistry()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	for i := range Registry {
 		if Registry[i].Name == name {
 			return &Registry[i]
@@ -168,6 +178,8 @@ func GetAgentByName(name string) *AgentInfo {
 // GetTeamAgents 获取团队模式的智能体列表
 func GetTeamAgents(ctx context.Context) []adk.Agent {
 	initRegistry()
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 
 	var subAgents []adk.Agent
 	for _, agentInfo := range Registry {
@@ -175,4 +187,11 @@ func GetTeamAgents(ctx context.Context) []adk.Agent {
 	}
 
 	return subAgents
+}
+
+// ReloadRegistry 重新构建智能体注册表（配置变更后调用）
+func ReloadRegistry() {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	buildRegistry()
 }
