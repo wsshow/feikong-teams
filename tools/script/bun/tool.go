@@ -16,7 +16,7 @@ func (bt *BunTools) GetTools() ([]tool.BaseTool, error) {
 	var tools []tool.BaseTool
 
 	// 环境初始化工具
-	initEnvTool, err := utils.InferTool("bun_init_env", "初始化 JavaScript 项目环境。使用 bun 创建项目配置文件 package.json。", bt.InitEnv)
+	initEnvTool, err := utils.InferTool("bun_init_env", "初始化 JavaScript 项目环境。使用 bun 创建项目配置文件 package.json。如果 bun 尚未安装，可以通过运行 `fkteams init --env bun` 命令来安装和初始化 bun 环境。", bt.InitEnv)
 	if err != nil {
 		return nil, err
 	}

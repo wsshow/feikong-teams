@@ -16,7 +16,7 @@ func (ut *UVTools) GetTools() ([]tool.BaseTool, error) {
 	var tools []tool.BaseTool
 
 	// 环境初始化工具
-	initEnvTool, err := utils.InferTool("uv_init_env", "初始化 Python 虚拟环境。使用 uv 创建隔离的 Python 环境，可以指定 Python 版本。", ut.InitEnv)
+	initEnvTool, err := utils.InferTool("uv_init_env", "初始化 Python 虚拟环境。使用 uv 创建隔离的 Python 环境，可以指定 Python 版本。如果 uv 尚未安装，可以通过运行 `fkteams init --env uv` 命令来安装和初始化 uv 环境。", ut.InitEnv)
 	if err != nil {
 		return nil, err
 	}
