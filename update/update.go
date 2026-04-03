@@ -112,7 +112,7 @@ func (up Updater) Apply(rel *Release,
 	if proxyStr != "" {
 		proxyURL, err := url.Parse(proxyStr)
 		if err != nil {
-			return fmt.Errorf("invalid FEIKONG_PROXY_URL: %w", err)
+			return fmt.Errorf("invalid proxy URL %q: %w", proxyStr, err)
 		}
 		proxyFunc = http.ProxyURL(proxyURL)
 	} else {
@@ -131,7 +131,11 @@ func (up Updater) Apply(rel *Release,
 	}
 
 	// 创建下载器
-	downloader := dl.NewDownloader(downloadURL, dl.WithFileName(dstFilename), dl.WithHTTPClient(httpClient))
+	downloader := dl.NewDownloader(downloadURL,
+		dl.WithFileName(dstFilename),
+		dl.WithHTTPClient(httpClient),
+		dl.WithBaseDir(tmpDir),
+	)
 
 	// 设置进度回调
 	var lastProgress float64
