@@ -569,6 +569,7 @@ FKTeamsChat.prototype.saveConfig = async function () {
     this.configSaveBtn.textContent = "保存中...";
 
     try {
+        const oldCfg = this._configData;
         const cfg = this.collectConfigData();
         const resp = await this.fetchWithAuth("/api/fkteams/config", {
             method: "PUT",
@@ -593,12 +594,68 @@ FKTeamsChat.prototype.saveConfig = async function () {
             return;
         }
 
+        // 检测是否有需要重启才能生效的配置变更
+        const needsRestart = this._detectRestartNeeded(oldCfg, cfg);
+
         this.closeConfig();
-        this.showNotification("配置已保存并生效", "success");
+        if (needsRestart) {
+            this._showRestartHint();
+        } else {
+            this.showNotification("配置已保存并生效", "success");
+        }
     } catch (err) {
         alert("保存配置失败: " + err.message);
     } finally {
         this.configSaveBtn.disabled = false;
         this.configSaveBtn.textContent = "保存配置";
     }
+};
+
+// 检测是否有需要重启服务才能生效的配置变更（服务器、通道）
+FKTeamsChat.prototype._detectRestartNeeded = function (oldCfg, newCfg) {
+    if (!oldCfg) return false;
+    // 服务器 host/port/log_level 变更
+    const os = oldCfg.server || {}, ns = newCfg.server || {};
+    if (os.host !== ns.host || os.port !== ns.port || os.log_level !== ns.log_level) return true;
+    // 通道配置变更
+    if (JSON.stringify(oldCfg.channels || {}) !== JSON.stringify(newCfg.channels || {})) return true;
+    return false;
+};
+
+// 弹窗提示用户需要手动重启服务
+FKTeamsChat.prototype._showRestartHint = function () {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(40,35,25,0.4);backdrop-filter:blur(4px);z-index:1200;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.15s ease;";
+
+    const box = document.createElement("div");
+    box.style.cssText = "background:var(--bg-secondary);border:2px solid var(--border-sketch);border-radius:16px;width:90%;max-width:420px;box-shadow:4px 6px 0px rgba(60,50,30,0.12);animation:sketchSlideUp 0.25s ease;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "padding:16px 20px;border-bottom:2px dashed var(--border-color);";
+    header.innerHTML = '<h3 style="margin:0;font-family:var(--font-hand);font-size:22px;font-weight:600;color:var(--warning,#f0a500);">提示</h3>';
+
+    const body = document.createElement("div");
+    body.style.cssText = "padding:20px;text-align:center;line-height:1.6;font-size:15px;color:var(--text-primary);";
+    body.textContent = "配置已保存。服务器或通道相关配置的变更需要重启服务后才能生效。";
+
+    const footer = document.createElement("div");
+    footer.style.cssText = "display:flex;justify-content:flex-end;padding:16px 20px;border-top:2px dashed var(--border-color);";
+
+    const okBtn = document.createElement("button");
+    okBtn.textContent = "我知道了";
+    okBtn.style.cssText = "padding:8px 20px;border:2px solid var(--accent-primary);border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;background:var(--accent-primary);color:white;transition:all var(--transition);";
+    okBtn.addEventListener("mouseenter", () => { okBtn.style.opacity = "0.85"; });
+    okBtn.addEventListener("mouseleave", () => { okBtn.style.opacity = "1"; });
+
+    const close = () => {
+        overlay.style.animation = "fadeIn 0.15s ease reverse";
+        setTimeout(() => overlay.remove(), 150);
+    };
+    okBtn.addEventListener("click", close);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+    footer.appendChild(okBtn);
+    box.append(header, body, footer);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
 };

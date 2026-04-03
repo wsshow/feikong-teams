@@ -503,7 +503,7 @@ class FKTeamsChat {
     // 创建通知元素
     const notification = document.createElement("div");
     const bgColor =
-      type === "success" ? "#66bb6a" : type === "error" ? "#ef5350" : "#42a5f5";
+      type === "success" ? "#66bb6a" : type === "error" ? "#ef5350" : type === "warning" ? "#ffa726" : "#42a5f5";
 
     // 计算通知的位置（堆叠显示）
     const topOffset = 20 + this.activeNotifications.length * 70;
