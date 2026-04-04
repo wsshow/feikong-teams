@@ -3,6 +3,7 @@ package handler
 import (
 	"fkteams/agents"
 	"fkteams/config"
+	"fkteams/tools"
 	"net/http"
 	"strings"
 
@@ -121,6 +122,6 @@ func UpdateConfigHandler() gin.HandlerFunc {
 // GetToolNamesHandler 获取可用工具名列表
 func GetToolNamesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		OK(c, config.GetToolNames())
+		OK(c, tools.GetAllToolNames())
 	}
 }

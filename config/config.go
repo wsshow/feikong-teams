@@ -337,15 +337,6 @@ func Save(cfg *Config) error {
 	return nil
 }
 
-// GetToolNames 返回所有可用的工具名列表
-func GetToolNames() []string {
-	return []string{
-		"file", "git", "excel", "todo", "ssh",
-		"command", "scheduler", "search", "fetch", "doc",
-		"uv", "bun",
-	}
-}
-
 // EnsureDefaultModel 检查是否配置了默认模型，未配置时返回引导信息
 func ensureDefaultModel() error {
 	cfg := Get()

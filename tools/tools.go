@@ -130,3 +130,16 @@ func BuiltinToolNames() []string {
 		"uv", "bun",
 	}
 }
+
+// GetAllToolNames 返回所有可用的工具名列表（内置 + MCP）
+func GetAllToolNames() []string {
+	names := make([]string, 0, len(BuiltinToolNames()))
+	names = append(names, BuiltinToolNames()...)
+	mcpGroups, err := mcp.GetAllToolGroups()
+	if err == nil {
+		for name := range mcpGroups {
+			names = append(names, "mcp-"+name)
+		}
+	}
+	return names
+}
