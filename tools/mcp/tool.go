@@ -60,3 +60,8 @@ func GetAllToolGroups() (DictToolGroup, error) {
 	}
 	return cachedTools, nil
 }
+
+// ClearCache 清除 MCP 工具缓存，下次调用时重新连接
+func ClearCache() {
+	cachedTools = nil
+}

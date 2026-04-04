@@ -1,901 +1,1372 @@
 <!doctype html>
 <html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>非空小队</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+  </head>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>非空小队</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
-</head>
+  <body>
+    <div class="app-container">
+      <button class="sidebar-toggle" id="sidebar-toggle">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      </button>
 
-<body>
-  <div class="app-container">
-    <button class="sidebar-toggle" id="sidebar-toggle">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M15 18l-6-6 6-6" />
-      </svg>
-    </button>
-
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 6v6l4 2" />
-          </svg>
-          <span class="logo-text">非空小队</span>
-        </div>
-      </div>
-
-      <div class="sidebar-top-actions">
-        <button class="sidebar-action-btn new-session-btn" id="new-session-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          <span>新建会话</span>
-        </button>
-        <button class="sidebar-action-btn history-manage-btn" id="history-manage-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
-          <span>管理历史</span>
-        </button>
-        <button class="sidebar-action-btn schedule-manage-btn" id="schedule-manage-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-          <span>定时任务</span>
-        </button>
-        <button class="sidebar-action-btn fm-open-btn" id="fm-open-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          </svg>
-          <span>文件管理</span>
-        </button>
-        <button class="sidebar-action-btn config-open-btn" id="config-open-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3" />
-            <path
-              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-          <span>系统配置</span>
-        </button>
-      </div>
-
-      <div class="sidebar-sessions" id="sidebar-sessions">
-        <div class="sidebar-session-list" id="sidebar-session-list">
-          <div class="sidebar-session-empty">暂无会话记录</div>
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <div class="mode-selector">
-          <label class="mode-label">运行模式</label>
-          <div class="mode-buttons">
-            <button class="mode-btn active" data-mode="supervisor">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              <span>团队模式</span>
-            </button>
-            <button class="mode-btn" data-mode="roundtable">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              <span>圆桌讨论</span>
-            </button>
-            <button class="mode-btn" data-mode="custom">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                <path d="M15 5l3 3" />
-              </svg>
-              <span>自定义会议</span>
-            </button>
-            <button class="mode-btn deep-mode-btn" data-mode="deep">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3" />
-                <path
-                  d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
-              </svg>
-              <span>深度模式</span>
-            </button>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <svg
+              class="logo-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            <span class="logo-text">非空小队</span>
           </div>
         </div>
 
-        <div class="status-section">
-          <div class="status-indicator" id="status-indicator">
-            <span class="status-dot disconnected"></span>
-            <span class="status-text">服务未连接</span>
-            <span class="version-tag" id="version-tag"></span>
+        <div class="sidebar-top-actions">
+          <button
+            class="sidebar-action-btn new-session-btn"
+            id="new-session-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>新建会话</span>
+          </button>
+          <button
+            class="sidebar-action-btn history-manage-btn"
+            id="history-manage-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span>管理历史</span>
+          </button>
+          <button
+            class="sidebar-action-btn schedule-manage-btn"
+            id="schedule-manage-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span>定时任务</span>
+          </button>
+          <button class="sidebar-action-btn fm-open-btn" id="fm-open-btn">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+              />
+            </svg>
+            <span>文件管理</span>
+          </button>
+          <button
+            class="sidebar-action-btn config-open-btn"
+            id="config-open-btn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+            <span>系统配置</span>
+          </button>
+        </div>
+
+        <div class="sidebar-sessions" id="sidebar-sessions">
+          <div class="sidebar-session-list" id="sidebar-session-list">
+            <div class="sidebar-session-empty">暂无会话记录</div>
           </div>
         </div>
-      </div>
 
-      <!-- 隐藏的 session-id 输入框，保持功能兼容 -->
-      <input type="hidden" id="session-id" value="default" />
-    </aside>
-
-    <main class="main-content" id="main-content">
-      <div class="chat-container">
-        <div class="messages-wrapper" id="messages-wrapper">
-          <div class="messages" id="messages">
-            <div class="welcome-message">
-              <div class="welcome-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
+        <div class="sidebar-footer">
+          <div class="mode-selector">
+            <label class="mode-label">运行模式</label>
+            <div class="mode-buttons">
+              <button class="mode-btn active" data-mode="supervisor">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
+                <span>团队模式</span>
+              </button>
+              <button class="mode-btn" data-mode="roundtable">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span>圆桌讨论</span>
+              </button>
+              <button class="mode-btn" data-mode="custom">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M12 20h9" />
+                  <path
+                    d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
+                  />
+                  <path d="M15 5l3 3" />
+                </svg>
+                <span>自定义会议</span>
+              </button>
+              <button class="mode-btn deep-mode-btn" data-mode="deep">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path
+                    d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"
+                  />
+                </svg>
+                <span>深度模式</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="status-section">
+            <div class="status-indicator" id="status-indicator">
+              <span class="status-dot disconnected"></span>
+              <span class="status-text">服务未连接</span>
+              <span class="version-tag" id="version-tag"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 隐藏的 session-id 输入框，保持功能兼容 -->
+        <input type="hidden" id="session-id" value="default" />
+      </aside>
+
+      <main class="main-content" id="main-content">
+        <div class="chat-container">
+          <div class="messages-wrapper" id="messages-wrapper">
+            <div class="messages" id="messages">
+              <div class="welcome-message">
+                <div class="welcome-icon">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  >
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <h2>非空小队</h2>
+                <p>多智能体协作系统，开始您的对话</p>
+                <div class="welcome-tips">
+                  <span class="welcome-tip"
+                    >输入 <code>@</code> 指定智能体</span
+                  >
+                  <span class="welcome-tip">输入 <code>#</code> 引用文件</span>
+                  <span class="welcome-tip"
+                    >试试 <code>深度模式</code> 深入探索</span
+                  >
+                </div>
               </div>
-              <h2>非空小队</h2>
-              <p>多智能体协作系统，开始您的对话</p>
-              <div class="welcome-tips">
-                <span class="welcome-tip">输入 <code>@</code> 指定智能体</span>
-                <span class="welcome-tip">输入 <code>#</code> 引用文件</span>
-                <span class="welcome-tip">试试 <code>深度模式</code> 深入探索</span>
+            </div>
+            <!-- 加载历史记录的loading效果 -->
+            <div class="chat-loading" id="chat-loading" style="display: none">
+              <div class="chat-loading-content">
+                <div class="chat-loading-spinner"></div>
+                <p class="chat-loading-text">正在加载历史记录...</p>
               </div>
             </div>
           </div>
-          <!-- 加载历史记录的loading效果 -->
-          <div class="chat-loading" id="chat-loading" style="display: none">
-            <div class="chat-loading-content">
-              <div class="chat-loading-spinner"></div>
-              <p class="chat-loading-text">正在加载历史记录...</p>
+
+          <!-- 问题导航（一体化：收缩为圆点，展开显示文本） -->
+          <div
+            class="quick-nav-wrapper"
+            id="quick-nav-wrapper"
+            style="display: none"
+          >
+            <div class="quick-nav-list" id="quick-nav-list">
+              <div class="quick-nav-empty">暂无问题</div>
+            </div>
+          </div>
+
+          <!-- 回到底部按钮 -->
+          <button
+            class="scroll-to-bottom"
+            id="scroll-to-bottom"
+            style="display: none"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M12 5v14M5 12l7 7 7-7" />
+            </svg>
+            <span>回到底部</span>
+          </button>
+
+          <div class="input-container">
+            <div id="attachments-preview" class="attachments-preview"></div>
+            <div class="input-wrapper">
+              <button class="upload-btn" id="upload-btn" title="上传图片">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+              </button>
+              <input
+                type="file"
+                id="file-upload"
+                accept="image/*"
+                multiple
+                style="display: none"
+              />
+              <textarea
+                id="message-input"
+                class="message-input"
+                placeholder="请输入消息..."
+                rows="1"
+              ></textarea>
+              <button class="cancel-btn" id="cancel-btn" style="display: none">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+                <span>取消</span>
+              </button>
+              <button class="send-btn" id="send-btn" disabled>发送</button>
             </div>
           </div>
         </div>
+      </main>
 
-        <!-- 问题导航（一体化：收缩为圆点，展开显示文本） -->
-        <div class="quick-nav-wrapper" id="quick-nav-wrapper" style="display: none">
-          <div class="quick-nav-list" id="quick-nav-list">
-            <div class="quick-nav-empty">暂无问题</div>
-          </div>
-        </div>
-
-        <!-- 回到底部按钮 -->
-        <button class="scroll-to-bottom" id="scroll-to-bottom" style="display: none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 5v14M5 12l7 7 7-7" />
-          </svg>
-          <span>回到底部</span>
-        </button>
-
-        <div class="input-container">
-          <div id="attachments-preview" class="attachments-preview"></div>
-          <div class="input-wrapper">
-            <button class="upload-btn" id="upload-btn" title="上传图片">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-            </button>
-            <input type="file" id="file-upload" accept="image/*" multiple style="display:none" />
-            <textarea id="message-input" class="message-input" placeholder="请输入消息..." rows="1"></textarea>
-            <button class="cancel-btn" id="cancel-btn" style="display: none">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="15" y1="9" x2="9" y2="15" />
-                <line x1="9" y1="9" x2="15" y2="15" />
-              </svg>
-              <span>取消</span>
-            </button>
-            <button class="send-btn" id="send-btn" disabled>发送</button>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <!-- 历史记录弹窗 -->
-    <div class="history-modal" id="history-modal" style="display: none">
-      <div class="history-modal-content">
-        <div class="history-modal-header">
-          <h3>历史记录</h3>
-          <button class="history-modal-close" id="history-modal-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div class="history-search-bar">
-          <svg class="history-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input type="text" class="history-search-input" id="history-search-input" placeholder="搜索历史记录..." />
-        </div>
-        <div class="history-modal-body">
-          <div class="history-list" id="history-list">
-            <div class="history-loading">加载中...</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 重命名弹窗 -->
-    <div class="rename-modal" id="rename-modal" style="display: none">
-      <div class="rename-modal-content">
-        <div class="rename-modal-header">
-          <h3>重命名文件</h3>
-          <button class="rename-modal-close" id="rename-modal-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div class="rename-modal-body">
-          <label class="rename-label">新文件名</label>
-          <input type="text" class="rename-input" id="rename-input" placeholder="请输入新文件名" />
-        </div>
-        <div class="rename-modal-footer">
-          <button class="rename-cancel-btn" id="rename-cancel-btn">
-            取消
-          </button>
-          <button class="rename-confirm-btn" id="rename-confirm-btn">
-            确定
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 审批弹窗 -->
-    <div class="approval-modal" id="approval-modal" style="display: none">
-      <div class="approval-modal-content">
-        <div class="approval-modal-header">
-          <h3>需要审批</h3>
-        </div>
-        <div class="approval-modal-body">
-          <p class="approval-message" id="approval-message"></p>
-        </div>
-        <div class="approval-modal-footer">
-          <button class="approval-btn approval-btn-reject" data-decision="0">
-            拒绝
-          </button>
-          <button class="approval-btn approval-btn-once" data-decision="1">
-            允许一次
-          </button>
-          <button class="approval-btn approval-btn-item" data-decision="2">
-            允许该项
-          </button>
-          <button class="approval-btn approval-btn-all" data-decision="3">
-            全部允许
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 删除确认弹窗 -->
-    <div class="delete-modal" id="delete-modal" style="display: none">
-      <div class="delete-modal-content">
-        <div class="delete-modal-header">
-          <h3>确认删除</h3>
-          <button class="delete-modal-close" id="delete-modal-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div class="delete-modal-body">
-          <p class="delete-message">
-            确定要删除 "<span id="delete-filename"></span>" 吗？
-          </p>
-          <p class="delete-warning">此操作不可恢复！</p>
-        </div>
-        <div class="delete-modal-footer">
-          <button class="delete-cancel-btn" id="delete-cancel-btn">
-            取消
-          </button>
-          <button class="delete-confirm-btn" id="delete-confirm-btn">
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 定时任务弹窗 -->
-    <div class="schedule-modal" id="schedule-modal" style="display: none">
-      <div class="schedule-modal-content">
-        <div class="schedule-modal-header">
-          <h3>定时任务</h3>
-          <div class="schedule-header-actions">
-            <select class="schedule-filter" id="schedule-filter">
-              <option value="">全部</option>
-              <option value="pending">等待中</option>
-              <option value="running">执行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">已失败</option>
-              <option value="cancelled">已取消</option>
-            </select>
-            <button class="schedule-refresh-btn" id="schedule-refresh-btn" title="刷新">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-              </svg>
-            </button>
-            <button class="schedule-modal-close" id="schedule-modal-close">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <!-- 历史记录弹窗 -->
+      <div class="history-modal" id="history-modal" style="display: none">
+        <div class="history-modal-content">
+          <div class="history-modal-header">
+            <h3>历史记录</h3>
+            <button class="history-modal-close" id="history-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
-        </div>
-        <div class="schedule-modal-body">
-          <div class="schedule-list" id="schedule-list">
-            <div class="schedule-loading">加载中...</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 文件管理器弹窗 -->
-    <div class="fm-modal" id="fm-modal" style="display: none">
-      <div class="fm-modal-content">
-        <div class="fm-header">
-          <h3>文件管理</h3>
-          <div class="fm-header-actions">
-            <button class="fm-icon-btn" id="fm-refresh-btn" title="刷新">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-              </svg>
-            </button>
-            <button class="fm-icon-btn" id="fm-close-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="fm-breadcrumb-bar">
-          <div class="fm-breadcrumb" id="fm-breadcrumb"></div>
-        </div>
-        <div class="fm-toolbar">
-          <div class="fm-search-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div class="history-search-bar">
+            <svg
+              class="history-search-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <input type="text" id="fm-search-input" placeholder="搜索文件..." autocomplete="off" />
-            <button class="fm-search-clear hidden" id="fm-search-clear" title="清除搜索">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <input
+              type="text"
+              class="history-search-input"
+              id="history-search-input"
+              placeholder="搜索历史记录..."
+            />
+          </div>
+          <div class="history-modal-body">
+            <div class="history-list" id="history-list">
+              <div class="history-loading">加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 重命名弹窗 -->
+      <div class="rename-modal" id="rename-modal" style="display: none">
+        <div class="rename-modal-content">
+          <div class="rename-modal-header">
+            <h3>重命名文件</h3>
+            <button class="rename-modal-close" id="rename-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
-          <div class="fm-toolbar-actions">
-            <button class="fm-action-btn primary" id="fm-upload-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span>上传文件</span>
+          <div class="rename-modal-body">
+            <label class="rename-label">新文件名</label>
+            <input
+              type="text"
+              class="rename-input"
+              id="rename-input"
+              placeholder="请输入新文件名"
+            />
+          </div>
+          <div class="rename-modal-footer">
+            <button class="rename-cancel-btn" id="rename-cancel-btn">
+              取消
             </button>
-            <button class="fm-action-btn" id="fm-upload-folder-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                <line x1="12" y1="11" x2="12" y2="17" />
-                <polyline points="9 14 12 11 15 14" />
-              </svg>
-              <span>上传文件夹</span>
-            </button>
-            <button class="fm-action-btn" id="fm-download-btn" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              <span>下载</span>
-            </button>
-            <button class="fm-action-btn danger" id="fm-delete-btn" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-              <span>删除</span>
-            </button>
-            <button class="fm-action-btn" id="fm-share-selected-btn" disabled title="分享选中的文件">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="18" cy="5" r="3" />
-                <circle cx="6" cy="12" r="3" />
-                <circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              <span>分享</span>
-            </button>
-            <button class="fm-action-btn" id="fm-share-manage-btn" title="管理分享链接">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="18" cy="5" r="3" />
-                <circle cx="6" cy="12" r="3" />
-                <circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              <span>分享管理</span>
+            <button class="rename-confirm-btn" id="rename-confirm-btn">
+              确定
             </button>
           </div>
-        </div>
-        <div class="fm-select-bar hidden" id="fm-select-bar">
-          <input type="checkbox" class="fm-select-all-cb" id="fm-select-all-cb" />
-          <span class="fm-select-count" id="fm-select-count">共 0 项</span>
-        </div>
-        <div class="fm-body" id="fm-body">
-          <div class="fm-list" id="fm-list">
-            <div class="fm-empty">点击上方按钮打开文件管理</div>
-          </div>
-          <div class="fm-dropzone" id="fm-dropzone">
-            <span class="fm-dropzone-text">拖拽文件或文件夹到此处上传</span>
-          </div>
-        </div>
-        <div class="fm-upload-bar" id="fm-upload-bar">
-          <div class="fm-upload-info">
-            <div class="fm-upload-text" id="fm-upload-text">准备上传...</div>
-            <div class="fm-upload-progress">
-              <div class="fm-upload-progress-fill" id="fm-upload-progress-fill"></div>
-            </div>
-          </div>
-          <button class="fm-upload-cancel" id="fm-upload-cancel" title="取消上传">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="15" y1="9" x2="9" y2="15" />
-              <line x1="9" y1="9" x2="15" y2="15" />
-            </svg>
-          </button>
         </div>
       </div>
-      <!-- 隐藏的文件上传 input -->
-      <input type="file" id="fm-file-input" multiple style="display:none" />
-      <input type="file" id="fm-folder-input" webkitdirectory style="display:none" />
-    </div>
 
-    <!-- 文件预览弹窗 -->
-    <div class="fm-preview-modal" id="fm-preview-modal" style="display: none">
-      <div class="fm-preview-content">
-        <div class="fm-preview-header">
-          <h4 id="fm-preview-title">预览</h4>
-          <button class="fm-icon-btn" id="fm-preview-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+      <!-- 审批弹窗 -->
+      <div class="approval-modal" id="approval-modal" style="display: none">
+        <div class="approval-modal-content">
+          <div class="approval-modal-header">
+            <h3>需要审批</h3>
+          </div>
+          <div class="approval-modal-body">
+            <p class="approval-message" id="approval-message"></p>
+          </div>
+          <div class="approval-modal-footer">
+            <button class="approval-btn approval-btn-reject" data-decision="0">
+              拒绝
+            </button>
+            <button class="approval-btn approval-btn-once" data-decision="1">
+              允许一次
+            </button>
+            <button class="approval-btn approval-btn-item" data-decision="2">
+              允许该项
+            </button>
+            <button class="approval-btn approval-btn-all" data-decision="3">
+              全部允许
+            </button>
+          </div>
         </div>
-        <div class="fm-preview-body" id="fm-preview-body"></div>
       </div>
-    </div>
 
-    <!-- 文件分享弹窗 -->
-    <div class="fm-share-modal" id="fm-share-modal" style="display: none">
-      <div class="fm-share-content">
-        <div class="fm-share-header">
-          <h3>分享文件</h3>
-          <button class="fm-icon-btn" id="fm-share-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+      <!-- 删除确认弹窗 -->
+      <div class="delete-modal" id="delete-modal" style="display: none">
+        <div class="delete-modal-content">
+          <div class="delete-modal-header">
+            <h3>确认删除</h3>
+            <button class="delete-modal-close" id="delete-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="delete-modal-body">
+            <p class="delete-message">
+              确定要删除 "<span id="delete-filename"></span>" 吗？
+            </p>
+            <p class="delete-warning">此操作不可恢复！</p>
+          </div>
+          <div class="delete-modal-footer">
+            <button class="delete-cancel-btn" id="delete-cancel-btn">
+              取消
+            </button>
+            <button class="delete-confirm-btn" id="delete-confirm-btn">
+              删除
+            </button>
+          </div>
         </div>
-        <div class="fm-share-body">
-          <div class="fm-share-filename" id="fm-share-filename"></div>
-          <div class="fm-share-field">
-            <label>访问密码（可选）</label>
-            <input type="text" id="fm-share-password" placeholder="留空则无需密码" autocomplete="off" />
-          </div>
-          <div class="fm-share-field">
-            <label>有效期</label>
-            <select id="fm-share-expiry">
-              <option value="3600">1 小时</option>
-              <option value="86400" selected>1 天</option>
-              <option value="259200">3 天</option>
-              <option value="604800">7 天</option>
-              <option value="2592000">30 天</option>
-              <option value="-1">永不过期</option>
-            </select>
-          </div>
-          <!-- 创建成功后显示链接 -->
-          <div class="fm-share-result" id="fm-share-result" style="display:none">
-            <label>分享链接</label>
-            <div class="fm-share-link-row">
-              <input type="text" id="fm-share-link" readonly />
-              <button class="fm-share-copy-btn" id="fm-share-copy-btn" title="复制链接">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </div>
+
+      <!-- 定时任务弹窗 -->
+      <div class="schedule-modal" id="schedule-modal" style="display: none">
+        <div class="schedule-modal-content">
+          <div class="schedule-modal-header">
+            <h3>定时任务</h3>
+            <div class="schedule-header-actions">
+              <select class="schedule-filter" id="schedule-filter">
+                <option value="">全部</option>
+                <option value="pending">等待中</option>
+                <option value="running">执行中</option>
+                <option value="completed">已完成</option>
+                <option value="failed">已失败</option>
+                <option value="cancelled">已取消</option>
+              </select>
+              <button
+                class="schedule-refresh-btn"
+                id="schedule-refresh-btn"
+                title="刷新"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+              </button>
+              <button class="schedule-modal-close" id="schedule-modal-close">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
           </div>
-        </div>
-        <div class="fm-share-footer">
-          <button class="fm-share-links-btn" id="fm-share-links-btn">管理分享</button>
-          <button class="fm-share-cancel-btn" id="fm-share-cancel">取消</button>
-          <button class="fm-share-ok-btn" id="fm-share-ok">创建分享</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 分享链接管理弹窗 -->
-    <div class="fm-share-list-modal" id="fm-share-list-modal" style="display: none">
-      <div class="fm-share-list-content">
-        <div class="fm-share-list-header">
-          <h3>分享管理</h3>
-          <button class="fm-icon-btn" id="fm-share-list-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div class="fm-share-list-body">
-          <div class="fm-share-list" id="fm-share-list">
-            <div class="fm-empty">加载中...</div>
+          <div class="schedule-modal-body">
+            <div class="schedule-list" id="schedule-list">
+              <div class="schedule-loading">加载中...</div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 文件删除确认弹窗 -->
-    <div class="fm-confirm-modal" id="fm-confirm-modal" style="display: none">
-      <div class="fm-confirm-content">
-        <div class="fm-confirm-header">
-          <h3>确认删除</h3>
-          <button class="fm-icon-btn" id="fm-confirm-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div class="fm-confirm-body">
-          <p class="fm-confirm-msg" id="fm-confirm-msg"></p>
-          <p class="fm-confirm-warn" id="fm-confirm-warn"></p>
-        </div>
-        <div class="fm-confirm-footer">
-          <button class="fm-confirm-cancel-btn" id="fm-confirm-cancel">取消</button>
-          <button class="fm-confirm-ok-btn" id="fm-confirm-ok">删除</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 系统配置弹窗 -->
-    <div class="config-modal" id="config-modal" style="display: none">
-      <div class="config-modal-content">
-        <div class="config-modal-header">
-          <h3>系统配置</h3>
-          <button class="config-modal-close" id="config-modal-close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div class="config-tabs" id="config-tabs">
-          <button class="config-tab-btn active" data-tab="models">模型</button>
-          <button class="config-tab-btn" data-tab="general">通用</button>
-          <button class="config-tab-btn" data-tab="agents">智能体</button>
-          <button class="config-tab-btn" data-tab="custom-agents">自定义智能体</button>
-          <button class="config-tab-btn" data-tab="channels">通道</button>
-        </div>
-        <div class="config-panels" id="config-panels">
-          <!-- 模型面板 -->
-          <div class="config-panel active" id="config-panel-models">
-            <div class="config-model-list" id="config-model-list"></div>
-            <button class="config-add-btn" id="config-add-model">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
+      <!-- 文件管理器弹窗 -->
+      <div class="fm-modal" id="fm-modal" style="display: none">
+        <div class="fm-modal-content">
+          <div class="fm-header">
+            <h3>文件管理</h3>
+            <div class="fm-header-actions">
+              <button class="fm-icon-btn" id="fm-refresh-btn" title="刷新">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+              </button>
+              <button class="fm-icon-btn" id="fm-close-btn">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="fm-breadcrumb-bar">
+            <div class="fm-breadcrumb" id="fm-breadcrumb"></div>
+          </div>
+          <div class="fm-toolbar">
+            <div class="fm-search-box">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              添加模型
+              <input
+                type="text"
+                id="fm-search-input"
+                placeholder="搜索文件..."
+                autocomplete="off"
+              />
+              <button
+                class="fm-search-clear hidden"
+                id="fm-search-clear"
+                title="清除搜索"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div class="fm-toolbar-actions">
+              <button class="fm-action-btn primary" id="fm-upload-btn">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                <span>上传文件</span>
+              </button>
+              <button class="fm-action-btn" id="fm-upload-folder-btn">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                  />
+                  <line x1="12" y1="11" x2="12" y2="17" />
+                  <polyline points="9 14 12 11 15 14" />
+                </svg>
+                <span>上传文件夹</span>
+              </button>
+              <button class="fm-action-btn" id="fm-download-btn" disabled>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                <span>下载</span>
+              </button>
+              <button class="fm-action-btn danger" id="fm-delete-btn" disabled>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path
+                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                  />
+                </svg>
+                <span>删除</span>
+              </button>
+              <button
+                class="fm-action-btn"
+                id="fm-share-selected-btn"
+                disabled
+                title="分享选中的文件"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                <span>分享</span>
+              </button>
+              <button
+                class="fm-action-btn"
+                id="fm-share-manage-btn"
+                title="管理分享链接"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                <span>分享管理</span>
+              </button>
+            </div>
+          </div>
+          <div class="fm-select-bar hidden" id="fm-select-bar">
+            <input
+              type="checkbox"
+              class="fm-select-all-cb"
+              id="fm-select-all-cb"
+            />
+            <span class="fm-select-count" id="fm-select-count">共 0 项</span>
+          </div>
+          <div class="fm-body" id="fm-body">
+            <div class="fm-list" id="fm-list">
+              <div class="fm-empty">点击上方按钮打开文件管理</div>
+            </div>
+            <div class="fm-dropzone" id="fm-dropzone">
+              <span class="fm-dropzone-text">拖拽文件或文件夹到此处上传</span>
+            </div>
+          </div>
+          <div class="fm-upload-bar" id="fm-upload-bar">
+            <div class="fm-upload-info">
+              <div class="fm-upload-text" id="fm-upload-text">准备上传...</div>
+              <div class="fm-upload-progress">
+                <div
+                  class="fm-upload-progress-fill"
+                  id="fm-upload-progress-fill"
+                ></div>
+              </div>
+            </div>
+            <button
+              class="fm-upload-cancel"
+              id="fm-upload-cancel"
+              title="取消上传"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
             </button>
           </div>
-          <!-- 通用面板 -->
-          <div class="config-panel" id="config-panel-general">
-            <div class="config-section">
-              <div class="config-section-title">代理设置</div>
-              <div class="config-field">
-                <label>代理 URL</label>
-                <input type="text" class="config-input" id="config-proxy-url" placeholder="http://127.0.0.1:7890" />
-              </div>
+        </div>
+        <!-- 隐藏的文件上传 input -->
+        <input type="file" id="fm-file-input" multiple style="display: none" />
+        <input
+          type="file"
+          id="fm-folder-input"
+          webkitdirectory
+          style="display: none"
+        />
+      </div>
+
+      <!-- 文件预览弹窗 -->
+      <div class="fm-preview-modal" id="fm-preview-modal" style="display: none">
+        <div class="fm-preview-content">
+          <div class="fm-preview-header">
+            <h4 id="fm-preview-title">预览</h4>
+            <button class="fm-icon-btn" id="fm-preview-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="fm-preview-body" id="fm-preview-body"></div>
+        </div>
+      </div>
+
+      <!-- 文件分享弹窗 -->
+      <div class="fm-share-modal" id="fm-share-modal" style="display: none">
+        <div class="fm-share-content">
+          <div class="fm-share-header">
+            <h3>分享文件</h3>
+            <button class="fm-icon-btn" id="fm-share-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="fm-share-body">
+            <div class="fm-share-filename" id="fm-share-filename"></div>
+            <div class="fm-share-field">
+              <label>访问密码（可选）</label>
+              <input
+                type="text"
+                id="fm-share-password"
+                placeholder="留空则无需密码"
+                autocomplete="off"
+              />
             </div>
-            <div class="config-section">
-              <div class="config-section-title">记忆设置</div>
-              <div class="config-toggle-row">
-                <div>
-                  <div class="config-toggle-label">长期记忆</div>
-                  <div class="config-toggle-desc">启用后智能体可以记住跨会话信息</div>
-                </div>
-                <label class="config-toggle">
-                  <input type="checkbox" id="config-memory-enabled" />
-                  <span class="config-toggle-slider"></span>
-                </label>
-              </div>
+            <div class="fm-share-field">
+              <label>有效期</label>
+              <select id="fm-share-expiry">
+                <option value="3600">1 小时</option>
+                <option value="86400" selected>1 天</option>
+                <option value="259200">3 天</option>
+                <option value="604800">7 天</option>
+                <option value="2592000">30 天</option>
+                <option value="-1">永不过期</option>
+              </select>
             </div>
-            <div class="config-section">
-              <div class="config-section-title">服务器配置</div>
-              <div class="config-row">
-                <div class="config-field">
-                  <label>主机地址</label>
-                  <input type="text" class="config-input" id="config-server-host" placeholder="127.0.0.1" />
-                </div>
-                <div class="config-field">
-                  <label>端口</label>
-                  <input type="number" class="config-input small" id="config-server-port" placeholder="23456" />
-                </div>
-                <div class="config-field">
-                  <label>日志级别</label>
-                  <select class="config-select" id="config-server-loglevel">
-                    <option value="debug">debug</option>
-                    <option value="info">info</option>
-                    <option value="warn">warn</option>
-                    <option value="error">error</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div class="config-section">
-              <div class="config-section-title">认证配置</div>
-              <div class="config-toggle-row">
-                <div>
-                  <div class="config-toggle-label">启用认证</div>
-                  <div class="config-toggle-desc">需要登录用户名和密码</div>
-                </div>
-                <label class="config-toggle">
-                  <input type="checkbox" id="config-auth-enabled" />
-                  <span class="config-toggle-slider"></span>
-                </label>
-              </div>
-              <div id="config-auth-fields" style="display: none; margin-top: 12px;">
-                <div class="config-row">
-                  <div class="config-field">
-                    <label>用户名</label>
-                    <input type="text" class="config-input" id="config-auth-username" placeholder="admin"
-                      autocomplete="off" />
-                  </div>
-                  <div class="config-field">
-                    <label>密码</label>
-                    <input type="password" class="config-input" id="config-auth-password" placeholder="***"
-                      autocomplete="new-password" />
-                  </div>
-                </div>
-                <div class="config-field">
-                  <label>JWT Secret</label>
-                  <input type="password" class="config-input" id="config-auth-secret" placeholder="***"
-                    autocomplete="new-password" />
-                </div>
+            <!-- 创建成功后显示链接 -->
+            <div
+              class="fm-share-result"
+              id="fm-share-result"
+              style="display: none"
+            >
+              <label>分享链接</label>
+              <div class="fm-share-link-row">
+                <input type="text" id="fm-share-link" readonly />
+                <button
+                  class="fm-share-copy-btn"
+                  id="fm-share-copy-btn"
+                  title="复制链接"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path
+                      d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                    />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
-          <!-- 智能体面板 -->
-          <div class="config-panel" id="config-panel-agents">
-            <div class="config-section">
-              <div class="config-section-title">内置智能体开关</div>
-              <div class="config-toggle-row">
-                <div>
-                  <div class="config-toggle-label">搜索专家 (小搜)</div>
-                  <div class="config-toggle-desc">启用 DuckDuckGo 搜索和网页抓取能力</div>
-                </div>
-                <label class="config-toggle">
-                  <input type="checkbox" id="config-agent-searcher" />
-                  <span class="config-toggle-slider"></span>
-                </label>
-              </div>
-              <div class="config-toggle-row">
-                <div>
-                  <div class="config-toggle-label">个人助手 (小助)</div>
-                  <div class="config-toggle-desc">全能个人助手，命令执行、搜索、文件管理</div>
-                </div>
-                <label class="config-toggle">
-                  <input type="checkbox" id="config-agent-assistant" />
-                  <span class="config-toggle-slider"></span>
-                </label>
-              </div>
-              <div class="config-toggle-row">
-                <div>
-                  <div class="config-toggle-label">数据分析师 (小析)</div>
-                  <div class="config-toggle-desc">数据分析和 Excel 处理能力</div>
-                </div>
-                <label class="config-toggle">
-                  <input type="checkbox" id="config-agent-analyst" />
-                  <span class="config-toggle-slider"></span>
-                </label>
-              </div>
+          <div class="fm-share-footer">
+            <button class="fm-share-links-btn" id="fm-share-links-btn">
+              管理分享
+            </button>
+            <button class="fm-share-cancel-btn" id="fm-share-cancel">
+              取消
+            </button>
+            <button class="fm-share-ok-btn" id="fm-share-ok">创建分享</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分享链接管理弹窗 -->
+      <div
+        class="fm-share-list-modal"
+        id="fm-share-list-modal"
+        style="display: none"
+      >
+        <div class="fm-share-list-content">
+          <div class="fm-share-list-header">
+            <h3>分享管理</h3>
+            <button class="fm-icon-btn" id="fm-share-list-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="fm-share-list-body">
+            <div class="fm-share-list" id="fm-share-list">
+              <div class="fm-empty">加载中...</div>
             </div>
-            <div class="config-section">
-              <div class="config-section-title">SSH 远程访问</div>
-              <div class="config-toggle-row">
-                <div>
-                  <div class="config-toggle-label">SSH 小访</div>
-                  <div class="config-toggle-desc">启用远程服务器访问能力</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 文件删除确认弹窗 -->
+      <div class="fm-confirm-modal" id="fm-confirm-modal" style="display: none">
+        <div class="fm-confirm-content">
+          <div class="fm-confirm-header">
+            <h3>确认删除</h3>
+            <button class="fm-icon-btn" id="fm-confirm-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="fm-confirm-body">
+            <p class="fm-confirm-msg" id="fm-confirm-msg"></p>
+            <p class="fm-confirm-warn" id="fm-confirm-warn"></p>
+          </div>
+          <div class="fm-confirm-footer">
+            <button class="fm-confirm-cancel-btn" id="fm-confirm-cancel">
+              取消
+            </button>
+            <button class="fm-confirm-ok-btn" id="fm-confirm-ok">删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 系统配置弹窗 -->
+      <div class="config-modal" id="config-modal" style="display: none">
+        <div class="config-modal-content">
+          <div class="config-modal-header">
+            <h3>系统配置</h3>
+            <button class="config-modal-close" id="config-modal-close">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="config-tabs" id="config-tabs">
+            <button class="config-tab-btn active" data-tab="models">
+              模型
+            </button>
+            <button class="config-tab-btn" data-tab="general">通用</button>
+            <button class="config-tab-btn" data-tab="agents">智能体</button>
+            <button class="config-tab-btn" data-tab="custom-agents">
+              自定义智能体
+            </button>
+            <button class="config-tab-btn" data-tab="channels">通道</button>
+          </div>
+          <div class="config-panels" id="config-panels">
+            <!-- 模型面板 -->
+            <div class="config-panel active" id="config-panel-models">
+              <div class="config-model-list" id="config-model-list"></div>
+              <button class="config-add-btn" id="config-add-model">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                添加模型
+              </button>
+            </div>
+            <!-- 通用面板 -->
+            <div class="config-panel" id="config-panel-general">
+              <div class="config-section">
+                <div class="config-section-title">代理设置</div>
+                <div class="config-field">
+                  <label>代理 URL</label>
+                  <input
+                    type="text"
+                    class="config-input"
+                    id="config-proxy-url"
+                    placeholder="http://127.0.0.1:7890"
+                  />
                 </div>
-                <label class="config-toggle">
-                  <input type="checkbox" id="config-ssh-enabled" />
-                  <span class="config-toggle-slider"></span>
-                </label>
               </div>
-              <div id="config-ssh-fields" style="display: none; margin-top: 12px;">
+              <div class="config-section">
+                <div class="config-section-title">记忆设置</div>
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">长期记忆</div>
+                    <div class="config-toggle-desc">
+                      启用后智能体可以记住跨会话信息
+                    </div>
+                  </div>
+                  <label class="config-toggle">
+                    <input type="checkbox" id="config-memory-enabled" />
+                    <span class="config-toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-section">
+                <div class="config-section-title">服务器配置</div>
                 <div class="config-row">
                   <div class="config-field">
                     <label>主机地址</label>
-                    <input type="text" class="config-input" id="config-ssh-host" placeholder="192.168.1.100:22" />
+                    <input
+                      type="text"
+                      class="config-input"
+                      id="config-server-host"
+                      placeholder="127.0.0.1"
+                    />
                   </div>
                   <div class="config-field">
-                    <label>用户名</label>
-                    <input type="text" class="config-input" id="config-ssh-username" placeholder="root" />
-                  </div>
-                  <div class="config-field">
-                    <label>密码</label>
-                    <input type="password" class="config-input" id="config-ssh-password" placeholder="***"
-                      autocomplete="new-password" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <!-- 自定义智能体面板 -->
-          <div class="config-panel" id="config-panel-custom-agents">
-            <div class="agent-cards-grid" id="agent-cards-grid"></div>
-          </div>
-          <!-- 通道面板 -->
-          <div class="config-panel" id="config-panel-channels">
-            <div class="config-collapse" id="config-channel-qq">
-              <div class="config-collapse-header" onclick="this.parentElement.classList.toggle('open')">
-                <span>QQ 机器人</span>
-                <svg class="config-collapse-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="2">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </div>
-              <div class="config-collapse-body">
-                <div class="config-toggle-row">
-                  <div>
-                    <div class="config-toggle-label">启用</div>
-                  </div>
-                  <label class="config-toggle"><input type="checkbox" id="config-qq-enabled" /><span
-                      class="config-toggle-slider"></span></label>
-                </div>
-                <div class="config-row">
-                  <div class="config-field"><label>App ID</label><input type="text" class="config-input"
-                      id="config-qq-appid" /></div>
-                  <div class="config-field"><label>App Secret</label><input type="password" class="config-input"
-                      id="config-qq-appsecret" autocomplete="new-password" /></div>
-                </div>
-                <div class="config-row">
-                  <div class="config-field">
-                    <label>模式</label>
-                    <select class="config-select channel-mode-select" id="config-qq-mode">
-                      <option value="team">团队模式</option>
-                      <option value="deep">深度模式</option>
-                      <option value="roundtable">圆桌讨论</option>
-                      <option value="custom">自定义会议</option>
-                    </select>
-                  </div>
-                  <div class="config-field" style="flex: 0;">
-                    <label>沙盒</label>
-                    <label class="config-toggle" style="margin-top:4px"><input type="checkbox"
-                        id="config-qq-sandbox" /><span class="config-toggle-slider"></span></label>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="config-collapse" id="config-channel-discord">
-              <div class="config-collapse-header" onclick="this.parentElement.classList.toggle('open')">
-                <span>Discord 机器人</span>
-                <svg class="config-collapse-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="2">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </div>
-              <div class="config-collapse-body">
-                <div class="config-toggle-row">
-                  <div>
-                    <div class="config-toggle-label">启用</div>
-                  </div>
-                  <label class="config-toggle"><input type="checkbox" id="config-discord-enabled" /><span
-                      class="config-toggle-slider"></span></label>
-                </div>
-                <div class="config-row">
-                  <div class="config-field"><label>Token</label><input type="password" class="config-input"
-                      id="config-discord-token" autocomplete="new-password" /></div>
-                  <div class="config-field"><label>允许用户 (逗号分隔)</label><input type="text" class="config-input"
-                      id="config-discord-allowfrom" /></div>
-                </div>
-                <div class="config-field">
-                  <label>模式</label>
-                  <select class="config-select channel-mode-select" id="config-discord-mode">
-                    <option value="team">团队模式</option>
-                    <option value="deep">深度模式</option>
-                    <option value="roundtable">圆桌讨论</option>
-                    <option value="custom">自定义会议</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div class="config-collapse" id="config-channel-weixin">
-              <div class="config-collapse-header" onclick="this.parentElement.classList.toggle('open')">
-                <span>微信机器人</span>
-                <svg class="config-collapse-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="2">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </div>
-              <div class="config-collapse-body">
-                <div class="config-toggle-row">
-                  <div>
-                    <div class="config-toggle-label">启用</div>
-                  </div>
-                  <label class="config-toggle"><input type="checkbox" id="config-weixin-enabled" /><span
-                      class="config-toggle-slider"></span></label>
-                </div>
-                <div class="config-row">
-                  <div class="config-field"><label>API 地址</label><input type="text" class="config-input"
-                      id="config-weixin-baseurl" /></div>
-                  <div class="config-field"><label>凭证路径</label><input type="text" class="config-input"
-                      id="config-weixin-credpath" /></div>
-                </div>
-                <div class="config-row">
-                  <div class="config-field"><label>允许用户</label><input type="text" class="config-input"
-                      id="config-weixin-allowfrom" /></div>
-                  <div class="config-field">
-                    <label>模式</label>
-                    <select class="config-select channel-mode-select" id="config-weixin-mode">
-                      <option value="team">团队模式</option>
-                      <option value="deep">深度模式</option>
-                      <option value="roundtable">圆桌讨论</option>
-                      <option value="custom">自定义会议</option>
-                    </select>
+                    <label>端口</label>
+                    <input
+                      type="number"
+                      class="config-input small"
+                      id="config-server-port"
+                      placeholder="23456"
+                    />
                   </div>
                   <div class="config-field">
                     <label>日志级别</label>
-                    <select class="config-select" id="config-weixin-loglevel">
+                    <select class="config-select" id="config-server-loglevel">
                       <option value="debug">debug</option>
                       <option value="info">info</option>
                       <option value="warn">warn</option>
                       <option value="error">error</option>
-                      <option value="silent">silent</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+              <div class="config-section">
+                <div class="config-section-title">认证配置</div>
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">启用认证</div>
+                    <div class="config-toggle-desc">需要登录用户名和密码</div>
+                  </div>
+                  <label class="config-toggle">
+                    <input type="checkbox" id="config-auth-enabled" />
+                    <span class="config-toggle-slider"></span>
+                  </label>
+                </div>
+                <div
+                  id="config-auth-fields"
+                  style="display: none; margin-top: 12px"
+                >
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>用户名</label>
+                      <input
+                        type="text"
+                        class="config-input"
+                        id="config-auth-username"
+                        placeholder="admin"
+                        autocomplete="off"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>密码</label>
+                      <input
+                        type="password"
+                        class="config-input"
+                        id="config-auth-password"
+                        placeholder="***"
+                        autocomplete="new-password"
+                      />
+                    </div>
+                  </div>
+                  <div class="config-field">
+                    <label>JWT Secret</label>
+                    <input
+                      type="password"
+                      class="config-input"
+                      id="config-auth-secret"
+                      placeholder="***"
+                      autocomplete="new-password"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 智能体面板 -->
+            <div class="config-panel" id="config-panel-agents">
+              <div class="config-section">
+                <div class="config-section-title">内置智能体开关</div>
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">搜索专家 (小搜)</div>
+                    <div class="config-toggle-desc">
+                      启用 DuckDuckGo 搜索和网页抓取能力
+                    </div>
+                  </div>
+                  <label class="config-toggle">
+                    <input type="checkbox" id="config-agent-searcher" />
+                    <span class="config-toggle-slider"></span>
+                  </label>
+                </div>
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">个人助手 (小助)</div>
+                    <div class="config-toggle-desc">
+                      全能个人助手，命令执行、搜索、文件管理
+                    </div>
+                  </div>
+                  <label class="config-toggle">
+                    <input type="checkbox" id="config-agent-assistant" />
+                    <span class="config-toggle-slider"></span>
+                  </label>
+                </div>
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">数据分析师 (小析)</div>
+                    <div class="config-toggle-desc">
+                      数据分析和 Excel 处理能力
+                    </div>
+                  </div>
+                  <label class="config-toggle">
+                    <input type="checkbox" id="config-agent-analyst" />
+                    <span class="config-toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-section">
+                <div class="config-section-title">SSH 远程访问</div>
+                <div class="config-toggle-row">
+                  <div>
+                    <div class="config-toggle-label">SSH 小访</div>
+                    <div class="config-toggle-desc">启用远程服务器访问能力</div>
+                  </div>
+                  <label class="config-toggle">
+                    <input type="checkbox" id="config-ssh-enabled" />
+                    <span class="config-toggle-slider"></span>
+                  </label>
+                </div>
+                <div
+                  id="config-ssh-fields"
+                  style="display: none; margin-top: 12px"
+                >
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>主机地址</label>
+                      <input
+                        type="text"
+                        class="config-input"
+                        id="config-ssh-host"
+                        placeholder="192.168.1.100:22"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>用户名</label>
+                      <input
+                        type="text"
+                        class="config-input"
+                        id="config-ssh-username"
+                        placeholder="root"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>密码</label>
+                      <input
+                        type="password"
+                        class="config-input"
+                        id="config-ssh-password"
+                        placeholder="***"
+                        autocomplete="new-password"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 自定义智能体面板 -->
+            <div class="config-panel" id="config-panel-custom-agents">
+              <div class="agent-cards-grid" id="agent-cards-grid"></div>
+            </div>
+            <!-- 通道面板 -->
+            <div class="config-panel" id="config-panel-channels">
+              <div class="config-collapse" id="config-channel-qq">
+                <div
+                  class="config-collapse-header"
+                  onclick="this.parentElement.classList.toggle('open')"
+                >
+                  <span>QQ 机器人</span>
+                  <svg
+                    class="config-collapse-arrow"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div class="config-collapse-body">
+                  <div class="config-toggle-row">
+                    <div>
+                      <div class="config-toggle-label">启用</div>
+                    </div>
+                    <label class="config-toggle"
+                      ><input type="checkbox" id="config-qq-enabled" /><span
+                        class="config-toggle-slider"
+                      ></span
+                    ></label>
+                  </div>
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>App ID</label
+                      ><input
+                        type="text"
+                        class="config-input"
+                        id="config-qq-appid"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>App Secret</label
+                      ><input
+                        type="password"
+                        class="config-input"
+                        id="config-qq-appsecret"
+                        autocomplete="new-password"
+                      />
+                    </div>
+                  </div>
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>模式</label>
+                      <select
+                        class="config-select channel-mode-select"
+                        id="config-qq-mode"
+                      >
+                        <option value="team">团队模式</option>
+                        <option value="deep">深度模式</option>
+                        <option value="roundtable">圆桌讨论</option>
+                        <option value="custom">自定义会议</option>
+                      </select>
+                    </div>
+                    <div class="config-field" style="flex: 0">
+                      <label>沙盒</label>
+                      <label class="config-toggle" style="margin-top: 4px"
+                        ><input type="checkbox" id="config-qq-sandbox" /><span
+                          class="config-toggle-slider"
+                        ></span
+                      ></label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="config-collapse" id="config-channel-discord">
+                <div
+                  class="config-collapse-header"
+                  onclick="this.parentElement.classList.toggle('open')"
+                >
+                  <span>Discord 机器人</span>
+                  <svg
+                    class="config-collapse-arrow"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div class="config-collapse-body">
+                  <div class="config-toggle-row">
+                    <div>
+                      <div class="config-toggle-label">启用</div>
+                    </div>
+                    <label class="config-toggle"
+                      ><input
+                        type="checkbox"
+                        id="config-discord-enabled" /><span
+                        class="config-toggle-slider"
+                      ></span
+                    ></label>
+                  </div>
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>Token</label
+                      ><input
+                        type="password"
+                        class="config-input"
+                        id="config-discord-token"
+                        autocomplete="new-password"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>允许用户 (逗号分隔)</label
+                      ><input
+                        type="text"
+                        class="config-input"
+                        id="config-discord-allowfrom"
+                      />
+                    </div>
+                  </div>
+                  <div class="config-field">
+                    <label>模式</label>
+                    <select
+                      class="config-select channel-mode-select"
+                      id="config-discord-mode"
+                    >
+                      <option value="team">团队模式</option>
+                      <option value="deep">深度模式</option>
+                      <option value="roundtable">圆桌讨论</option>
+                      <option value="custom">自定义会议</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="config-collapse" id="config-channel-weixin">
+                <div
+                  class="config-collapse-header"
+                  onclick="this.parentElement.classList.toggle('open')"
+                >
+                  <span>微信机器人</span>
+                  <svg
+                    class="config-collapse-arrow"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div class="config-collapse-body">
+                  <div class="config-toggle-row">
+                    <div>
+                      <div class="config-toggle-label">启用</div>
+                    </div>
+                    <label class="config-toggle"
+                      ><input type="checkbox" id="config-weixin-enabled" /><span
+                        class="config-toggle-slider"
+                      ></span
+                    ></label>
+                  </div>
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>API 地址</label
+                      ><input
+                        type="text"
+                        class="config-input"
+                        id="config-weixin-baseurl"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>凭证路径</label
+                      ><input
+                        type="text"
+                        class="config-input"
+                        id="config-weixin-credpath"
+                      />
+                    </div>
+                  </div>
+                  <div class="config-row">
+                    <div class="config-field">
+                      <label>允许用户</label
+                      ><input
+                        type="text"
+                        class="config-input"
+                        id="config-weixin-allowfrom"
+                      />
+                    </div>
+                    <div class="config-field">
+                      <label>模式</label>
+                      <select
+                        class="config-select channel-mode-select"
+                        id="config-weixin-mode"
+                      >
+                        <option value="team">团队模式</option>
+                        <option value="deep">深度模式</option>
+                        <option value="roundtable">圆桌讨论</option>
+                        <option value="custom">自定义会议</option>
+                      </select>
+                    </div>
+                    <div class="config-field">
+                      <label>日志级别</label>
+                      <select class="config-select" id="config-weixin-loglevel">
+                        <option value="debug">debug</option>
+                        <option value="info">info</option>
+                        <option value="warn">warn</option>
+                        <option value="error">error</option>
+                        <option value="silent">silent</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="config-modal-footer">
-          <button class="config-btn config-btn-cancel" id="config-cancel-btn">取消</button>
-          <button class="config-btn config-btn-save" id="config-save-btn">保存配置</button>
+          <div class="config-modal-footer">
+            <button class="config-btn config-btn-cancel" id="config-cancel-btn">
+              取消
+            </button>
+            <button class="config-btn config-btn-save" id="config-save-btn">
+              保存配置
+            </button>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <script src="/static/js/select.js"></script>
-  <script src="/static/js/app.js"></script>
-  <script src="/static/js/messages.js"></script>
-  <script src="/static/js/history.js"></script>
-  <script src="/static/js/navigation.js"></script>
-  <script src="/static/js/agents.js"></script>
-  <script src="/static/js/files.js"></script>
-  <script src="/static/js/filemanager.js"></script>
-  <script src="/static/js/schedule.js"></script>
-  <script src="/static/js/config.js"></script>
-</body>
-
+    <script src="/static/js/select.js"></script>
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/messages.js"></script>
+    <script src="/static/js/history.js"></script>
+    <script src="/static/js/navigation.js"></script>
+    <script src="/static/js/agents.js"></script>
+    <script src="/static/js/files.js"></script>
+    <script src="/static/js/filemanager.js"></script>
+    <script src="/static/js/schedule.js"></script>
+    <script src="/static/js/config.js"></script>
+  </body>
 </html>

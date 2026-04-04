@@ -122,6 +122,9 @@ func run(mode serverMode, opts *ServeOptions) error {
 	app := lifecycle.New()
 	appCfg := app.Config()
 
+	// 注册关闭回调供 API 调用
+	lifecycle.SetShutdownFunc(func() { app.Shutdown() })
+
 	if appCfg.MemoryEnabled {
 		app.RegisterService(lifecycle.NewMemoryService(appCfg.WorkspaceDir))
 	}
@@ -176,6 +179,12 @@ func run(mode serverMode, opts *ServeOptions) error {
 
 	app.OnCleanup(func(ctx context.Context) error {
 		g.RunProcessCleanup()
+
+		// 如有待重启请求，启动新进程
+		if err := lifecycle.ExecutePendingRestart(); err != nil {
+			log.Printf("[server] restart failed: %v", err)
+		}
+
 		fmt.Printf("服务安全退出\n")
 		return nil
 	})

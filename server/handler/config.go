@@ -4,6 +4,7 @@ import (
 	"fkteams/agents"
 	"fkteams/config"
 	"fkteams/tools"
+	"fkteams/tools/mcp"
 	"net/http"
 	"strings"
 
@@ -112,8 +113,9 @@ func UpdateConfigHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 重载智能体注册表
+		// 重载智能体注册表和 MCP 工具缓存
 		agents.ReloadRegistry()
+		mcp.ClearCache()
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}

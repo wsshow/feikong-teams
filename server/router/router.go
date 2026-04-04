@@ -98,6 +98,10 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			configGroup.PUT("", handler.UpdateConfigHandler())
 			configGroup.GET("/tools", handler.GetToolNamesHandler())
 		}
+
+		// 系统管理 API
+		apiV1.POST("/shutdown", handler.ShutdownHandler())
+		apiV1.POST("/restart", handler.RestartHandler())
 	}
 }
 
