@@ -153,3 +153,82 @@ func parseExtraHeaders(s string) map[string]string {
 	}
 	return headers
 }
+
+// ModelInfo 模型信息
+type ModelInfo = internal.ModelInfo
+
+// ModelLister 模型列表获取接口
+type ModelLister func(ctx context.Context, cfg *internal.Config) ([]ModelInfo, error)
+
+var modelListers = map[Type]ModelLister{}
+
+func init() {
+	RegisterModelLister(OpenAI, internal.ListOpenAIModels)
+	RegisterModelLister(DeepSeek, internal.ListOpenAIModels)
+	RegisterModelLister(Qwen, internal.ListOpenAIModels)
+	RegisterModelLister(OpenRouter, internal.ListOpenAIModels)
+	RegisterModelLister(Ollama, internal.ListOpenAIModels)
+	RegisterModelLister(Ark, internal.ListOpenAIModels)
+	RegisterModelLister(Copilot, copilot.ListModels)
+}
+
+// RegisterModelLister 注册模型列表获取函数
+func RegisterModelLister(t Type, l ModelLister) {
+	modelListers[t] = l
+}
+
+// defaultBaseURLs 各提供者的默认 API 地址（用户未配置 base_url 时使用）
+var defaultBaseURLs = map[Type]string{
+	OpenAI:     "https://api.openai.com/v1",
+	DeepSeek:   "https://api.deepseek.com",
+	Qwen:       "https://dashscope.aliyuncs.com/compatible-mode/v1",
+	OpenRouter: "https://openrouter.ai/api/v1",
+	Ollama:     "http://localhost:11434/v1",
+	Ark:        "https://ark.cn-beijing.volces.com/api/v3",
+}
+
+// ListModels 获取指定提供者的可用模型列表
+func ListModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
+	t := cfg.Provider
+	if t == "" {
+		t = Detect(cfg.BaseURL, cfg.Model)
+	}
+
+	l, ok := modelListers[t]
+	if !ok {
+		return nil, fmt.Errorf("提供者 %s 不支持模型列表查询", t)
+	}
+
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = defaultBaseURLs[t]
+	}
+
+	return l(ctx, &internal.Config{
+		APIKey:       cfg.APIKey,
+		BaseURL:      baseURL,
+		Model:        cfg.Model,
+		ExtraHeaders: cfg.ExtraHeaders,
+	})
+}
+
+// ProviderInfo 提供者信息
+type ProviderInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListProviders 返回所有已注册的提供者信息
+func ListProviders() []ProviderInfo {
+	return []ProviderInfo{
+		{ID: string(OpenAI), Name: "OpenAI"},
+		{ID: string(DeepSeek), Name: "DeepSeek"},
+		{ID: string(Claude), Name: "Claude"},
+		{ID: string(Gemini), Name: "Gemini"},
+		{ID: string(Qwen), Name: "通义千问"},
+		{ID: string(Ollama), Name: "Ollama"},
+		{ID: string(OpenRouter), Name: "OpenRouter"},
+		{ID: string(Ark), Name: "火山方舟"},
+		{ID: string(Copilot), Name: "GitHub Copilot"},
+	}
+}

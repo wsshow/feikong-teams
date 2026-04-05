@@ -3,12 +3,15 @@ package copilot
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -141,4 +144,51 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	return resp, nil
+}
+
+// ListModels 获取 Copilot 可用的模型列表
+func ListModels(ctx context.Context, _ *internal.Config) ([]internal.ModelInfo, error) {
+	tm := GetTokenManager()
+	token, err := tm.GetToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("获取 Copilot token 失败: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", copilotBaseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	for k, v := range copilotHeaders() {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求 Copilot 模型列表失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Copilot 模型列表返回状态 %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			ID                 string `json:"id"`
+			ModelPickerEnabled bool   `json:"model_picker_enabled"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	var models []internal.ModelInfo
+	for _, m := range result.Data {
+		if m.ModelPickerEnabled {
+			models = append(models, internal.ModelInfo{ID: m.ID})
+		}
+	}
+	return models, nil
 }

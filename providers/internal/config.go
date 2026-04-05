@@ -1,6 +1,14 @@
 package internal
 
-import "net/http"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"time"
+)
 
 // Config 统一模型配置（供各 provider 子包使用）
 type Config struct {
@@ -9,6 +17,70 @@ type Config struct {
 	BaseURL      string            // API 地址
 	Model        string            // 模型名称
 	ExtraHeaders map[string]string // 额外 HTTP 请求头
+}
+
+// ModelInfo 模型信息（复用顶层结构）
+type ModelInfo struct {
+	ID string `json:"id"`
+}
+
+// ListOpenAIModels 通过 OpenAI 兼容的 /models 接口获取模型列表
+func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
+	if cfg.BaseURL == "" {
+		return nil, fmt.Errorf("未配置 base_url")
+	}
+
+	url := cfg.BaseURL + "/models"
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	}
+	for k, v := range cfg.ExtraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	client := newHTTPClient()
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求模型列表失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("模型列表请求返回状态 %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("解析模型列表失败: %w", err)
+	}
+
+	models := make([]ModelInfo, 0, len(result.Data))
+	for _, m := range result.Data {
+		models = append(models, ModelInfo{ID: m.ID})
+	}
+	return models, nil
+}
+
+// newHTTPClient 创建支持代理的 HTTP 客户端
+func newHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxyURL := os.Getenv("FEIKONG_PROXY_URL"); proxyURL != "" {
+		if u, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(u)
+		}
+	}
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+	}
 }
 
 // HTTPClientWithHeaders 创建一个注入额外 HTTP Header 的客户端

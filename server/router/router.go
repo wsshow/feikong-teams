@@ -110,6 +110,10 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			configGroup.GET("/tools", handler.GetToolNamesHandler())
 		}
 
+		// 模型提供者 API
+		apiV1.GET("/providers", handler.GetProvidersHandler())
+		apiV1.POST("/providers/models", handler.GetProviderModelsHandler())
+
 		// 系统管理 API
 		apiV1.POST("/shutdown", handler.ShutdownHandler())
 		apiV1.POST("/restart", handler.RestartHandler())

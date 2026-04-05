@@ -12,6 +12,7 @@ FKTeamsChat.prototype.initConfig = function () {
 
   this._configData = null;
   this._toolNames = [];
+  this._modelCache = {}; // provider+baseUrl+apiKey → [{id}]
 
   // 打开配置
   this.configOpenBtn.addEventListener("click", () => this.openConfig());
@@ -277,6 +278,7 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
             <option value="ollama" ${m.provider === "ollama" ? "selected" : ""}>Ollama</option>
             <option value="openrouter" ${m.provider === "openrouter" ? "selected" : ""}>OpenRouter</option>
             <option value="ark" ${m.provider === "ark" ? "selected" : ""}>火山方舟</option>
+            <option value="copilot" ${m.provider === "copilot" ? "selected" : ""}>GitHub Copilot</option>
           </select>
         </div>
       </div>
@@ -287,7 +289,14 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
         </div>
         <div class="config-field">
           <label>模型</label>
-          <input type="text" class="config-input model-model" value="${this.escapeHtml(m.model || "")}" placeholder="gpt-4o" />
+          <div class="config-input-group">
+            <input type="text" class="config-input model-model" value="${this.escapeHtml(m.model || "")}" placeholder="gpt-4o" />
+            <button class="config-fetch-models-btn" title="从服务商获取可用模型列表">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M21 12a9 9 0 11-6.22-8.56" /><polyline points="21 3 21 9 15 9" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
       <div class="config-row">
@@ -330,12 +339,175 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
     .addEventListener("change", updateSummary);
   card.querySelector(".model-model").addEventListener("input", updateSummary);
 
+  // Copilot 等无需 API Key 的服务商，隐藏密钥和地址字段
+  const toggleProviderFields = () => {
+    const provider = card.querySelector(".model-provider").value;
+    const needsKey = provider !== "copilot";
+    card.querySelector(".model-apikey").closest(".config-field").style.display =
+      needsKey ? "" : "none";
+    card
+      .querySelector(".model-baseurl")
+      .closest(".config-field").style.display = needsKey ? "" : "none";
+  };
+  card
+    .querySelector(".model-provider")
+    .addEventListener("change", toggleProviderFields);
+  toggleProviderFields();
+
+  // 获取模型列表（带缓存）
+  const self = this;
+  const getCacheKey = () => {
+    const provider = card.querySelector(".model-provider").value;
+    const baseUrl = card.querySelector(".model-baseurl").value.trim();
+    const apiKey = card.querySelector(".model-apikey").value.trim();
+    return provider + "|" + baseUrl + "|" + apiKey;
+  };
+
+  const fetchAndShowModels = async (forceRefresh) => {
+    const provider = card.querySelector(".model-provider").value;
+    const baseUrl = card.querySelector(".model-baseurl").value.trim();
+    const apiKey = card.querySelector(".model-apikey").value.trim();
+    const input = card.querySelector(".model-model");
+    const cacheKey = getCacheKey();
+
+    // 尝试使用缓存
+    if (!forceRefresh && self._modelCache[cacheKey]) {
+      self._showModelDropdown(input, self._modelCache[cacheKey]);
+      return;
+    }
+
+    const btn = card.querySelector(".config-fetch-models-btn");
+    btn.disabled = true;
+    btn.style.opacity = "0.5";
+    try {
+      const resp = await self.fetchWithAuth("/api/fkteams/providers/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          base_url: baseUrl,
+          api_key: apiKey,
+        }),
+      });
+      const result = await resp.json();
+      if (result.code !== 0 || !result.data) {
+        self.showNotification(
+          "获取模型列表失败: " + (result.message || "未知错误"),
+          "error",
+        );
+        return;
+      }
+      self._modelCache[cacheKey] = result.data;
+      self._showModelDropdown(input, result.data);
+      self.showNotification(
+        `已获取 ${result.data.length} 个可用模型`,
+        "success",
+      );
+    } catch (err) {
+      self.showNotification("获取模型列表失败: " + err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  };
+
+  // 点击刷新按钮：强制刷新
+  card
+    .querySelector(".config-fetch-models-btn")
+    .addEventListener("click", (e) => {
+      e.preventDefault();
+      fetchAndShowModels(true);
+    });
+
+  // 点击模型输入框：有缓存时直接展示下拉
+  card.querySelector(".model-model").addEventListener("click", () => {
+    const cacheKey = getCacheKey();
+    if (self._modelCache[cacheKey]) {
+      const input = card.querySelector(".model-model");
+      self._showModelDropdown(input, self._modelCache[cacheKey]);
+    }
+  });
+
   this.configModelList.appendChild(card);
 
   // 转换 select 为自定义组件
   card
     .querySelectorAll("select.config-select")
     .forEach((sel) => createCustomSelect(sel));
+};
+
+// 模型列表下拉面板（匹配自定义主题组件）
+FKTeamsChat.prototype._showModelDropdown = function (input, models) {
+  // 清理旧面板
+  const oldDrop = document.querySelector(".fk-model-dropdown");
+  if (oldDrop) oldDrop.remove();
+
+  const dropdown = document.createElement("div");
+  dropdown.className = "fk-model-dropdown fk-select-dropdown";
+  document.body.appendChild(dropdown);
+
+  const allModels = models.map((m) => m.id);
+
+  const renderItems = (filter) => {
+    dropdown.innerHTML = "";
+    const filtered = filter
+      ? allModels.filter((id) =>
+          id.toLowerCase().includes(filter.toLowerCase()),
+        )
+      : allModels;
+    filtered.forEach((id) => {
+      const item = document.createElement("div");
+      item.className =
+        "fk-select-option" + (input.value === id ? " active" : "");
+      item.textContent = id;
+      item.addEventListener("click", () => {
+        input.value = id;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        close();
+      });
+      dropdown.appendChild(item);
+    });
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "fk-select-option disabled";
+      empty.textContent = "无匹配模型";
+      dropdown.appendChild(empty);
+    }
+  };
+
+  const position = () => {
+    const rect = input.getBoundingClientRect();
+    dropdown.style.position = "fixed";
+    dropdown.style.left = rect.left + "px";
+    dropdown.style.width = rect.width + "px";
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow >= 200) {
+      dropdown.style.top = rect.bottom + 4 + "px";
+      dropdown.style.bottom = "auto";
+    } else {
+      dropdown.style.top = "auto";
+      dropdown.style.bottom = window.innerHeight - rect.top + 4 + "px";
+    }
+  };
+
+  const close = () => {
+    dropdown.remove();
+    input.removeEventListener("input", onInput);
+    document.removeEventListener("click", onDocClick);
+  };
+
+  const onInput = () => renderItems(input.value);
+  const onDocClick = (e) => {
+    if (!dropdown.contains(e.target) && e.target !== input) close();
+  };
+
+  input.addEventListener("input", onInput);
+  document.addEventListener("click", onDocClick);
+
+  renderItems("");
+  position();
+  dropdown.style.display = "block";
+  input.focus();
 };
 
 // ===== 自定义智能体卡片 =====
