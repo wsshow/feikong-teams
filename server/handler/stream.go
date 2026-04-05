@@ -7,6 +7,7 @@ import (
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/tools/approval"
+	"fkteams/tools/ask"
 	"fmt"
 	"log"
 	"net/http"
@@ -126,7 +127,7 @@ type StreamTaskState struct {
 	Status     string // processing, completed, error, cancelled
 	Buffer     *StreamBuffer
 	Cancel     context.CancelFunc
-	ApprovalCh chan int
+	ApprovalCh chan any
 	CreatedAt  time.Time
 	FinishedAt time.Time
 }
@@ -254,7 +255,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		// 创建任务状态
 		taskCtx, taskCancel := context.WithCancel(ctx)
 		buf := newStreamBuffer()
-		approvalCh := make(chan int, 1)
+		approvalCh := make(chan any, 1)
 
 		state := &StreamTaskState{
 			SessionID:  sessionID,
@@ -536,6 +537,42 @@ func StreamApprovalHandler() gin.HandlerFunc {
 	}
 }
 
+// StreamAskResponseHandler 提交 ask_questions 回答
+func StreamAskResponseHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			SessionID string   `json:"session_id" binding:"required"`
+			Selected  []string `json:"selected"`
+			FreeText  string   `json:"free_text"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if !validateSessionID(req.SessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+
+		state := globalStreamTasks.get(req.SessionID)
+		if state == nil || state.Status != "processing" {
+			Fail(c, http.StatusNotFound, "no running task for this session")
+			return
+		}
+
+		resp := &ask.AskResponse{
+			Selected: req.Selected,
+			FreeText: req.FreeText,
+		}
+		select {
+		case state.ApprovalCh <- resp:
+			OK(c, gin.H{"message": "response submitted"})
+		default:
+			Fail(c, http.StatusConflict, "no pending ask request")
+		}
+	}
+}
+
 // StreamEventsHandler 获取当前任务的已缓冲事件（非 SSE，一次性拉取）。
 // 仅对内存中有缓存的任务有效；已完成的历史数据应通过 GET /sessions/:id 获取。
 func StreamEventsHandler() gin.HandlerFunc {
@@ -573,9 +610,36 @@ func StreamEventsHandler() gin.HandlerFunc {
 // ==================== 内部辅助 ====================
 
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
-func buildStreamInterruptHandler(buf *StreamBuffer, recorder *fkevent.HistoryRecorder, sessionID string, approvalCh <-chan int) engine.InterruptHandler {
+func buildStreamInterruptHandler(buf *StreamBuffer, recorder *fkevent.HistoryRecorder, sessionID string, approvalCh <-chan any) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(approvalCh)
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+		// 检查是否为 ask_questions 中断
+		if info := extractAskInfo(interrupts); info != nil {
+			recorder.RecordEvent(fkevent.Event{
+				Type:       "action",
+				ActionType: "ask_questions",
+				Content:    info.Question,
+			})
+			buf.Append(map[string]any{
+				"type":         "ask_questions",
+				"session_id":   sessionID,
+				"question":     info.Question,
+				"options":      info.Options,
+				"multi_select": info.MultiSelect,
+			})
+
+			result, err := channelHandler(ctx, interrupts)
+			if err == nil {
+				recorder.RecordEvent(fkevent.Event{
+					Type:       "action",
+					ActionType: "ask_response",
+					Content:    fmt.Sprintf("%v", result),
+				})
+			}
+			return result, err
+		}
+
+		// 默认审批流程
 		msg := extractInterruptMessage(interrupts)
 
 		recorder.RecordEvent(fkevent.Event{

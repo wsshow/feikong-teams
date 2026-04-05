@@ -7,6 +7,7 @@ import (
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
+	"fkteams/tools/ask"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -256,6 +257,18 @@ func approvalDecisionText(result map[string]any) string {
 		break
 	}
 	return ""
+}
+
+// extractAskInfo 从中断上下文中提取 ask_questions 信息
+func extractAskInfo(interrupts []*adk.InterruptCtx) *ask.AskInfo {
+	for _, ic := range interrupts {
+		if ic.IsRootCause {
+			if info, ok := ic.Info.(*ask.AskInfo); ok {
+				return info
+			}
+		}
+	}
+	return nil
 }
 
 // --- 事件/内容转换 ---

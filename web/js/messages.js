@@ -251,6 +251,10 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       this.showApprovalRequest(event.message);
       this.showApprovalDialog(event.message);
       break;
+    case "ask_questions":
+      this.showAskRequest(event);
+      this.showAskDialog(event);
+      break;
     case "error":
       this.handleError(event);
       break;
@@ -1358,6 +1362,141 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
   el.className = "action-event approval-result " + (classes[decision] || "");
   el.innerHTML =
     "<span>" + this.escapeHtml(labels[decision] || "审批完成") + "</span>";
+  this.messagesContainer.appendChild(el);
+  this.scrollToBottom();
+
+  this.updateStatus("processing", "处理中...");
+};
+
+// 在聊天区域显示提问请求卡片
+FKTeamsChat.prototype.showAskRequest = function (event) {
+  var el = document.createElement("div");
+  el.className = "action-event ask-request";
+  el.innerHTML =
+    "<span>[提问] " +
+    this.escapeHtml(event.question || "模型有问题要问你") +
+    "</span>";
+  this.messagesContainer.appendChild(el);
+  this.scrollToBottom();
+};
+
+// 显示提问弹窗
+FKTeamsChat.prototype.showAskDialog = function (event) {
+  var modal = document.getElementById("ask-modal");
+  var questionEl = document.getElementById("ask-question");
+  var optionsEl = document.getElementById("ask-options");
+  var freeTextEl = document.getElementById("ask-free-text");
+  var submitBtn = document.getElementById("ask-submit-btn");
+
+  questionEl.textContent = event.question || "请回答以下问题";
+  optionsEl.innerHTML = "";
+  freeTextEl.value = "";
+
+  var multiSelect = event.multi_select || false;
+  var inputType = multiSelect ? "checkbox" : "radio";
+
+  if (event.options && event.options.length > 0) {
+    event.options.forEach(function (opt, idx) {
+      var label = document.createElement("label");
+      label.className = "ask-option-label";
+      var input = document.createElement("input");
+      input.type = inputType;
+      input.name = "ask-option";
+      input.value = opt;
+      input.className = "ask-option-input";
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(" " + opt));
+      optionsEl.appendChild(label);
+    });
+
+    // 添加"自行输入"选项
+    var customLabel = document.createElement("label");
+    customLabel.className = "ask-option-label ask-option-custom";
+    var customInput = document.createElement("input");
+    customInput.type = inputType;
+    customInput.name = "ask-option";
+    customInput.value = "__custom__";
+    customInput.className = "ask-option-input";
+    customLabel.appendChild(customInput);
+    customLabel.appendChild(document.createTextNode(" 自行输入"));
+    optionsEl.appendChild(customLabel);
+
+    // 自行输入选中时显示文本框
+    freeTextEl.style.display = "none";
+    optionsEl.addEventListener("change", function () {
+      var inputs = optionsEl.querySelectorAll("input");
+      var showFreeText = false;
+      inputs.forEach(function (inp) {
+        if (inp.value === "__custom__" && inp.checked) showFreeText = true;
+      });
+      freeTextEl.style.display = showFreeText ? "block" : "none";
+      if (showFreeText) freeTextEl.focus();
+    });
+  } else {
+    // 无选项，只有自由输入
+    freeTextEl.style.display = "block";
+    freeTextEl.placeholder = "请输入您的回答...";
+  }
+
+  // 重新绑定提交按钮
+  var self = this;
+  var newSubmitBtn = submitBtn.cloneNode(true);
+  submitBtn.parentNode.replaceChild(newSubmitBtn, submitBtn);
+  newSubmitBtn.addEventListener("click", function () {
+    self.submitAskResponse(modal, optionsEl, freeTextEl);
+  });
+
+  modal.style.display = "flex";
+  this.updateStatus("processing", "等待回答...");
+};
+
+// 提交提问回答
+FKTeamsChat.prototype.submitAskResponse = function (
+  modal,
+  optionsEl,
+  freeTextEl,
+) {
+  var selected = [];
+  var freeText = "";
+
+  var inputs = optionsEl.querySelectorAll("input:checked");
+  inputs.forEach(function (inp) {
+    if (inp.value !== "__custom__") {
+      selected.push(inp.value);
+    }
+  });
+
+  // 检查是否选了自行输入
+  var customChecked = false;
+  inputs.forEach(function (inp) {
+    if (inp.value === "__custom__") customChecked = true;
+  });
+  if (customChecked || optionsEl.children.length === 0) {
+    freeText = (freeTextEl.value || "").trim();
+  }
+
+  modal.style.display = "none";
+
+  if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    this.ws.send(
+      JSON.stringify({
+        type: "ask_response",
+        session_id: this.sessionId,
+        ask_selected: selected,
+        ask_free_text: freeText,
+      }),
+    );
+  }
+
+  // 在聊天中显示回答结果
+  var parts = [];
+  if (selected.length > 0) parts.push("选择: " + selected.join(", "));
+  if (freeText) parts.push("输入: " + freeText);
+  var summary = parts.length > 0 ? parts.join(" | ") : "已回答";
+
+  var el = document.createElement("div");
+  el.className = "action-event ask-response approved";
+  el.innerHTML = "<span>" + this.escapeHtml(summary) + "</span>";
   this.messagesContainer.appendChild(el);
   this.scrollToBottom();
 

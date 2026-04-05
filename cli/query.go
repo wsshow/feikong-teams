@@ -11,6 +11,8 @@ import (
 	"fkteams/g"
 	"fkteams/report"
 	"fkteams/tools/approval"
+	"fkteams/tools/ask"
+	"fkteams/tui"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -226,7 +228,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	if e.autoReject {
 		handler = engine.AutoRejectHandler()
 	} else {
-		handler = engine.CallbackHandler(e.promptApproval)
+		handler = engine.CompositeCallbackHandler(e.promptApproval, e.promptAskQuestions)
 	}
 
 	startTime := time.Now()
@@ -274,6 +276,23 @@ func (e *QueryExecutor) promptApproval() int {
 		return approval.ApproveAll
 	default:
 		return approval.Reject
+	}
+}
+
+// promptAskQuestions 在 CLI 中展示问题并收集用户回答
+func (e *QueryExecutor) promptAskQuestions(info *ask.AskInfo) *ask.AskResponse {
+	var options []tui.AskOption
+	for _, opt := range info.Options {
+		options = append(options, tui.AskOption{Label: opt, Value: opt})
+	}
+
+	result, err := tui.AskQuestions(info.Question, options, info.MultiSelect)
+	if err != nil || result == nil {
+		return &ask.AskResponse{}
+	}
+	return &ask.AskResponse{
+		Selected: result.Selected,
+		FreeText: result.FreeText,
 	}
 }
 

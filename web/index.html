@@ -419,6 +419,29 @@
         </div>
       </div>
 
+      <!-- 提问弹窗 -->
+      <div class="ask-modal" id="ask-modal" style="display: none">
+        <div class="ask-modal-content">
+          <div class="ask-modal-header">
+            <h3>需要你的输入</h3>
+          </div>
+          <div class="ask-modal-body">
+            <p class="ask-question" id="ask-question"></p>
+            <div class="ask-options" id="ask-options"></div>
+            <textarea
+              class="ask-free-text"
+              id="ask-free-text"
+              rows="3"
+              placeholder="输入自定义回答..."
+              style="display: none"
+            ></textarea>
+          </div>
+          <div class="ask-modal-footer">
+            <button class="ask-submit-btn" id="ask-submit-btn">提交回答</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 删除确认弹窗 -->
       <div class="delete-modal" id="delete-modal" style="display: none">
         <div class="delete-modal-content">

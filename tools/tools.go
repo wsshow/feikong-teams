@@ -5,6 +5,7 @@ import (
 	"fkteams/common"
 	"fkteams/config"
 	"fkteams/g"
+	"fkteams/tools/ask"
 	"fkteams/tools/command"
 	"fkteams/tools/doc"
 	"fkteams/tools/excel"
@@ -102,6 +103,8 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		return fetch.GetTools()
 	case "doc":
 		return doc.GetTools()
+	case "ask":
+		return ask.GetTools()
 	case "uv":
 		uvTools, err := uv.NewUVTools(runtimeDir(), workspacePath())
 		if err != nil {
@@ -127,7 +130,7 @@ func BuiltinToolNames() []string {
 	return []string{
 		"file", "git", "excel", "todo", "ssh",
 		"command", "scheduler", "search", "fetch", "doc",
-		"uv", "bun",
+		"ask", "uv", "bun",
 	}
 }
 

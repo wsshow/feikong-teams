@@ -17,7 +17,7 @@ var (
 // sessionTask 单个会话的任务状态
 type sessionTask struct {
 	cancel     context.CancelFunc
-	approvalCh chan int
+	approvalCh chan any
 	id         uint64 // 唯一标识，用于区分同一 session 的新旧任务
 }
 
@@ -48,7 +48,7 @@ func (sm *sessionManager) startTask(sessionID string, cancel context.CancelFunc)
 }
 
 // setApprovalCh 设置指定会话的审批通道（仅当 taskID 匹配时）
-func (sm *sessionManager) setApprovalCh(sessionID string, taskID uint64, ch chan int) {
+func (sm *sessionManager) setApprovalCh(sessionID string, taskID uint64, ch chan any) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if t, exists := sm.tasks[sessionID]; exists && t.id == taskID {
@@ -57,7 +57,7 @@ func (sm *sessionManager) setApprovalCh(sessionID string, taskID uint64, ch chan
 }
 
 // getApprovalCh 获取指定会话的审批通道
-func (sm *sessionManager) getApprovalCh(sessionID string) chan int {
+func (sm *sessionManager) getApprovalCh(sessionID string) chan any {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if t, exists := sm.tasks[sessionID]; exists {

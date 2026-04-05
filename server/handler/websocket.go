@@ -7,6 +7,8 @@ import (
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/tools/approval"
+	"fkteams/tools/ask"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -24,13 +26,15 @@ var upgrader = websocket.Upgrader{
 
 // WSMessage WebSocket 消息类型
 type WSMessage struct {
-	Type      string        `json:"type"`
-	SessionID string        `json:"session_id,omitempty"`
-	Message   string        `json:"message,omitempty"`
-	Mode      string        `json:"mode,omitempty"`
-	AgentName string        `json:"agent_name,omitempty"`
-	Decision  int           `json:"decision,omitempty"`
-	Contents  []ContentPart `json:"contents,omitempty"`
+	Type        string        `json:"type"`
+	SessionID   string        `json:"session_id,omitempty"`
+	Message     string        `json:"message,omitempty"`
+	Mode        string        `json:"mode,omitempty"`
+	AgentName   string        `json:"agent_name,omitempty"`
+	Decision    int           `json:"decision,omitempty"`
+	Contents    []ContentPart `json:"contents,omitempty"`
+	AskSelected []string      `json:"ask_selected,omitempty"`
+	AskFreeText string        `json:"ask_free_text,omitempty"`
 }
 
 // WebSocketHandler 处理 WebSocket 连接
@@ -111,6 +115,19 @@ func WebSocketHandler() gin.HandlerFunc {
 					}
 				}
 
+			case "ask_response":
+				sid := wsMsg.SessionID
+				if ch := sm.getApprovalCh(sid); ch != nil {
+					resp := &ask.AskResponse{
+						Selected: wsMsg.AskSelected,
+						FreeText: wsMsg.AskFreeText,
+					}
+					select {
+					case ch <- resp:
+					default:
+					}
+				}
+
 			case "ping":
 				_ = writeJSON(map[string]any{"type": "pong"})
 
@@ -124,9 +141,38 @@ func WebSocketHandler() gin.HandlerFunc {
 // --- WebSocket HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan int) engine.InterruptHandler {
+func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan any) engine.InterruptHandler {
 	channelHandler := engine.ChannelHandler(approvalCh)
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+		// 检查是否为 ask_questions 中断
+		if info := extractAskInfo(interrupts); info != nil {
+			recorder.RecordEvent(fkevent.Event{
+				Type:       "action",
+				ActionType: "ask_questions",
+				Content:    info.Question,
+			})
+			payload := map[string]any{
+				"type":         "ask_questions",
+				"session_id":   sessionID,
+				"question":     info.Question,
+				"options":      info.Options,
+				"multi_select": info.MultiSelect,
+			}
+			_ = writeJSON(payload)
+
+			result, err := channelHandler(ctx, interrupts)
+
+			if err == nil {
+				recorder.RecordEvent(fkevent.Event{
+					Type:       "action",
+					ActionType: "ask_response",
+					Content:    fmt.Sprintf("%v", result),
+				})
+			}
+			return result, err
+		}
+
+		// 默认审批流程
 		msg := extractInterruptMessage(interrupts)
 
 		recorder.RecordEvent(fkevent.Event{
@@ -223,7 +269,7 @@ func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMess
 	))
 
 	// 初始化 HITL 审批通道
-	approvalCh := make(chan int, 1)
+	approvalCh := make(chan any, 1)
 	sm.setApprovalCh(sessionID, taskID, approvalCh)
 	defer sm.setApprovalCh(sessionID, taskID, nil)
 

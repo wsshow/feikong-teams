@@ -1141,6 +1141,24 @@ FKTeamsChat.prototype.renderSingleAction = function (action, agentName) {
     return;
   }
 
+  // 提问请求
+  if (action.action_type === "ask_questions") {
+    const el = document.createElement("div");
+    el.className = "action-event ask-request";
+    el.innerHTML = `<span>[提问] ${this.escapeHtml(action.content || "模型提问")}</span>`;
+    this.messagesContainer.appendChild(el);
+    return;
+  }
+
+  // 提问回答
+  if (action.action_type === "ask_response") {
+    const el = document.createElement("div");
+    el.className = "action-event ask-response approved";
+    el.innerHTML = `<span>${this.escapeHtml(action.content || "已回答")}</span>`;
+    this.messagesContainer.appendChild(el);
+    return;
+  }
+
   let actionClass = "";
   let actionIcon = "";
 

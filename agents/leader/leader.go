@@ -13,7 +13,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 	return common.NewAgentBuilder("统御", "团队管理者，善于规划和分配任务。").
 		WithTemplate(leaderPromptTemplate).
 		WithTemplateVar("workspace_dir", safeDir).
-		WithToolNames("todo", "file", "scheduler").
+		WithToolNames("todo", "file", "scheduler", "ask").
 		WithSummary().
 		WithSkills().
 		Build(ctx)

@@ -94,7 +94,7 @@ func searchSkills(ctx context.Context, keyword string, page, size int, providers
 			if s.Owner != "" {
 				meta = append(meta, "@"+s.Owner)
 			}
-			meta = append(meta, "⬇ "+formatCount(s.Downloads))
+			meta = append(meta, "下载 "+formatCount(s.Downloads))
 			if s.Stars > 0 {
 				meta = append(meta, "★ "+formatCount(s.Stars))
 			}

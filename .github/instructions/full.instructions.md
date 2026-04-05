@@ -284,6 +284,8 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 
 4. **错误处理**: 所有初始化函数返回 `error`（不使用 `log.Fatal`），运行时错误通过事件系统传递
 
+5. **禁止使用 Emoji**: 所有源代码（Go、JS、HTML、CSS 等）中禁止使用 emoji 图形字符（如 💬、⚡、✨、🔧、✏️、⏱ 等），用纯文字替代。文字符号（如 ✓、✗、●、○、▸、↑、↓、★、⚠、⚙ 等）允许使用。
+
 ### 全局变量
 
 定义在 `g/g.go`:

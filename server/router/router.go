@@ -53,6 +53,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			stream.GET("/status/:sessionID", handler.StreamStatusHandler())
 			stream.GET("/events/:sessionID", handler.StreamEventsHandler())
 			stream.POST("/approval", handler.StreamApprovalHandler())
+			stream.POST("/ask-response", handler.StreamAskResponseHandler())
 		}
 
 		// 文件管理 API

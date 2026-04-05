@@ -205,7 +205,7 @@ func statusIcon(s string) string {
 	case "error":
 		return "✗"
 	case "timeout":
-		return "⏱"
+		return "T"
 	default:
 		return "?"
 	}
@@ -231,7 +231,7 @@ func (m dispatchModel) View() tea.View {
 		w = 80
 	}
 
-	b.WriteString(headerStyle.Render(fmt.Sprintf("⚡ 并行分发 %d 个子任务", len(m.tasks))))
+	b.WriteString(headerStyle.Render(fmt.Sprintf("并行分发 %d 个子任务", len(m.tasks))))
 	b.WriteString("\n\n")
 
 	for i := range m.tasks {
