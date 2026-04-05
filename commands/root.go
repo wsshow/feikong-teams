@@ -23,6 +23,7 @@ func Root() *ucli.Command {
 			agentCommand(),
 			toolCommand(),
 			skillCommand(),
+			modelCommand(),
 			loginCommand(),
 			logoutCommand(),
 		},
