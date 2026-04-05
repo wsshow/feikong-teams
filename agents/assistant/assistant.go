@@ -16,7 +16,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplateVar("os_type", runtime.GOOS).
 		WithTemplateVar("os_arch", runtime.GOARCH).
 		WithTemplateVar("workspace_dir", safeDir).
-		WithToolNames("command", "file", "search", "fetch", "ask").
+		WithToolNames("command", "file", "search", "fetch", "ask", "doc").
 		WithDispatch(nil).
 		WithSummary().
 		WithSkills().
