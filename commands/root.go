@@ -23,6 +23,8 @@ func Root() *ucli.Command {
 			agentCommand(),
 			toolCommand(),
 			skillCommand(),
+			loginCommand(),
+			logoutCommand(),
 		},
 		Flags: []ucli.Flag{
 			&ucli.StringFlag{

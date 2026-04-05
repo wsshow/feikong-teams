@@ -13,6 +13,7 @@ import (
 
 	"fkteams/providers/ark"
 	"fkteams/providers/claude"
+	"fkteams/providers/copilot"
 	"fkteams/providers/deepseek"
 	"fkteams/providers/gemini"
 	"fkteams/providers/internal"
@@ -34,6 +35,7 @@ const (
 	Gemini     Type = "gemini"     // Google Gemini
 	Qwen       Type = "qwen"       // 阿里通义千问
 	OpenRouter Type = "openrouter" // OpenRouter
+	Copilot    Type = "copilot"    // GitHub Copilot
 )
 
 // Config 统一模型配置
@@ -59,6 +61,7 @@ func init() {
 	Register(Gemini, gemini.New)
 	Register(Qwen, qwen.New)
 	Register(OpenRouter, openrouter.New)
+	Register(Copilot, copilot.New)
 }
 
 // Register 注册提供者工厂函数
@@ -124,6 +127,8 @@ func Detect(baseURL, modelName string) Type {
 		return Qwen
 	case strings.Contains(lower, "openrouter"):
 		return OpenRouter
+	case strings.Contains(lower, "copilot") || strings.Contains(lower, "githubcopilot"):
+		return Copilot
 	default:
 		return OpenAI
 	}

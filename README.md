@@ -45,6 +45,7 @@ fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI
 - **长期记忆**：跨会话自动记忆，助手越用越顺手
 - **多模态输入**：支持文本、图片、音频、视频和文件
 - **推理模型支持**：流式展示思考过程（DeepSeek-R1、o1/o3 等）
+- **GitHub Copilot**：一键登录 GitHub Copilot，OAuth 设备码认证，会话内复用 token 优化计费
 - **流式任务控制**：后台独立执行任务，SSE 订阅事件流，断线重连无损续接
 - **Skills 技能系统**：动态加载技能提升特定任务表现
 - **定时任务**：自然语言设置定时任务，后台静默执行
@@ -92,6 +93,23 @@ provider = "openai"
 base_url = "https://api.openai.com/v1"
 api_key = "your_api_key_here"
 model = "gpt-5"
+```
+
+或使用 GitHub Copilot（需要 Copilot 订阅）：
+
+```bash
+# 登录 GitHub Copilot
+fkteams login copilot
+
+# 或从 VS Code 已保存的 token 导入（免登录）
+fkteams login copilot --import
+```
+
+```toml
+[[models]]
+name = "default"
+provider = "copilot"
+model = "gpt-4o"
 ```
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
