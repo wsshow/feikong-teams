@@ -68,6 +68,9 @@ func (m inputModel) Init() tea.Cmd { return textinput.Blink }
 
 func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.textInput.SetWidth(msg.Width - 4)
+		return m, nil
 	case tea.PasteMsg:
 		content := msg.Content
 		if strings.ContainsAny(content, "\n\r") {

@@ -33,6 +33,7 @@ type askModel struct {
 	inputMode bool
 	textInput textinput.Model
 
+	width   int // 终端宽度
 	result  AskResult
 	done    bool
 	aborted bool
@@ -55,6 +56,7 @@ func newAskModel(question string, options []AskOption, multiSelect bool) askMode
 		multiSelect: multiSelect,
 		checked:     make(map[int]bool),
 		textInput:   ti,
+		width:       80,
 	}
 }
 
@@ -70,6 +72,17 @@ func (m askModel) isCustomIndex() bool {
 }
 
 func (m askModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// 终端尺寸变化
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsm.Width
+		tiWidth := wsm.Width - 6
+		if tiWidth < 20 {
+			tiWidth = 20
+		}
+		m.textInput.SetWidth(tiWidth)
+		return m, nil
+	}
+
 	// 自由输入模式
 	if m.inputMode {
 		switch msg := msg.(type) {
@@ -188,6 +201,15 @@ var (
 			PaddingLeft(2)
 )
 
+// wrapText 使用 lipgloss 的 Width 属性实现文字自动换行
+func wrapText(text string, style lipgloss.Style, termWidth int) string {
+	w := termWidth - 4 // 留出左右边距
+	if w < 20 {
+		w = 20
+	}
+	return style.Width(w).Render(text)
+}
+
 func (m askModel) View() tea.View {
 	if m.done || m.aborted {
 		return tea.NewView("")
@@ -197,7 +219,7 @@ func (m askModel) View() tea.View {
 
 	// 问题
 	b.WriteString("\n")
-	b.WriteString(askQuestionStyle.Render("[提问] " + m.question))
+	b.WriteString(wrapText("[提问] "+m.question, askQuestionStyle, m.width))
 	b.WriteString("\n\n")
 
 	if m.inputMode {
@@ -259,15 +281,15 @@ func (m askModel) View() tea.View {
 
 		if isCursor {
 			if isCustom {
-				b.WriteString(askCursorStyle.Render("> " + askCustomStyle.Render(line)))
+				b.WriteString(wrapText("> "+askCustomStyle.Render(line), askCursorStyle, m.width))
 			} else {
-				b.WriteString(askCursorStyle.Render("> " + line))
+				b.WriteString(wrapText("> "+line, askCursorStyle, m.width))
 			}
 		} else {
 			if isCustom {
-				b.WriteString(askOptionStyle.Render(askCustomStyle.Render(line)))
+				b.WriteString(wrapText(askCustomStyle.Render(line), askOptionStyle, m.width))
 			} else {
-				b.WriteString(askOptionStyle.Render(line))
+				b.WriteString(wrapText(line, askOptionStyle, m.width))
 			}
 		}
 		b.WriteString("\n")
@@ -315,7 +337,7 @@ func askFreeText(question string) (*AskResult, error) {
 	ti.SetWidth(60)
 	ti.Focus()
 
-	m := freeTextModel{question: question, textInput: ti}
+	m := freeTextModel{question: question, textInput: ti, width: 80}
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {
@@ -332,6 +354,7 @@ func askFreeText(question string) (*AskResult, error) {
 type freeTextModel struct {
 	question  string
 	textInput textinput.Model
+	width     int
 	text      string
 	aborted   bool
 }
@@ -339,6 +362,15 @@ type freeTextModel struct {
 func (m freeTextModel) Init() tea.Cmd { return textinput.Blink }
 
 func (m freeTextModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsm.Width
+		tiWidth := wsm.Width - 6
+		if tiWidth < 20 {
+			tiWidth = 20
+		}
+		m.textInput.SetWidth(tiWidth)
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -361,7 +393,7 @@ func (m freeTextModel) View() tea.View {
 	}
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(askQuestionStyle.Render("[提问] " + m.question))
+	b.WriteString(wrapText("[提问] "+m.question, askQuestionStyle, m.width))
 	b.WriteString("\n\n")
 	b.WriteString(m.textInput.View())
 	b.WriteString("\n\n")
