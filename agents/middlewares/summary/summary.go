@@ -3,6 +3,7 @@ package summary
 import (
 	"context"
 	"fkteams/fkevent"
+	"fkteams/providers/copilot"
 	"fmt"
 	"strings"
 
@@ -286,7 +287,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 		Content:    "对话上下文压缩中...",
 	})
 
-	msg, err := s.summarizer.Invoke(ctx, map[string]any{
+	msg, err := s.summarizer.Invoke(copilot.WithAgentInitiator(ctx), map[string]any{
 		"system_prompt":    joinBlocks([]block{systemBlock}),
 		"user_messages":    joinBlocks([]block{userBlock}),
 		"previous_summary": joinBlocks([]block{summaryBlock}),

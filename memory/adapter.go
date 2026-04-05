@@ -5,6 +5,8 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"fkteams/providers/copilot"
 )
 
 // einoLLMAdapter 将 Eino ChatModel 适配为 LLMClient 接口
@@ -18,6 +20,7 @@ func NewLLMClient(m model.BaseChatModel) LLMClient {
 }
 
 func (a *einoLLMAdapter) Complete(ctx context.Context, prompt string) (string, error) {
+	ctx = copilot.WithAgentInitiator(ctx)
 	resp, err := a.model.Generate(ctx, []*schema.Message{
 		schema.SystemMessage("You are a memory extraction assistant. Respond only in the requested format."),
 		schema.UserMessage(prompt),

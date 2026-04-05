@@ -18,6 +18,19 @@ import (
 	"fkteams/providers/internal"
 )
 
+type contextKey int
+
+const agentInitiatorKey contextKey = iota
+
+func WithAgentInitiator(ctx context.Context) context.Context {
+	return context.WithValue(ctx, agentInitiatorKey, true)
+}
+
+func isAgentInitiator(ctx context.Context) bool {
+	v, ok := ctx.Value(agentInitiatorKey).(bool)
+	return ok && v
+}
+
 var (
 	// 全局 TokenManager 单例
 	globalTM     *TokenManager
@@ -99,7 +112,10 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	// 根据消息内容判断 X-Initiator
 	initiator := "user"
-	if req.Body != nil && req.Body != http.NoBody {
+	if isAgentInitiator(req.Context()) {
+		// context 显式标记为 agent 行为（记忆提取、子任务等）
+		initiator = "agent"
+	} else if req.Body != nil && req.Body != http.NoBody {
 		bodyBytes, readErr := io.ReadAll(req.Body)
 		req.Body.Close()
 		if readErr == nil {

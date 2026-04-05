@@ -7,6 +7,7 @@ import (
 	"fkteams/agents/retry"
 	rootcommon "fkteams/common"
 	"fkteams/fkevent"
+	"fkteams/providers/copilot"
 	"fkteams/tools/approval"
 	"fmt"
 	"strings"
@@ -129,6 +130,7 @@ func (m *middleware) executeOneTask(parentCtx context.Context, index int, task t
 	defer cancel()
 
 	taskCtx = approval.WithRegistry(taskCtx, approval.NewAutoApproveRegistry())
+	taskCtx = copilot.WithAgentInitiator(taskCtx)
 
 	agent, err := m.createSubAgent(taskCtx, fmt.Sprintf("子任务-%d", index), task.Description)
 	if err != nil {
