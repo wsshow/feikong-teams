@@ -149,6 +149,13 @@ func handleClearHistory(wsMsg WSMessage, writeJSON func(any) error) {
 		log.Printf("failed to delete session directory: %v", err)
 		_ = writeJSON(map[string]any{"type": "error", "error": "清除历史失败"})
 	} else {
+		// 清理关联的流式任务缓存
+		if task := globalStreamTasks.get(sessionID); task != nil {
+			if task.Status == "processing" {
+				task.Cancel()
+			}
+			globalStreamTasks.remove(sessionID)
+		}
 		fkevent.GlobalSessionManager.Remove(sessionID)
 		log.Printf("[SessionManager] cleared session history: session=%s", sessionID)
 		_ = writeJSON(map[string]any{"type": "history_cleared", "message": "历史记录已清除"})

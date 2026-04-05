@@ -44,6 +44,17 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		// 聊天 API
 		apiV1.POST("/chat", handler.ChatHandler())
 
+		// 流式任务 API（前端订阅模式，支持断线重连）
+		stream := apiV1.Group("/stream")
+		{
+			stream.POST("/start", handler.StreamStartHandler())
+			stream.POST("/stop/:sessionID", handler.StreamStopHandler())
+			stream.GET("/subscribe/:sessionID", handler.StreamSubscribeHandler())
+			stream.GET("/status/:sessionID", handler.StreamStatusHandler())
+			stream.GET("/events/:sessionID", handler.StreamEventsHandler())
+			stream.POST("/approval", handler.StreamApprovalHandler())
+		}
+
 		// 文件管理 API
 		files := apiV1.Group("/files")
 		{

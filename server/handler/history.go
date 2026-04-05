@@ -19,11 +19,12 @@ var historyDir = common.SessionsDir()
 
 // SessionInfo 会话信息
 type SessionInfo struct {
-	SessionID string    `json:"session_id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	Size      int64     `json:"size"`
-	ModTime   time.Time `json:"mod_time"`
+	SessionID  string    `json:"session_id"`
+	Title      string    `json:"title"`
+	Status     string    `json:"status"`
+	ActiveTask bool      `json:"active_task"` // 是否有内存中的活跃流式任务可订阅
+	Size       int64     `json:"size"`
+	ModTime    time.Time `json:"mod_time"`
 }
 
 // validateSessionID 校验会话 ID 安全性（禁止路径穿越）
@@ -85,11 +86,12 @@ func ListSessionsHandler() gin.HandlerFunc {
 			}
 
 			files = append(files, SessionInfo{
-				SessionID: sessionID,
-				Title:     title,
-				Status:    status,
-				Size:      size,
-				ModTime:   modTime,
+				SessionID:  sessionID,
+				Title:      title,
+				Status:     status,
+				ActiveTask: globalStreamTasks.get(sessionID) != nil,
+				Size:       size,
+				ModTime:    modTime,
 			})
 		}
 
@@ -200,6 +202,14 @@ func DeleteSessionHandler() gin.HandlerFunc {
 		if _, err := os.Stat(sessionDir); os.IsNotExist(err) {
 			Fail(c, http.StatusNotFound, "session not found")
 			return
+		}
+
+		// 取消该会话的流式任务并清理缓存
+		if task := globalStreamTasks.get(sessionID); task != nil {
+			if task.Status == "processing" {
+				task.Cancel()
+			}
+			globalStreamTasks.remove(sessionID)
 		}
 
 		if err := os.RemoveAll(sessionDir); err != nil {
