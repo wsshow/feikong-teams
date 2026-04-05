@@ -50,7 +50,6 @@ func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel,
 }
 
 // newCopilotHTTPClient 创建带有 Copilot 认证和 X-Initiator 逻辑的 HTTP 客户端
-// 支持 config.toml 中的 proxy.url 和 FEIKONG_PROXY_URL 环境变量代理
 func newCopilotHTTPClient(tm *TokenManager) *http.Client {
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	if proxyURL := os.Getenv("FEIKONG_PROXY_URL"); proxyURL != "" {

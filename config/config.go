@@ -341,7 +341,7 @@ func Save(cfg *Config) error {
 func ensureDefaultModel() error {
 	cfg := Get()
 	// 配置文件中有 default 模型
-	if mc := cfg.ResolveModel("default"); mc != nil && (mc.APIKey != "" || mc.Provider == "copilot") {
+	if mc := cfg.ResolveModel("default"); mc != nil && (mc.APIKey != "" || mc.Provider != "") {
 		return nil
 	}
 	// 环境变量回退

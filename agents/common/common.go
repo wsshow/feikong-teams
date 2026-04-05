@@ -26,7 +26,7 @@ func WorkspaceDir() string {
 func NewChatModel() (model.ToolCallingChatModel, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveModel("default")
-	if modelCfg != nil && modelCfg.APIKey != "" {
+	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
 		return NewChatModelWithModelConfig(modelCfg)
 	}
 	// 回退到环境变量（兼容未配置 config.toml 的场景）
