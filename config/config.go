@@ -224,7 +224,7 @@ type Custom struct {
 
 // OpenAIAPI OpenAI 兼容 API 配置
 type OpenAIAPI struct {
-	APIKeys []string `toml:"api_keys,omitempty" json:"api_keys"` // 访问密钥，为空则不进行密钥校验
+	APIKeys []string `toml:"api_keys,omitempty" json:"api_keys"` // 访问密钥
 }
 
 // ==================== 全局配置 ====================
