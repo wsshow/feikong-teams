@@ -59,6 +59,16 @@ func newCopilotHTTPClient(tm *TokenManager) *http.Client {
 	}
 }
 
+// NewHTTPClient 返回带有 Copilot 认证的 HTTP 客户端（供代理层复用）
+func NewHTTPClient() *http.Client {
+	return newCopilotHTTPClient(GetTokenManager())
+}
+
+// BaseURL 返回 Copilot API 基地址
+func BaseURL() string {
+	return copilotBaseURL
+}
+
 // copilotTransport 自定义 RoundTripper，负责：
 // 1. 自动注入 Copilot 认证 headers
 // 2. Token 过期自动刷新

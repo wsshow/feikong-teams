@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fkteams/config"
 	"fkteams/providers"
+	"fkteams/providers/copilot"
 	"fmt"
 	"io"
 	"log"
@@ -76,14 +77,19 @@ func OpenAIChatCompletionsHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 确定后端 URL
+		// 确定后端 URL 和 HTTP 客户端
+		pt := providers.Type(mc.Provider)
+		if pt == "" {
+			pt = providers.Detect(mc.BaseURL, mc.Model)
+		}
+
 		baseURL := mc.BaseURL
 		if baseURL == "" {
-			pt := providers.Type(mc.Provider)
-			if pt == "" {
-				pt = providers.Detect(mc.BaseURL, mc.Model)
+			if pt == providers.Copilot {
+				baseURL = copilot.BaseURL()
+			} else {
+				baseURL = providers.DefaultBaseURL(pt)
 			}
-			baseURL = providers.DefaultBaseURL(pt)
 		}
 		if baseURL == "" {
 			c.JSON(http.StatusInternalServerError, openAIError("server_error", "no base_url configured for model"))
@@ -108,14 +114,20 @@ func OpenAIChatCompletionsHandler() gin.HandlerFunc {
 			return
 		}
 		proxyReq.Header.Set("Content-Type", "application/json")
-		if mc.APIKey != "" {
-			proxyReq.Header.Set("Authorization", "Bearer "+mc.APIKey)
-		}
-		for k, v := range mc.ParseExtraHeaders() {
-			proxyReq.Header.Set(k, v)
-		}
 
-		client := newProxyHTTPClient()
+		// 选择 HTTP 客户端：Copilot 使用带 OAuth transport 的客户端，其余注入 API Key
+		var client *http.Client
+		if pt == providers.Copilot {
+			client = copilot.NewHTTPClient()
+		} else {
+			if mc.APIKey != "" {
+				proxyReq.Header.Set("Authorization", "Bearer "+mc.APIKey)
+			}
+			for k, v := range mc.ParseExtraHeaders() {
+				proxyReq.Header.Set(k, v)
+			}
+			client = newProxyHTTPClient()
+		}
 		resp, err := client.Do(proxyReq)
 		if err != nil {
 			log.Printf("[openai-proxy] upstream request failed: model=%s, url=%s, err=%v", req.Model, targetURL, err)
