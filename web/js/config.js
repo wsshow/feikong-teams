@@ -244,13 +244,21 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
   const displayModel = m.model || "";
   const displayProvider = m.provider || "openai";
 
+  const isDefault = m.name === "default";
+
   card.innerHTML = `
     <div class="config-model-header">
       <div class="config-model-summary">
         <span class="config-model-title">${this.escapeHtml(displayName)}</span>
         <span class="config-model-info">${this.escapeHtml(displayProvider)}${displayModel ? " / " + this.escapeHtml(displayModel) : ""}</span>
+        ${isDefault ? '<span class="config-model-default-badge">默认</span>' : ""}
       </div>
       <div class="config-model-header-actions">
+        <button class="config-model-set-default" title="${isDefault ? "当前默认模型" : "设为默认模型"}" ${isDefault ? "disabled" : ""}>
+          <svg viewBox="0 0 24 24" fill="${isDefault ? "var(--accent-color)" : "none"}" stroke="${isDefault ? "var(--accent-color)" : "currentColor"}" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        </button>
         <button class="config-model-remove" title="删除此模型">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -314,7 +322,11 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
 
   // 折叠/展开
   card.querySelector(".config-model-header").addEventListener("click", (e) => {
-    if (e.target.closest(".config-model-remove")) return;
+    if (
+      e.target.closest(".config-model-remove") ||
+      e.target.closest(".config-model-set-default")
+    )
+      return;
     card.classList.toggle("open");
   });
 
@@ -324,7 +336,39 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
     card.remove();
   });
 
+  // 设为默认模型
+  card
+    .querySelector(".config-model-set-default")
+    .addEventListener("click", (e) => {
+      e.stopPropagation();
+      const allCards =
+        this.configModelList.querySelectorAll(".config-model-card");
+      const myName = card.querySelector(".model-name").value.trim();
+
+      // 将当前 default 的卡片名称改回它原本的 model-name 或 provider
+      allCards.forEach((c) => {
+        const nameInput = c.querySelector(".model-name");
+        if (nameInput.value.trim() === "default" && c !== card) {
+          // 用服务商+模型名做新名称
+          const p = c.querySelector(".model-provider").value;
+          const m = c.querySelector(".model-model").value.trim();
+          nameInput.value = myName || p + (m ? "-" + m : "");
+          nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+
+      // 将当前卡片名称设为 default
+      card.querySelector(".model-name").value = "default";
+      card
+        .querySelector(".model-name")
+        .dispatchEvent(new Event("input", { bubbles: true }));
+
+      // 更新所有卡片的默认标识
+      this._refreshDefaultBadges();
+    });
+
   // 实时更新摘要
+  const self = this;
   const updateSummary = () => {
     const name = card.querySelector(".model-name").value.trim() || "未命名模型";
     const provider = card.querySelector(".model-provider").value;
@@ -332,6 +376,7 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
     card.querySelector(".config-model-title").textContent = name;
     card.querySelector(".config-model-info").textContent =
       provider + (model ? " / " + model : "");
+    self._refreshDefaultBadges();
   };
   card.querySelector(".model-name").addEventListener("input", updateSummary);
   card
@@ -355,7 +400,6 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
   toggleProviderFields();
 
   // 获取模型列表（带缓存）
-  const self = this;
   const getCacheKey = () => {
     const provider = card.querySelector(".model-provider").value;
     const baseUrl = card.querySelector(".model-baseurl").value.trim();
@@ -508,6 +552,41 @@ FKTeamsChat.prototype._showModelDropdown = function (input, models) {
   position();
   dropdown.style.display = "block";
   input.focus();
+};
+
+// 刷新所有模型卡片的默认标识
+FKTeamsChat.prototype._refreshDefaultBadges = function () {
+  const allCards = this.configModelList.querySelectorAll(".config-model-card");
+  allCards.forEach((c) => {
+    const name = c.querySelector(".model-name").value.trim();
+    const isDefault = name === "default";
+
+    // 更新 badge
+    let badge = c.querySelector(".config-model-default-badge");
+    if (isDefault && !badge) {
+      badge = document.createElement("span");
+      badge.className = "config-model-default-badge";
+      badge.textContent = "默认";
+      c.querySelector(".config-model-summary").appendChild(badge);
+    } else if (!isDefault && badge) {
+      badge.remove();
+    }
+
+    // 更新星标按钮
+    const starBtn = c.querySelector(".config-model-set-default");
+    if (starBtn) {
+      starBtn.disabled = isDefault;
+      starBtn.title = isDefault ? "当前默认模型" : "设为默认模型";
+      const svg = starBtn.querySelector("svg");
+      if (svg) {
+        svg.setAttribute("fill", isDefault ? "var(--accent-color)" : "none");
+        svg.setAttribute(
+          "stroke",
+          isDefault ? "var(--accent-color)" : "currentColor",
+        );
+      }
+    }
+  });
 };
 
 // ===== 自定义智能体卡片 =====

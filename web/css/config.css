@@ -535,7 +535,7 @@
 .config-model-header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -544,6 +544,7 @@
   height: 16px;
   color: var(--text-tertiary);
   transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
 .config-model-card.open .config-model-arrow {
@@ -571,6 +572,8 @@
   padding: 4px;
   border-radius: 6px;
   transition: all var(--transition);
+  display: flex;
+  align-items: center;
 }
 
 .config-model-remove:hover {
@@ -579,6 +582,44 @@
 }
 
 .config-model-remove svg {
+  width: 16px;
+  height: 16px;
+}
+
+.config-model-default-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: var(--accent-light);
+  padding: 1px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.config-model-set-default {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 4px;
+  border-radius: 6px;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+}
+
+.config-model-set-default:hover:not(:disabled) {
+  color: var(--accent-primary);
+  background: var(--accent-light);
+}
+
+.config-model-set-default:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.config-model-set-default svg {
   width: 16px;
   height: 16px;
 }
