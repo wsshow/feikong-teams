@@ -90,9 +90,11 @@ fkteams/
 │   ├── handler/            # 请求处理
 │   │   ├── resp.go         # 统一响应 OK()/Fail()
 │   │   ├── conn.go         # WS 连接池管理
-│   │   ├── chat.go         # RunnerCache 类型 + 聊天处理
-│   │   ├── websocket.go    # WS handler + 消息路由
-│   │   ├── history.go      # 会话 CRUD
+│   │   ├── chat.go         # RunnerCache + 公共聊天工具函数
+│   │   ├── websocket.go    # WS handler + 消息路由 + WS 聊天处理
+│   │   ├── http_chat.go    # HTTP POST 聊天处理
+│   │   ├── stream.go       # 流式任务 API（SSE 订阅模式）
+│   │   ├── session.go      # 会话 CRUD
 │   │   ├── agents.go       # 智能体列表
 │   │   ├── auth.go         # 认证（AuthEnabled 返回 error）
 │   │   ├── files.go        # 文件列表
@@ -107,6 +109,7 @@ fkteams/
 ### 智能体开发
 
 每个智能体包含两个文件:
+
 - `{name}.go`: 实现 `NewAgent(ctx context.Context) (adk.Agent, error)` 函数
 - `prompt.go`: 定义小写未导出的提示词模板变量（如 `searcherPromptTemplate`）
 
@@ -151,6 +154,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 | `Build(ctx)` | 构建并返回 `(adk.Agent, error)` |
 
 **智能体签名约定**:
+
 - 基本: `func NewAgent(ctx context.Context) (adk.Agent, error)`
 - 带参数: `func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error)`（custom）
 - 带参数: `func NewAgent(ctx context.Context, member config.TeamMember) (adk.Agent, error)`（discussant）
@@ -159,6 +163,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 ### 智能体注册
 
 智能体通过 `agents/registry.go` 注册，采用延迟加载模式:
+
 - `agentCreator` 类型: `func(ctx context.Context) (adk.Agent, error)`
 - 内置智能体在 `init()` 中注册，自定义智能体从配置文件动态加载
 - 通过 `agents.ListAgents(ctx)` 获取所有可用智能体
@@ -167,13 +172,13 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 
 系统支持 5 种工作模式，在 `runner/runner.go` 中创建对应的 `adk.Runner`:
 
-| 模式 | 函数 | 说明 |
-|------|------|------|
-| Supervisor | `CreateTaskRunner` | 默认模式，Leader 协调多个专家智能体 |
-| Roundtable | `CreateLoopAgentRunner` | 圆桌讨论，多个 Discussant 轮流发言 |
-| Custom | `CreateCustomSupervisorRunner` | 自定义主持人 + 自定义智能体组合 |
-| DeepAgents | `CreateDeepRunner` | 深度探索模式 |
-| Background | `CreateBackgroundRunner` | 后台定时任务（Tasker 执行） |
+| 模式       | 函数                           | 说明                                |
+| ---------- | ------------------------------ | ----------------------------------- |
+| Supervisor | `CreateTaskRunner`             | 默认模式，Leader 协调多个专家智能体 |
+| Roundtable | `CreateLoopAgentRunner`        | 圆桌讨论，多个 Discussant 轮流发言  |
+| Custom     | `CreateCustomSupervisorRunner` | 自定义主持人 + 自定义智能体组合     |
+| DeepAgents | `CreateDeepRunner`             | 深度探索模式                        |
+| Background | `CreateBackgroundRunner`       | 后台定时任务（Tasker 执行）         |
 
 ### 中间件栈
 
@@ -190,6 +195,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 ### 审批机制
 
 通过 `tools/approval/` 包实现，支持两种模式:
+
 - `ApprovalModeHITL` (默认值 0): 人工审批，工具调用前请求用户确认
 - `ApprovalModeReject` (值 1): 自动拒绝危险操作（仅 tasker 使用）
 
@@ -245,18 +251,19 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 
 ### 命名规范
 
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| 智能体名称 | 中文 | 小码、小搜 |
-| 包/文件名 | 小写英文 | coder, searcher |
-| 工具函数 | 下划线分隔 | file_read, ssh_execute |
-| 环境变量 | FEIKONG_ 前缀 | FEIKONG_APP_DIR |
-| 提示词模板变量 | 小写未导出 | searcherPromptTemplate |
-| 全局变量 | 完整语义命名 | MemoryManager（非缩写） |
+| 类型           | 规范           | 示例                    |
+| -------------- | -------------- | ----------------------- |
+| 智能体名称     | 中文           | 小码、小搜              |
+| 包/文件名      | 小写英文       | coder, searcher         |
+| 工具函数       | 下划线分隔     | file_read, ssh_execute  |
+| 环境变量       | FEIKONG\_ 前缀 | FEIKONG_APP_DIR         |
+| 提示词模板变量 | 小写未导出     | searcherPromptTemplate  |
+| 全局变量       | 完整语义命名   | MemoryManager（非缩写） |
 
 ### 代码风格规范
 
 1. **错误信息使用英文**: `fmt.Errorf`、`errors.New` 等错误信息一律使用英文
+
    ```go
    // 正确
    return fmt.Errorf("failed to read file: %w", err)
@@ -265,6 +272,7 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
    ```
 
 2. **注释使用中文**: 代码注释、文档注释使用中文
+
    ```go
    // 初始化文件工具，限制在指定目录内
    func NewFileTools(dir string) (*FileTools, error) {
@@ -279,11 +287,13 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 ### 全局变量
 
 定义在 `g/g.go`:
+
 - `g.MemoryManager`: 全局长期记忆管理器
 - `g.ProcessCleaner`: 进程级资源清理器（终止后台子进程、关闭 SSH 连接等）
 - `g.RunProcessCleanup()`: 执行所有进程级清理函数
 
 公共函数定义在 `common/common.go`:
+
 - `AppDir()`: 应用数据目录（默认 `~/.fkteams`，支持 `FEIKONG_APP_DIR` 环境变量覆盖）
 - `WorkspaceDir()`: 工作目录（固定为 `~/.fkteams/workspace`）
 - `GenerateSessionID()`: 生成 UUID v4 会话 ID
@@ -323,6 +333,7 @@ secret = "your_jwt_secret"
 ### 环境变量
 
 仅保留用于 Docker 等场景的环境变量回退:
+
 ```bash
 FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
 FEIKONG_PROXY_URL          # 代理地址 (配置文件优先)
@@ -337,12 +348,14 @@ FEIKONG_EXTRA_HEADERS      # 额外 HTTP 请求头 (格式: Key1:Value1,Key2:Val
 ## Web 服务
 
 服务通过 `lifecycle.Service` 接口管理，支持优雅启停:
+
 - `server.go` 的 `run()` 返回 `error`（不使用 `log.Fatal`）
 - 认证: `handler/auth.go` 的 `AuthEnabled()` 返回 `(bool, error)`
 - 路由: `router/` 的 `Init()` / `InitAPI()` 返回 `(http.Handler, error)`
 - Runner 缓存: `handler/chat.go` 的 `RunnerCache` 类型管理 Web 模式下的 Runner 实例
 
 **API 端点**:
+
 ```
 GET    /agents      # 获取智能体列表
 GET    /files       # 获取文件列表
@@ -354,18 +367,18 @@ POST   /login       # 登录（若启用认证）
 
 ## CLI 命令
 
-| 类别 | 命令 | 说明 |
-|------|------|------|
-| 基本 | `help` `q` `quit` | 帮助、退出 |
-| 智能体 | `list_agents` `@agent_name` | 列表、直接对话 |
-| 文件引用 | `#path` | 快速引用文件内容 |
-| 聊天历史 | `list_chat_history` `load_chat_history` | 列表、加载 |
-| | `save_chat_history` `clear_chat_history` | 保存、清空 |
-| | `save_chat_history_to_markdown` | 导出为 Markdown |
-| | `save_chat_history_to_html` | 导出为 HTML |
+| 类别     | 命令                                                | 说明             |
+| -------- | --------------------------------------------------- | ---------------- |
+| 基本     | `help` `q` `quit`                                   | 帮助、退出       |
+| 智能体   | `list_agents` `@agent_name`                         | 列表、直接对话   |
+| 文件引用 | `#path`                                             | 快速引用文件内容 |
+| 聊天历史 | `list_chat_history` `load_chat_history`             | 列表、加载       |
+|          | `save_chat_history` `clear_chat_history`            | 保存、清空       |
+|          | `save_chat_history_to_markdown`                     | 导出为 Markdown  |
+|          | `save_chat_history_to_html`                         | 导出为 HTML      |
 | 定时任务 | `list_schedule` `cancel_schedule` `delete_schedule` | 查看、取消、删除 |
-| 模式 | `switch_work_mode` | 切换工作模式 |
-| 记忆 | `list_memory` `delete_memory` `clear_memory` | 长期记忆管理 |
+| 模式     | `switch_work_mode`                                  | 切换工作模式     |
+| 记忆     | `list_memory` `delete_memory` `clear_memory`        | 长期记忆管理     |
 
 ## 构建与运行
 

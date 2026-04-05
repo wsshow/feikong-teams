@@ -193,11 +193,11 @@ func (m *streamTaskManager) remove(sessionID string) {
 
 // StreamStartRequest 启动流式任务请求
 type StreamStartRequest struct {
-	SessionID string          `json:"session_id"`
-	Message   string          `json:"message"`
-	Mode      string          `json:"mode"`
-	AgentName string          `json:"agent_name"`
-	Contents  []WSContentPart `json:"contents"`
+	SessionID string        `json:"session_id"`
+	Message   string        `json:"message"`
+	Mode      string        `json:"mode"`
+	AgentName string        `json:"agent_name"`
+	Contents  []ContentPart `json:"contents"`
 }
 
 // StreamStartHandler 启动流式任务（任务在后台执行，前端通过 SSE 订阅事件流）
@@ -304,7 +304,7 @@ func runStreamTask(ctx context.Context, state *StreamTaskState, r *adk.Runner, r
 			return nil
 		}
 		recorder.RecordEvent(event)
-		data := convertEventForWS(event)
+		data := convertEventToMap(event)
 		data["session_id"] = sessionID
 		buf.Append(data)
 		return nil

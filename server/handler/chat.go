@@ -3,13 +3,10 @@ package handler
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
-	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/runner"
-	"fkteams/tools/approval"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -110,9 +107,9 @@ func resolveRunner(ctx context.Context, mode, agentName string) (*adk.Runner, er
 // --- 聊天输入构建 ---
 
 // buildChatInput 构建输入消息（含历史），支持多模态
-func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents []WSContentPart) (messages []adk.Message, displayText string) {
+func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents []ContentPart) (messages []adk.Message, displayText string) {
 	if len(contents) > 0 {
-		parts := convertWSContentParts(contents)
+		parts := convertContentParts(contents)
 		displayText = chatutil.ExtractTextFromParts(parts)
 		if displayText == "" {
 			displayText = message
@@ -227,41 +224,6 @@ func isConnectionClosed(ctx context.Context, err error) bool {
 		strings.Contains(msg, "connection reset")
 }
 
-// --- HITL 中断处理器 ---
-
-// buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan int) engine.InterruptHandler {
-	channelHandler := engine.ChannelHandler(approvalCh)
-	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
-		msg := extractInterruptMessage(interrupts)
-
-		recorder.RecordEvent(fkevent.Event{
-			Type:       "action",
-			ActionType: "approval_required",
-			Content:    msg,
-		})
-		_ = writeJSON(map[string]any{
-			"type":       "approval_required",
-			"session_id": sessionID,
-			"message":    msg,
-		})
-
-		result, err := channelHandler(ctx, interrupts)
-
-		if err == nil {
-			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(fkevent.Event{
-					Type:       "action",
-					ActionType: "approval_decision",
-					Content:    text,
-				})
-			}
-		}
-
-		return result, err
-	}
-}
-
 func extractInterruptMessage(interrupts []*adk.InterruptCtx) string {
 	var infos []string
 	for _, ic := range interrupts {
@@ -296,112 +258,10 @@ func approvalDecisionText(result map[string]any) string {
 	return ""
 }
 
-// --- WebSocket 事件回调 ---
-
-// wsEventCallback 构建 WebSocket 模式的事件回调
-func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error) func(fkevent.Event) error {
-	return func(event fkevent.Event) error {
-		// interrupted 由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
-		if event.Type == "action" && event.ActionType == "interrupted" {
-			return nil
-		}
-		recorder.RecordEvent(event)
-		data := convertEventForWS(event)
-		data["session_id"] = sessionID
-		return writeJSON(data)
-	}
-}
-
-// --- WebSocket 聊天处理 ---
-
-// handleChatMessage 处理 WebSocket 聊天消息
-func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error) {
-	sessionID := wsMsg.SessionID
-	mode := wsMsg.Mode
-	if mode == "" {
-		mode = "supervisor"
-	}
-
-	// 为任务创建独立的 context
-	taskCtx, taskCancel := context.WithCancel(connCtx)
-	defer taskCancel()
-
-	// 注册任务（同一 session 的旧任务会被自动取消）
-	taskID := sm.startTask(sessionID, taskCancel)
-	defer sm.removeTask(sessionID, taskID)
-
-	select {
-	case <-taskCtx.Done():
-		return
-	default:
-	}
-
-	// 获取 runner
-	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
-	if err != nil {
-		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
-		return
-	}
-
-	// 构建输入消息
-	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
-	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
-	countBeforeRun := recorder.GetMessageCount()
-	recorder.RecordUserInput(userDisplayText)
-
-	// 装配 context
-	taskCtx = fkevent.WithNonInteractive(taskCtx)
-	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallback(recorder, sessionID, writeJSON))
-	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
-	taskCtx = approval.WithRegistry(taskCtx, approval.NewRegistry(
-		approval.StoreConfig{Name: approval.StoreCommand},
-		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-		approval.StoreConfig{Name: approval.StoreDispatch},
-	))
-
-	// 初始化 HITL 审批通道
-	approvalCh := make(chan int, 1)
-	sm.setApprovalCh(sessionID, taskID, approvalCh)
-	defer sm.setApprovalCh(sessionID, taskID, nil)
-
-	// 更新会话标题（首次提交时从默认标题更新为用户输入）和状态
-	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
-
-	_ = writeJSON(map[string]any{
-		"type":       "processing_start",
-		"session_id": sessionID,
-		"message":    "开始处理您的请求...",
-	})
-
-	// 执行
-	interruptHandler := buildInterruptHandler(recorder, sessionID, writeJSON, approvalCh)
-	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
-	if err != nil {
-		if isConnectionClosed(taskCtx, err) {
-			log.Printf("task cancelled or connection closed: session=%s", sessionID)
-			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-			ensureSessionMetadata(sessionID, userDisplayText)
-			return
-		}
-		log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
-		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
-	}
-
-	finishChat(recorder, sessionID, userDisplayText)
-	_ = writeJSON(map[string]any{
-		"type":       "processing_end",
-		"session_id": sessionID,
-		"message":    "处理完成",
-	})
-}
-
 // --- 事件/内容转换 ---
 
-// convertEventForWS 将事件转换为前端可用的格式
-func convertEventForWS(event fkevent.Event) map[string]any {
+// convertEventToMap 将事件转换为前端可用的格式
+func convertEventToMap(event fkevent.Event) map[string]any {
 	result := map[string]any{
 		"type":       event.Type,
 		"agent_name": event.AgentName,
@@ -438,8 +298,18 @@ func convertEventForWS(event fkevent.Event) map[string]any {
 	return result
 }
 
-// convertWSContentParts 将前端传入的多模态内容转换为 eino MessageInputPart
-func convertWSContentParts(parts []WSContentPart) []schema.MessageInputPart {
+// ContentPart 多模态内容部分
+type ContentPart struct {
+	Type       string `json:"type"`                  // text, image_url, image_base64, audio_url, video_url, file_url
+	Text       string `json:"text,omitempty"`        // type=text 时的文本内容
+	URL        string `json:"url,omitempty"`         // type=image_url/audio_url/video_url/file_url 时的 URL
+	Base64Data string `json:"base64_data,omitempty"` // type=image_base64 时的 Base64 数据
+	MIMEType   string `json:"mime_type,omitempty"`   // type=image_base64 时的 MIME 类型
+	Detail     string `json:"detail,omitempty"`      // type=image_url 时的精度: high/low/auto
+}
+
+// convertContentParts 将前端传入的多模态内容转换为 eino MessageInputPart
+func convertContentParts(parts []ContentPart) []schema.MessageInputPart {
 	result := make([]schema.MessageInputPart, 0, len(parts))
 	for _, p := range parts {
 		switch p.Type {

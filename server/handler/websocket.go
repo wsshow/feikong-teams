@@ -3,14 +3,15 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fkteams/agents/middlewares/summary"
+	"fkteams/engine"
 	"fkteams/fkevent"
-	"fmt"
+	"fkteams/tools/approval"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -23,23 +24,13 @@ var upgrader = websocket.Upgrader{
 
 // WSMessage WebSocket 消息类型
 type WSMessage struct {
-	Type      string          `json:"type"`
-	SessionID string          `json:"session_id,omitempty"`
-	Message   string          `json:"message,omitempty"`
-	Mode      string          `json:"mode,omitempty"`
-	AgentName string          `json:"agent_name,omitempty"`
-	Decision  int             `json:"decision,omitempty"`
-	Contents  []WSContentPart `json:"contents,omitempty"`
-}
-
-// WSContentPart 多模态内容部分
-type WSContentPart struct {
-	Type       string `json:"type"`                  // text, image_url, image_base64, audio_url, video_url, file_url
-	Text       string `json:"text,omitempty"`        // type=text 时的文本内容
-	URL        string `json:"url,omitempty"`         // type=image_url/audio_url/video_url/file_url 时的 URL
-	Base64Data string `json:"base64_data,omitempty"` // type=image_base64 时的 Base64 数据
-	MIMEType   string `json:"mime_type,omitempty"`   // type=image_base64 时的 MIME 类型
-	Detail     string `json:"detail,omitempty"`      // type=image_url 时的精度: high/low/auto
+	Type      string        `json:"type"`
+	SessionID string        `json:"session_id,omitempty"`
+	Message   string        `json:"message,omitempty"`
+	Mode      string        `json:"mode,omitempty"`
+	AgentName string        `json:"agent_name,omitempty"`
+	Decision  int           `json:"decision,omitempty"`
+	Contents  []ContentPart `json:"contents,omitempty"`
 }
 
 // WebSocketHandler 处理 WebSocket 连接
@@ -120,12 +111,6 @@ func WebSocketHandler() gin.HandlerFunc {
 					}
 				}
 
-			case "clear_history":
-				handleClearHistory(wsMsg, writeJSON)
-
-			case "load_history":
-				handleLoadHistory(wsMsg, writeJSON)
-
 			case "ping":
 				_ = writeJSON(map[string]any{"type": "pong"})
 
@@ -136,65 +121,139 @@ func WebSocketHandler() gin.HandlerFunc {
 	}
 }
 
-// handleClearHistory 清除指定会话的历史
-func handleClearHistory(wsMsg WSMessage, writeJSON func(any) error) {
-	sessionID := wsMsg.SessionID
-	if sessionID == "" {
-		_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
-		return
-	}
+// --- WebSocket HITL 中断处理器 ---
 
-	sessionDir := sessionDirPath(sessionID)
-	if err := os.RemoveAll(sessionDir); err != nil {
-		log.Printf("failed to delete session directory: %v", err)
-		_ = writeJSON(map[string]any{"type": "error", "error": "清除历史失败"})
-	} else {
-		// 清理关联的流式任务缓存
-		if task := globalStreamTasks.get(sessionID); task != nil {
-			if task.Status == "processing" {
-				task.Cancel()
+// buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
+func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error, approvalCh <-chan int) engine.InterruptHandler {
+	channelHandler := engine.ChannelHandler(approvalCh)
+	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
+		msg := extractInterruptMessage(interrupts)
+
+		recorder.RecordEvent(fkevent.Event{
+			Type:       "action",
+			ActionType: "approval_required",
+			Content:    msg,
+		})
+		_ = writeJSON(map[string]any{
+			"type":       "approval_required",
+			"session_id": sessionID,
+			"message":    msg,
+		})
+
+		result, err := channelHandler(ctx, interrupts)
+
+		if err == nil {
+			if text := approvalDecisionText(result); text != "" {
+				recorder.RecordEvent(fkevent.Event{
+					Type:       "action",
+					ActionType: "approval_decision",
+					Content:    text,
+				})
 			}
-			globalStreamTasks.remove(sessionID)
 		}
-		fkevent.GlobalSessionManager.Remove(sessionID)
-		log.Printf("[SessionManager] cleared session history: session=%s", sessionID)
-		_ = writeJSON(map[string]any{"type": "history_cleared", "message": "历史记录已清除"})
+
+		return result, err
 	}
 }
 
-// handleLoadHistory 加载指定的历史会话
-func handleLoadHistory(wsMsg WSMessage, writeJSON func(any) error) {
-	sessionID := wsMsg.Message
-	if !validateSessionID(sessionID) {
-		_ = writeJSON(map[string]any{"type": "error", "error": "无效的会话 ID"})
-		return
+// --- WebSocket 事件回调 ---
+
+// wsEventCallback 构建 WebSocket 模式的事件回调
+func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error) func(fkevent.Event) error {
+	return func(event fkevent.Event) error {
+		// interrupted 由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
+		if event.Type == "action" && event.ActionType == "interrupted" {
+			return nil
+		}
+		recorder.RecordEvent(event)
+		data := convertEventToMap(event)
+		data["session_id"] = sessionID
+		return writeJSON(data)
+	}
+}
+
+// --- WebSocket 聊天处理 ---
+
+// handleChatMessage 处理 WebSocket 聊天消息
+func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error) {
+	sessionID := wsMsg.SessionID
+	mode := wsMsg.Mode
+	if mode == "" {
+		mode = "supervisor"
 	}
 
-	filePath := filepath.Join(sessionDirPath(sessionID), "history.json")
+	// 为任务创建独立的 context
+	taskCtx, taskCancel := context.WithCancel(connCtx)
+	defer taskCancel()
 
-	// 历史文件不存在时返回空会话（新建会话尚无历史）
-	if _, statErr := os.Stat(filePath); os.IsNotExist(statErr) {
-		_ = writeJSON(map[string]any{
-			"type":       "history_loaded",
-			"message":    "历史记录已加载",
-			"session_id": sessionID,
-			"messages":   []any{},
-		})
+	// 注册任务（同一 session 的旧任务会被自动取消）
+	taskID := sm.startTask(sessionID, taskCancel)
+	defer sm.removeTask(sessionID, taskID)
+
+	select {
+	case <-taskCtx.Done():
 		return
+	default:
 	}
 
-	recorder, err := fkevent.GlobalSessionManager.LoadForSession(sessionID, filePath)
+	// 获取 runner
+	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
-		log.Printf("failed to load session: %v", err)
-		_ = writeJSON(map[string]any{"type": "error", "error": fmt.Sprintf("加载历史失败: %v", err)})
+		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
+		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 		return
 	}
 
-	log.Printf("[SessionManager] loaded session: %s", sessionID)
+	// 构建输入消息
+	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
+	countBeforeRun := recorder.GetMessageCount()
+	recorder.RecordUserInput(userDisplayText)
+
+	// 装配 context
+	taskCtx = fkevent.WithNonInteractive(taskCtx)
+	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallback(recorder, sessionID, writeJSON))
+	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
+		recorder.SetSummary(summaryText, countBeforeRun)
+	})
+	taskCtx = approval.WithRegistry(taskCtx, approval.NewRegistry(
+		approval.StoreConfig{Name: approval.StoreCommand},
+		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+		approval.StoreConfig{Name: approval.StoreDispatch},
+	))
+
+	// 初始化 HITL 审批通道
+	approvalCh := make(chan int, 1)
+	sm.setApprovalCh(sessionID, taskID, approvalCh)
+	defer sm.setApprovalCh(sessionID, taskID, nil)
+
+	// 更新会话标题（首次提交时从默认标题更新为用户输入）和状态
+	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+
 	_ = writeJSON(map[string]any{
-		"type":       "history_loaded",
-		"message":    "历史记录已加载",
+		"type":       "processing_start",
 		"session_id": sessionID,
-		"messages":   recorder.GetMessages(),
+		"message":    "开始处理您的请求...",
+	})
+
+	// 执行
+	interruptHandler := buildInterruptHandler(recorder, sessionID, writeJSON, approvalCh)
+	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
+	if err != nil {
+		if isConnectionClosed(taskCtx, err) {
+			log.Printf("task cancelled or connection closed: session=%s", sessionID)
+			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+			ensureSessionMetadata(sessionID, userDisplayText)
+			return
+		}
+		log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
+		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+	}
+
+	finishChat(recorder, sessionID, userDisplayText)
+	_ = writeJSON(map[string]any{
+		"type":       "processing_end",
+		"session_id": sessionID,
+		"message":    "处理完成",
 	})
 }

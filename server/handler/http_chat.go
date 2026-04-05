@@ -18,12 +18,12 @@ import (
 
 // ChatRequest HTTP 聊天请求
 type ChatRequest struct {
-	SessionID string          `json:"session_id"`
-	Message   string          `json:"message"`
-	Mode      string          `json:"mode"`
-	AgentName string          `json:"agent_name"`
-	Stream    bool            `json:"stream"`
-	Contents  []WSContentPart `json:"contents"`
+	SessionID string        `json:"session_id"`
+	Message   string        `json:"message"`
+	Mode      string        `json:"mode"`
+	AgentName string        `json:"agent_name"`
+	Stream    bool          `json:"stream"`
+	Contents  []ContentPart `json:"contents"`
 }
 
 // ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
@@ -85,7 +85,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 
 	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
 		recorder.RecordEvent(event)
-		data, _ := json.Marshal(convertEventForWS(event))
+		data, _ := json.Marshal(convertEventToMap(event))
 		_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 		c.Writer.Flush()
 		return err
