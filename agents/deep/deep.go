@@ -41,7 +41,7 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 		Description:  "一个能够深入分析问题并协调多个智能体协作解决复杂任务的智能体。",
 		ChatModel:    retryModel,
 		SubAgents:    subAgents,
-		MaxIteration: common.MaxIterations,
+		MaxIteration: common.MaxIterations(),
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: toolList,

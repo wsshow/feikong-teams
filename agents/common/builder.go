@@ -156,7 +156,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		Description:   b.description,
 		Instruction:   instruction,
 		Model:         retryModel,
-		MaxIterations: MaxIterations,
+		MaxIterations: MaxIterations(),
 	}
 
 	// 工具

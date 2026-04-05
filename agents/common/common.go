@@ -10,9 +10,12 @@ import (
 	"github.com/cloudwego/eino/components/model"
 )
 
+// MaxIterations 返回智能体最大迭代次数
+func MaxIterations() int {
+	return rootcommon.MaxIterations()
+}
+
 const (
-	// MaxIterations 智能体最大迭代次数
-	MaxIterations = 60
 	// MaxRetries 最大重试次数
 	MaxRetries = rootcommon.MaxRetries
 )

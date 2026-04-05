@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,7 +16,23 @@ import (
 const (
 	// MaxRetries 模型调用最大重试次数
 	MaxRetries = 3
+	// defaultMaxIterations 默认最大迭代次数
+	defaultMaxIterations = 60
 )
+
+// MaxIterations 返回智能体最大迭代次数，支持 FEIKONG_MAX_ITERATIONS 环境变量覆盖。
+// 设为 0 或负数表示不限制
+func MaxIterations() int {
+	if v := os.Getenv("FEIKONG_MAX_ITERATIONS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			if n <= 0 {
+				return 1<<31 - 1
+			}
+			return n
+		}
+	}
+	return defaultMaxIterations
+}
 
 // AppDir 返回应用数据目录 ~/.fkteams，支持 FEIKONG_APP_DIR 环境变量覆盖
 func AppDir() string {

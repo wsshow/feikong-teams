@@ -129,6 +129,11 @@ fkteams login custom --base-url https://your-api.com/v1 --api-key xxx --name my-
 # 退出登录（移除对应配置）
 fkteams logout openai
 fkteams logout custom --name my-provider
+
+# 管理模型配置
+fkteams model ls                     # 列出已配置的模型
+fkteams model rm                     # 交互式选择并移除模型配置
+fkteams model rm --name model-name   # 移除指定名称的模型配置
 ```
 
 ```toml

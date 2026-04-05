@@ -18,7 +18,6 @@ import (
 const (
 	defaultMaxConcurrency = 3
 	defaultTaskTimeout    = 30 * time.Minute
-	defaultMaxIterations  = 60
 )
 
 // Config 分发中间件配置。未指定工具时子智能体自动继承父智能体的工具。

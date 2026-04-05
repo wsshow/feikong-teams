@@ -171,7 +171,7 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: m.tools},
 		},
-		MaxIterations: defaultMaxIterations,
+		MaxIterations: rootcommon.MaxIterations(),
 	})
 }
 
