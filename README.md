@@ -107,6 +107,30 @@ fkteams login copilot
 fkteams login copilot --import
 ```
 
+也可通过 `login` 命令快速配置其他供应商：
+
+```bash
+# 登录各供应商（交互式输入 API Key，自动填充默认 API 地址）
+fkteams login openai
+fkteams login deepseek
+fkteams login claude
+fkteams login qwen
+fkteams login gemini
+fkteams login openrouter
+fkteams login ark
+fkteams login ollama          # Ollama 本地模型，无需 API Key
+
+# 指定 API Key 和自定义地址（非交互式）
+fkteams login openai --api-key sk-xxx --base-url https://your-proxy.com/v1
+
+# 登录自定义 OpenAI 兼容供应商
+fkteams login custom --base-url https://your-api.com/v1 --api-key xxx --name my-provider
+
+# 退出登录（移除对应配置）
+fkteams logout openai
+fkteams logout custom --name my-provider
+```
+
 ```toml
 [[models]]
 name = "default"
