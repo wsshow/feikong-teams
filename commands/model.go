@@ -6,6 +6,7 @@ import (
 
 	"fkteams/config"
 	"fkteams/providers"
+	"fkteams/tui"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
@@ -49,6 +50,32 @@ func modelCommand() *ucli.Command {
 						return err
 					}
 					return listAvailableModels(ctx, cmd.String("provider"), cmd.String("name"))
+				},
+			},
+			{
+				Name:    "rm",
+				Aliases: []string{"remove"},
+				Usage:   "移除指定的模型配置",
+				Flags: []ucli.Flag{
+					&ucli.StringFlag{
+						Name:    "name",
+						Aliases: []string{"n"},
+						Usage:   "要移除的模型配置名称（未指定则交互式选择）",
+					},
+				},
+				Action: func(ctx context.Context, cmd *ucli.Command) error {
+					if err := config.Init(); err != nil {
+						return err
+					}
+					name := cmd.String("name")
+					if name == "" {
+						var err error
+						name, err = selectModelToRemove()
+						if err != nil {
+							return err
+						}
+					}
+					return removeModel(name)
 				},
 			},
 		},
@@ -130,4 +157,53 @@ func listAvailableModels(ctx context.Context, provider, name string) error {
 		fmt.Println("  " + m.ID)
 	}
 	return nil
+}
+
+// removeModel 移除指定名称的模型配置
+func removeModel(name string) error {
+	cfg := config.Get()
+	var newModels []config.ModelConfig
+	var removed bool
+	for _, m := range cfg.Models {
+		if m.Name == name {
+			removed = true
+			continue
+		}
+		newModels = append(newModels, m)
+	}
+
+	if !removed {
+		return fmt.Errorf("未找到模型配置「%s」", name)
+	}
+
+	cfg.Models = newModels
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+
+	fmt.Printf("✓ 已移除模型配置「%s」\n", name)
+	return nil
+}
+
+// selectModelToRemove 交互式选择要移除的模型配置
+func selectModelToRemove() (string, error) {
+	cfg := config.Get()
+	if len(cfg.Models) == 0 {
+		return "", fmt.Errorf("暂无配置的模型")
+	}
+
+	items := make([]tui.SelectItem, 0, len(cfg.Models))
+	for _, m := range cfg.Models {
+		label := m.Name
+		if m.Provider != "" {
+			label += " (" + m.Provider
+			if m.Model != "" {
+				label += "/" + m.Model
+			}
+			label += ")"
+		}
+		items = append(items, tui.SelectItem{Label: label, Value: m.Name})
+	}
+
+	return tui.SelectFromList("请选择要移除的模型配置", items)
 }
