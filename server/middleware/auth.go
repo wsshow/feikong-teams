@@ -32,6 +32,12 @@ func Auth() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+
+		// OpenAI 兼容 API 使用独立的 API Key 认证
+		if strings.HasPrefix(path, "/v1/") {
+			c.Next()
+			return
+		}
 		if (c.Request.Method == "GET" || c.Request.Method == "HEAD") && strings.HasPrefix(path, "/api/fkteams/preview/") {
 			c.Next()
 			return

@@ -187,6 +187,11 @@ var defaultBaseURLs = map[Type]string{
 	Ark:        "https://ark.cn-beijing.volces.com/api/v3",
 }
 
+// DefaultBaseURL 返回指定提供者的默认 API 地址
+func DefaultBaseURL(t Type) string {
+	return defaultBaseURLs[t]
+}
+
 // ListModels 获取指定提供者的可用模型列表
 func ListModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 	t := cfg.Provider

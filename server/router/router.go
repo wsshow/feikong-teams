@@ -31,6 +31,13 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 	r.GET("/health", handler.HealthHandler())
 	r.GET("/ws", handler.WebSocketHandler())
 
+	// OpenAI 兼容 API（独立的 API Key 认证）
+	v1 := r.Group("/v1", middleware.APIKeyAuth())
+	{
+		v1.GET("/models", handler.OpenAIModelsHandler())
+		v1.POST("/chat/completions", handler.OpenAIChatCompletionsHandler())
+	}
+
 	apiV1 := r.Group("/api/fkteams")
 	{
 		if authEnabled {

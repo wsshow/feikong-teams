@@ -220,6 +220,13 @@ type Custom struct {
 	MCPServers []MCPServer   `toml:"mcp_servers" json:"mcp_servers"`
 }
 
+// ==================== OpenAI 兼容 API ====================
+
+// OpenAIAPI OpenAI 兼容 API 配置
+type OpenAIAPI struct {
+	APIKeys []string `toml:"api_keys,omitempty" json:"api_keys"` // 访问密钥，为空则不进行密钥校验
+}
+
 // ==================== 全局配置 ====================
 
 // Config 应用全局配置
@@ -228,6 +235,7 @@ type Config struct {
 	Proxy      Proxy         `toml:"proxy" json:"proxy"`
 	Memory     Memory        `toml:"memory" json:"memory"`
 	Server     Server        `toml:"server" json:"server"`
+	OpenAIAPI  OpenAIAPI     `toml:"openai_api" json:"openai_api"`
 	Agents     Agents        `toml:"agents" json:"agents"`
 	Channels   Channels      `toml:"channels" json:"channels"`
 	Roundtable Roundtable    `toml:"roundtable" json:"roundtable"`
@@ -443,6 +451,9 @@ func GenerateExample() error {
 				Password: "admin",
 				Secret:   "your_jwt_secret_here",
 			},
+		},
+		OpenAIAPI: OpenAIAPI{
+			APIKeys: []string{"sk-fkteams-your-api-key"},
 		},
 		Agents: Agents{
 			Searcher:  true,

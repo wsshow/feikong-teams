@@ -41,6 +41,7 @@ fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI
 - **双界面支持**：现代化 Web 界面 + 命令行界面
 - **MCP 工具生态**：完整支持 MCP 协议，轻松接入外部工具
 - **自定义智能体**：通过配置文件灵活创建专业智能体
+- **OpenAI 兼容 API**：对外提供 OpenAI 格式接口，任意客户端配置地址和密钥即可使用已配置的模型
 - **聊天通道集成**：支持接入 QQ、Discord 等即时通讯平台
 - **长期记忆**：跨会话自动记忆，助手越用越顺手
 - **多模态输入**：支持文本、图片、音频、视频和文件
@@ -142,6 +143,42 @@ make build
 # Web界面模式
 ./release/fkteams_darwin_arm64 web
 ```
+
+## OpenAI 兼容 API
+
+服务内置了 OpenAI 兼容的 API 端点，任意支持 OpenAI API 的客户端（如 Cursor、ChatBox、Open WebUI 等）都可以直接接入使用。
+
+### 配置
+
+在 `config.toml` 中添加 `[openai_api]` 配置段：
+
+```toml
+[openai_api]
+api_keys = ["sk-fkteams-your-secret-key"]
+```
+
+密钥可以通过命令自动生成：
+
+```bash
+fkteams generate apikey
+```
+
+### 使用
+
+启动服务后，客户端使用以下配置即可接入：
+
+- **API Base URL**：`http://<host>:<port>/v1`
+- **API Key**：配置文件中设置的密钥
+- **Model**：配置文件中定义的模型名称（如 `default`、`deepseek` 等）
+
+支持的端点：
+
+| 端点                        | 说明                 |
+| --------------------------- | -------------------- |
+| `GET /v1/models`            | 获取可用模型列表     |
+| `POST /v1/chat/completions` | 聊天补全（支持流式） |
+
+> 如未配置 `api_keys`，API 端点将不进行密钥校验。
 
 ## 内置智能体
 
