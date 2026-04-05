@@ -14,7 +14,12 @@ func APIKeyAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keys := config.Get().OpenAIAPI.APIKeys
 		if len(keys) == 0 {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": gin.H{
+					"message": "API key not configured, please set [[openai_api]].api_keys in config.toml",
+					"type":    "invalid_api_key",
+				},
+			})
 			return
 		}
 

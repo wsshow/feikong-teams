@@ -207,7 +207,7 @@ fkteams generate apikey
 | `GET /v1/models`            | 获取可用模型列表     |
 | `POST /v1/chat/completions` | 聊天补全（支持流式） |
 
-> 如未配置 `api_keys`，API 端点将不进行密钥校验。
+> **注意**：必须配置 `api_keys` 才能访问 API 端点，未配置时所有请求将返回 401 错误。可使用 `fkteams generate apikey` 快速生成密钥。
 
 ## 内置智能体
 
