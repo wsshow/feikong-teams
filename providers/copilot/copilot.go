@@ -7,11 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
 	"regexp"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -54,15 +51,9 @@ func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel,
 
 // newCopilotHTTPClient 创建带有 Copilot 认证和 X-Initiator 逻辑的 HTTP 客户端
 func newCopilotHTTPClient(tm *TokenManager) *http.Client {
-	base := http.DefaultTransport.(*http.Transport).Clone()
-	if proxyURL := os.Getenv("FEIKONG_PROXY_URL"); proxyURL != "" {
-		if u, err := url.Parse(proxyURL); err == nil {
-			base.Proxy = http.ProxyURL(u)
-		}
-	}
 	return &http.Client{
 		Transport: &copilotTransport{
-			base: base,
+			base: internal.NewHTTPClient().Transport,
 			tm:   tm,
 		},
 	}
@@ -163,7 +154,7 @@ func ListModels(ctx context.Context, _ *internal.Config) ([]internal.ModelInfo, 
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := internal.NewHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("请求 Copilot 模型列表失败: %w", err)

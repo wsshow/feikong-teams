@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"fkteams/providers/internal"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -39,7 +40,7 @@ func RequestDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := internal.NewHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("设备码请求失败: %w", err)
 	}
@@ -117,7 +118,7 @@ func tryGetAccessToken(ctx context.Context, deviceCode string) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := internal.NewHTTPClient().Do(req)
 	if err != nil {
 		return "", err
 	}

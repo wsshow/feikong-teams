@@ -42,7 +42,7 @@ func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 		req.Header.Set(k, v)
 	}
 
-	client := newHTTPClient()
+	client := NewHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("请求模型列表失败: %w", err)
@@ -69,8 +69,8 @@ func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 	return models, nil
 }
 
-// newHTTPClient 创建支持代理的 HTTP 客户端
-func newHTTPClient() *http.Client {
+// NewHTTPClient 创建支持代理的 HTTP 客户端
+func NewHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if proxyURL := os.Getenv("FEIKONG_PROXY_URL"); proxyURL != "" {
 		if u, err := url.Parse(proxyURL); err == nil {

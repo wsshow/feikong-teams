@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"fkteams/common"
+	"fkteams/providers/internal"
 )
 
 const (
@@ -111,7 +112,7 @@ func exchangeCopilotToken(ctx context.Context, githubToken string) (*Token, erro
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := internal.NewHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
