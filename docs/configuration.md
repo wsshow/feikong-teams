@@ -61,12 +61,52 @@ password = "your_password"
 secret = "your_jwt_secret"
 ```
 
-### 环境变量（仅用于 Docker 等场景的回退）
+### OpenAI 兼容 API
+
+服务内置了 OpenAI 兼容的 API 端点，任意支持 OpenAI API 的客户端（如 Cursor、ChatBox、Open WebUI 等）都可以直接接入。
+
+在 `config.toml` 中添加配置段：
+
+```toml
+[openai_api]
+api_keys = ["sk-fkteams-your-secret-key"]
+```
+
+> **注意**：必须配置 `api_keys` 才能访问 API 端点，未配置时所有请求将返回 401 错误。
+
+密钥可自动生成：
 
 ```bash
-FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
-FEIKONG_PROXY_URL          # 代理地址 (配置文件优先)
+fkteams generate apikey
 ```
+
+客户端配置：
+
+- **API Base URL**：`http://<host>:<port>/v1`
+- **API Key**：配置文件中设置的密钥
+- **Model**：配置文件中定义的模型名称（如 `default`、`deepseek` 等）
+
+支持的端点：
+
+| 端点                        | 说明                 |
+| --------------------------- | -------------------- |
+| `GET /v1/models`            | 获取可用模型列表     |
+| `POST /v1/chat/completions` | 聊天补全（支持流式） |
+
+### 环境变量
+
+仅用于 Docker 等不便使用配置文件的场景，配置文件优先。
+
+| 变量名                   | 说明                              | 默认值       |
+| ------------------------ | --------------------------------- | ------------ |
+| `FEIKONG_APP_DIR`        | 应用数据目录                      | `~/.fkteams` |
+| `FEIKONG_PROXY_URL`      | 代理地址                          | -            |
+| `FEIKONG_BASE_URL`       | 模型 API 地址（回退用）           | -            |
+| `FEIKONG_API_KEY`        | 模型 API 密钥（回退用）           | -            |
+| `FEIKONG_MODEL`          | 模型名称（回退用）                | -            |
+| `FEIKONG_PROVIDER`       | 模型提供者类型（回退用）          | 自动检测     |
+| `FEIKONG_EXTRA_HEADERS`  | 额外 HTTP 请求头                  | -            |
+| `FEIKONG_MAX_ITERATIONS` | 智能体最大迭代次数（0/-1 不限制） | `60`         |
 
 ## 配置圆桌会议成员
 

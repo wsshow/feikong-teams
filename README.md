@@ -107,33 +107,22 @@ fkteams login copilot
 fkteams login copilot --import
 ```
 
-也可通过 `login` 命令快速配置其他供应商：
+也可通过 `login` 命令快速配置供应商：
 
 ```bash
-# 登录各供应商（交互式输入 API Key，自动填充默认 API 地址）
+# 交互式选择供应商并配置（推荐）
+fkteams login
+
+# 或直接指定供应商
 fkteams login openai
 fkteams login deepseek
-fkteams login claude
-fkteams login qwen
-fkteams login gemini
-fkteams login openrouter
-fkteams login ark
-fkteams login ollama          # Ollama 本地模型，无需 API Key
+fkteams login copilot         # GitHub Copilot（OAuth 设备码）
+fkteams login copilot --import # 从 VS Code 导入 Copilot token
 
-# 指定 API Key 和自定义地址（非交互式）
-fkteams login openai --api-key sk-xxx --base-url https://your-proxy.com/v1
-
-# 登录自定义 OpenAI 兼容供应商
-fkteams login custom --base-url https://your-api.com/v1 --api-key xxx --name my-provider
-
-# 退出登录（移除对应配置）
-fkteams logout openai
-fkteams logout custom --name my-provider
-
-# 管理模型配置
+# 模型管理
 fkteams model ls                     # 列出已配置的模型
 fkteams model rm                     # 交互式选择并移除模型配置
-fkteams model rm --name model-name   # 移除指定名称的模型配置
+fkteams logout openai                # 退出指定供应商
 ```
 
 ```toml
@@ -159,55 +148,19 @@ fkteams
 
 > 更多运行模式和命令行参数请参考 [使用指南](./docs/usage.md)
 
-## 从源码构建
+## 构建与部署
 
 ```bash
-# 克隆项目
+# 从源码构建
 git clone https://github.com/wsshow/feikong-teams.git
 cd feikong-teams
-
-# 编译
 make build
 
-# Web界面模式
-./release/fkteams_darwin_arm64 web
+# Docker 部署
+docker compose up -d
 ```
 
-## OpenAI 兼容 API
-
-服务内置了 OpenAI 兼容的 API 端点，任意支持 OpenAI API 的客户端（如 Cursor、ChatBox、Open WebUI 等）都可以直接接入使用。
-
-### 配置
-
-在 `config.toml` 中添加 `[openai_api]` 配置段：
-
-```toml
-[openai_api]
-api_keys = ["sk-fkteams-your-secret-key"]
-```
-
-密钥可以通过命令自动生成：
-
-```bash
-fkteams generate apikey
-```
-
-### 使用
-
-启动服务后，客户端使用以下配置即可接入：
-
-- **API Base URL**：`http://<host>:<port>/v1`
-- **API Key**：配置文件中设置的密钥
-- **Model**：配置文件中定义的模型名称（如 `default`、`deepseek` 等）
-
-支持的端点：
-
-| 端点                        | 说明                 |
-| --------------------------- | -------------------- |
-| `GET /v1/models`            | 获取可用模型列表     |
-| `POST /v1/chat/completions` | 聊天补全（支持流式） |
-
-> **注意**：必须配置 `api_keys` 才能访问 API 端点，未配置时所有请求将返回 401 错误。可使用 `fkteams generate apikey` 快速生成密钥。
+> 详细部署配置请参考 [部署指南](./docs/deployment.md)
 
 ## 内置智能体
 
@@ -239,29 +192,6 @@ fkteams generate apikey
 | [部署指南](./docs/deployment.md)        | 构建、Docker 部署                        |
 | [安全说明](./docs/security.md)          | 安全机制和注意事项                       |
 | [API 文档](./docs/api/)                 | HTTP/WebSocket API 接口                  |
-
-## 构建
-
-```bash
-make clean && make build
-```
-
-## Docker 部署
-
-```bash
-# docker-compose（推荐）
-docker compose up -d
-
-# 或 docker run
-docker build -t fkteams .
-docker run -d --name fkteams -p 23456:23456 \
-  -e FEIKONG_BASE_URL=https://api.openai.com/v1 \
-  -e FEIKONG_API_KEY=your_api_key_here \
-  -e FEIKONG_MODEL=GPT-5 \
-  fkteams
-```
-
-> 详细部署配置请参考 [部署指南](./docs/deployment.md)
 
 ## 许可证
 
