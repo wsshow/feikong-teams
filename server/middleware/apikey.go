@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/hmac"
 	"fkteams/config"
 	"net/http"
 	"strings"
@@ -28,9 +29,10 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 
-		key := authHeader[7:]
+		key := []byte(authHeader[7:])
+		// 使用常量时间比较防止时序攻击
 		for _, k := range keys {
-			if k == key {
+			if hmac.Equal(key, []byte(k)) {
 				c.Next()
 				return
 			}

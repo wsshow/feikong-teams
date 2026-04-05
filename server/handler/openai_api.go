@@ -72,7 +72,7 @@ func OpenAIChatCompletionsHandler() gin.HandlerFunc {
 		cfg := config.Get()
 		mc := cfg.ResolveModel(req.Model)
 		if mc == nil {
-			c.JSON(http.StatusNotFound, openAIError("model_not_found", fmt.Sprintf("model '%s' not found", req.Model)))
+			c.JSON(http.StatusNotFound, openAIError("model_not_found", fmt.Sprintf("model %q not found", req.Model)))
 			return
 		}
 
@@ -124,10 +124,22 @@ func OpenAIChatCompletionsHandler() gin.HandlerFunc {
 		}
 		defer resp.Body.Close()
 
-		// 透传响应头
+		// 只透传安全的响应头，防止上游注入 Set-Cookie / Location 等
+		safeHeaders := map[string]bool{
+			"Content-Type":                   true,
+			"X-Request-Id":                   true,
+			"X-Ratelimit-Limit-Requests":     true,
+			"X-Ratelimit-Limit-Tokens":       true,
+			"X-Ratelimit-Remaining-Requests": true,
+			"X-Ratelimit-Remaining-Tokens":   true,
+			"X-Ratelimit-Reset-Requests":     true,
+			"X-Ratelimit-Reset-Tokens":       true,
+		}
 		for k, vs := range resp.Header {
-			for _, v := range vs {
-				c.Writer.Header().Add(k, v)
+			if safeHeaders[k] {
+				for _, v := range vs {
+					c.Writer.Header().Add(k, v)
+				}
 			}
 		}
 		c.Writer.WriteHeader(resp.StatusCode)
