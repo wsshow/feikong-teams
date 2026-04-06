@@ -103,7 +103,8 @@ func (up Updater) Apply(rel *Release,
 	defer os.RemoveAll(tmpDir)
 
 	downloadURL := rel.Assets[idx].BrowserDownloadURL
-	srcFilename := filepath.Join(tmpDir, filepath.Base(downloadURL))
+	fkDir := filepath.Join(tmpDir, "fkteams")
+	srcFilename := filepath.Join(fkDir, filepath.Base(downloadURL))
 	dstFilename := srcFilename
 
 	// 配置HTTP客户端
@@ -134,7 +135,7 @@ func (up Updater) Apply(rel *Release,
 	downloader := dl.NewDownloader(downloadURL,
 		dl.WithFileName(dstFilename),
 		dl.WithHTTPClient(httpClient),
-		dl.WithBaseDir(tmpDir),
+		dl.WithBaseDir(filepath.Join(fkDir, "parts")),
 	)
 
 	// 设置进度回调
