@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"sync"
 
 	"github.com/google/uuid"
@@ -91,8 +90,6 @@ type copilotTransport struct {
 	tm   *TokenManager
 }
 
-var assistantRolePattern = regexp.MustCompile(`"role"\s*:\s*"(?:assistant|tool)"`)
-
 func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// 获取有效 token（自动刷新）
 	token, err := t.tm.GetToken(req.Context())
@@ -107,28 +104,35 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	for k, v := range copilotHeaders() {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set("Openai-Intent", "conversation-panel")
+	req.Header.Set("Openai-Intent", "conversation-edits")
 	req.Header.Set("X-Request-Id", uuid.New().String())
+
+	// 读取请求体用于判断 X-Initiator 和 Vision
+	var bodyBytes []byte
+	if req.Body != nil && req.Body != http.NoBody {
+		bodyBytes, _ = io.ReadAll(req.Body)
+		req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
 
 	// 根据消息内容判断 X-Initiator
 	initiator := "user"
 	if isAgentInitiator(req.Context()) {
-		// context 显式标记为 agent 行为（记忆提取、子任务等）
+		// context 显式标记为 agent 行为（记忆提取、摘要压缩、子任务等）
 		initiator = "agent"
-	} else if req.Body != nil && req.Body != http.NoBody {
-		bodyBytes, readErr := io.ReadAll(req.Body)
-		req.Body.Close()
-		if readErr == nil {
-			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-			if assistantRolePattern.Match(bodyBytes) {
-				initiator = "agent"
-			}
-		}
+	} else if len(bodyBytes) > 0 {
+		initiator = detectInitiator(bodyBytes)
 	}
 	req.Header.Set("X-Initiator", initiator)
 
-	// 清除 SDK 可能自动设置的无效 API key header
+	// 检测 Vision 请求
+	if len(bodyBytes) > 0 && detectVision(bodyBytes) {
+		req.Header.Set("Copilot-Vision-Request", "true")
+	}
+
+	// 清除 SDK 可能自动设置的无效 header
 	req.Header.Del("X-Api-Key")
+	req.Header.Del("authorization") // 防止 SDK 同时设置小写版本
 
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
@@ -161,6 +165,34 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	return resp, nil
+}
+
+// chatRequest 用于解析请求体中 messages 数组的最后一条消息 role
+type chatRequest struct {
+	Messages []struct {
+		Role    string `json:"role"`
+		Content any    `json:"content"`
+	} `json:"messages"`
+}
+
+// detectInitiator 通过检查 messages 数组最后一条消息的 role 判断是否为 agent 发起
+// 只有最后一条消息 role 为 "user" 时才标记为 "user"（新的用户意图），其余均为 "agent"
+func detectInitiator(body []byte) string {
+	var req chatRequest
+	if err := json.Unmarshal(body, &req); err != nil || len(req.Messages) == 0 {
+		return "user"
+	}
+	last := req.Messages[len(req.Messages)-1]
+	if last.Role != "user" {
+		return "agent"
+	}
+	return "user"
+}
+
+// detectVision 检查请求体中是否包含图片内容（image_url 类型的 content part）
+func detectVision(body []byte) bool {
+	return bytes.Contains(body, []byte(`"type":"image_url"`)) ||
+		bytes.Contains(body, []byte(`"type": "image_url"`))
 }
 
 // ListModels 获取 Copilot 可用的模型列表
