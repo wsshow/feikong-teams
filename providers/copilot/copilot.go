@@ -132,7 +132,6 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	// 清除 SDK 可能自动设置的无效 header
 	req.Header.Del("X-Api-Key")
-	req.Header.Del("authorization") // 防止 SDK 同时设置小写版本
 
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
