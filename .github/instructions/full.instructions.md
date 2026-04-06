@@ -307,7 +307,7 @@ func (t *Tool) DoSomething(ctx context.Context, req *Request) (*Response, error)
 - `config.Init()`: 初始化配置（应在启动时调用一次）
 - `config.Get()`: 返回全局配置单例 `*Config`（无 error）
 - `config.ResolveModel(name)`: 通过名称查找模型配置，空名称返回 "default" 模型
-- `config.ProxyURL()`: 返回代理 URL（配置文件优先，环境变量回退）
+- `config.ProxyURL()`: 返回代理 URL（通过环境变量 FEIKONG_PROXY_URL 控制）
 - `config.GenerateExample()`: 生成示例配置文件
 
 模型池设计: 模型定义为具名实体（`[[models]]`），其他配置通过名称引用。
@@ -334,17 +334,11 @@ secret = "your_jwt_secret"
 
 ### 环境变量
 
-仅保留用于 Docker 等场景的环境变量回退:
-
 ```bash
 FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
-FEIKONG_PROXY_URL          # 代理地址 (配置文件优先)
-# 以下为 NewChatModelFromEnv 回退（未配置 config.toml 时使用）
-FEIKONG_API_KEY            # 模型 API Key
-FEIKONG_BASE_URL           # 模型 Base URL
-FEIKONG_MODEL              # 模型名称
-FEIKONG_PROVIDER           # 模型提供者类型 (可选，自动检测)
-FEIKONG_EXTRA_HEADERS      # 额外 HTTP 请求头 (格式: Key1:Value1,Key2:Value2)
+FEIKONG_PROXY_URL          # 代理地址（唯一的代理配置方式）
+FEIKONG_MAX_ITERATIONS     # 智能体最大迭代次数 (默认 60，0/-1 不限制)
+FEIKONG_NO_SELF_RESTART    # 禁用自动重启（systemd 等场景）
 ```
 
 ## Web 服务

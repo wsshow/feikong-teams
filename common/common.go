@@ -4,6 +4,7 @@ package common
 import (
 	"context"
 	"errors"
+	"fkteams/fkenv"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ const (
 // MaxIterations 返回智能体最大迭代次数，支持 FEIKONG_MAX_ITERATIONS 环境变量覆盖。
 // 设为 0 或负数表示不限制
 func MaxIterations() int {
-	if v := os.Getenv("FEIKONG_MAX_ITERATIONS"); v != "" {
+	if v := fkenv.Get(fkenv.MaxIterations); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			if n <= 0 {
 				return 1<<31 - 1
@@ -36,7 +37,7 @@ func MaxIterations() int {
 
 // AppDir 返回应用数据目录 ~/.fkteams，支持 FEIKONG_APP_DIR 环境变量覆盖
 func AppDir() string {
-	if d := os.Getenv("FEIKONG_APP_DIR"); d != "" {
+	if d := fkenv.Get(fkenv.AppDir); d != "" {
 		return d
 	}
 	home, err := os.UserHomeDir()

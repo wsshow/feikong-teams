@@ -41,13 +41,6 @@ func (m *ModelConfig) ParseExtraHeaders() map[string]string {
 	return headers
 }
 
-// ==================== 代理 ====================
-
-// Proxy 网络代理配置
-type Proxy struct {
-	URL string `toml:"url" json:"url"`
-}
-
 // ==================== 记忆 ====================
 
 // Memory 长期记忆配置
@@ -232,7 +225,6 @@ type OpenAIAPI struct {
 // Config 应用全局配置
 type Config struct {
 	Models     []ModelConfig `toml:"models" json:"models"`
-	Proxy      Proxy         `toml:"proxy" json:"proxy"`
 	Memory     Memory        `toml:"memory" json:"memory"`
 	Server     Server        `toml:"server" json:"server"`
 	OpenAIAPI  OpenAIAPI     `toml:"openai_api" json:"openai_api"`
@@ -253,14 +245,6 @@ func (c *Config) ResolveModel(name string) *ModelConfig {
 		}
 	}
 	return nil
-}
-
-// ProxyURL 返回代理 URL（配置文件优先，环境变量回退）
-func (c *Config) ProxyURL() string {
-	if c != nil && c.Proxy.URL != "" {
-		return c.Proxy.URL
-	}
-	return os.Getenv("FEIKONG_PROXY_URL")
 }
 
 // WorkspaceDir 返回工作区目录（固定为 ~/.fkteams/workspace）
@@ -352,19 +336,11 @@ func ensureDefaultModel() error {
 	if mc := cfg.ResolveModel("default"); mc != nil && (mc.APIKey != "" || mc.Provider != "") {
 		return nil
 	}
-	// 环境变量回退
-	if os.Getenv("FEIKONG_API_KEY") != "" {
-		return nil
-	}
 	configPath := filepath.Join(common.AppDir(), "config", "config.toml")
 	return fmt.Errorf("未配置默认模型，请先完成配置后再使用\n\n"+
-		"  方式一：生成配置文件并编辑\n"+
+		"  生成配置文件并编辑\n"+
 		"    fkteams generate config\n"+
-		"    编辑 %s\n\n"+
-		"  方式二：设置环境变量\n"+
-		"    export FEIKONG_API_KEY=your_api_key\n"+
-		"    export FEIKONG_BASE_URL=https://api.openai.com/v1\n"+
-		"    export FEIKONG_MODEL=gpt-5", configPath)
+		"    编辑 %s", configPath)
 }
 
 // InitAndValidate 初始化配置并校验必要参数
@@ -434,9 +410,6 @@ func GenerateExample() error {
 				Provider: "copilot",
 				Model:    "gpt-4o",
 			},
-		},
-		Proxy: Proxy{
-			URL: "http://127.0.0.1:7890",
 		},
 		Memory: Memory{
 			Enabled: false,

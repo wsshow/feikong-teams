@@ -17,14 +17,7 @@ make build
 
 ### 使用 docker-compose（推荐）
 
-1. 编辑 `docker-compose.yml`，填入模型 API 配置：
-
-```yaml
-environment:
-  - FEIKONG_BASE_URL=https://api.openai.com/v1
-  - FEIKONG_API_KEY=your_api_key_here
-  - FEIKONG_MODEL=GPT-5
-```
+1. 编辑 `docker-compose.yml`，确保数据目录挂载正确。
 
 2. 首次启动前，生成示例配置文件：
 
@@ -56,9 +49,6 @@ docker run -d \
   --name fkteams \
   -p 23456:23456 \
   -e FEIKONG_APP_DIR=/app \
-  -e FEIKONG_BASE_URL=https://api.openai.com/v1 \
-  -e FEIKONG_API_KEY=your_api_key_here \
-  -e FEIKONG_MODEL=GPT-5 \
   -v ./data/config:/app/config \
   -v ./data/workspace:/app/workspace \
   -v ./data/history:/app/history \

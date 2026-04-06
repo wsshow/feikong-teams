@@ -2,7 +2,7 @@ package search
 
 import (
 	"context"
-	"fkteams/config"
+	"fkteams/fkenv"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,7 +13,7 @@ import (
 
 func NewDuckDuckGoTool(ctx context.Context) (tool.InvokableTool, error) {
 	// 1. 获取代理配置
-	proxyStr := config.Get().ProxyURL()
+	proxyStr := fkenv.Get(fkenv.ProxyURL)
 
 	var proxyFunc func(*http.Request) (*url.URL, error)
 

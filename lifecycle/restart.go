@@ -1,13 +1,13 @@
 package lifecycle
 
 import (
+	"fkteams/fkenv"
+	"fkteams/log"
 	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"fkteams/log"
 )
 
 var (
@@ -64,7 +64,7 @@ func ExecutePendingRestart() error {
 		log.Info("skip self-restart: running as PID 1 (container), relying on restart policy")
 		return nil
 	}
-	if os.Getenv("FEIKONG_NO_SELF_RESTART") != "" {
+	if fkenv.Get(fkenv.NoSelfRestart) != "" {
 		log.Info("skip self-restart: FEIKONG_NO_SELF_RESTART is set, relying on external process manager")
 		return nil
 	}

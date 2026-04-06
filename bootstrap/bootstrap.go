@@ -1,7 +1,7 @@
 package bootstrap
 
 import (
-	"fkteams/config"
+	"fkteams/fkenv"
 
 	"github.com/pterm/pterm"
 )
@@ -63,11 +63,6 @@ func RunWith(names []string, mirror bool) {
 }
 
 func runSelected(selectedOptions []string, mirror bool) {
-	// 尝试加载配置文件以获取代理等设置，配置文件不存在时使用默认值
-	if err := config.Init(); err != nil {
-		pterm.Warning.Printfln("加载配置文件失败（将使用默认设置）: %v", err)
-	}
-
 	pterm.Info.Printfln("即将初始化: %v", selectedOptions)
 
 	// 构建 name->initializer 映射用于查找
@@ -98,7 +93,7 @@ func runSelected(selectedOptions []string, mirror bool) {
 
 // appendProxyEnv 如果设置了 FEIKONG_PROXY_URL，注入 HTTP_PROXY/HTTPS_PROXY 环境变量
 func appendProxyEnv(env []string) []string {
-	proxyURL := config.Get().ProxyURL()
+	proxyURL := fkenv.Get(fkenv.ProxyURL)
 	if proxyURL == "" {
 		return env
 	}

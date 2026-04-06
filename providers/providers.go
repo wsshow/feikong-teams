@@ -6,7 +6,6 @@ package providers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
@@ -89,25 +88,6 @@ func NewChatModel(ctx context.Context, cfg *Config) (model.ToolCallingChatModel,
 	})
 }
 
-// NewChatModelFromEnv 从环境变量创建聊天模型（兼容旧版本，优先使用配置文件）
-func NewChatModelFromEnv(ctx context.Context) (model.ToolCallingChatModel, error) {
-	return NewChatModel(ctx, &Config{
-		Provider:     Type(os.Getenv("FEIKONG_PROVIDER")),
-		APIKey:       envWithFallback("FEIKONG_API_KEY", "FEIKONG_OPENAI_API_KEY"),
-		BaseURL:      envWithFallback("FEIKONG_BASE_URL", "FEIKONG_OPENAI_BASE_URL"),
-		Model:        envWithFallback("FEIKONG_MODEL", "FEIKONG_OPENAI_MODEL"),
-		ExtraHeaders: parseExtraHeaders(os.Getenv("FEIKONG_EXTRA_HEADERS")),
-	})
-}
-
-// envWithFallback 优先读取新变量名，为空时回退到旧变量名
-func envWithFallback(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return os.Getenv(fallback)
-}
-
 // Detect 从 BaseURL 或模型名称自动检测提供者类型
 func Detect(baseURL, modelName string) Type {
 	lower := strings.ToLower(baseURL + " " + modelName)
@@ -132,26 +112,6 @@ func Detect(baseURL, modelName string) Type {
 	default:
 		return OpenAI
 	}
-}
-
-// parseExtraHeaders 解析 "Key1:Value1,Key2:Value2" 格式的 header 字符串
-func parseExtraHeaders(s string) map[string]string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	headers := make(map[string]string)
-	for _, pair := range strings.Split(s, ",") {
-		pair = strings.TrimSpace(pair)
-		k, v, ok := strings.Cut(pair, ":")
-		if ok {
-			headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
-		}
-	}
-	if len(headers) == 0 {
-		return nil
-	}
-	return headers
 }
 
 // ModelInfo 模型信息

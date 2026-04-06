@@ -113,7 +113,6 @@ FKTeamsChat.prototype.fillConfigForm = function (cfg) {
   (cfg.models || []).forEach((m) => this.addModelCard(m));
 
   // 通用
-  document.getElementById("config-proxy-url").value = cfg.proxy?.url || "";
   document.getElementById("config-memory-enabled").checked =
     cfg.memory?.enabled || false;
   document.getElementById("config-server-host").value = cfg.server?.host || "";
@@ -811,9 +810,6 @@ FKTeamsChat.prototype.collectConfigData = function () {
         extra_headers: card.querySelector(".model-extraheaders").value.trim(),
       });
     });
-
-  // 代理
-  cfg.proxy = { url: document.getElementById("config-proxy-url").value.trim() };
 
   // 记忆
   cfg.memory = {

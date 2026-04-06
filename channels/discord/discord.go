@@ -3,7 +3,7 @@ package discord
 import (
 	"context"
 	"fkteams/channels"
-	"fkteams/config"
+	"fkteams/fkenv"
 	"fkteams/log"
 	"net/http"
 	"net/url"
@@ -61,7 +61,7 @@ func (c *Channel) Start(ctx context.Context) error {
 	}
 
 	// 配置代理（FEIKONG_PROXY_URL）
-	if proxyStr := config.Get().ProxyURL(); proxyStr != "" {
+	if proxyStr := fkenv.Get(fkenv.ProxyURL); proxyStr != "" {
 		proxyURL, err := url.Parse(proxyStr)
 		if err == nil {
 			session.Client = &http.Client{

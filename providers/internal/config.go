@@ -3,10 +3,10 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"fkteams/fkenv"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 )
 
@@ -72,7 +72,7 @@ func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 // NewHTTPClient 创建支持代理的 HTTP 客户端
 func NewHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if proxyURL := os.Getenv("FEIKONG_PROXY_URL"); proxyURL != "" {
+	if proxyURL := fkenv.Get(fkenv.ProxyURL); proxyURL != "" {
 		if u, err := url.Parse(proxyURL); err == nil {
 			transport.Proxy = http.ProxyURL(u)
 		}

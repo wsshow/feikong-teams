@@ -22,13 +22,6 @@ model = "gpt-5"
 # extra_headers = "X-Custom-Auth:your-token,X-Gateway-Key:your-key"  # 额外 HTTP 请求头（可选）
 ```
 
-### 代理配置（可选）
-
-```toml
-[proxy]
-url = "http://127.0.0.1:7890"
-```
-
 ### 智能体开关
 
 ```toml
@@ -100,12 +93,7 @@ fkteams generate apikey
 | 变量名                   | 说明                              | 默认值       |
 | ------------------------ | --------------------------------- | ------------ |
 | `FEIKONG_APP_DIR`        | 应用数据目录                      | `~/.fkteams` |
-| `FEIKONG_PROXY_URL`      | 代理地址                          | -            |
-| `FEIKONG_BASE_URL`       | 模型 API 地址（回退用）           | -            |
-| `FEIKONG_API_KEY`        | 模型 API 密钥（回退用）           | -            |
-| `FEIKONG_MODEL`          | 模型名称（回退用）                | -            |
-| `FEIKONG_PROVIDER`       | 模型提供者类型（回退用）          | 自动检测     |
-| `FEIKONG_EXTRA_HEADERS`  | 额外 HTTP 请求头                  | -            |
+| `FEIKONG_PROXY_URL`      | 代理地址（唯一的代理配置方式）    | -            |
 | `FEIKONG_MAX_ITERATIONS` | 智能体最大迭代次数（0/-1 不限制） | `60`         |
 
 ## 配置圆桌会议成员

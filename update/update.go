@@ -2,7 +2,7 @@ package update
 
 import (
 	"encoding/json"
-	"fkteams/config"
+	"fkteams/fkenv"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -108,7 +108,7 @@ func (up Updater) Apply(rel *Release,
 	dstFilename := srcFilename
 
 	// 配置HTTP客户端
-	proxyStr := config.Get().ProxyURL()
+	proxyStr := fkenv.Get(fkenv.ProxyURL)
 	var proxyFunc func(*http.Request) (*url.URL, error)
 	if proxyStr != "" {
 		proxyURL, err := url.Parse(proxyStr)

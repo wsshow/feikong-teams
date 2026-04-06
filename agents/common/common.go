@@ -6,6 +6,7 @@ import (
 	rootcommon "fkteams/common"
 	"fkteams/config"
 	"fkteams/providers"
+	"fmt"
 
 	"github.com/cloudwego/eino/components/model"
 )
@@ -32,8 +33,7 @@ func NewChatModel() (model.ToolCallingChatModel, error) {
 	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
 		return NewChatModelWithModelConfig(modelCfg)
 	}
-	// 回退到环境变量（兼容未配置 config.toml 的场景）
-	return providers.NewChatModelFromEnv(context.Background())
+	return nil, fmt.Errorf("未配置默认模型，请运行 fkteams generate config 生成配置文件")
 }
 
 // NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
