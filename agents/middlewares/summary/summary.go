@@ -15,7 +15,6 @@ import (
 )
 
 const DefaultMaxTokensBeforeSummary = 80 * 1024
-const DefaultMaxTokensForRecentMessages = 25 * 1024 // 20% of DefaultMaxTokensBeforeSummary
 const PromptOfSummary = `<role>
 Conversation Summarization Assistant for Multi-turn LLM Agent
 </role>
@@ -89,6 +88,7 @@ func WithSummaryPersistCallback(ctx context.Context, cb SummaryPersistCallback) 
 type Config struct {
 	MaxTokensBeforeSummary     int
 	MaxTokensForRecentMessages int
+	MaxTokensSummarizerInput   int // 压缩模型最大输入 token 数，防止超出模型上下文窗口
 	Counter                    TokenCounter
 	Model                      model.BaseChatModel
 	SystemPrompt               string
@@ -107,9 +107,14 @@ func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
 	if cfg.MaxTokensBeforeSummary > 0 {
 		maxBefore = cfg.MaxTokensBeforeSummary
 	}
-	maxRecent := DefaultMaxTokensForRecentMessages
+	// 由 maxBefore 自动推导：recent 窗口占 20%，压缩模型输入限制等于触发阈值
+	maxRecent := maxBefore / 5
 	if cfg.MaxTokensForRecentMessages > 0 {
 		maxRecent = cfg.MaxTokensForRecentMessages
+	}
+	maxSummarizerInput := maxBefore
+	if cfg.MaxTokensSummarizerInput > 0 {
+		maxSummarizerInput = cfg.MaxTokensSummarizerInput
 	}
 
 	tpl := prompt.FromMessages(schema.FString,
@@ -125,10 +130,11 @@ func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
 	}
 
 	sm := &summaryMiddleware{
-		counter:    defaultCounterToken,
-		maxBefore:  maxBefore,
-		maxRecent:  maxRecent,
-		summarizer: summarizer,
+		counter:            defaultCounterToken,
+		maxBefore:          maxBefore,
+		maxRecent:          maxRecent,
+		maxSummarizerInput: maxSummarizerInput,
+		summarizer:         summarizer,
 	}
 	if cfg.Counter != nil {
 		sm.counter = cfg.Counter
@@ -139,9 +145,10 @@ func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
 const summaryMessageFlag = "_agent_middleware_summary_message"
 
 type summaryMiddleware struct {
-	counter   TokenCounter
-	maxBefore int
-	maxRecent int
+	counter            TokenCounter
+	maxBefore          int
+	maxRecent          int
+	maxSummarizerInput int
 
 	summarizer compose.Runnable[map[string]any, *schema.Message]
 }
@@ -269,15 +276,46 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 		var sb strings.Builder
 		for _, b := range bs {
 			for _, m := range b.msgs {
-				sb.WriteString(renderMsg(m))
+				sb.WriteString(renderMsg(m, 0))
 				sb.WriteString("\n")
 			}
 		}
 		return sb.String()
 	}
 
-	olderText := joinBlocks(olderBlocks)
-	recentText := joinBlocks(recentBlocks)
+	// 单条消息截断阈值: maxBefore/4
+	maxContentPerMsg := s.maxBefore / 4
+	joinBlocksTruncated := func(bs []block) string {
+		var sb strings.Builder
+		for _, b := range bs {
+			for _, m := range b.msgs {
+				sb.WriteString(renderMsg(m, maxContentPerMsg))
+				sb.WriteString("\n")
+			}
+		}
+		return sb.String()
+	}
+
+	// 截断 olderBlocks 确保压缩模型输入不超出上下文限制
+	overheadTokens := countTokensInString(joinBlocks([]block{systemBlock})) +
+		countTokensInString(joinBlocks([]block{userBlock})) +
+		countTokensInString(joinBlocks([]block{summaryBlock})) +
+		recentTokens + 1024 // 1024 为 prompt 模板开销
+	maxOlderTokens := int64(s.maxSummarizerInput) - overheadTokens
+	if maxOlderTokens < 1024 {
+		maxOlderTokens = 1024
+	}
+	var olderTokensTotal int64
+	for _, b := range olderBlocks {
+		olderTokensTotal += b.tokens
+	}
+	for olderTokensTotal > maxOlderTokens && len(olderBlocks) > 1 {
+		olderTokensTotal -= olderBlocks[0].tokens
+		olderBlocks = olderBlocks[1:]
+	}
+
+	olderText := joinBlocksTruncated(olderBlocks)
+	recentText := joinBlocksTruncated(recentBlocks)
 
 	// 通知上下文压缩开始
 	_ = fkevent.DispatchEvent(ctx, fkevent.Event{
@@ -331,8 +369,8 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	return nil
 }
 
-// Render messages into strings
-func renderMsg(m *schema.Message) string {
+// renderMsg renders a message to string. If maxContent > 0, truncates content exceeding that token count.
+func renderMsg(m *schema.Message, maxContent int) string {
 	if m == nil {
 		return ""
 	}
@@ -351,7 +389,7 @@ func renderMsg(m *schema.Message) string {
 		sb.WriteString("]\n")
 	}
 	if m.Content != "" {
-		sb.WriteString(m.Content)
+		sb.WriteString(truncateContent(m.Content, maxContent))
 		sb.WriteString("\n")
 	}
 	if m.Role == schema.Assistant && len(m.ToolCalls) > 0 {
@@ -363,24 +401,52 @@ func renderMsg(m *schema.Message) string {
 			}
 			if tc.Function.Arguments != "" {
 				sb.WriteString("args: ")
-				sb.WriteString(tc.Function.Arguments)
+				sb.WriteString(truncateContent(tc.Function.Arguments, maxContent))
 				sb.WriteString("\n")
 			}
 		}
 	}
 	for _, part := range m.UserInputMultiContent {
 		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
-			sb.WriteString(part.Text)
+			sb.WriteString(truncateContent(part.Text, maxContent))
 			sb.WriteString("\n")
 		}
 	}
 	for _, part := range m.AssistantGenMultiContent {
 		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
-			sb.WriteString(part.Text)
+			sb.WriteString(truncateContent(part.Text, maxContent))
 			sb.WriteString("\n")
 		}
 	}
 	return sb.String()
+}
+
+// truncateContent 按 token 估算截断字符串，保留首尾、截断中间。maxTokens <= 0 时不截断
+func truncateContent(s string, maxTokens int) string {
+	if maxTokens <= 0 || s == "" {
+		return s
+	}
+	tokens := countTokensInString(s)
+	if tokens <= int64(maxTokens) {
+		return s
+	}
+	// 首尾各保留一半
+	halfTokens := maxTokens / 2
+	headRatio := float64(halfTokens) / float64(tokens)
+	headCutoff := int(float64(len(s)) * headRatio)
+	// 确保不在 UTF-8 多字节序列中间截断
+	for headCutoff > 0 && headCutoff < len(s) && s[headCutoff]&0xC0 == 0x80 {
+		headCutoff--
+	}
+	tailRatio := float64(halfTokens) / float64(tokens)
+	tailStart := len(s) - int(float64(len(s))*tailRatio)
+	for tailStart < len(s) && s[tailStart]&0xC0 == 0x80 {
+		tailStart++
+	}
+	if headCutoff >= tailStart {
+		return s
+	}
+	return s[:headCutoff] + "\n...[truncated]...\n" + s[tailStart:]
 }
 
 func defaultCounterToken(_ context.Context, msgs []adk.Message) ([]int64, error) {

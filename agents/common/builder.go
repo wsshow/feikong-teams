@@ -9,8 +9,10 @@ import (
 	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/agents/retry"
 	rootcommon "fkteams/common"
+	"fkteams/fkenv"
 	"fkteams/tools"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -172,11 +174,16 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
 
 	if b.enableSummary {
+		maxTokens := summary.DefaultMaxTokensBeforeSummary
+		if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
+			if n, _ := strconv.Atoi(v); n > 0 {
+				maxTokens = n
+			}
+		}
 		summaryMiddleware, err := summary.New(ctx, &summary.Config{
-			Model:                      chatModel,
-			SystemPrompt:               summary.PromptOfSummary,
-			MaxTokensBeforeSummary:     summary.DefaultMaxTokensBeforeSummary,
-			MaxTokensForRecentMessages: summary.DefaultMaxTokensForRecentMessages,
+			Model:                  chatModel,
+			SystemPrompt:           summary.PromptOfSummary,
+			MaxTokensBeforeSummary: maxTokens,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("init summary middleware: %w", err)
