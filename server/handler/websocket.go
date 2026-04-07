@@ -97,18 +97,52 @@ func WebSocketHandler() gin.HandlerFunc {
 					_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
 					continue
 				}
-				go handleChatMessage(connCtx, sm, wsMsg, writeJSON)
+				go handleChatMessage(sm, wsMsg, writeJSON)
+
+			case "resume":
+				sid := wsMsg.SessionID
+				if sid == "" {
+					_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
+					continue
+				}
+				task := globalTaskStore.Get(sid)
+				if task != nil && task.Reattach(writeJSON) {
+					// 成功重新绑定 writer 并回放缓冲事件
+					sm.mu.Lock()
+					sm.tasks[sid] = &sessionTask{cancel: task.cancel}
+					sm.mu.Unlock()
+					log.Printf("task resumed: session=%s", sid)
+				} else {
+					// 没有活跃任务或任务已过期，通知前端
+					_ = writeJSON(map[string]any{
+						"type":       "processing_end",
+						"session_id": sid,
+						"message":    "任务已完成或不存在",
+					})
+				}
 
 			case "cancel":
 				sid := wsMsg.SessionID
 				if sid != "" {
+					// 优先从 globalTaskStore 取消
+					if task := globalTaskStore.Get(sid); task != nil {
+						task.cancel()
+						globalTaskStore.RemoveIfMatch(sid, task)
+					}
 					sm.cancelTask(sid)
 				}
 				_ = writeJSON(map[string]any{"type": "cancelled", "session_id": sid, "message": "任务已取消"})
 
 			case "approval":
 				sid := wsMsg.SessionID
-				if ch := sm.getApprovalCh(sid); ch != nil {
+				if task := globalTaskStore.Get(sid); task != nil {
+					if ch := task.GetApprovalCh(); ch != nil {
+						select {
+						case ch <- wsMsg.Decision:
+						default:
+						}
+					}
+				} else if ch := sm.getApprovalCh(sid); ch != nil {
 					select {
 					case ch <- wsMsg.Decision:
 					default:
@@ -117,7 +151,18 @@ func WebSocketHandler() gin.HandlerFunc {
 
 			case "ask_response":
 				sid := wsMsg.SessionID
-				if ch := sm.getApprovalCh(sid); ch != nil {
+				if task := globalTaskStore.Get(sid); task != nil {
+					if ch := task.GetApprovalCh(); ch != nil {
+						resp := &ask.AskResponse{
+							Selected: wsMsg.AskSelected,
+							FreeText: wsMsg.AskFreeText,
+						}
+						select {
+						case ch <- resp:
+						default:
+						}
+					}
+				} else if ch := sm.getApprovalCh(sid); ch != nil {
 					resp := &ask.AskResponse{
 						Selected: wsMsg.AskSelected,
 						FreeText: wsMsg.AskFreeText,
@@ -218,35 +263,49 @@ func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJ
 	}
 }
 
+// wsEventCallbackBuffered 构建支持断线缓冲的事件回调
+func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string, task *activeTask) func(fkevent.Event) error {
+	return func(event fkevent.Event) error {
+		if event.Type == "action" && event.ActionType == "interrupted" {
+			return nil
+		}
+		recorder.RecordEvent(event)
+		data := convertEventToMap(event)
+		data["session_id"] = sessionID
+		return task.Write(data)
+	}
+}
+
 // --- WebSocket 聊天处理 ---
 
 // handleChatMessage 处理 WebSocket 聊天消息
-func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error) {
+func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
 	mode := wsMsg.Mode
 	if mode == "" {
 		mode = "supervisor"
 	}
 
-	// 为任务创建独立的 context
-	taskCtx, taskCancel := context.WithCancel(connCtx)
+	// 任务 context 独立于连接——断连不会自动取消任务
+	taskCtx, taskCancel := context.WithCancel(context.Background())
 	defer taskCancel()
 
-	// 注册任务（同一 session 的旧任务会被自动取消）
+	// 注册到全局 TaskStore（支持断线重连）
+	task := globalTaskStore.Register(sessionID, taskCancel, writeJSON)
+	defer func() {
+		task.MarkDone()
+		globalTaskStore.RemoveIfMatch(sessionID, task)
+	}()
+
+	// 同时在连接级 sessionManager 中注册（用于取消和审批路由）
 	taskID := sm.startTask(sessionID, taskCancel)
 	defer sm.removeTask(sessionID, taskID)
-
-	select {
-	case <-taskCtx.Done():
-		return
-	default:
-	}
 
 	// 获取 runner
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+		_ = task.Write(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 		return
 	}
 
@@ -256,9 +315,9 @@ func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMess
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(userDisplayText)
 
-	// 装配 context
+	// 装配 context —— 事件回调通过 task.Write 发送（支持缓冲）
 	taskCtx = fkevent.WithNonInteractive(taskCtx)
-	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallback(recorder, sessionID, writeJSON))
+	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallbackBuffered(recorder, sessionID, task))
 	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
@@ -268,36 +327,31 @@ func handleChatMessage(connCtx context.Context, sm *sessionManager, wsMsg WSMess
 		approval.StoreConfig{Name: approval.StoreDispatch},
 	))
 
-	// 初始化 HITL 审批通道
-	approvalCh := make(chan any, 1)
-	sm.setApprovalCh(sessionID, taskID, approvalCh)
-	defer sm.setApprovalCh(sessionID, taskID, nil)
-
-	// 更新会话标题（首次提交时从默认标题更新为用户输入）和状态
+	// 更新会话标题和状态
 	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 
-	_ = writeJSON(map[string]any{
+	_ = task.Write(map[string]any{
 		"type":       "processing_start",
 		"session_id": sessionID,
 		"message":    "开始处理您的请求...",
 	})
 
-	// 执行
-	interruptHandler := buildInterruptHandler(recorder, sessionID, writeJSON, approvalCh)
+	// 执行——中断处理使用 task 的审批通道
+	interruptHandler := buildInterruptHandler(recorder, sessionID, task.Write, task.approvalCh)
 	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 	if err != nil {
-		if isConnectionClosed(taskCtx, err) {
-			log.Printf("task cancelled or connection closed: session=%s", sessionID)
+		if taskCtx.Err() != nil {
+			log.Printf("task cancelled: session=%s", sessionID)
 			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 			ensureSessionMetadata(sessionID, userDisplayText)
 			return
 		}
 		log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
-		_ = writeJSON(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+		_ = task.Write(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 	}
 
 	finishChat(recorder, sessionID, userDisplayText)
-	_ = writeJSON(map[string]any{
+	_ = task.Write(map[string]any{
 		"type":       "processing_end",
 		"session_id": sessionID,
 		"message":    "处理完成",

@@ -96,6 +96,19 @@ func (sm *sessionManager) cancelAll() {
 	sm.tasks = nil
 }
 
+// detachAll 分离所有运行中的任务（连接断开时调用，不取消任务）
+func (sm *sessionManager) detachAll() {
+	sm.mu.Lock()
+	sids := make([]string, 0, len(sm.tasks))
+	for sid := range sm.tasks {
+		sids = append(sids, sid)
+	}
+	sm.tasks = make(map[string]*sessionTask) // 清空连接级任务引用
+	sm.mu.Unlock()
+	// 任务继续在 globalTaskStore 中运行，启动宽限期
+	globalTaskStore.DetachAll(sids)
+}
+
 func registerConn(conn *websocket.Conn, cancel context.CancelFunc) {
 	wsConnsMu.Lock()
 	wsConns[conn] = cancel
@@ -123,13 +136,16 @@ func removeSessionManager(conn *websocket.Conn) {
 	sessionManagersMu.Lock()
 	defer sessionManagersMu.Unlock()
 	if sm, exists := sessionManagers[conn]; exists {
-		sm.cancelAll()
+		sm.detachAll() // 分离任务而非取消，允许重连后恢复
 		delete(sessionManagers, conn)
 	}
 }
 
-// CloseAllWebSockets 服务退出时调用，主动关闭所有 WS 连接
+// CloseAllWebSockets 服务退出时调用，主动关闭所有 WS 连接并取消所有任务
 func CloseAllWebSockets() {
+	// 先取消所有活跃任务（context.Background 创建的任务不会被连接关闭自动取消）
+	globalTaskStore.CancelAll()
+
 	wsConnsMu.Lock()
 	conns := make(map[*websocket.Conn]context.CancelFunc, len(wsConns))
 	for c, cancel := range wsConns {

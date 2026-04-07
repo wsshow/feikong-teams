@@ -1288,6 +1288,10 @@ FKTeamsChat.prototype.createAssistantMessage = function (
 
 FKTeamsChat.prototype.cancelTask = function () {
   if (!this.isProcessing) return;
+  if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    this.showNotification("连接已断开，无法取消", "error");
+    return;
+  }
 
   // 发送取消消息（带 session_id 以支持多会话并发）
   this.ws.send(
@@ -1307,6 +1311,13 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   this.currentMessageElement = null;
   this.hasToolCallAfterMessage = false;
 
+  // 关闭审批弹窗
+  var modal = document.getElementById("approval-modal");
+  if (modal) modal.style.display = "none";
+
+  // 禁用所有未提交的 ask 表单
+  this._dismissPendingAskForms();
+
   // 添加取消提示
   const cancelEl = document.createElement("div");
   cancelEl.className = "action-event cancelled";
@@ -1321,6 +1332,19 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   this.messagesContainer.appendChild(cancelEl);
 
   this.showNotification("任务已取消", "success");
+};
+
+// 关闭所有未提交的 ask 表单
+FKTeamsChat.prototype._dismissPendingAskForms = function () {
+  var forms = this.messagesContainer.querySelectorAll(
+    ".inline-ask-form:not(.submitted)",
+  );
+  forms.forEach(function (form) {
+    form.classList.add("submitted");
+    form.querySelectorAll("input, textarea, button").forEach(function (el) {
+      el.disabled = true;
+    });
+  });
 };
 
 // 在聊天区域显示审批请求卡片
@@ -1380,6 +1404,10 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
 // 在聊天流中内联显示提问表单
 FKTeamsChat.prototype.showInlineAskForm = function (event) {
   var self = this;
+
+  // 自动关闭之前未提交的 ask 表单（防止多个表单同时显示）
+  this._dismissPendingAskForms();
+
   var container = document.createElement("div");
   container.className = "inline-ask-form";
 
@@ -1471,16 +1499,20 @@ FKTeamsChat.prototype.showInlineAskForm = function (event) {
     submitBtn.disabled = true;
     submitBtn.textContent = "已提交";
     container.classList.add("submitted");
-    optionsDiv.querySelectorAll("input").forEach(function (inp) { inp.disabled = true; });
+    optionsDiv.querySelectorAll("input").forEach(function (inp) {
+      inp.disabled = true;
+    });
     freeTextArea.disabled = true;
 
     if (self.ws && self.ws.readyState === WebSocket.OPEN) {
-      self.ws.send(JSON.stringify({
-        type: "ask_response",
-        session_id: self.sessionId,
-        ask_selected: selected,
-        ask_free_text: freeText,
-      }));
+      self.ws.send(
+        JSON.stringify({
+          type: "ask_response",
+          session_id: self.sessionId,
+          ask_selected: selected,
+          ask_free_text: freeText,
+        }),
+      );
     }
 
     // 显示回答摘要

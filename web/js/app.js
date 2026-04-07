@@ -313,39 +313,47 @@ class FKTeamsChat {
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
     const wsUrl = `${protocol}//${window.location.host}/ws${tokenParam}`;
 
-    this.ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl);
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
+      if (this.ws !== ws) return; // 旧连接的延迟事件，忽略
       this.updateStatus("connected", "已连接");
       this.reconnectAttempts = 0;
       this._startHeartbeat();
+      // 如果有正在处理的任务，发送 resume 请求恢复输出流
+      if (this.isProcessing && this.sessionId) {
+        ws.send(
+          JSON.stringify({
+            type: "resume",
+            session_id: this.sessionId,
+          }),
+        );
+        this.updateStatus("processing", "处理中...");
+      }
       // 加载侧边栏历史会话列表
       this.loadSidebarHistory();
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      if (this.ws !== ws) return; // 旧连接的延迟事件，忽略
       this._stopHeartbeat();
       this.updateStatus("disconnected", "服务未连接");
-      // 连接断开时重置处理状态，恢复发送按钮
-      if (this.isProcessing) {
-        this.isProcessing = false;
-        this.updateSendButtonState();
-      }
+      // 连接断开时不立即重置 isProcessing，后端任务可能仍在运行
+      // 重连后会通过 resume 恢复输出流，或由 processing_end 重置状态
       this.tryReconnect();
     };
 
-    this.ws.onerror = (error) => {
+    ws.onerror = (error) => {
+      if (this.ws !== ws) return; // 旧连接的延迟事件，忽略
       console.error("WebSocket error:", error);
       this._stopHeartbeat();
       this.updateStatus("disconnected", "连接异常");
-      // 连接错误时重置处理状态，恢复发送按钮
-      if (this.isProcessing) {
-        this.isProcessing = false;
-        this.updateSendButtonState();
-      }
+      // 连接错误时不立即重置 isProcessing，等待重连 resume
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (this.ws !== ws) return; // 旧连接的延迟事件，忽略
       try {
         const data = JSON.parse(event.data);
         this.handleServerEvent(data);
@@ -363,6 +371,12 @@ class FKTeamsChat {
         `重连中 (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
       );
       setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
+    } else {
+      // 重连次数耗尽，重置处理状态避免 UI 卡死
+      if (this.isProcessing) {
+        this.isProcessing = false;
+        this.updateSendButtonState();
+      }
     }
   }
 

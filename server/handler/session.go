@@ -211,6 +211,14 @@ func DeleteSessionHandler() gin.HandlerFunc {
 			}
 			globalStreamTasks.remove(sessionID)
 		}
+		// 取消 WebSocket 活跃任务
+		if task := globalTaskStore.Get(sessionID); task != nil {
+			task.cancel()
+			globalTaskStore.RemoveIfMatch(sessionID, task)
+		}
+
+		// 清理内存中的会话历史记录
+		fkevent.GlobalSessionManager.Remove(sessionID)
 
 		if err := os.RemoveAll(sessionDir); err != nil {
 			log.Printf("failed to delete session %s: %v", sessionID, err)
