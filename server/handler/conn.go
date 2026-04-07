@@ -67,18 +67,6 @@ func (sm *sessionManager) removeTask(sessionID string, taskID uint64) {
 	}
 }
 
-// cancelAll 取消所有运行中的任务
-func (sm *sessionManager) cancelAll() {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	for _, t := range sm.tasks {
-		if t.cancel != nil {
-			t.cancel()
-		}
-	}
-	sm.tasks = nil
-}
-
 // detachAll 分离所有运行中的任务（连接断开时调用，不取消任务）
 func (sm *sessionManager) detachAll() {
 	sm.mu.Lock()

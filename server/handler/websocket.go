@@ -237,20 +237,6 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 
 // --- WebSocket 事件回调 ---
 
-// wsEventCallback 构建 WebSocket 模式的事件回调
-func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJSON func(any) error) func(fkevent.Event) error {
-	return func(event fkevent.Event) error {
-		// interrupted 由 interruptHandler 记录为 approval_required 并推送，此处跳过避免重复
-		if event.Type == "action" && event.ActionType == "interrupted" {
-			return nil
-		}
-		recorder.RecordEvent(event)
-		data := convertEventToMap(event)
-		data["session_id"] = sessionID
-		return writeJSON(data)
-	}
-}
-
 // wsEventCallbackBuffered 构建支持断线缓冲的事件回调
 func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(fkevent.Event) error {
 	return func(event fkevent.Event) error {

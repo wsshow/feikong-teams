@@ -19,8 +19,8 @@ type Event = map[string]any
 
 // IndexedEvent 带递增 ID 的事件，支持 offset 断点续传
 type IndexedEvent struct {
-	ID   uint64
-	Data Event
+	ID   uint64 `json:"id"`
+	Data Event  `json:"data"`
 }
 
 // Subscriber 接收推送事件（Push 模式，如 WebSocket 连接）
@@ -56,8 +56,9 @@ type Stream struct {
 	nextID uint64
 
 	// Push 订阅者（至多一个，如 WS 连接）
-	sub      Subscriber
-	subEpoch uint64 // 版本号，防止旧连接延迟 Unsubscribe 覆盖新连接
+	sub           Subscriber
+	subEpoch      uint64 // 版本号，防止旧连接延迟 Unsubscribe 覆盖新连接
+	lastPushedIdx int    // 最后一次成功推送到订阅者的事件索引（Subscribe 回放时只发送此后的事件）
 
 	// Pull 监听者（多个，如 SSE 连接）
 	watchers    map[uint64]chan struct{}
@@ -89,6 +90,8 @@ func (s *Stream) Publish(event Event) {
 	if s.sub != nil {
 		if err := s.sub.WriteEvent(event); err != nil {
 			s.sub = nil // 推送失败，自动解绑（连接可能已断开）
+		} else {
+			s.lastPushedIdx = len(s.events)
 		}
 	}
 
@@ -102,17 +105,15 @@ func (s *Stream) Publish(event Event) {
 }
 
 // Subscribe 绑定 Push 订阅者并回放错过的事件。
-// 返回 (false, 0) 表示流已结束/过期（但仍会回放缓冲中的事件），调用方需自行通知客户端。
+// 返回 (false, 0) 表示流已结束/过期，调用方需自行通知客户端。
 // 返回 (true, epoch) 表示绑定成功，调用方应保存 epoch 用于后续 Unsubscribe。
 func (s *Stream) Subscribe(sub Subscriber) (bool, uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.done {
-		// 流已结束：回放所有事件后返回 false
-		for _, e := range s.events {
-			_ = sub.WriteEvent(e.Data)
-		}
+		// 流已结束，不回放事件（避免重连时重复渲染）
+		// 已完成的任务数据应通过历史 API 获取
 		return false, 0
 	}
 
@@ -124,11 +125,13 @@ func (s *Stream) Subscribe(sub Subscriber) (bool, uint64) {
 
 	s.subEpoch++
 
-	// 回放所有事件，然后绑定订阅者
-	// 持锁回放确保事件顺序：历史事件 → 新事件
-	for _, e := range s.events {
+	// 仅回放自上次成功推送以来的错过事件
+	// 首次 Subscribe: lastPushedIdx=0 → 回放全部已有事件
+	// 重连 Subscribe: lastPushedIdx=N → 仅回放断连期间积压的事件
+	for _, e := range s.events[s.lastPushedIdx:] {
 		_ = sub.WriteEvent(e.Data)
 	}
+	s.lastPushedIdx = len(s.events)
 	s.sub = sub
 	return true, s.subEpoch
 }
