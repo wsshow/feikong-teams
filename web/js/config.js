@@ -55,10 +55,7 @@ FKTeamsChat.prototype.initConfig = function () {
         : "none";
     });
 
-  // 点击背景关闭
-  this.configModal.addEventListener("click", (e) => {
-    if (e.target === this.configModal) this.closeConfig();
-  });
+
 
   // 初始化静态下拉选择器为自定义组件
   initAllCustomSelects(this.configModal);
@@ -342,21 +339,30 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
       e.stopPropagation();
       const allCards =
         this.configModelList.querySelectorAll(".config-model-card");
-      const myName = card.querySelector(".model-name").value.trim();
 
-      // 将当前 default 的卡片名称改回它原本的 model-name 或 provider
+      // 将当前 default 的卡片名称改回它原本的名称
       allCards.forEach((c) => {
         const nameInput = c.querySelector(".model-name");
         if (nameInput.value.trim() === "default" && c !== card) {
-          // 用服务商+模型名做新名称
-          const p = c.querySelector(".model-provider").value;
-          const m = c.querySelector(".model-model").value.trim();
-          nameInput.value = myName || p + (m ? "-" + m : "");
+          // 优先从 dataset 恢复原始名称
+          const restored = c.dataset.originalName;
+          if (restored) {
+            nameInput.value = restored;
+            delete c.dataset.originalName;
+          } else {
+            const p = c.querySelector(".model-provider").value;
+            const m = c.querySelector(".model-model").value.trim();
+            nameInput.value = p + (m ? "-" + m : "");
+          }
           nameInput.dispatchEvent(new Event("input", { bubbles: true }));
         }
       });
 
-      // 将当前卡片名称设为 default
+      // 记录当前卡片的原始名称，然后设为 default
+      const myName = card.querySelector(".model-name").value.trim();
+      if (myName && myName !== "default") {
+        card.dataset.originalName = myName;
+      }
       card.querySelector(".model-name").value = "default";
       card
         .querySelector(".model-name")
@@ -421,7 +427,7 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
 
     const btn = card.querySelector(".config-fetch-models-btn");
     btn.disabled = true;
-    btn.style.opacity = "0.5";
+    btn.classList.add("loading");
     try {
       const resp = await self.fetchWithAuth("/api/fkteams/providers/models", {
         method: "POST",
@@ -450,7 +456,7 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
       self.showNotification("获取模型列表失败: " + err.message, "error");
     } finally {
       btn.disabled = false;
-      btn.style.opacity = "";
+      btn.classList.remove("loading");
     }
   };
 
@@ -495,8 +501,8 @@ FKTeamsChat.prototype._showModelDropdown = function (input, models) {
     dropdown.innerHTML = "";
     const filtered = filter
       ? allModels.filter((id) =>
-          id.toLowerCase().includes(filter.toLowerCase()),
-        )
+        id.toLowerCase().includes(filter.toLowerCase()),
+      )
       : allModels;
     filtered.forEach((id) => {
       const item = document.createElement("div");
@@ -891,6 +897,20 @@ FKTeamsChat.prototype.saveConfig = async function () {
   try {
     const oldCfg = this._configData;
     const cfg = this.collectConfigData();
+
+    // 校验模型名称唯一性
+    const names = cfg.models.map((m) => m.name).filter(Boolean);
+    const seen = new Set();
+    for (const n of names) {
+      if (seen.has(n)) {
+        this.showNotification(`模型名称 "${n}" 重复，请确保每个模型名称唯一`, "error");
+        this.configSaveBtn.disabled = false;
+        this.configSaveBtn.textContent = "保存配置";
+        return;
+      }
+      seen.add(n);
+    }
+
     const resp = await this.fetchWithAuth("/api/fkteams/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -1012,7 +1032,7 @@ FKTeamsChat.prototype._showRestartHint = function () {
             clearInterval(poll);
             window.location.reload();
           }
-        } catch (_) {}
+        } catch (_) { }
       }, 2000);
     } catch (err) {
       self.showNotification("重启失败: " + err.message, "error");

@@ -240,6 +240,21 @@
   color: var(--accent-primary);
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.config-fetch-models-btn.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.config-fetch-models-btn.loading svg {
+  animation: spin 0.8s linear infinite;
+}
+
 .config-row {
   display: flex;
   gap: 12px;
@@ -460,12 +475,12 @@
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-.config-toggle input:checked + .config-toggle-slider {
+.config-toggle input:checked+.config-toggle-slider {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
 }
 
-.config-toggle input:checked + .config-toggle-slider::before {
+.config-toggle input:checked+.config-toggle-slider::before {
   transform: translateX(20px);
 }
 

@@ -31,8 +31,12 @@ FKTeamsChat.prototype.initFileManager = function () {
     this.fmUploadCancel = document.getElementById("fm-upload-cancel");
     this.fmPreviewModal = document.getElementById("fm-preview-modal");
     this.fmPreviewClose = document.getElementById("fm-preview-close");
+    this.fmPreviewRender = document.getElementById("fm-preview-render");
     this.fmPreviewTitle = document.getElementById("fm-preview-title");
     this.fmPreviewBody = document.getElementById("fm-preview-body");
+    this._fmPreviewRawText = null;
+    this._fmPreviewExt = null;
+    this._fmPreviewRendered = false;
     // Confirm modal elements
     this.fmConfirmModal = document.getElementById("fm-confirm-modal");
     this.fmConfirmClose = document.getElementById("fm-confirm-close");
@@ -84,11 +88,7 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     if (this.fmCloseBtn) {
         this.fmCloseBtn.addEventListener("click", () => this.closeFileManager());
     }
-    if (this.fmModal) {
-        this.fmModal.addEventListener("click", (e) => {
-            if (e.target === this.fmModal) this.closeFileManager();
-        });
-    }
+
     if (this.fmRefreshBtn) {
         this.fmRefreshBtn.addEventListener("click", () => this.fmLoadFiles());
     }
@@ -158,11 +158,11 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     if (this.fmPreviewClose) {
         this.fmPreviewClose.addEventListener("click", () => this._fmClosePreview());
     }
-    if (this.fmPreviewModal) {
-        this.fmPreviewModal.addEventListener("click", (e) => {
-            if (e.target === this.fmPreviewModal) this._fmClosePreview();
-        });
+    // Preview render toggle
+    if (this.fmPreviewRender) {
+        this.fmPreviewRender.addEventListener("click", () => this._fmToggleRender());
     }
+
 
     // Confirm modal events
     if (this.fmConfirmClose) {
@@ -171,11 +171,7 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     if (this.fmConfirmCancel) {
         this.fmConfirmCancel.addEventListener("click", () => this._fmCloseConfirm());
     }
-    if (this.fmConfirmModal) {
-        this.fmConfirmModal.addEventListener("click", (e) => {
-            if (e.target === this.fmConfirmModal) this._fmCloseConfirm();
-        });
-    }
+
 
     // Share modal events
     if (this.fmShareClose) {
@@ -184,11 +180,7 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     if (this.fmShareCancel) {
         this.fmShareCancel.addEventListener("click", () => this._fmCloseShareDialog());
     }
-    if (this.fmShareModal) {
-        this.fmShareModal.addEventListener("click", (e) => {
-            if (e.target === this.fmShareModal) this._fmCloseShareDialog();
-        });
-    }
+
     if (this.fmShareOk) {
         this.fmShareOk.addEventListener("click", () => this._fmCreateShareLink());
     }
@@ -208,11 +200,7 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     if (this.fmShareListClose) {
         this.fmShareListClose.addEventListener("click", () => this._fmCloseShareList());
     }
-    if (this.fmShareListModal) {
-        this.fmShareListModal.addEventListener("click", (e) => {
-            if (e.target === this.fmShareListModal) this._fmCloseShareList();
-        });
-    }
+
 
     // Search events
     if (this.fmSearchInput) {
@@ -951,6 +939,10 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
     this.fmPreviewModal.style.display = "flex";
     if (this.fmPreviewTitle) this.fmPreviewTitle.textContent = file.name;
     this.fmPreviewBody.innerHTML = '<div class="fm-loading">加载中...</div>';
+    this._fmPreviewRawText = null;
+    this._fmPreviewExt = null;
+    this._fmPreviewRendered = false;
+    if (this.fmPreviewRender) this.fmPreviewRender.style.display = "none";
 
     const ext = (file.name.split(".").pop() || "").toLowerCase();
     const url = `/api/fkteams/files/download?path=${encodeURIComponent(file.path)}`;
@@ -1003,6 +995,12 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
             const resp = await this.fetchWithAuth(url);
             const text = await resp.text();
             this.fmPreviewBody.innerHTML = `<pre>${this.escapeHtml(text)}</pre>`;
+            // 为 HTML 和 MD 文件显示渲染预览按钮
+            if (["html", "htm", "md"].includes(ext)) {
+                this._fmPreviewRawText = text;
+                this._fmPreviewExt = ext;
+                if (this.fmPreviewRender) this.fmPreviewRender.style.display = "";
+            }
             return;
         }
 
@@ -1020,6 +1018,45 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
 FKTeamsChat.prototype._fmClosePreview = function () {
     if (this.fmPreviewModal) this.fmPreviewModal.style.display = "none";
     if (this.fmPreviewBody) this.fmPreviewBody.innerHTML = "";
+    this._fmPreviewRawText = null;
+    this._fmPreviewExt = null;
+    this._fmPreviewRendered = false;
+    if (this.fmPreviewRender) this.fmPreviewRender.style.display = "none";
+};
+
+// 切换源码/渲染视图
+FKTeamsChat.prototype._fmToggleRender = function () {
+    if (!this._fmPreviewRawText || !this.fmPreviewBody) return;
+
+    this._fmPreviewRendered = !this._fmPreviewRendered;
+
+    if (this._fmPreviewRendered) {
+        // 渲染模式
+        if (this._fmPreviewExt === "md") {
+            // Markdown 渲染
+            if (typeof marked !== "undefined") {
+                var inst = this._markedInstance || new marked.Marked({ breaks: true, gfm: true });
+                this.fmPreviewBody.innerHTML = '<div class="fm-preview-rendered">' + inst.parse(this._fmPreviewRawText) + '</div>';
+            } else {
+                this.fmPreviewBody.innerHTML = '<div class="fm-preview-rendered">' + this.escapeHtml(this._fmPreviewRawText) + '</div>';
+            }
+        } else {
+            // HTML 渲染（使用沙箱 iframe）
+            var iframe = document.createElement("iframe");
+            iframe.sandbox = "allow-same-origin";
+            iframe.style.cssText = "width:100%;height:60vh;border:none;border-radius:8px;background:#fff;";
+            this.fmPreviewBody.innerHTML = "";
+            this.fmPreviewBody.appendChild(iframe);
+            iframe.contentDocument.open();
+            iframe.contentDocument.write(this._fmPreviewRawText);
+            iframe.contentDocument.close();
+        }
+        this.fmPreviewRender.title = "查看源码";
+    } else {
+        // 源码模式
+        this.fmPreviewBody.innerHTML = '<pre>' + this.escapeHtml(this._fmPreviewRawText) + '</pre>';
+        this.fmPreviewRender.title = "渲染预览";
+    }
 };
 
 // ===== 工具方法 =====

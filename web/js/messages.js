@@ -252,8 +252,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       this.showApprovalDialog(event.message);
       break;
     case "ask_questions":
-      this.showAskRequest(event);
-      this.showAskDialog(event);
+      this.showInlineAskForm(event);
       break;
     case "error":
       this.handleError(event);
@@ -1378,7 +1377,132 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
   this.updateStatus("processing", "处理中...");
 };
 
-// 在聊天区域显示提问请求卡片
+// 在聊天流中内联显示提问表单
+FKTeamsChat.prototype.showInlineAskForm = function (event) {
+  var self = this;
+  var container = document.createElement("div");
+  container.className = "inline-ask-form";
+
+  // 问题文本
+  var questionP = document.createElement("div");
+  questionP.className = "inline-ask-question";
+  questionP.textContent = event.question || "请回答以下问题";
+  container.appendChild(questionP);
+
+  var multiSelect = event.multi_select || false;
+  var inputType = multiSelect ? "checkbox" : "radio";
+
+  // 选项区域
+  var optionsDiv = document.createElement("div");
+  optionsDiv.className = "inline-ask-options";
+  container.appendChild(optionsDiv);
+
+  // 自由输入框
+  var freeTextArea = document.createElement("textarea");
+  freeTextArea.className = "inline-ask-free-text";
+  freeTextArea.rows = 2;
+  freeTextArea.placeholder = "输入自定义回答...";
+  container.appendChild(freeTextArea);
+
+  if (event.options && event.options.length > 0) {
+    event.options.forEach(function (opt) {
+      var label = document.createElement("label");
+      label.className = "inline-ask-option-label";
+      var input = document.createElement("input");
+      input.type = inputType;
+      input.name = "inline-ask-opt-" + Date.now();
+      input.value = opt;
+      input.className = "inline-ask-option-input";
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(" " + opt));
+      optionsDiv.appendChild(label);
+    });
+
+    // 自行输入选项
+    var customLabel = document.createElement("label");
+    customLabel.className = "inline-ask-option-label inline-ask-option-custom";
+    var customInput = document.createElement("input");
+    customInput.type = inputType;
+    customInput.name = "inline-ask-opt-" + Date.now();
+    customInput.value = "__custom__";
+    customInput.className = "inline-ask-option-input";
+    customLabel.appendChild(customInput);
+    customLabel.appendChild(document.createTextNode(" 自行输入"));
+    optionsDiv.appendChild(customLabel);
+
+    freeTextArea.style.display = "none";
+    optionsDiv.addEventListener("change", function () {
+      var show = false;
+      optionsDiv.querySelectorAll("input").forEach(function (inp) {
+        if (inp.value === "__custom__" && inp.checked) show = true;
+      });
+      freeTextArea.style.display = show ? "block" : "none";
+      if (show) freeTextArea.focus();
+    });
+  } else {
+    freeTextArea.style.display = "block";
+  }
+
+  // 提交按钮
+  var footer = document.createElement("div");
+  footer.className = "inline-ask-footer";
+  var submitBtn = document.createElement("button");
+  submitBtn.className = "inline-ask-submit-btn";
+  submitBtn.textContent = "提交回答";
+  footer.appendChild(submitBtn);
+  container.appendChild(footer);
+
+  submitBtn.addEventListener("click", function () {
+    var selected = [];
+    var freeText = "";
+    var checkedInputs = optionsDiv.querySelectorAll("input:checked");
+    checkedInputs.forEach(function (inp) {
+      if (inp.value !== "__custom__") selected.push(inp.value);
+    });
+    var customChecked = false;
+    checkedInputs.forEach(function (inp) {
+      if (inp.value === "__custom__") customChecked = true;
+    });
+    if (customChecked || optionsDiv.children.length === 0) {
+      freeText = (freeTextArea.value || "").trim();
+    }
+
+    // 禁用表单
+    submitBtn.disabled = true;
+    submitBtn.textContent = "已提交";
+    container.classList.add("submitted");
+    optionsDiv.querySelectorAll("input").forEach(function (inp) { inp.disabled = true; });
+    freeTextArea.disabled = true;
+
+    if (self.ws && self.ws.readyState === WebSocket.OPEN) {
+      self.ws.send(JSON.stringify({
+        type: "ask_response",
+        session_id: self.sessionId,
+        ask_selected: selected,
+        ask_free_text: freeText,
+      }));
+    }
+
+    // 显示回答摘要
+    var parts = [];
+    if (selected.length > 0) parts.push("选择: " + selected.join(", "));
+    if (freeText) parts.push("输入: " + freeText);
+    var summary = parts.length > 0 ? parts.join(" | ") : "已回答";
+    var resultEl = document.createElement("div");
+    resultEl.className = "inline-ask-result";
+    resultEl.textContent = summary;
+    container.appendChild(resultEl);
+
+    self.updateStatus("processing", "处理中...");
+    self.scrollToBottom();
+  });
+
+  this.messagesContainer.appendChild(container);
+  this.updateStatus("processing", "等待回答...");
+  this.scrollToBottom();
+};
+
+// 在聊天区域显示提问请求卡片（保留兼容，历史渲染用）
 FKTeamsChat.prototype.showAskRequest = function (event) {
   var el = document.createElement("div");
   el.className = "action-event ask-request";

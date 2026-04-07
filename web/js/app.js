@@ -136,12 +136,7 @@ class FKTeamsChat {
     this.historyModalClose.addEventListener("click", () =>
       this.hideHistoryModal(),
     );
-    // 点击背景关闭弹窗
-    this.historyModal.addEventListener("click", (e) => {
-      if (e.target === this.historyModal) {
-        this.hideHistoryModal();
-      }
-    });
+
     // 重命名弹窗事件
     this.renameModalClose.addEventListener("click", () =>
       this.hideRenameModal(),

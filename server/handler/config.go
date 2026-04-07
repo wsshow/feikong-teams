@@ -73,6 +73,19 @@ func UpdateConfigHandler() gin.HandlerFunc {
 
 		oldCfg := config.Get()
 
+		// 校验模型名称唯一性
+		modelNames := make(map[string]bool, len(newCfg.Models))
+		for _, m := range newCfg.Models {
+			if m.Name == "" {
+				continue
+			}
+			if modelNames[m.Name] {
+				Fail(c, http.StatusBadRequest, "duplicate model name: "+m.Name)
+				return
+			}
+			modelNames[m.Name] = true
+		}
+
 		// 合并敏感字段：前端传 "***" 或掩码时保留旧值
 		for i := range newCfg.Models {
 			if strings.Contains(newCfg.Models[i].APIKey, "****") {

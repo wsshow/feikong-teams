@@ -22,11 +22,7 @@ FKTeamsChat.prototype.initSchedule = function () {
       this.closeScheduleModal(),
     );
   }
-  if (this.scheduleModal) {
-    this.scheduleModal.addEventListener("click", (e) => {
-      if (e.target === this.scheduleModal) this.closeScheduleModal();
-    });
-  }
+
   if (this.scheduleFilter) {
     this.scheduleFilter.addEventListener("change", () =>
       this.loadScheduleTasks(),

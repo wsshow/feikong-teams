@@ -598,6 +598,7 @@ a.source-item:hover {
 }
 
 @keyframes sketchBounce {
+
   0%,
   80%,
   100% {
@@ -717,6 +718,7 @@ a.source-item:hover {
 }
 
 @keyframes blink {
+
   0%,
   100% {
     opacity: 1;
@@ -808,6 +810,7 @@ a.source-item:hover {
 }
 
 @keyframes pulse-dot {
+
   0%,
   100% {
     opacity: 1;
@@ -1317,4 +1320,135 @@ a.source-item:hover {
     font-size: 12px;
     padding: 5px 10px;
   }
+}
+
+/* ===== Inline Ask Form (embedded in chat) ===== */
+.inline-ask-form {
+  margin: 12px 0;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--accent-primary);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sketch);
+  animation: sketchSlideUp 0.3s ease;
+}
+
+.inline-ask-form.submitted {
+  opacity: 0.7;
+  border-style: dashed;
+}
+
+.inline-ask-question {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inline-ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.inline-ask-option-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all var(--transition);
+}
+
+.inline-ask-option-label:hover {
+  border-color: var(--accent-primary);
+  background: var(--accent-light);
+}
+
+.inline-ask-option-label:has(input:checked) {
+  border-color: var(--accent-primary);
+  background: var(--accent-light);
+  font-weight: 500;
+}
+
+.inline-ask-option-input {
+  accent-color: var(--accent-primary);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.inline-ask-option-custom {
+  border-style: dashed;
+}
+
+.inline-ask-free-text {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-body);
+  resize: vertical;
+  min-height: 48px;
+  box-sizing: border-box;
+  transition: border-color var(--transition);
+}
+
+.inline-ask-free-text:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.inline-ask-free-text::placeholder {
+  color: var(--text-muted);
+}
+
+.inline-ask-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.inline-ask-submit-btn {
+  padding: 7px 22px;
+  background: var(--accent-primary);
+  color: white;
+  border: 1.5px solid var(--accent-primary);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.inline-ask-submit-btn:hover {
+  background: var(--accent-secondary);
+  border-color: var(--accent-secondary);
+}
+
+.inline-ask-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inline-ask-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--success-light);
+  border: 1.5px solid var(--success);
+  border-radius: 8px;
+  color: var(--success);
+  font-size: 13px;
 }
