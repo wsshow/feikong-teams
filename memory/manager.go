@@ -190,6 +190,14 @@ func (m *Manager) Wait() {
 	}
 }
 
+// ResetLLM 替换底层 LLM 客户端（配置变更后调用，保留已有记忆数据）
+func (m *Manager) ResetLLM(llm LLMClient) {
+	m.wg.Wait() // 等待正在运行的提取任务完成
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.llm = llm
+}
+
 // FlushExtract 强制提取指定会话的剩余消息（退出前调用，跳过触发条件检查）
 func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionID string) {
 	m.mu.RLock()

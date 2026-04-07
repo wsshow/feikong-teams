@@ -2,8 +2,12 @@ package handler
 
 import (
 	"fkteams/agents"
+	agentcommon "fkteams/agents/common"
 	"fkteams/channels"
 	"fkteams/config"
+	"fkteams/g"
+	"fkteams/log"
+	"fkteams/memory"
 	"fkteams/tools"
 	"fkteams/tools/mcp"
 	"net/http"
@@ -133,9 +137,24 @@ func UpdateConfigHandler() gin.HandlerFunc {
 		ClearRunnerCache()
 		mcp.ClearCache()
 		channels.ResetAllBridges()
+		resetMemoryLLM()
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
+}
+
+// resetMemoryLLM 使用当前配置重建 MemoryManager 的 LLM 客户端
+func resetMemoryLLM() {
+	if g.MemoryManager == nil {
+		return
+	}
+	chatModel, err := agentcommon.NewChatModel()
+	if err != nil {
+		log.Printf("[memory] 重建模型失败，记忆服务继续使用旧模型: %v", err)
+		return
+	}
+	g.MemoryManager.ResetLLM(memory.NewLLMClient(chatModel))
+	log.Println("[memory] 记忆服务模型已更新")
 }
 
 // GetToolNamesHandler 获取可用工具名列表
