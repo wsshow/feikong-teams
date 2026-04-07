@@ -89,7 +89,7 @@ func ListSessionsHandler() gin.HandlerFunc {
 				SessionID:  sessionID,
 				Title:      title,
 				Status:     status,
-				ActiveTask: globalStreamTasks.get(sessionID) != nil,
+				ActiveTask: GlobalStreams.Get(sessionID) != nil,
 				Size:       size,
 				ModTime:    modTime,
 			})
@@ -204,18 +204,8 @@ func DeleteSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 取消该会话的流式任务并清理缓存
-		if task := globalStreamTasks.get(sessionID); task != nil {
-			if task.Status == "processing" {
-				task.Cancel()
-			}
-			globalStreamTasks.remove(sessionID)
-		}
-		// 取消 WebSocket 活跃任务
-		if task := globalTaskStore.Get(sessionID); task != nil {
-			task.cancel()
-			globalTaskStore.RemoveIfMatch(sessionID, task)
-		}
+		// 取消该会话的活跃任务并清理缓存
+		GlobalStreams.CancelAndRemove(sessionID)
 
 		// 清理内存中的会话历史记录
 		fkevent.GlobalSessionManager.Remove(sessionID)

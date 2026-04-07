@@ -6,189 +6,19 @@ import (
 	"fkteams/agents/middlewares/summary"
 	"fkteams/engine"
 	"fkteams/fkevent"
+	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
-
-// ==================== StreamBuffer: 会话级事件缓冲 ====================
-
-// StreamEvent 带序号的流式事件
-type StreamEvent struct {
-	ID   uint64         `json:"id"`
-	Data map[string]any `json:"data"`
-}
-
-// StreamBuffer 线程安全的事件缓冲区，支持实时订阅与历史回放。
-// 每个事件按递增 ID 存储，订阅者可以从任意 offset 开始消费，
-// 实现断线重连时的无损数据回放。
-type StreamBuffer struct {
-	mu      sync.RWMutex
-	events  []StreamEvent
-	nextID  uint64
-	done    bool
-	subs    map[uint64]chan struct{}
-	nextSub uint64
-}
-
-func newStreamBuffer() *StreamBuffer {
-	return &StreamBuffer{
-		events: make([]StreamEvent, 0, 256),
-		subs:   make(map[uint64]chan struct{}),
-	}
-}
-
-// Append 追加事件并通知所有订阅者
-func (b *StreamBuffer) Append(data map[string]any) uint64 {
-	b.mu.Lock()
-	id := b.nextID
-	b.nextID++
-	b.events = append(b.events, StreamEvent{ID: id, Data: data})
-	for _, ch := range b.subs {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-	}
-	b.mu.Unlock()
-	return id
-}
-
-// EventsSince 返回从 offset 开始的所有事件
-func (b *StreamBuffer) EventsSince(offset uint64) []StreamEvent {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if offset >= uint64(len(b.events)) {
-		return nil
-	}
-	result := make([]StreamEvent, len(b.events)-int(offset))
-	copy(result, b.events[offset:])
-	return result
-}
-
-// Subscribe 注册订阅，返回通知 channel 和取消函数
-func (b *StreamBuffer) Subscribe() (notify <-chan struct{}, unsubscribe func()) {
-	ch := make(chan struct{}, 1)
-	b.mu.Lock()
-	id := b.nextSub
-	b.nextSub++
-	b.subs[id] = ch
-	b.mu.Unlock()
-	return ch, func() {
-		b.mu.Lock()
-		delete(b.subs, id)
-		b.mu.Unlock()
-	}
-}
-
-// MarkDone 标记任务已完成，通知所有订阅者
-func (b *StreamBuffer) MarkDone() {
-	b.mu.Lock()
-	b.done = true
-	for _, ch := range b.subs {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-	}
-	b.mu.Unlock()
-}
-
-// IsDone 检查任务是否已完成
-func (b *StreamBuffer) IsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.done
-}
-
-// Len 返回已缓冲的事件数量
-func (b *StreamBuffer) Len() uint64 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return uint64(len(b.events))
-}
-
-// ==================== StreamTaskManager: 全局任务管理 ====================
-
-// StreamTaskState 流式任务状态
-type StreamTaskState struct {
-	SessionID  string
-	Mode       string
-	AgentName  string
-	Status     string // processing, completed, error, cancelled
-	Buffer     *StreamBuffer
-	Cancel     context.CancelFunc
-	ApprovalCh chan any
-	CreatedAt  time.Time
-	FinishedAt time.Time
-}
-
-// streamTaskManager 管理所有流式任务（与 WebSocket 连接解耦）。
-// 缓存仅服务于运行中及刚完成的任务，用于实时 SSE 推送和断线重连。
-// 已完成任务的数据由历史接口 (/sessions/:id) 提供，缓存过期后自动释放。
-type streamTaskManager struct {
-	mu    sync.RWMutex
-	tasks map[string]*StreamTaskState
-}
-
-// 已完成任务在内存中的保留时间，供迟到的订阅者拉取
-const streamTaskTTL = 5 * time.Minute
-
-var globalStreamTasks = newStreamTaskManager()
-
-func newStreamTaskManager() *streamTaskManager {
-	m := &streamTaskManager{tasks: make(map[string]*StreamTaskState)}
-	go m.cleanupLoop()
-	return m
-}
-
-// cleanupLoop 后台定期清理已过期的已完成任务，释放内存
-func (m *streamTaskManager) cleanupLoop() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		m.cleanup()
-	}
-}
-
-func (m *streamTaskManager) cleanup() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := time.Now()
-	for id, t := range m.tasks {
-		if t.Status != "processing" && !t.FinishedAt.IsZero() && now.Sub(t.FinishedAt) > streamTaskTTL {
-			delete(m.tasks, id)
-			log.Printf("[stream] released expired task buffer: session=%s", id)
-		}
-	}
-}
-
-func (m *streamTaskManager) get(sessionID string) *StreamTaskState {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.tasks[sessionID]
-}
-
-func (m *streamTaskManager) set(sessionID string, t *StreamTaskState) {
-	m.mu.Lock()
-	m.tasks[sessionID] = t
-	m.mu.Unlock()
-}
-
-func (m *streamTaskManager) remove(sessionID string) {
-	m.mu.Lock()
-	delete(m.tasks, sessionID)
-	m.mu.Unlock()
-}
 
 // ==================== API Handlers ====================
 
@@ -225,7 +55,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		}
 
 		// 如果已有运行中的任务，拒绝重复启动
-		if existing := globalStreamTasks.get(sessionID); existing != nil && existing.Status == "processing" {
+		if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
 			Fail(c, http.StatusConflict, "session has a running task, stop it first")
 			return
 		}
@@ -252,33 +82,27 @@ func StreamStartHandler() gin.HandlerFunc {
 		countBeforeRun := recorder.GetMessageCount()
 		recorder.RecordUserInput(userDisplayText)
 
-		// 创建任务状态
+		// 创建任务——统一使用 GlobalStreams
 		taskCtx, taskCancel := context.WithCancel(ctx)
-		buf := newStreamBuffer()
-		approvalCh := make(chan any, 1)
-
-		state := &StreamTaskState{
-			SessionID:  sessionID,
-			Mode:       mode,
-			AgentName:  req.AgentName,
-			Status:     "processing",
-			Buffer:     buf,
-			Cancel:     taskCancel,
-			ApprovalCh: approvalCh,
-			CreatedAt:  time.Now(),
-		}
-		globalStreamTasks.set(sessionID, state)
+		stream := GlobalStreams.Register(taskstream.StreamConfig{
+			SessionID:   sessionID,
+			Cancel:      taskCancel,
+			GracePeriod: 0,
+			CleanupTTL:  5 * time.Minute,
+			Mode:        mode,
+			AgentName:   req.AgentName,
+		})
 
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 
-		buf.Append(map[string]any{
+		stream.Publish(map[string]any{
 			"type":       "processing_start",
 			"session_id": sessionID,
 			"message":    "开始处理您的请求...",
 		})
 
 		// 后台执行任务
-		go runStreamTask(taskCtx, state, r, recorder, inputMessages, countBeforeRun, userDisplayText)
+		go runStreamTask(taskCtx, stream, sessionID, r, recorder, inputMessages, countBeforeRun, userDisplayText)
 
 		OK(c, gin.H{
 			"session_id": sessionID,
@@ -289,25 +113,18 @@ func StreamStartHandler() gin.HandlerFunc {
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, state *StreamTaskState, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, userDisplayText string) {
-	sessionID := state.SessionID
-	buf := state.Buffer
-
-	defer func() {
-		state.FinishedAt = time.Now()
-		buf.MarkDone()
-	}()
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, userDisplayText string) {
+	defer stream.Done()
 
 	ctx = fkevent.WithNonInteractive(ctx)
 	ctx = fkevent.WithCallback(ctx, func(event fkevent.Event) error {
-		// interrupted 事件由 interruptHandler 记录为 approval_required 并推送，此处跳过
 		if event.Type == "action" && event.ActionType == "interrupted" {
 			return nil
 		}
 		recorder.RecordEvent(event)
 		data := convertEventToMap(event)
 		data["session_id"] = sessionID
-		buf.Append(data)
+		stream.Publish(data)
 		return nil
 	})
 	ctx = summary.WithSummaryPersistCallback(ctx, func(summaryText string) {
@@ -319,14 +136,14 @@ func runStreamTask(ctx context.Context, state *StreamTaskState, r *adk.Runner, r
 		approval.StoreConfig{Name: approval.StoreDispatch},
 	))
 
-	interruptHandler := buildStreamInterruptHandler(buf, recorder, sessionID, state.ApprovalCh)
+	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
 	_, err := engine.New(r, "fkteams").Run(ctx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 
 	if err != nil {
 		if isConnectionClosed(ctx, err) {
 			log.Printf("stream task cancelled: session=%s", sessionID)
-			state.Status = "cancelled"
-			buf.Append(map[string]any{
+			stream.SetStatus("cancelled")
+			stream.Publish(map[string]any{
 				"type":       "cancelled",
 				"session_id": sessionID,
 				"message":    "任务已取消",
@@ -336,8 +153,8 @@ func runStreamTask(ctx context.Context, state *StreamTaskState, r *adk.Runner, r
 			return
 		}
 		log.Printf("stream task error: session=%s, err=%v", sessionID, err)
-		state.Status = "error"
-		buf.Append(map[string]any{
+		stream.SetStatus("error")
+		stream.Publish(map[string]any{
 			"type":       "error",
 			"session_id": sessionID,
 			"error":      err.Error(),
@@ -346,9 +163,9 @@ func runStreamTask(ctx context.Context, state *StreamTaskState, r *adk.Runner, r
 		return
 	}
 
-	state.Status = "completed"
+	stream.SetStatus("completed")
 	finishChat(recorder, sessionID, userDisplayText)
-	buf.Append(map[string]any{
+	stream.Publish(map[string]any{
 		"type":       "processing_end",
 		"session_id": sessionID,
 		"message":    "处理完成",
@@ -364,17 +181,17 @@ func StreamStopHandler() gin.HandlerFunc {
 			return
 		}
 
-		state := globalStreamTasks.get(sessionID)
-		if state == nil {
+		stream := GlobalStreams.Get(sessionID)
+		if stream == nil {
 			Fail(c, http.StatusNotFound, "no task found for this session")
 			return
 		}
-		if state.Status != "processing" {
-			Fail(c, http.StatusConflict, fmt.Sprintf("task is not running, current status: %s", state.Status))
+		if stream.Status() != "processing" {
+			Fail(c, http.StatusConflict, fmt.Sprintf("task is not running, current status: %s", stream.Status()))
 			return
 		}
 
-		state.Cancel()
+		stream.Cancel()
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"message":    "task stop requested",
@@ -394,8 +211,8 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 			return
 		}
 
-		state := globalStreamTasks.get(sessionID)
-		if state == nil {
+		stream := GlobalStreams.Get(sessionID)
+		if stream == nil {
 			Fail(c, http.StatusNotFound, "no active task for this session")
 			return
 		}
@@ -417,14 +234,13 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 		c.Header("Connection", "keep-alive")
 		c.Header("X-Accel-Buffering", "no")
 
-		buf := state.Buffer
-		notify, unsub := buf.Subscribe()
+		notify, unsub := stream.Watch()
 		defer unsub()
 
 		ctx := c.Request.Context()
 		flusher := c.Writer
 
-		writeSSE := func(event StreamEvent) bool {
+		writeSSE := func(event taskstream.IndexedEvent) bool {
 			data, _ := json.Marshal(event.Data)
 			_, err := fmt.Fprintf(flusher, "id: %d\ndata: %s\n\n", event.ID, data)
 			flusher.Flush()
@@ -432,7 +248,7 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 		}
 
 		for {
-			events := buf.EventsSince(offset)
+			events := stream.EventsSince(offset)
 			for _, e := range events {
 				if !writeSSE(e) {
 					return
@@ -440,9 +256,9 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 				offset = e.ID + 1
 			}
 
-			if buf.IsDone() {
+			if stream.IsDone() {
 				// 任务已结束，最后再读一次确保不丢失尾部事件
-				for _, e := range buf.EventsSince(offset) {
+				for _, e := range stream.EventsSince(offset) {
 					writeSSE(e)
 				}
 				return
@@ -458,8 +274,6 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 }
 
 // StreamStatusHandler 获取流式任务状态。
-// 返回 has_task 标识是否有活跃的流式任务缓存可订阅。
-// 前端据此决定是直接加载历史还是接入实时流。
 func StreamStatusHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
@@ -468,21 +282,21 @@ func StreamStatusHandler() gin.HandlerFunc {
 			return
 		}
 
-		state := globalStreamTasks.get(sessionID)
-		if state != nil {
+		stream := GlobalStreams.Get(sessionID)
+		if stream != nil {
 			result := gin.H{
 				"session_id":  sessionID,
-				"status":      state.Status,
+				"status":      stream.Status(),
 				"has_task":    true,
-				"mode":        state.Mode,
-				"event_count": state.Buffer.Len(),
-				"created_at":  state.CreatedAt,
+				"mode":        stream.Mode(),
+				"event_count": stream.EventCount(),
+				"created_at":  stream.CreatedAt(),
 			}
-			if !state.FinishedAt.IsZero() {
-				result["finished_at"] = state.FinishedAt
+			if doneAt := stream.DoneAt(); !doneAt.IsZero() {
+				result["finished_at"] = doneAt
 			}
-			if state.AgentName != "" {
-				result["agent_name"] = state.AgentName
+			if stream.AgentName() != "" {
+				result["agent_name"] = stream.AgentName()
 			}
 			OK(c, result)
 			return
@@ -522,14 +336,14 @@ func StreamApprovalHandler() gin.HandlerFunc {
 			return
 		}
 
-		state := globalStreamTasks.get(req.SessionID)
-		if state == nil || state.Status != "processing" {
+		stream := GlobalStreams.Get(req.SessionID)
+		if stream == nil || stream.Status() != "processing" {
 			Fail(c, http.StatusNotFound, "no running task for this session")
 			return
 		}
 
 		select {
-		case state.ApprovalCh <- req.Decision:
+		case stream.InterruptCh() <- req.Decision:
 			OK(c, gin.H{"message": "approval submitted"})
 		default:
 			Fail(c, http.StatusConflict, "no pending approval request")
@@ -554,8 +368,8 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 			return
 		}
 
-		state := globalStreamTasks.get(req.SessionID)
-		if state == nil || state.Status != "processing" {
+		stream := GlobalStreams.Get(req.SessionID)
+		if stream == nil || stream.Status() != "processing" {
 			Fail(c, http.StatusNotFound, "no running task for this session")
 			return
 		}
@@ -565,7 +379,7 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 			FreeText: req.FreeText,
 		}
 		select {
-		case state.ApprovalCh <- resp:
+		case stream.InterruptCh() <- resp:
 			OK(c, gin.H{"message": "response submitted"})
 		default:
 			Fail(c, http.StatusConflict, "no pending ask request")
@@ -574,7 +388,6 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 }
 
 // StreamEventsHandler 获取当前任务的已缓冲事件（非 SSE，一次性拉取）。
-// 仅对内存中有缓存的任务有效；已完成的历史数据应通过 GET /sessions/:id 获取。
 func StreamEventsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
@@ -583,8 +396,8 @@ func StreamEventsHandler() gin.HandlerFunc {
 			return
 		}
 
-		state := globalStreamTasks.get(sessionID)
-		if state == nil {
+		stream := GlobalStreams.Get(sessionID)
+		if stream == nil {
 			Fail(c, http.StatusNotFound, "no active task for this session")
 			return
 		}
@@ -596,13 +409,13 @@ func StreamEventsHandler() gin.HandlerFunc {
 			}
 		}
 
-		events := state.Buffer.EventsSince(offset)
+		events := stream.EventsSince(offset)
 		OK(c, gin.H{
 			"session_id":  sessionID,
-			"status":      state.Status,
+			"status":      stream.Status(),
 			"events":      events,
-			"event_count": state.Buffer.Len(),
-			"done":        state.Buffer.IsDone(),
+			"event_count": stream.EventCount(),
+			"done":        stream.IsDone(),
 		})
 	}
 }
@@ -610,8 +423,8 @@ func StreamEventsHandler() gin.HandlerFunc {
 // ==================== 内部辅助 ====================
 
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
-func buildStreamInterruptHandler(buf *StreamBuffer, recorder *fkevent.HistoryRecorder, sessionID string, approvalCh <-chan any) engine.InterruptHandler {
-	channelHandler := engine.ChannelHandler(approvalCh)
+func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.HistoryRecorder, sessionID string) engine.InterruptHandler {
+	channelHandler := engine.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []*adk.InterruptCtx) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
@@ -620,7 +433,7 @@ func buildStreamInterruptHandler(buf *StreamBuffer, recorder *fkevent.HistoryRec
 				ActionType: "ask_questions",
 				Content:    info.Question,
 			})
-			buf.Append(map[string]any{
+			stream.Publish(map[string]any{
 				"type":         "ask_questions",
 				"session_id":   sessionID,
 				"question":     info.Question,
@@ -647,7 +460,7 @@ func buildStreamInterruptHandler(buf *StreamBuffer, recorder *fkevent.HistoryRec
 			ActionType: "approval_required",
 			Content:    msg,
 		})
-		buf.Append(map[string]any{
+		stream.Publish(map[string]any{
 			"type":       "approval_required",
 			"session_id": sessionID,
 			"message":    msg,

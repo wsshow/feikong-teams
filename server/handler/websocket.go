@@ -6,12 +6,14 @@ import (
 	"fkteams/agents/middlewares/summary"
 	"fkteams/engine"
 	"fkteams/fkevent"
+	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
 	"fmt"
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/gin-gonic/gin"
@@ -105,15 +107,23 @@ func WebSocketHandler() gin.HandlerFunc {
 					_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
 					continue
 				}
-				task := globalTaskStore.Get(sid)
-				if task != nil && task.Reattach(writeJSON) {
-					// 成功重新绑定 writer 并回放缓冲事件
-					sm.mu.Lock()
-					sm.tasks[sid] = &sessionTask{cancel: task.cancel}
-					sm.mu.Unlock()
-					log.Printf("task resumed: session=%s", sid)
+				stream := GlobalStreams.Get(sid)
+				if stream != nil {
+					ok, epoch := stream.Subscribe(taskstream.FuncSubscriber(writeJSON))
+					if ok {
+						// 成功重新绑定并回放事件
+						sm.mu.Lock()
+						sm.tasks[sid] = &sessionTask{cancel: stream.Cancel, stream: stream, subEpoch: epoch}
+						sm.mu.Unlock()
+						log.Printf("task resumed: session=%s", sid)
+					} else {
+						_ = writeJSON(map[string]any{
+							"type":       "processing_end",
+							"session_id": sid,
+							"message":    "任务已完成或不存在",
+						})
+					}
 				} else {
-					// 没有活跃任务或任务已过期，通知前端
 					_ = writeJSON(map[string]any{
 						"type":       "processing_end",
 						"session_id": sid,
@@ -124,51 +134,29 @@ func WebSocketHandler() gin.HandlerFunc {
 			case "cancel":
 				sid := wsMsg.SessionID
 				if sid != "" {
-					// 优先从 globalTaskStore 取消
-					if task := globalTaskStore.Get(sid); task != nil {
-						task.cancel()
-						globalTaskStore.RemoveIfMatch(sid, task)
-					}
+					GlobalStreams.CancelAndRemove(sid)
 					sm.cancelTask(sid)
 				}
 				_ = writeJSON(map[string]any{"type": "cancelled", "session_id": sid, "message": "任务已取消"})
 
 			case "approval":
 				sid := wsMsg.SessionID
-				if task := globalTaskStore.Get(sid); task != nil {
-					if ch := task.GetApprovalCh(); ch != nil {
-						select {
-						case ch <- wsMsg.Decision:
-						default:
-						}
-					}
-				} else if ch := sm.getApprovalCh(sid); ch != nil {
+				if stream := GlobalStreams.Get(sid); stream != nil {
 					select {
-					case ch <- wsMsg.Decision:
+					case stream.InterruptCh() <- wsMsg.Decision:
 					default:
 					}
 				}
 
 			case "ask_response":
 				sid := wsMsg.SessionID
-				if task := globalTaskStore.Get(sid); task != nil {
-					if ch := task.GetApprovalCh(); ch != nil {
-						resp := &ask.AskResponse{
-							Selected: wsMsg.AskSelected,
-							FreeText: wsMsg.AskFreeText,
-						}
-						select {
-						case ch <- resp:
-						default:
-						}
-					}
-				} else if ch := sm.getApprovalCh(sid); ch != nil {
-					resp := &ask.AskResponse{
-						Selected: wsMsg.AskSelected,
-						FreeText: wsMsg.AskFreeText,
-					}
+				resp := &ask.AskResponse{
+					Selected: wsMsg.AskSelected,
+					FreeText: wsMsg.AskFreeText,
+				}
+				if stream := GlobalStreams.Get(sid); stream != nil {
 					select {
-					case ch <- resp:
+					case stream.InterruptCh() <- resp:
 					default:
 					}
 				}
@@ -264,7 +252,7 @@ func wsEventCallback(recorder *fkevent.HistoryRecorder, sessionID string, writeJ
 }
 
 // wsEventCallbackBuffered 构建支持断线缓冲的事件回调
-func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string, task *activeTask) func(fkevent.Event) error {
+func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(fkevent.Event) error {
 	return func(event fkevent.Event) error {
 		if event.Type == "action" && event.ActionType == "interrupted" {
 			return nil
@@ -272,7 +260,8 @@ func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string
 		recorder.RecordEvent(event)
 		data := convertEventToMap(event)
 		data["session_id"] = sessionID
-		return task.Write(data)
+		stream.Publish(data)
+		return nil
 	}
 }
 
@@ -290,22 +279,34 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	taskCtx, taskCancel := context.WithCancel(context.Background())
 	defer taskCancel()
 
-	// 注册到全局 TaskStore（支持断线重连）
-	task := globalTaskStore.Register(sessionID, taskCancel, writeJSON)
+	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
+	stream := GlobalStreams.Register(taskstream.StreamConfig{
+		SessionID:   sessionID,
+		Cancel:      taskCancel,
+		GracePeriod: 60 * time.Second,
+		CleanupTTL:  60 * time.Second,
+	})
+	// 绑定当前 WS 连接为 Push 订阅者
+	_, subEpoch := stream.Subscribe(taskstream.FuncSubscriber(writeJSON))
 	defer func() {
-		task.MarkDone()
-		globalTaskStore.RemoveIfMatch(sessionID, task)
+		stream.Done()
 	}()
 
-	// 同时在连接级 sessionManager 中注册（用于取消和审批路由）
+	// 同时在连接级 sessionManager 中注册（用于取消和断线 Unsubscribe）
 	taskID := sm.startTask(sessionID, taskCancel)
+	sm.mu.Lock()
+	if t, exists := sm.tasks[sessionID]; exists && t.id == taskID {
+		t.stream = stream
+		t.subEpoch = subEpoch
+	}
+	sm.mu.Unlock()
 	defer sm.removeTask(sessionID, taskID)
 
 	// 获取 runner
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		_ = task.Write(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+		stream.Publish(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
 		return
 	}
 
@@ -315,9 +316,9 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	countBeforeRun := recorder.GetMessageCount()
 	recorder.RecordUserInput(userDisplayText)
 
-	// 装配 context —— 事件回调通过 task.Write 发送（支持缓冲）
+	// 装配 context —— 事件回调通过 stream.Publish 发送（支持缓冲）
 	taskCtx = fkevent.WithNonInteractive(taskCtx)
-	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallbackBuffered(recorder, sessionID, task))
+	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallbackBuffered(recorder, sessionID, stream))
 	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
@@ -330,28 +331,34 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	// 更新会话标题和状态
 	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 
-	_ = task.Write(map[string]any{
+	stream.Publish(map[string]any{
 		"type":       "processing_start",
 		"session_id": sessionID,
 		"message":    "开始处理您的请求...",
 	})
 
-	// 执行——中断处理使用 task 的审批通道
-	interruptHandler := buildInterruptHandler(recorder, sessionID, task.Write, task.approvalCh)
+	// 执行——中断处理使用 stream 的审批通道
+	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
+	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream.InterruptCh())
 	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 	if err != nil {
 		if taskCtx.Err() != nil {
 			log.Printf("task cancelled: session=%s", sessionID)
+			stream.SetStatus("cancelled")
 			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 			ensureSessionMetadata(sessionID, userDisplayText)
 			return
 		}
 		log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
-		_ = task.Write(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+		stream.SetStatus("error")
+		stream.Publish(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+		finishChat(recorder, sessionID, userDisplayText)
+		return
 	}
 
+	stream.SetStatus("completed")
 	finishChat(recorder, sessionID, userDisplayText)
-	_ = task.Write(map[string]any{
+	stream.Publish(map[string]any{
 		"type":       "processing_end",
 		"session_id": sessionID,
 		"message":    "处理完成",
