@@ -5,7 +5,22 @@ import (
 	"fkteams/config"
 	"fkteams/log"
 	"fmt"
+	"sync"
 )
+
+var (
+	activeBridgesMu sync.RWMutex
+	activeBridges   []*Bridge
+)
+
+// ResetAllBridges 重置所有活跃通道的 runner（配置变更后调用，使下次请求使用新模型）
+func ResetAllBridges() {
+	activeBridgesMu.RLock()
+	defer activeBridgesMu.RUnlock()
+	for _, b := range activeBridges {
+		b.ResetRunner()
+	}
+}
 
 // Setup 从配置中创建并注册所有启用的通道，返回可注册到 lifecycle 的 Service
 // 如果没有启用任何通道则返回 nil
@@ -22,6 +37,14 @@ func Setup(entries []config.ChannelEntry) (*Service, error) {
 		bridge := NewBridge(mgr, entry.Mode)
 		bridges[entry.Name] = bridge
 	}
+
+	// 注册到全局列表，以便配置变更时重置
+	activeBridgesMu.Lock()
+	activeBridges = make([]*Bridge, 0, len(bridges))
+	for _, b := range bridges {
+		activeBridges = append(activeBridges, b)
+	}
+	activeBridgesMu.Unlock()
 
 	// 设置统一消息处理：根据通道名称路由到对应的 Bridge
 	mgr.SetHandler(func(ctx context.Context, chatID, senderID string, msg Message, isGroup bool) {

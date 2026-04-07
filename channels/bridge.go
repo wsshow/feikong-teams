@@ -58,9 +58,9 @@ type Bridge struct {
 	manager *Manager
 	mode    string // 运行模式: team, deep, roundtable, custom 或智能体名称
 
-	runnerOnce sync.Once
-	runner     *adk.Runner
-	runnerErr  error
+	runnerMu  sync.Mutex
+	runner    *adk.Runner
+	runnerErr error
 
 	queueMu sync.Mutex
 	queues  map[string]*sessionQueue // per-session 消息队列
@@ -78,28 +78,41 @@ func NewBridge(manager *Manager, mode string) *Bridge {
 	}
 }
 
+// ResetRunner 重置 runner，下次请求时会使用新配置重建（配置变更后调用）
+func (b *Bridge) ResetRunner() {
+	b.runnerMu.Lock()
+	defer b.runnerMu.Unlock()
+	b.runner = nil
+	b.runnerErr = nil
+}
+
 // getRunner 惰性创建 runner（线程安全）
 func (b *Bridge) getRunner(ctx context.Context) (*adk.Runner, error) {
-	b.runnerOnce.Do(func() {
-		switch b.mode {
-		case "team":
-			b.runner, b.runnerErr = runner.CreateSupervisorRunner(ctx)
-		case "roundtable":
-			b.runner, b.runnerErr = runner.CreateLoopAgentRunner(ctx)
-		case "custom":
-			b.runner, b.runnerErr = runner.CreateCustomSupervisorRunner(ctx)
-		case "deep":
-			b.runner, b.runnerErr = runner.CreateDeepAgentsRunner(ctx)
-		default:
-			// 尝试按名称查找单个智能体
-			info := agents.GetAgentByName(b.mode)
-			if info != nil {
-				b.runner = runner.CreateAgentRunner(ctx, info.Creator(ctx))
-			} else {
-				b.runnerErr = fmt.Errorf("unknown mode or agent: %s", b.mode)
-			}
+	b.runnerMu.Lock()
+	defer b.runnerMu.Unlock()
+
+	if b.runner != nil || b.runnerErr != nil {
+		return b.runner, b.runnerErr
+	}
+
+	switch b.mode {
+	case "team":
+		b.runner, b.runnerErr = runner.CreateSupervisorRunner(ctx)
+	case "roundtable":
+		b.runner, b.runnerErr = runner.CreateLoopAgentRunner(ctx)
+	case "custom":
+		b.runner, b.runnerErr = runner.CreateCustomSupervisorRunner(ctx)
+	case "deep":
+		b.runner, b.runnerErr = runner.CreateDeepAgentsRunner(ctx)
+	default:
+		// 尝试按名称查找单个智能体
+		info := agents.GetAgentByName(b.mode)
+		if info != nil {
+			b.runner = runner.CreateAgentRunner(ctx, info.Creator(ctx))
+		} else {
+			b.runnerErr = fmt.Errorf("unknown mode or agent: %s", b.mode)
 		}
-	})
+	}
 	return b.runner, b.runnerErr
 }
 

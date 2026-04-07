@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fkteams/agents"
+	"fkteams/channels"
 	"fkteams/config"
 	"fkteams/tools"
 	"fkteams/tools/mcp"
@@ -127,9 +128,11 @@ func UpdateConfigHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 重载智能体注册表和 MCP 工具缓存
+		// 重载智能体注册表、清除 Runner 缓存和 MCP 工具缓存
 		agents.ReloadRegistry()
+		ClearRunnerCache()
 		mcp.ClearCache()
+		channels.ResetAllBridges()
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
