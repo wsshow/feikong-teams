@@ -605,6 +605,47 @@
     flex-direction: column;
     box-shadow: 4px 6px 0px rgba(60, 50, 30, 0.12);
     animation: sketchSlideUp 0.25s ease;
+    transition: all 0.25s ease;
+}
+
+.fm-preview-content.fm-preview-fullscreen {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100vh;
+    height: 100vh;
+    border-radius: 0;
+    border: none;
+}
+
+.fm-preview-fullscreen .fm-preview-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.fm-preview-fullscreen .fm-preview-body pre {
+    max-height: none;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: auto;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    padding: 20px;
+}
+
+.fm-preview-fullscreen .fm-preview-body iframe {
+    width: 100% !important;
+    height: 100% !important;
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+.fm-preview-fullscreen .fm-preview-body .fm-preview-rendered {
+    height: 100%;
+    overflow: auto;
+    padding: 20px 24px 20px 40px;
+    box-sizing: border-box;
 }
 
 .fm-preview-header {

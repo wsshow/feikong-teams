@@ -32,6 +32,7 @@ FKTeamsChat.prototype.initFileManager = function () {
     this.fmPreviewModal = document.getElementById("fm-preview-modal");
     this.fmPreviewClose = document.getElementById("fm-preview-close");
     this.fmPreviewRender = document.getElementById("fm-preview-render");
+    this.fmPreviewFullscreen = document.getElementById("fm-preview-fullscreen");
     this.fmPreviewTitle = document.getElementById("fm-preview-title");
     this.fmPreviewBody = document.getElementById("fm-preview-body");
     this._fmPreviewRawText = null;
@@ -161,6 +162,10 @@ FKTeamsChat.prototype._bindFmEvents = function () {
     // Preview render toggle
     if (this.fmPreviewRender) {
         this.fmPreviewRender.addEventListener("click", () => this._fmToggleRender());
+    }
+    // Preview fullscreen toggle
+    if (this.fmPreviewFullscreen) {
+        this.fmPreviewFullscreen.addEventListener("click", () => this._fmToggleFullscreen());
     }
 
 
@@ -1016,12 +1021,20 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
 };
 
 FKTeamsChat.prototype._fmClosePreview = function () {
-    if (this.fmPreviewModal) this.fmPreviewModal.style.display = "none";
+    if (this.fmPreviewModal) {
+        this.fmPreviewModal.style.display = "none";
+        var content = this.fmPreviewModal.querySelector(".fm-preview-content");
+        if (content) content.classList.remove("fm-preview-fullscreen");
+    }
     if (this.fmPreviewBody) this.fmPreviewBody.innerHTML = "";
     this._fmPreviewRawText = null;
     this._fmPreviewExt = null;
     this._fmPreviewRendered = false;
     if (this.fmPreviewRender) this.fmPreviewRender.style.display = "none";
+    if (this.fmPreviewFullscreen) {
+        this.fmPreviewFullscreen.title = "全屏预览";
+        this.fmPreviewFullscreen.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+    }
 };
 
 // 切换源码/渲染视图
@@ -1056,6 +1069,23 @@ FKTeamsChat.prototype._fmToggleRender = function () {
         // 源码模式
         this.fmPreviewBody.innerHTML = '<pre>' + this.escapeHtml(this._fmPreviewRawText) + '</pre>';
         this.fmPreviewRender.title = "渲染预览";
+    }
+};
+
+// 切换全屏预览
+FKTeamsChat.prototype._fmToggleFullscreen = function () {
+    if (!this.fmPreviewModal) return;
+    var content = this.fmPreviewModal.querySelector(".fm-preview-content");
+    if (!content) return;
+
+    content.classList.toggle("fm-preview-fullscreen");
+    var isFS = content.classList.contains("fm-preview-fullscreen");
+    if (this.fmPreviewFullscreen) {
+        this.fmPreviewFullscreen.title = isFS ? "退出全屏" : "全屏预览";
+        // 切换图标
+        this.fmPreviewFullscreen.innerHTML = isFS
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
     }
 };
 
