@@ -13,16 +13,19 @@ import (
 
 	"fkteams/common"
 	"fkteams/providers/internal"
+
+	"github.com/google/uuid"
 )
 
 const (
 	copilotTokenURL = "https://api.github.com/copilot_internal/v2/token"
 	copilotBaseURL  = "https://api.githubcopilot.com"
 
-	userAgent           = "GitHubCopilotChat/0.32.4"
+	userAgent           = "GitHubCopilotChat/0.42.3"
 	editorVersion       = "vscode/1.105.1"
-	editorPluginVersion = "copilot-chat/0.32.4"
+	editorPluginVersion = "copilot-chat/0.42.3"
 	integrationID       = "vscode-chat"
+	githubAPIVersion    = "2025-10-01"
 )
 
 // Token 包含 GitHub OAuth token 和 Copilot API token
@@ -150,7 +153,29 @@ func copilotHeaders() map[string]string {
 		"Editor-Version":         editorVersion,
 		"Editor-Plugin-Version":  editorPluginVersion,
 		"Copilot-Integration-Id": integrationID,
+		"X-Github-Api-Version":   githubAPIVersion,
 	}
+}
+
+// deviceIDFilePath 返回 device ID 持久化文件路径
+func deviceIDFilePath() string {
+	return filepath.Join(common.AppDir(), "copilot_device_id")
+}
+
+// getOrCreateDeviceID 获取或创建持久化的设备 ID
+func getOrCreateDeviceID() string {
+	path := deviceIDFilePath()
+	if data, err := os.ReadFile(path); err == nil {
+		if id := string(data); len(id) > 0 {
+			return id
+		}
+	}
+	id := uuid.New().String()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err == nil {
+		_ = os.WriteFile(path, []byte(id), 0600)
+	}
+	return id
 }
 
 // tokenFilePath 返回 token 持久化文件路径

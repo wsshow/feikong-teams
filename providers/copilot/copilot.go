@@ -30,6 +30,20 @@ func isAgentInitiator(ctx context.Context) bool {
 	return ok && v
 }
 
+// 全局会话 ID（进程级别，一次启动一个 session）
+var sessionID = uuid.New().String()
+
+// 全局设备 ID（持久化）
+var deviceID string
+var deviceIDOnce sync.Once
+
+func getDeviceID() string {
+	deviceIDOnce.Do(func() {
+		deviceID = getOrCreateDeviceID()
+	})
+	return deviceID
+}
+
 var (
 	// 全局 TokenManager 单例
 	globalTM     *TokenManager
@@ -104,8 +118,13 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	for k, v := range copilotHeaders() {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set("Openai-Intent", "conversation-edits")
-	req.Header.Set("X-Request-Id", uuid.New().String())
+
+	// 会话和设备标识
+	requestID := uuid.New().String()
+	req.Header.Set("X-Request-Id", requestID)
+	req.Header.Set("X-Agent-Task-Id", requestID)
+	req.Header.Set("Vscode-Sessionid", sessionID)
+	req.Header.Set("Editor-Device-Id", getDeviceID())
 
 	// 读取请求体用于判断 X-Initiator 和 Vision
 	var bodyBytes []byte
@@ -115,15 +134,25 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
-	// 根据消息内容判断 X-Initiator
-	initiator := "user"
+	// 根据上下文和消息内容判断计费分类
 	if isAgentInitiator(req.Context()) {
-		// context 显式标记为 agent 行为（记忆提取、摘要压缩、子任务等）
-		initiator = "agent"
-	} else if len(bodyBytes) > 0 {
-		initiator = detectInitiator(bodyBytes)
+		// agent 行为（记忆提取、摘要压缩、子任务等）：复用当前会话计费
+		req.Header.Set("X-Initiator", "agent")
+		req.Header.Set("Openai-Intent", "conversation-agent")
+		req.Header.Set("X-Interaction-Type", "conversation-subagent")
+	} else {
+		// 用户发起或自动检测
+		initiator := "user"
+		if len(bodyBytes) > 0 {
+			initiator = detectInitiator(bodyBytes)
+		}
+		req.Header.Set("X-Initiator", initiator)
+		req.Header.Set("Openai-Intent", "conversation-agent")
+		req.Header.Set("X-Interaction-Type", "conversation-agent")
 	}
-	req.Header.Set("X-Initiator", initiator)
+
+	// 交互分组 ID（用于将同一会话的请求归组）
+	req.Header.Set("X-Interaction-Id", sessionID)
 
 	// 检测 Vision 请求
 	if len(bodyBytes) > 0 && detectVision(bodyBytes) {
