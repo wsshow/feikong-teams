@@ -159,7 +159,7 @@ func copilotHeaders() map[string]string {
 
 // deviceIDFilePath 返回 device ID 持久化文件路径
 func deviceIDFilePath() string {
-	return filepath.Join(common.AppDir(), "copilot_device_id")
+	return filepath.Join(common.AppDir(), "device", "copilot_device_id")
 }
 
 // getOrCreateDeviceID 获取或创建持久化的设备 ID
@@ -180,7 +180,7 @@ func getOrCreateDeviceID() string {
 
 // tokenFilePath 返回 token 持久化文件路径
 func tokenFilePath() string {
-	return filepath.Join(common.AppDir(), "copilot_token.json")
+	return filepath.Join(common.AppDir(), "device", "copilot_token.json")
 }
 
 // saveTokenToDisk 将 token 保存到磁盘
