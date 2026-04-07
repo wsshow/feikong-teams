@@ -297,11 +297,14 @@ class FKTeamsChat {
         if (el) {
           el.textContent = "v" + result.data.version;
           if (result.data.buildDate) {
-            el.setAttribute("data-tooltip", `v${result.data.version} (${result.data.buildDate})`);
+            el.setAttribute(
+              "data-tooltip",
+              `v${result.data.version} (${result.data.buildDate})`,
+            );
           }
         }
       }
-    } catch (_) { }
+    } catch (_) {}
   }
 
   connect() {
@@ -315,11 +318,13 @@ class FKTeamsChat {
     this.ws.onopen = () => {
       this.updateStatus("connected", "已连接");
       this.reconnectAttempts = 0;
+      this._startHeartbeat();
       // 加载侧边栏历史会话列表
       this.loadSidebarHistory();
     };
 
     this.ws.onclose = () => {
+      this._stopHeartbeat();
       this.updateStatus("disconnected", "服务未连接");
       // 连接断开时重置处理状态，恢复发送按钮
       if (this.isProcessing) {
@@ -331,6 +336,7 @@ class FKTeamsChat {
 
     this.ws.onerror = (error) => {
       console.error("WebSocket error:", error);
+      this._stopHeartbeat();
       this.updateStatus("disconnected", "连接异常");
       // 连接错误时重置处理状态，恢复发送按钮
       if (this.isProcessing) {
@@ -360,6 +366,22 @@ class FKTeamsChat {
     }
   }
 
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 30000);
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) {
+      clearInterval(this._heartbeatTimer);
+      this._heartbeatTimer = null;
+    }
+  }
+
   updateStatus(status, text) {
     const dot = this.statusIndicator.querySelector(".status-dot");
     const textEl = this.statusIndicator.querySelector(".status-text");
@@ -370,7 +392,8 @@ class FKTeamsChat {
   handleInputChange() {
     const hasContent = this.messageInput.value.trim().length > 0;
     const hasAttachments = this.attachments && this.attachments.length > 0;
-    this.sendBtn.disabled = (!hasContent && !hasAttachments) || this.isProcessing;
+    this.sendBtn.disabled =
+      (!hasContent && !hasAttachments) || this.isProcessing;
     this.messageInput.style.height = "auto";
     this.messageInput.style.height =
       Math.min(this.messageInput.scrollHeight, 120) + "px";
@@ -498,7 +521,13 @@ class FKTeamsChat {
     // 创建通知元素
     const notification = document.createElement("div");
     const bgColor =
-      type === "success" ? "#66bb6a" : type === "error" ? "#ef5350" : type === "warning" ? "#ffa726" : "#42a5f5";
+      type === "success"
+        ? "#66bb6a"
+        : type === "error"
+          ? "#ef5350"
+          : type === "warning"
+            ? "#ffa726"
+            : "#42a5f5";
 
     // 计算通知的位置（堆叠显示）
     const topOffset = 20 + this.activeNotifications.length * 70;
