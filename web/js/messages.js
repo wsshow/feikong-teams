@@ -740,16 +740,26 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     }
   }
 
-  const toolCalls = this.messagesContainer.querySelectorAll(".tool-call");
-  const lastToolCall = toolCalls[toolCalls.length - 1];
-  if (lastToolCall) {
-    const argsEl = lastToolCall.querySelector(".tool-call-args");
-    if (argsEl && event.tool_calls[0].arguments) {
+  // 找到所有待填充参数的 tool-call 卡片（仍显示"参数准备中..."的）
+  const allCards = this.messagesContainer.querySelectorAll(".tool-call");
+  const pendingCards = [];
+  allCards.forEach(function (card) {
+    var argsEl = card.querySelector(".tool-call-args");
+    if (argsEl && argsEl.textContent === "参数准备中...") {
+      pendingCards.push(card);
+    }
+  });
+
+  // 按顺序将 tool calls 的参数填入对应的待填充卡片
+  var count = Math.min(event.tool_calls.length, pendingCards.length);
+  for (var i = 0; i < count; i++) {
+    var argsEl = pendingCards[i].querySelector(".tool-call-args");
+    if (argsEl && event.tool_calls[i].arguments) {
       try {
-        const args = JSON.parse(event.tool_calls[0].arguments);
+        var args = JSON.parse(event.tool_calls[i].arguments);
         argsEl.textContent = JSON.stringify(args, null, 2);
-      } catch {
-        argsEl.textContent = event.tool_calls[0].arguments;
+      } catch (e) {
+        argsEl.textContent = event.tool_calls[i].arguments;
       }
     }
   }
