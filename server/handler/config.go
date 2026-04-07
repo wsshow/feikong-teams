@@ -6,6 +6,7 @@ import (
 	"fkteams/tools"
 	"fkteams/tools/mcp"
 	"net/http"
+	"runtime"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -138,5 +139,23 @@ func UpdateConfigHandler() gin.HandlerFunc {
 func GetToolNamesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		OK(c, tools.GetAllToolNames())
+	}
+}
+
+// GetTemplateVarsHandler 返回可用的模板变量列表（供前端提示词编辑器补全）
+func GetTemplateVarsHandler() gin.HandlerFunc {
+	type templateVar struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Example     string `json:"example"`
+	}
+	vars := []templateVar{
+		{Name: "current_time", Description: "当前时间", Example: "2025-01-01 12:00:00"},
+		{Name: "os_type", Description: "操作系统类型", Example: runtime.GOOS},
+		{Name: "os_arch", Description: "系统架构", Example: runtime.GOARCH},
+		{Name: "workspace_dir", Description: "工作目录路径", Example: "/path/to/workspace"},
+	}
+	return func(c *gin.Context) {
+		OK(c, vars)
 	}
 }

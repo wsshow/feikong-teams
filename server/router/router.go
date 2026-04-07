@@ -116,6 +116,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			configGroup.GET("", handler.GetConfigHandler())
 			configGroup.PUT("", handler.UpdateConfigHandler())
 			configGroup.GET("/tools", handler.GetToolNamesHandler())
+			configGroup.GET("/template-vars", handler.GetTemplateVarsHandler())
 		}
 
 		// 模型提供者 API

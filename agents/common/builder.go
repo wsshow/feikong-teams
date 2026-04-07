@@ -12,6 +12,7 @@ import (
 	"fkteams/fkenv"
 	"fkteams/tools"
 	"fmt"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -48,9 +49,14 @@ type AgentBuilder struct {
 // NewAgentBuilder 创建构建器
 func NewAgentBuilder(name, description string) *AgentBuilder {
 	return &AgentBuilder{
-		name:         name,
-		description:  description,
-		templateVars: map[string]any{"current_time": time.Now().Format("2006-01-02 15:04:05")},
+		name:        name,
+		description: description,
+		templateVars: map[string]any{
+			"current_time":  time.Now().Format("2006-01-02 15:04:05"),
+			"os_type":       runtime.GOOS,
+			"os_arch":       runtime.GOARCH,
+			"workspace_dir": rootcommon.WorkspaceDir(),
+		},
 	}
 }
 

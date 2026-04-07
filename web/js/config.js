@@ -754,6 +754,9 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
     .querySelectorAll("select.config-select")
     .forEach((sel) => createCustomSelect(sel));
 
+  // 提示词模板变量补全
+  this._setupPromptVarAutocomplete(overlay.querySelector("#ae-prompt"));
+
   // 取消
   overlay.querySelector("#ae-cancel").addEventListener("click", () => {
     // 如果是新建且未填名称，移除
@@ -795,6 +798,142 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
 
   document.body.appendChild(overlay);
   overlay.querySelector("#ae-name").focus();
+};
+
+// ===== 模板变量补全 =====
+
+FKTeamsChat.prototype._loadTemplateVars = async function () {
+  if (this._templateVars) return this._templateVars;
+  try {
+    const resp = await this.fetchWithAuth("/api/fkteams/config/template-vars");
+    const result = await resp.json();
+    if (result.code === 0 && result.data) {
+      this._templateVars = result.data;
+      return this._templateVars;
+    }
+  } catch (e) {
+    console.error("load template vars:", e);
+  }
+  // 兜底
+  this._templateVars = [
+    { name: "current_time", description: "当前时间" },
+    { name: "os_type", description: "操作系统类型" },
+    { name: "os_arch", description: "系统架构" },
+    { name: "workspace_dir", description: "工作目录路径" },
+  ];
+  return this._templateVars;
+};
+
+FKTeamsChat.prototype._setupPromptVarAutocomplete = function (textarea) {
+  if (!textarea) return;
+  const self = this;
+
+  textarea.addEventListener("input", async function () {
+    const pos = textarea.selectionStart;
+    const text = textarea.value.substring(0, pos);
+
+    // 检测是否刚输入了 { 或正在 {xxx 中
+    const match = text.match(/\{([a-z_]*)$/);
+    if (!match) {
+      self._hideVarDropdown();
+      return;
+    }
+
+    const filter = match[1].toLowerCase();
+    const vars = await self._loadTemplateVars();
+    const filtered = vars.filter((v) =>
+      v.name.toLowerCase().includes(filter),
+    );
+    if (filtered.length === 0) {
+      self._hideVarDropdown();
+      return;
+    }
+
+    self._showVarDropdown(textarea, filtered, match[0].length);
+  });
+
+  textarea.addEventListener("blur", function () {
+    setTimeout(() => self._hideVarDropdown(), 200);
+  });
+
+  textarea.addEventListener("keydown", function (e) {
+    const dropdown = document.querySelector(".template-var-dropdown");
+    if (!dropdown || dropdown.style.display === "none") return;
+    const items = dropdown.querySelectorAll(".template-var-item");
+    let idx = Array.from(items).findIndex((i) =>
+      i.classList.contains("active"),
+    );
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (idx >= 0) items[idx].classList.remove("active");
+      idx = (idx + 1) % items.length;
+      items[idx].classList.add("active");
+      items[idx].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (idx >= 0) items[idx].classList.remove("active");
+      idx = idx <= 0 ? items.length - 1 : idx - 1;
+      items[idx].classList.add("active");
+      items[idx].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      if (idx >= 0) {
+        e.preventDefault();
+        items[idx].click();
+      }
+    } else if (e.key === "Escape") {
+      self._hideVarDropdown();
+    }
+  });
+};
+
+FKTeamsChat.prototype._showVarDropdown = function (textarea, vars, matchLen) {
+  let dropdown = document.querySelector(".template-var-dropdown");
+  if (!dropdown) {
+    dropdown = document.createElement("div");
+    dropdown.className = "template-var-dropdown";
+    document.body.appendChild(dropdown);
+  }
+
+  dropdown.innerHTML = "";
+  const self = this;
+  vars.forEach((v, i) => {
+    const item = document.createElement("div");
+    item.className = "template-var-item" + (i === 0 ? " active" : "");
+    item.innerHTML = `<span class="template-var-name">{${v.name}}</span><span class="template-var-desc">${v.description}</span>`;
+    item.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const pos = textarea.selectionStart;
+      const before = textarea.value.substring(0, pos - matchLen);
+      const after = textarea.value.substring(pos);
+      const insert = "{" + v.name + "}";
+      textarea.value = before + insert + after;
+      const newPos = before.length + insert.length;
+      textarea.selectionStart = textarea.selectionEnd = newPos;
+      textarea.focus();
+      self._hideVarDropdown();
+    });
+    dropdown.appendChild(item);
+  });
+
+  // 定位到光标附近
+  const rect = textarea.getBoundingClientRect();
+  // 粗略估算光标位置
+  const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 20;
+  const lines = textarea.value.substring(0, textarea.selectionStart).split("\n");
+  const lineNum = lines.length - 1;
+  const scrollTop = textarea.scrollTop;
+
+  dropdown.style.display = "block";
+  dropdown.style.position = "fixed";
+  dropdown.style.left = rect.left + "px";
+  dropdown.style.top = Math.min(rect.top + (lineNum + 1) * lineHeight - scrollTop + 4, rect.bottom) + "px";
+  dropdown.style.width = Math.min(280, rect.width) + "px";
+  dropdown.style.zIndex = "12000";
+};
+
+FKTeamsChat.prototype._hideVarDropdown = function () {
+  const dropdown = document.querySelector(".template-var-dropdown");
+  if (dropdown) dropdown.style.display = "none";
 };
 
 // ===== 收集并保存 =====
