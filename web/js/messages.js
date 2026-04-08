@@ -234,6 +234,9 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     case "tool_calls_preparing":
       this.handleToolCallsPreparing(event);
       break;
+    case "tool_calls_args_delta":
+      this.handleToolCallsArgsDelta(event);
+      break;
     case "tool_calls":
       this.handleToolCalls(event);
       break;
@@ -718,6 +721,30 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
   this.scrollToBottom();
 };
 
+// 处理工具参数增量流式更新
+FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
+  if (!event.content) return;
+
+  // 找到最后一个仍在准备中的 tool-call 卡片
+  const allCards = this.messagesContainer.querySelectorAll(".tool-call");
+  if (allCards.length === 0) return;
+
+  const lastCard = allCards[allCards.length - 1];
+  const argsEl = lastCard.querySelector(".tool-call-args");
+  if (!argsEl) return;
+
+  // 首次增量到达时清除占位文本
+  if (argsEl.textContent === "参数准备中...") {
+    argsEl.textContent = "";
+    argsEl.classList.add("streaming");
+  }
+
+  argsEl.textContent += event.content;
+  // 保持参数区域滚动到最新内容
+  argsEl.scrollTop = argsEl.scrollHeight;
+  this.scrollToBottom();
+};
+
 FKTeamsChat.prototype.handleToolCalls = function (event) {
   if (!event.tool_calls || event.tool_calls.length === 0) return;
 
@@ -739,12 +766,12 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     }
   }
 
-  // 找到所有待填充参数的 tool-call 卡片（仍显示"参数准备中..."的）
+  // 找到所有待填充参数的 tool-call 卡片（仍显示"参数准备中..."或正在流式更新的）
   const allCards = this.messagesContainer.querySelectorAll(".tool-call");
   const pendingCards = [];
   allCards.forEach(function (card) {
     var argsEl = card.querySelector(".tool-call-args");
-    if (argsEl && argsEl.textContent === "参数准备中...") {
+    if (argsEl && (argsEl.textContent === "参数准备中..." || argsEl.classList.contains("streaming"))) {
       pendingCards.push(card);
     }
   });
@@ -754,6 +781,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
   for (var i = 0; i < count; i++) {
     var argsEl = pendingCards[i].querySelector(".tool-call-args");
     if (argsEl && event.tool_calls[i].arguments) {
+      argsEl.classList.remove("streaming");
       try {
         var args = JSON.parse(event.tool_calls[i].arguments);
         argsEl.textContent = JSON.stringify(args, null, 2);

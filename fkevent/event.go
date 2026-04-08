@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -136,6 +137,11 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 	toolCallsMap := make(map[int][]*schema.Message) // 按 index 聚合工具调用分片
 	toolCallStarted := make(map[int]bool)           // 记录已发送准备事件的工具调用
 
+	// 工具参数增量发送的节流状态
+	toolArgsBuffer := make(map[int]string) // 按 index 缓冲未发送的参数增量
+	var lastArgsDeltaTime time.Time
+	const argsDeltaInterval = 100 * time.Millisecond
+
 	// 在独立 goroutine 中接收流数据，避免阻塞 context 取消检测
 	type recvResult struct {
 		chunk *schema.Message
@@ -238,8 +244,50 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 							},
 						},
 					})
+
+					// 缓冲参数增量，节流发送
+					if tc.Function.Arguments != "" {
+						toolArgsBuffer[*tc.Index] += tc.Function.Arguments
+					}
+				}
+
+				// 节流发送参数增量
+				now := time.Now()
+				if now.Sub(lastArgsDeltaTime) >= argsDeltaInterval && len(toolArgsBuffer) > 0 {
+					for idx, delta := range toolArgsBuffer {
+						if delta == "" {
+							continue
+						}
+						if err := handleEvent(ctx, Event{
+							Type:      "tool_calls_args_delta",
+							AgentName: event.AgentName,
+							RunPath:   formatRunPath(event.RunPath),
+							Content:   delta,
+							Detail:    fmt.Sprintf("%d", idx),
+						}); err != nil {
+							return err
+						}
+					}
+					toolArgsBuffer = make(map[int]string)
+					lastArgsDeltaTime = now
 				}
 			}
+		}
+	}
+
+	// 发送最后一批缓冲的参数增量
+	if len(toolArgsBuffer) > 0 {
+		for idx, delta := range toolArgsBuffer {
+			if delta == "" {
+				continue
+			}
+			_ = handleEvent(ctx, Event{
+				Type:      "tool_calls_args_delta",
+				AgentName: event.AgentName,
+				RunPath:   formatRunPath(event.RunPath),
+				Content:   delta,
+				Detail:    fmt.Sprintf("%d", idx),
+			})
 		}
 	}
 
