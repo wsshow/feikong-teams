@@ -9,7 +9,6 @@ import (
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
-	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -199,7 +198,7 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 				recorder.RecordEvent(fkevent.Event{
 					Type:       "action",
 					ActionType: "ask_response",
-					Content:    fmt.Sprintf("%v", result),
+					Content:    askResponseText(result),
 				})
 			}
 			return result, err

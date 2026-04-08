@@ -446,7 +446,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 				recorder.RecordEvent(fkevent.Event{
 					Type:       "action",
 					ActionType: "ask_response",
-					Content:    fmt.Sprintf("%v", result),
+					Content:    askResponseText(result),
 				})
 			}
 			return result, err

@@ -259,6 +259,26 @@ func approvalDecisionText(result map[string]any) string {
 	return ""
 }
 
+// askResponseText 从中断结果中提取 ask_response 的可读文本
+func askResponseText(result map[string]any) string {
+	for _, v := range result {
+		if resp, ok := v.(*ask.AskResponse); ok {
+			var parts []string
+			if len(resp.Selected) > 0 {
+				parts = append(parts, strings.Join(resp.Selected, ", "))
+			}
+			if resp.FreeText != "" {
+				parts = append(parts, resp.FreeText)
+			}
+			if len(parts) > 0 {
+				return strings.Join(parts, " | ")
+			}
+			return "已回答"
+		}
+	}
+	return fmt.Sprintf("%v", result)
+}
+
 // extractAskInfo 从中断上下文中提取 ask_questions 信息
 func extractAskInfo(interrupts []*adk.InterruptCtx) *ask.AskInfo {
 	for _, ic := range interrupts {
