@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fkteams/agents/middlewares/autocontinue"
 	"fkteams/agents/middlewares/dispatch"
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
@@ -176,8 +177,14 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		}
 	}
 
-	// 中间件（warperror 默认启用）
+	// 中间件（warperror + autocontinue 默认启用）
 	cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
+
+	acMiddleware, err := autocontinue.NewAgentMiddleware()
+	if err != nil {
+		return nil, fmt.Errorf("init autocontinue middleware: %w", err)
+	}
+	cfg.Middlewares = append(cfg.Middlewares, acMiddleware)
 
 	if b.enableSummary {
 		maxTokens := summary.DefaultMaxTokensBeforeSummary

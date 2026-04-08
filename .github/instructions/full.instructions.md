@@ -30,6 +30,7 @@ fkteams/
 │   │   ├── common.go       # NewChatModel() 返回 (model, error), MaxIterations, IsRetryAble
 │   │   └── builder.go      # AgentBuilder 流式构建器
 │   ├── middlewares/         # 智能体中间件
+│   │   ├── autocontinue/   # 输出截断自动续接中间件
 │   │   ├── dispatch/       # 子任务并行分发中间件
 │   │   ├── fkfs/           # 文件系统后端（内存/本地）
 │   │   ├── skills/         # 技能学习中间件（读取 workspace/skills/ 目录）
@@ -185,6 +186,8 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 ```
 ┌──────────────────────────────┐
 │  Warperror Middleware        │  ← 工具错误 → 成功输出（不中断 Agent 流程）
+├──────────────────────────────┤
+│  AutoContinue Middleware     │  ← 检测 max_tokens 截断，注入续接工具调用
 ├──────────────────────────────┤
 │  Summary Middleware          │  ← 80K token 阈值自动摘要历史
 ├──────────────────────────────┤
