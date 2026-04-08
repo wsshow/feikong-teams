@@ -189,6 +189,7 @@ func logoutCommand() *ucli.Command {
 		Name:     "logout",
 		Usage:    "退出模型服务登录",
 		Commands: commands,
+		Action:   interactiveLogoutAction,
 	}
 }
 
@@ -398,6 +399,72 @@ func providerLogoutAction(cmd *ucli.Command, defaultName string) error {
 	}
 
 	fmt.Printf("✓ 已移除供应商配置「%s」\n", name)
+	return nil
+}
+
+// interactiveLogoutAction 无子命令时的交互式退出入口
+func interactiveLogoutAction(ctx context.Context, cmd *ucli.Command) error {
+	if err := config.Init(); err != nil {
+		return err
+	}
+
+	cfg := config.Get()
+
+	// 构建已配置的供应商列表
+	var items []tui.SelectItem
+
+	// 检查 copilot 是否已登录（仅检查本地 token，不触发网络请求）
+	tm := copilot.GetTokenManager()
+	hasCopilot := tm.HasToken()
+	if hasCopilot {
+		items = append(items, tui.SelectItem{Label: "copilot - GitHub Copilot", Value: "copilot"})
+	}
+
+	// 列出已配置的模型（跳过 copilot 供应商，避免重复）
+	for _, m := range cfg.Models {
+		if hasCopilot && m.Provider == "copilot" {
+			continue
+		}
+		label := m.Name
+		if m.Provider != "" {
+			label += " (" + m.Provider + ")"
+		}
+		if m.BaseURL != "" {
+			label += " - " + m.BaseURL
+		}
+		items = append(items, tui.SelectItem{Label: label, Value: m.Name})
+	}
+
+	if len(items) == 0 {
+		fmt.Println("当前没有已登录的供应商")
+		return nil
+	}
+
+	selected, err := tui.SelectFromList("请选择要退出的供应商", items, 12)
+	if err != nil {
+		return err
+	}
+
+	if selected == "copilot" {
+		if err := tm.SetToken(&copilot.Token{}); err != nil {
+			return err
+		}
+		fmt.Println("✓ 已退出 GitHub Copilot")
+		return nil
+	}
+
+	// 移除模型配置
+	var newModels []config.ModelConfig
+	for _, m := range cfg.Models {
+		if m.Name != selected {
+			newModels = append(newModels, m)
+		}
+	}
+	cfg.Models = newModels
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+	fmt.Printf("✓ 已移除供应商配置「%s」\n", selected)
 	return nil
 }
 
