@@ -172,7 +172,14 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	if len(b.tools) > 0 {
 		cfg.ToolsConfig = adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: b.tools,
+				Tools:               b.tools,
+				UnknownToolsHandler: unknownToolsHandler,
+			},
+		}
+	} else {
+		cfg.ToolsConfig = adk.ToolsConfig{
+			ToolsNodeConfig: compose.ToolsNodeConfig{
+				UnknownToolsHandler: unknownToolsHandler,
 			},
 		}
 	}
@@ -238,4 +245,10 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	cfg.Handlers = append(cfg.Handlers, b.handlers...)
 
 	return adk.NewChatModelAgent(ctx, cfg)
+}
+
+// unknownToolsHandler 处理模型幻觉出的不存在的工具调用，
+// 将错误包装为字符串结果返回给模型而非中断执行。
+func unknownToolsHandler(_ context.Context, name, _ string) (string, error) {
+	return fmt.Sprintf("Tool '%s' does not exist. Please check the available tools and try again.", name), nil
 }
