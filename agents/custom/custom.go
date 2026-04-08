@@ -33,7 +33,9 @@ func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
 
 	builder := common.NewAgentBuilder(cfg.Name, cfg.Description).
 		WithTemplate(customPromptTemplate).
-		WithToolNames(cfg.ToolNames...)
+		WithToolNames(cfg.ToolNames...).
+		WithSummary().
+		WithSkills()
 
 	if cfg.Model.Name != "" || cfg.Model.BaseURL != "" {
 		chatModel, err := common.NewChatModelWithConfig(&providers.Config{
