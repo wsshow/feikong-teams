@@ -26,6 +26,7 @@ func Root() *ucli.Command {
 			modelCommand(),
 			loginCommand(),
 			logoutCommand(),
+			authCommand(),
 		},
 		Flags: []ucli.Flag{
 			&ucli.StringFlag{
