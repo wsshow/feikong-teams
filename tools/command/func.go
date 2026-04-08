@@ -48,6 +48,7 @@ type SmartExecuteRequest struct {
 	Command    string `json:"command,omitempty" jsonschema:"description=要执行的 shell 命令（执行命令时必填）"`
 	Timeout    int    `json:"timeout,omitempty" jsonschema:"description=超时时间（秒）默认60秒最大600秒"`
 	Reason     string `json:"reason,omitempty" jsonschema:"description=执行该命令的原因和目的（执行命令时必填）"`
+	Background bool   `json:"background,omitempty" jsonschema:"description=是否后台运行。对于需要持续运行的服务类命令（如 HTTP server、watch、tail -f 等）设为 true，命令会立即返回 PID，通过 kill PID 终止"`
 	TaskID     string `json:"task_id,omitempty" jsonschema:"description=后台任务ID，配合 task_action 使用"`
 	TaskAction string `json:"task_action,omitempty" jsonschema:"description=后台任务操作: list(列出所有任务) status(查询状态) terminate(终止任务)"`
 }
@@ -66,6 +67,7 @@ type SmartExecuteResponse struct {
 	OutputTruncated bool                 `json:"output_truncated,omitempty" jsonschema:"description=输出内容因超出大小限制被截断，可能需要将输出重定向到文件以获取完整内容"`
 	IsBackground    bool                 `json:"is_background,omitempty" jsonschema:"description=命令已转入后台执行，使用返回的 task_id 查询结果"`
 	TaskID          string               `json:"task_id,omitempty" jsonschema:"description=后台任务ID"`
+	PID             int                  `json:"pid,omitempty" jsonschema:"description=后台进程PID，可通过 kill PID 终止"`
 	Tasks           []BackgroundTaskInfo `json:"tasks,omitempty" jsonschema:"description=后台任务列表"`
 }
 
@@ -197,6 +199,10 @@ func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteReques
 		}
 	}
 
+	if req.Background {
+		return t.executeBackground(req, eval)
+	}
+
 	return t.executeCommand(ctx, req, eval)
 }
 
@@ -277,6 +283,31 @@ func (t *CommandTools) backgroundExecution(ec *executionContext) (*SmartExecuteR
 		WarningMessage: fmt.Sprintf(
 			"命令执行超过%s未完成，已转入后台执行。请告知用户任务已在后台运行，稍后可以让你查看任务完成情况。查询时调用 execute 工具传入 {\"task_id\": \"%s\", \"task_action\": \"status\"} 即可，不需要传 command 和 reason。不要主动轮询",
 			backgroundBudget, taskID,
+		),
+	}, nil
+}
+
+// executeBackground 立即以后台方式启动命令，返回 PID。
+// 平台特定实现在 exec_unix.go / exec_windows.go 中。
+func (t *CommandTools) executeBackground(req *SmartExecuteRequest, eval SecurityEvaluation) (*SmartExecuteResponse, error) {
+	pid, err := startBackgroundProcess(req.Command, t.workDir)
+	if err != nil {
+		return &SmartExecuteResponse{
+			Command:       req.Command,
+			SecurityLevel: securityLevelName(eval.Level),
+			ErrorMessage:  fmt.Sprintf("failed to start background command: %v", err),
+		}, nil
+	}
+
+	return &SmartExecuteResponse{
+		Success:       true,
+		Command:       req.Command,
+		SecurityLevel: securityLevelName(eval.Level),
+		IsBackground:  true,
+		PID:           pid,
+		WarningMessage: fmt.Sprintf(
+			"命令已在后台启动，PID: %d。可通过 kill %d 终止，或通过 ps -p %d 检查是否仍在运行。",
+			pid, pid, pid,
 		),
 	}, nil
 }
