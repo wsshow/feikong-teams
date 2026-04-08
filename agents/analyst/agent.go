@@ -14,5 +14,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplateVar("os", runtime.GOOS).
 		WithTemplateVar("workspace_dir", common.WorkspaceDir()).
 		WithToolNames("todo", "excel", "file", "uv", "doc").
+		WithSummary().
+		WithSkills().
 		Build(ctx)
 }

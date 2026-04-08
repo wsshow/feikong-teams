@@ -14,5 +14,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplateVar("os_type", runtime.GOOS).
 		WithTemplateVar("os_arch", runtime.GOARCH).
 		WithToolNames("command").
+		WithSummary().
+		WithSkills().
 		Build(ctx)
 }

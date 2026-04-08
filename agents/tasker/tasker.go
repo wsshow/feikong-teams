@@ -12,7 +12,6 @@ import (
 func NewAgent(ctx context.Context) (adk.Agent, error) {
 	workspaceDir := common.WorkspaceDir()
 
-	// command 需要特殊的 ApprovalMode 配置，无法通过 GetToolsByName 获取
 	cmdTools, err := command.NewCommandTools(workspaceDir, command.WithApprovalMode(command.ApprovalModeReject)).GetTools()
 	if err != nil {
 		return nil, fmt.Errorf("init command tools: %w", err)
@@ -23,5 +22,6 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		WithTemplateVar("workspace_dir", workspaceDir).
 		WithTools(cmdTools...).
 		WithToolNames("search", "fetch", "file").
+		WithSummary().
 		Build(ctx)
 }

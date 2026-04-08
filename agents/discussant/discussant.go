@@ -24,5 +24,6 @@ func NewAgent(ctx context.Context, member config.TeamMember) (adk.Agent, error) 
 	return common.NewAgentBuilder(member.Name, member.Desc).
 		WithTemplate(discussantPromptTemplate).
 		WithModel(chatModel).
+		WithSummary().
 		Build(ctx)
 }
