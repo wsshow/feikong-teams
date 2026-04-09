@@ -1231,8 +1231,30 @@ FKTeamsChat.prototype.handleAction = function (event) {
 
 FKTeamsChat.prototype.handleError = function (event) {
   const errorEl = document.createElement("div");
-  errorEl.className = "error-message";
-  errorEl.innerHTML = `
+  const errorMsg = event.error || "";
+  const isMaxIterations = errorMsg.includes("exceeds max iterations");
+
+  if (isMaxIterations) {
+    errorEl.className = "error-message error-continuable";
+    errorEl.innerHTML = `
+        <div class="error-continuable-content">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span>${event.agent_name ? `[${this.escapeHtml(event.agent_name)}] ` : ""}执行步数已达上限，任务自动停止。</span>
+        </div>
+        <button class="continue-btn" onclick="app.continueAfterMaxIterations()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            继续
+        </button>
+    `;
+  } else {
+    errorEl.className = "error-message";
+    errorEl.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <line x1="15" y1="9" x2="9" y2="15"/>
@@ -1240,12 +1262,47 @@ FKTeamsChat.prototype.handleError = function (event) {
         </svg>
         <span>${event.agent_name ? `[${this.escapeHtml(event.agent_name)}] ` : ""}${this.escapeHtml(event.error)}</span>
     `;
+  }
+
   this.messagesContainer.appendChild(errorEl);
   this.scrollToBottom();
   this.hideChatLoading();
   this.isProcessing = false;
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
+};
+
+// 继续执行（达到最大步数后）
+FKTeamsChat.prototype.continueAfterMaxIterations = function () {
+  if (this.isProcessing) return;
+  if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    this.showNotification("连接已断开，请刷新页面", "error");
+    return;
+  }
+
+  // 隐藏继续按钮，显示已继续状态
+  const continuableErrors = this.messagesContainer.querySelectorAll(".error-continuable .continue-btn");
+  continuableErrors.forEach(function (btn) {
+    btn.disabled = true;
+    btn.textContent = "继续中...";
+    btn.style.opacity = "0.5";
+    btn.style.cursor = "default";
+  });
+
+  const payload = {
+    type: "chat",
+    session_id: this.sessionId,
+    message: "上一步因为执行步数达到上限被中断了。请回顾上文，找到中断点，从中断处继续完成任务。",
+    mode: this.mode,
+  };
+  if (this.currentAgent) {
+    payload.agent_name = this.currentAgent.name;
+  }
+
+  this.ws.send(JSON.stringify(payload));
+  this.isProcessing = true;
+  this.updateSendButtonState();
+  this.updateStatus("processing", "处理中...");
 };
 
 FKTeamsChat.prototype.addUserMessage = function (content, attachments) {

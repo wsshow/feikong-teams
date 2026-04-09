@@ -20,7 +20,7 @@ import (
 
 const (
 	toolName = "continue_output"
-	toolDesc = "Internal tool: signals the model to continue its previous output from where it was cut off."
+	toolDesc = "System-managed internal tool. DO NOT call this tool directly — it is automatically injected by the system when output is truncated."
 
 	// maxContinues 单次模型调用最大自动续接次数，防止无限循环
 	maxContinues           = 3

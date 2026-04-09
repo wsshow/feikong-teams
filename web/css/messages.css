@@ -1062,6 +1062,43 @@ a.source-item:hover {
   box-shadow: var(--shadow-sketch);
 }
 
+.error-message.error-continuable {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.error-continuable-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.continue-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px;
+  background: var(--accent-primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.continue-btn:hover {
+  background: var(--accent-secondary);
+}
+
+.continue-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .error-message svg {
   width: 16px;
   height: 16px;
