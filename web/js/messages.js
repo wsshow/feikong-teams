@@ -234,6 +234,8 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
   switch (event.type) {
     case "connected":
       break;
+    case "pong":
+      break;
     case "processing_start":
       this.isProcessing = true;
       this.updateStatus("processing", "处理中...");

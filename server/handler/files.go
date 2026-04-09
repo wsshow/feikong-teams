@@ -785,6 +785,12 @@ func ServeFileHandler() gin.HandlerFunc {
 			return
 		}
 		if info.IsDir() {
+			// 目录：尝试提供 index.html（标准 web 服务器行为）
+			indexPath := filepath.Join(fullPath, "index.html")
+			if indexInfo, err := os.Stat(indexPath); err == nil && !indexInfo.IsDir() {
+				c.File(indexPath)
+				return
+			}
 			Fail(c, http.StatusBadRequest, "不支持目录")
 			return
 		}

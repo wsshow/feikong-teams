@@ -581,7 +581,7 @@ FKTeamsChat.prototype._fmRenderSearchResults = function (files, query) {
             btn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 const action = btn.dataset.action;
-                if (action === "download") this._fmDownloadFile(file);
+                if (action === "download") this._fmDownloadFile(file.path);
                 else if (action === "preview") this._fmPreviewFile(file);
                 else if (action === "share") this._fmShowShareDialog(file);
                 else if (action === "locate") {
@@ -999,6 +999,10 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
         ];
         if (textExts.includes(ext) || file.size < 256 * 1024) {
             const resp = await this.fetchWithAuth(url);
+            if (!resp.ok) {
+                this.fmPreviewBody.innerHTML = '<div class="fm-empty">文件加载失败</div>';
+                return;
+            }
             const text = await resp.text();
             this.fmPreviewBody.innerHTML = `<pre>${this.escapeHtml(text)}</pre>`;
             // 为 HTML 和 MD 文件显示渲染预览按钮
@@ -1059,12 +1063,13 @@ FKTeamsChat.prototype._fmToggleRender = function () {
         } else {
             // HTML 渲染（通过后端 serve 端点，支持 CDN 和相对路径资源）
             var iframe = document.createElement("iframe");
-            iframe.sandbox = "allow-scripts allow-popups allow-forms";
+            iframe.sandbox = "allow-scripts allow-popups allow-forms allow-same-origin";
             iframe.style.cssText = "width:100%;height:60vh;border:none;border-radius:8px;background:#fff;";
             this.fmPreviewBody.innerHTML = "";
             this.fmPreviewBody.appendChild(iframe);
             if (this._fmPreviewFilePath) {
-                iframe.src = "/api/fkteams/files/serve/" + encodeURI(this._fmPreviewFilePath);
+                const encodedPath = this._fmPreviewFilePath.split("/").map(encodeURIComponent).join("/");
+                iframe.src = "/api/fkteams/files/serve/" + encodedPath;
             } else {
                 iframe.contentDocument.open();
                 iframe.contentDocument.write(this._fmPreviewRawText);
