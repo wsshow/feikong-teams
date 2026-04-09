@@ -699,6 +699,6 @@ func PreviewRenderHandler() gin.HandlerFunc {
 			return
 		}
 
-		c.File(fullPath)
+		serveFileContent(c, fullPath, info)
 	}
 }

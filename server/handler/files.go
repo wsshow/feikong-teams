@@ -756,6 +756,18 @@ func DeleteFileHandler() gin.HandlerFunc {
 	}
 }
 
+// serveFileContent 使用 http.ServeContent 提供文件内容，避免 http.ServeFile 对
+// index.html 路径的自动重定向行为，更好地支持 HTML 预览等场景
+func serveFileContent(c *gin.Context, fullPath string, info os.FileInfo) {
+	f, err := os.Open(fullPath)
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, "无法读取文件")
+		return
+	}
+	defer f.Close()
+	http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), f)
+}
+
 // ServeFileHandler 以 inline 方式提供工作目录中的文件（用于 HTML 预览等场景）
 // 相对路径通过 URL wildcard 传入，浏览器可自然解析相对引用
 // Route: GET /api/fkteams/files/serve/*filepath
@@ -785,16 +797,15 @@ func ServeFileHandler() gin.HandlerFunc {
 			return
 		}
 		if info.IsDir() {
-			// 目录：尝试提供 index.html（标准 web 服务器行为）
 			indexPath := filepath.Join(fullPath, "index.html")
 			if indexInfo, err := os.Stat(indexPath); err == nil && !indexInfo.IsDir() {
-				c.File(indexPath)
+				serveFileContent(c, indexPath, indexInfo)
 				return
 			}
 			Fail(c, http.StatusBadRequest, "不支持目录")
 			return
 		}
 
-		c.File(fullPath)
+		serveFileContent(c, fullPath, info)
 	}
 }

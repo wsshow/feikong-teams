@@ -1063,7 +1063,6 @@ FKTeamsChat.prototype._fmToggleRender = function () {
         } else {
             // HTML 渲染（通过后端 serve 端点，支持 CDN 和相对路径资源）
             var iframe = document.createElement("iframe");
-            iframe.sandbox = "allow-scripts allow-popups allow-forms allow-same-origin";
             iframe.style.cssText = "width:100%;height:60vh;border:none;border-radius:8px;background:#fff;";
             this.fmPreviewBody.innerHTML = "";
             this.fmPreviewBody.appendChild(iframe);
