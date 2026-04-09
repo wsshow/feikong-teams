@@ -73,6 +73,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			files.POST("/upload", handler.UploadFileHandler())
 			files.POST("/upload/chunk", handler.UploadChunkHandler())
 			files.DELETE("", handler.DeleteFileHandler())
+			files.GET("/serve/*filepath", handler.ServeFileHandler())
 		}
 
 		// 文件预览链接 API
@@ -82,6 +83,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			preview.GET("", handler.ListPreviewLinksHandler())
 			preview.GET("/:linkId", handler.PreviewFileHandler())
 			preview.GET("/:linkId/info", handler.PreviewInfoHandler())
+			preview.GET("/:linkId/render/*filepath", handler.PreviewRenderHandler())
 			preview.DELETE("/:linkId", handler.DeletePreviewLinkHandler())
 		}
 

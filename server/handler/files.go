@@ -755,3 +755,40 @@ func DeleteFileHandler() gin.HandlerFunc {
 		OK(c, nil)
 	}
 }
+
+// ServeFileHandler 以 inline 方式提供工作目录中的文件（用于 HTML 预览等场景）
+// 相对路径通过 URL wildcard 传入，浏览器可自然解析相对引用
+// Route: GET /api/fkteams/files/serve/*filepath
+func ServeFileHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		relativePath := strings.TrimPrefix(c.Param("filepath"), "/")
+		if relativePath == "" {
+			Fail(c, http.StatusBadRequest, "缺少文件路径")
+			return
+		}
+
+		fullPath, _, err := resolveAndValidatePath(baseDir, absBase, relativePath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusNotFound, "文件不存在")
+			return
+		}
+		if info.IsDir() {
+			Fail(c, http.StatusBadRequest, "不支持目录")
+			return
+		}
+
+		c.File(fullPath)
+	}
+}

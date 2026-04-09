@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -401,6 +402,25 @@ func PreviewInfoHandler() gin.HandlerFunc {
 			return
 		}
 
+		// 密码保护链接：返回渲染所需的基本信息，但不泄露完整路径
+		if entry.PasswordHash != "" {
+			fileName := filepath.Base(entry.FilePaths[0])
+			contentType := mime.TypeByExtension(filepath.Ext(entry.FilePaths[0]))
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			isMulti := len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0]))
+			OK(c, gin.H{
+				"file_name":        fileName,
+				"file_count":       len(entry.FilePaths),
+				"content_type":     contentType,
+				"require_password": true,
+				"previewable":      !isMulti && isPreviewable(contentType),
+				"expires_at":       expiresAtUnix(entry.ExpiresAt),
+			})
+			return
+		}
+
 		fileName := filepath.Base(entry.FilePaths[0])
 		contentType := mime.TypeByExtension(filepath.Ext(entry.FilePaths[0]))
 		if contentType == "" {
@@ -564,4 +584,121 @@ func isPreviewable(contentType string) bool {
 		}
 	}
 	return false
+}
+
+// PreviewRenderHandler 直接渲染预览文件（HTML 完整预览，支持相对路径资源加载）
+// Route: GET /api/fkteams/preview/:linkId/render/*filepath
+// 当 filepath 为空或 "/" 时返回主文件；否则解析为主文件目录下的相对路径资源
+// 密码校验支持 query 参数 password 或 cookie fk_preview_{linkId}
+func PreviewRenderHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir := common.WorkspaceDir()
+		absBase, _ := filepath.Abs(baseDir)
+
+		linkID := c.Param("linkId")
+		if linkID == "" {
+			Fail(c, http.StatusBadRequest, "缺少链接 ID")
+			return
+		}
+
+		previewLinkStore.RLock()
+		entry, exists := previewLinkStore.m[linkID]
+		previewLinkStore.RUnlock()
+
+		if !exists {
+			Fail(c, http.StatusNotFound, "链接不存在或已失效")
+			return
+		}
+
+		if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
+			previewLinkStore.Lock()
+			delete(previewLinkStore.m, linkID)
+			previewLinkStore.Unlock()
+			saveShareLinks()
+			Fail(c, http.StatusGone, "链接已过期")
+			return
+		}
+
+		// 校验密码：query param 或 cookie
+		if entry.PasswordHash != "" {
+			password := c.Query("password")
+			if password == "" {
+				password = c.GetHeader("X-Preview-Password")
+			}
+			if password == "" {
+				if cookie, err := c.Cookie("fk_preview_" + linkID); err == nil {
+					password = cookie
+				}
+			}
+			if password == "" || !verifyPassword(password, entry.PasswordHash) {
+				Fail(c, http.StatusUnauthorized, "需要输入访问密码")
+				return
+			}
+			// 设置 cookie 以便 iframe 内的相对资源请求自动携带密码凭据
+			// HttpOnly=true 防止 JS 读取，路径限制到当前预览链接
+			cookiePath := fmt.Sprintf("/api/fkteams/preview/%s/", linkID)
+			c.SetCookie("fk_preview_"+linkID, password, 3600, cookiePath, "", false, true)
+		}
+
+		mainFile := entry.FilePaths[0]
+		mainDir := filepath.Dir(mainFile)
+
+		// 获取请求的相对路径
+		relativePath := strings.TrimPrefix(c.Param("filepath"), "/")
+
+		// 如果无路径或路径为 "/"，重定向到主文件
+		if relativePath == "" {
+			baseName := url.PathEscape(filepath.Base(mainFile))
+			redirectURL := fmt.Sprintf("/api/fkteams/preview/%s/render/%s", linkID, baseName)
+			if q := c.Request.URL.RawQuery; q != "" {
+				redirectURL += "?" + q
+			}
+			c.Redirect(http.StatusFound, redirectURL)
+			return
+		}
+
+		// 组合完整相对路径：主文件目录 + 请求路径
+		targetRel := filepath.Join(mainDir, relativePath)
+		cleanTarget := filepath.Clean(targetRel)
+
+		// 安全校验：必须在主文件目录内
+		cleanMainDir := filepath.Clean(mainDir)
+		if cleanMainDir == "." {
+			// 主文件在 workspace 根目录：仅允许访问主文件本身
+			if cleanTarget != filepath.Clean(mainFile) {
+				Fail(c, http.StatusForbidden, "禁止访问该路径")
+				return
+			}
+		} else if !strings.HasPrefix(cleanTarget, cleanMainDir+string(filepath.Separator)) && cleanTarget != cleanMainDir {
+			Fail(c, http.StatusForbidden, "禁止访问该路径")
+			return
+		}
+
+		// 解析为工作目录下的完整路径并校验
+		fullPath := filepath.Join(baseDir, cleanTarget)
+		absFull, _ := filepath.Abs(fullPath)
+		realBase, _ := filepath.EvalSymlinks(absBase)
+		realFull, err := filepath.EvalSymlinks(absFull)
+		if err != nil {
+			if !strings.HasPrefix(absFull, absBase+string(filepath.Separator)) {
+				Fail(c, http.StatusForbidden, "禁止访问该路径")
+				return
+			}
+		} else if !strings.HasPrefix(realFull, realBase+string(filepath.Separator)) {
+			Fail(c, http.StatusForbidden, "禁止访问该路径")
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusNotFound, "文件不存在")
+			return
+		}
+		if info.IsDir() {
+			Fail(c, http.StatusBadRequest, "不支持目录")
+			return
+		}
+
+		c.File(fullPath)
+	}
 }

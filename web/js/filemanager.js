@@ -946,6 +946,7 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
     this.fmPreviewBody.innerHTML = '<div class="fm-loading">加载中...</div>';
     this._fmPreviewRawText = null;
     this._fmPreviewExt = null;
+    this._fmPreviewFilePath = null;
     this._fmPreviewRendered = false;
     if (this.fmPreviewRender) this.fmPreviewRender.style.display = "none";
 
@@ -1004,6 +1005,7 @@ FKTeamsChat.prototype._fmPreviewFile = async function (file) {
             if (["html", "htm", "md"].includes(ext)) {
                 this._fmPreviewRawText = text;
                 this._fmPreviewExt = ext;
+                this._fmPreviewFilePath = file.path;
                 if (this.fmPreviewRender) this.fmPreviewRender.style.display = "";
             }
             return;
@@ -1029,6 +1031,7 @@ FKTeamsChat.prototype._fmClosePreview = function () {
     if (this.fmPreviewBody) this.fmPreviewBody.innerHTML = "";
     this._fmPreviewRawText = null;
     this._fmPreviewExt = null;
+    this._fmPreviewFilePath = null;
     this._fmPreviewRendered = false;
     if (this.fmPreviewRender) this.fmPreviewRender.style.display = "none";
     if (this.fmPreviewFullscreen) {
@@ -1054,15 +1057,19 @@ FKTeamsChat.prototype._fmToggleRender = function () {
                 this.fmPreviewBody.innerHTML = '<div class="fm-preview-rendered">' + this.escapeHtml(this._fmPreviewRawText) + '</div>';
             }
         } else {
-            // HTML 渲染（使用沙箱 iframe）
+            // HTML 渲染（通过后端 serve 端点，支持 CDN 和相对路径资源）
             var iframe = document.createElement("iframe");
-            iframe.sandbox = "allow-same-origin";
+            iframe.sandbox = "allow-scripts allow-popups allow-forms";
             iframe.style.cssText = "width:100%;height:60vh;border:none;border-radius:8px;background:#fff;";
             this.fmPreviewBody.innerHTML = "";
             this.fmPreviewBody.appendChild(iframe);
-            iframe.contentDocument.open();
-            iframe.contentDocument.write(this._fmPreviewRawText);
-            iframe.contentDocument.close();
+            if (this._fmPreviewFilePath) {
+                iframe.src = "/api/fkteams/files/serve/" + encodeURI(this._fmPreviewFilePath);
+            } else {
+                iframe.contentDocument.open();
+                iframe.contentDocument.write(this._fmPreviewRawText);
+                iframe.contentDocument.close();
+            }
         }
         this.fmPreviewRender.title = "查看源码";
     } else {

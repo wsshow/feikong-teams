@@ -691,6 +691,18 @@
                 };
                 if (ct.startsWith("text/") || ct.startsWith("application/json") || ct.startsWith("application/xml")
                     || ct.startsWith("application/javascript") || textExts.includes(ext)) {
+
+                    // HTML 文件直接通过后端渲染，支持 CDN 和相对路径资源加载
+                    if (ext === "html" || ext === "htm") {
+                        let renderUrl = `/api/fkteams/preview/${encodeURIComponent(linkId)}/render/`;
+                        if (password) renderUrl += `?password=${encodeURIComponent(password)}`;
+                        content.innerHTML = showFileInfo() + `<div class="preview-area"><iframe class="html-sandbox" sandbox="allow-scripts allow-popups allow-forms" allowfullscreen></iframe></div>`;
+                        const iframe = content.querySelector("iframe");
+                        iframe.src = renderUrl;
+                        footer.style.display = "flex";
+                        return;
+                    }
+
                     try {
                         const resp = await fetch(url);
                         if (!resp.ok) throw new Error();
@@ -705,12 +717,6 @@
                             if (typeof hljs !== "undefined") {
                                 mdBody.querySelectorAll("pre code").forEach((block) => hljs.highlightElement(block));
                             }
-                        }
-                        // HTML 渲染（沙箱 iframe）
-                        else if (ext === "html" || ext === "htm") {
-                            content.innerHTML = showFileInfo() + `<div class="preview-area"><iframe class="html-sandbox" sandbox="allow-same-origin"></iframe></div>`;
-                            const iframe = content.querySelector("iframe");
-                            iframe.srcdoc = text;
                         }
                         // 代码文件语法高亮
                         else if (typeof hljs !== "undefined" && ext !== "txt" && ext !== "csv" && ext !== "log") {
