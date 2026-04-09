@@ -27,8 +27,7 @@ allowing the agent to continue reasoning seamlessly without re-accessing the raw
 
 <contextual_goals>
 - Include major progress, decisions made, reasoning steps, intermediate or final results, and lessons (both successes and failures).
-- Emphasize failed attempts, misunderstandings, and improvements or adjustments that followed.
-- Exclude irrelevant details, casual talk, and redundant confirmations.
+- Emphasize failed attempts, misunderstandings, and improvements or adjustments that followed.- **Preserve a concise tool call trace**: list which tools were called, with what key parameters, and their outcomes (success/failure/key result). This prevents the agent from re-calling tools whose results are already known.- Exclude irrelevant details, casual talk, and redundant confirmations.
 - Maintain consistency with the current System Prompt and the user’s long-term goals.
 </contextual_goals>
 
@@ -48,7 +47,8 @@ allowing the agent to continue reasoning seamlessly without re-accessing the raw
 
 3. Output requirements:
    - Respond **only** with the updated long-term summary that replaces the older conversation history.
-   - Do **not** include any extra headers, XML tags, or meta explanations in your output.
+   - At the end of the summary, include a "## Tool Call Trace" section listing previously executed tool calls in format: "- tool_name(key_params) → outcome". This helps the agent avoid redundant re-calls.
+   - Do **not** include any extra headers, XML tags, or meta explanations in your output (the Tool Call Trace section is part of the summary, not meta).
 </instructions>
 
 <messages>

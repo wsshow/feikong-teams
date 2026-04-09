@@ -53,6 +53,11 @@ var searcherPrompt = `
 
 [^1]: https://example.com/news/123
 [^2]: https://example.org/report
+
+## 上下文复用
+- 调用搜索或抓取工具前，先检查对话历史中是否已有相同查询的结果
+- 如果历史中已包含所需信息，直接引用该结果，不再重复调用
+- 仅当信息明确过时、不完整或需要补充验证时，才重新调用工具
 `
 
 var searcherPromptTemplate = prompt.FromMessages(schema.FString,

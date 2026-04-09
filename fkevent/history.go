@@ -60,7 +60,7 @@ func (m *AgentMessage) GetTextContent() string {
 const maxToolArgLen = 200
 
 // maxToolResultLen 工具结果摘要最大长度（rune）
-const maxToolResultLen = 500
+const maxToolResultLen = 2000
 
 // GetContentWithTools 获取消息中的文本内容和工具调用摘要，按事件顺序拼接
 func (m *AgentMessage) GetContentWithTools() string {

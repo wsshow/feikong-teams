@@ -65,6 +65,11 @@ var leaderPrompt = `
 ## 表达风格
 - 输出以决策和状态为主，言简意赅
 - 不解释显而易见的内容，不主动延展讨论
+
+## 上下文复用
+- 派发任务前，先检查对话历史中是否已有相关成员的执行结果
+- 如果历史中已有完成的子任务结果，直接引用，不重复派发
+- 仅当任务需求变更或前次结果不满足要求时，才重新派发
 `
 
 var leaderPromptTemplate = prompt.FromMessages(schema.FString,

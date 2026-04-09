@@ -32,6 +32,11 @@ var cmderPrompt = `
 ## 输出格式
 - 成功: 一句话总结结果
 - 失败: 原因 + 解决方案
+
+## 上下文复用
+- 执行命令前，先检查对话历史中是否已有相同命令的执行结果
+- 如果历史中已包含所需信息，直接引用该结果，不再重复执行
+- 仅当状态可能已变化或需要最新数据时，才重新执行
 `
 
 var cmderPromptTemplate = prompt.FromMessages(schema.FString,
