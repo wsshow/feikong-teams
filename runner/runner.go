@@ -4,6 +4,7 @@ package runner
 import (
 	"context"
 	"fkteams/agents"
+	agentcommon "fkteams/agents/common"
 	"fkteams/agents/custom"
 	"fkteams/agents/deep"
 	"fkteams/agents/discussant"
@@ -18,6 +19,15 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 )
+
+// wrapErrorSafe 将子智能体列表中的每个智能体包装为错误安全版本，
+func wrapErrorSafe(subAgents []adk.Agent) []adk.Agent {
+	wrapped := make([]adk.Agent, len(subAgents))
+	for i, agent := range subAgents {
+		wrapped[i] = agentcommon.WrapErrorSafe(agent)
+	}
+	return wrapped
+}
 
 // resolveCustomModel 从配置文件解析自定义智能体的模型配置
 func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Model {
@@ -58,7 +68,7 @@ func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
 
 // CreateSupervisorRunner 创建 Supervisor 模式的 Runner
 func CreateSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
-	subAgents := agents.GetTeamAgents(ctx)
+	subAgents := wrapErrorSafe(agents.GetTeamAgents(ctx))
 
 	leaderAgent, err := leader.NewAgent(ctx)
 	if err != nil {
@@ -77,7 +87,7 @@ func CreateSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 
 // CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner
 func CreateDeepAgentsRunner(ctx context.Context) (*adk.Runner, error) {
-	subAgents := agents.GetTeamAgents(ctx)
+	subAgents := wrapErrorSafe(agents.GetTeamAgents(ctx))
 
 	supervisorAgent, err := deep.NewAgent(ctx, subAgents)
 	if err != nil {
@@ -155,7 +165,7 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 
 	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
 		Supervisor: moderatorAgent,
-		SubAgents:  subAgents,
+		SubAgents:  wrapErrorSafe(subAgents),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建自定义 Supervisor 失败: %w", err)
