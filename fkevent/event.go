@@ -132,23 +132,33 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 	return handleEvent(ctx, nEvent)
 }
 
+// streamState 持有流式消息处理过程中的工具调用聚合状态
+type streamState struct {
+	toolCallsMap    map[int][]*schema.Message // 按 index 聚合工具调用分片
+	toolCallStarted map[int]bool              // 记录已发送准备事件的工具调用
+	toolArgsBuffer  map[int]string            // 按 index 缓冲未发送的参数增量
+	lastArgsDelta   time.Time
+}
+
+const argsDeltaInterval = 100 * time.Millisecond
+
+func newStreamState() *streamState {
+	return &streamState{
+		toolCallsMap:    make(map[int][]*schema.Message),
+		toolCallStarted: make(map[int]bool),
+		toolArgsBuffer:  make(map[int]string),
+	}
+}
+
 // handleStreamingMessage 处理流式消息，通过 goroutine 异步接收以支持 context 取消
 func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
-	toolCallsMap := make(map[int][]*schema.Message) // 按 index 聚合工具调用分片
-	toolCallStarted := make(map[int]bool)           // 记录已发送准备事件的工具调用
+	ss := newStreamState()
 
-	// 工具参数增量发送的节流状态
-	toolArgsBuffer := make(map[int]string) // 按 index 缓冲未发送的参数增量
-	var lastArgsDeltaTime time.Time
-	const argsDeltaInterval = 100 * time.Millisecond
-
-	// 在独立 goroutine 中接收流数据，避免阻塞 context 取消检测
 	type recvResult struct {
 		chunk *schema.Message
 		err   error
 	}
 	recvCh := make(chan recvResult, 1)
-
 	go func() {
 		defer close(recvCh)
 		for {
@@ -183,129 +193,149 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 					Error:     fmt.Sprintf("stream error: %v", r.err),
 				})
 			}
-
-			chunk := r.chunk
-			// 处理推理/思考内容（推理模型如 DeepSeek-R1、o1）
-			if chunk.ReasoningContent != "" {
-				if err := handleEvent(ctx, Event{
-					Type:      "reasoning_chunk",
-					AgentName: event.AgentName,
-					RunPath:   formatRunPath(event.RunPath),
-					Content:   chunk.ReasoningContent,
-				}); err != nil {
-					return err
-				}
-			}
-
-			if chunk.Content != "" {
-				eventType := "stream_chunk"
-				if chunk.Role == schema.Tool {
-					eventType = "tool_result_chunk"
-				}
-				if err := handleEvent(ctx, Event{
-					Type:      eventType,
-					AgentName: event.AgentName,
-					RunPath:   formatRunPath(event.RunPath),
-					Content:   chunk.Content,
-				}); err != nil {
-					return err
-				}
-			}
-
-			if len(chunk.ToolCalls) > 0 {
-				for _, tc := range chunk.ToolCalls {
-					if tc.Index == nil {
-						continue
-					}
-					if !toolCallStarted[*tc.Index] && tc.Function.Name != "" {
-						toolCallStarted[*tc.Index] = true
-						if err := handleEvent(ctx, Event{
-							Type:      "tool_calls_preparing",
-							AgentName: event.AgentName,
-							RunPath:   formatRunPath(event.RunPath),
-							ToolCalls: []schema.ToolCall{
-								{Function: schema.FunctionCall{Name: tc.Function.Name}},
-							},
-						}); err != nil {
-							return err
-						}
-					}
-					toolCallsMap[*tc.Index] = append(toolCallsMap[*tc.Index], &schema.Message{
-						Role: chunk.Role,
-						ToolCalls: []schema.ToolCall{
-							{
-								ID:    tc.ID,
-								Type:  tc.Type,
-								Index: tc.Index,
-								Function: schema.FunctionCall{
-									Name:      tc.Function.Name,
-									Arguments: tc.Function.Arguments,
-								},
-							},
-						},
-					})
-
-					// 缓冲参数增量，节流发送
-					if tc.Function.Arguments != "" {
-						toolArgsBuffer[*tc.Index] += tc.Function.Arguments
-					}
-				}
-
-				// 节流发送参数增量
-				now := time.Now()
-				if now.Sub(lastArgsDeltaTime) >= argsDeltaInterval && len(toolArgsBuffer) > 0 {
-					for idx, delta := range toolArgsBuffer {
-						if delta == "" {
-							continue
-						}
-						if err := handleEvent(ctx, Event{
-							Type:      "tool_calls_args_delta",
-							AgentName: event.AgentName,
-							RunPath:   formatRunPath(event.RunPath),
-							Content:   delta,
-							Detail:    fmt.Sprintf("%d", idx),
-						}); err != nil {
-							return err
-						}
-					}
-					toolArgsBuffer = make(map[int]string)
-					lastArgsDeltaTime = now
-				}
+			if err := processStreamChunk(ctx, event, r.chunk, ss); err != nil {
+				return err
 			}
 		}
 	}
 
-	// 发送最后一批缓冲的参数增量
-	if len(toolArgsBuffer) > 0 {
-		for idx, delta := range toolArgsBuffer {
+	flushToolArgsBuffer(ctx, event, ss)
+
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	return emitMergedToolCalls(ctx, event, ss)
+}
+
+// processStreamChunk 处理单个流式消息分片（推理内容、文本内容、工具调用）
+func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState) error {
+	if chunk.ReasoningContent != "" {
+		if err := handleEvent(ctx, Event{
+			Type:      "reasoning_chunk",
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+			Content:   chunk.ReasoningContent,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if chunk.Content != "" {
+		eventType := "stream_chunk"
+		if chunk.Role == schema.Tool {
+			eventType = "tool_result_chunk"
+		}
+		if err := handleEvent(ctx, Event{
+			Type:      eventType,
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+			Content:   chunk.Content,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if len(chunk.ToolCalls) > 0 {
+		if err := collectToolCallChunks(ctx, event, chunk, ss); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// collectToolCallChunks 收集工具调用分片，节流发送参数增量
+func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState) error {
+	for _, tc := range chunk.ToolCalls {
+		if tc.Index == nil {
+			continue
+		}
+		idx := *tc.Index
+
+		if !ss.toolCallStarted[idx] && tc.Function.Name != "" {
+			ss.toolCallStarted[idx] = true
+			if err := handleEvent(ctx, Event{
+				Type:      "tool_calls_preparing",
+				AgentName: event.AgentName,
+				RunPath:   formatRunPath(event.RunPath),
+				ToolCalls: []schema.ToolCall{
+					{Function: schema.FunctionCall{Name: tc.Function.Name}},
+				},
+			}); err != nil {
+				return err
+			}
+		}
+
+		ss.toolCallsMap[idx] = append(ss.toolCallsMap[idx], &schema.Message{
+			Role: chunk.Role,
+			ToolCalls: []schema.ToolCall{{
+				ID:    tc.ID,
+				Type:  tc.Type,
+				Index: tc.Index,
+				Function: schema.FunctionCall{
+					Name:      tc.Function.Name,
+					Arguments: tc.Function.Arguments,
+				},
+			}},
+		})
+
+		if tc.Function.Arguments != "" {
+			ss.toolArgsBuffer[idx] += tc.Function.Arguments
+		}
+	}
+
+	// 节流发送参数增量
+	now := time.Now()
+	if now.Sub(ss.lastArgsDelta) >= argsDeltaInterval && len(ss.toolArgsBuffer) > 0 {
+		for idx, delta := range ss.toolArgsBuffer {
 			if delta == "" {
 				continue
 			}
-			_ = handleEvent(ctx, Event{
+			if err := handleEvent(ctx, Event{
 				Type:      "tool_calls_args_delta",
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
 				Content:   delta,
 				Detail:    fmt.Sprintf("%d", idx),
-			})
+			}); err != nil {
+				return err
+			}
 		}
+		ss.toolArgsBuffer = make(map[int]string)
+		ss.lastArgsDelta = now
 	}
 
-	// context 取消时跳过后续工具调用处理
-	if ctx.Err() != nil {
-		return nil
-	}
+	return nil
+}
 
-	// 合并所有工具调用分片，按 index 排序后统一发送
-	indices := make([]int, 0, len(toolCallsMap))
-	for idx := range toolCallsMap {
+// flushToolArgsBuffer 发送最后一批缓冲的参数增量
+func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamState) {
+	for idx, delta := range ss.toolArgsBuffer {
+		if delta == "" {
+			continue
+		}
+		_ = handleEvent(ctx, Event{
+			Type:      "tool_calls_args_delta",
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+			Content:   delta,
+			Detail:    fmt.Sprintf("%d", idx),
+		})
+	}
+}
+
+// emitMergedToolCalls 合并所有工具调用分片，按 index 排序后统一发送
+func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamState) error {
+	indices := make([]int, 0, len(ss.toolCallsMap))
+	for idx := range ss.toolCallsMap {
 		indices = append(indices, idx)
 	}
 	sort.Ints(indices)
 
 	var allToolCalls []schema.ToolCall
 	for _, idx := range indices {
-		concatenatedMsg, err := schema.ConcatMessages(toolCallsMap[idx])
+		concatenatedMsg, err := schema.ConcatMessages(ss.toolCallsMap[idx])
 		if err != nil {
 			return err
 		}
@@ -313,14 +343,12 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 	}
 
 	if len(allToolCalls) > 0 {
-		if err := handleEvent(ctx, Event{
+		return handleEvent(ctx, Event{
 			Type:      "tool_calls",
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			ToolCalls: allToolCalls,
-		}); err != nil {
-			return err
-		}
+		})
 	}
 
 	return nil
