@@ -276,6 +276,83 @@
             background: white;
         }
 
+        /* HTML 预览全屏模式 */
+        .preview-fullscreen-active {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            z-index: 9999;
+            border-radius: 0 !important;
+            border: none !important;
+            margin: 0 !important;
+            background: #fff;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            justify-content: stretch !important;
+        }
+
+        /* 全屏时顶部工具栏（不遮挡内容） */
+        .preview-fs-toolbar {
+            display: none;
+        }
+
+        .preview-fullscreen-active .preview-fs-toolbar {
+            display: flex;
+            flex-shrink: 0;
+            width: 100%;
+            z-index: 10000;
+            background: #2d2d2d;
+            padding: 6px 16px;
+            align-items: center;
+            gap: 12px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 13px;
+        }
+
+        .preview-fullscreen-active .html-sandbox {
+            flex: 1;
+            width: 100% !important;
+            height: auto !important;
+        }
+
+        .preview-fs-toolbar .fs-filename {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .preview-fs-toolbar button {
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.9);
+            padding: 4px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: background 0.2s ease;
+        }
+
+        .preview-fs-toolbar button:hover {
+            background: rgba(255, 255, 255, 0.22);
+        }
+
+        .preview-fs-toolbar button svg {
+            width: 14px;
+            height: 14px;
+        }
+
         .preview-msg {
             text-align: center;
             padding: 32px 20px;
@@ -385,13 +462,14 @@
         }
 
         .btn-secondary {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-            border-color: var(--border-color);
+            background: var(--accent-light);
+            color: var(--accent-primary);
+            border-color: var(--accent-secondary);
         }
 
         .btn-secondary:hover {
-            background: var(--bg-hover);
+            background: var(--accent-secondary);
+            color: white;
             box-shadow: var(--shadow-sketch);
         }
 
@@ -542,6 +620,15 @@
             <div class="loading">加载中...</div>
         </div>
         <div class="card-footer" id="footer" style="display:none">
+            <button class="btn btn-secondary" id="fullscreen-btn" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+                全屏
+            </button>
             <button class="btn btn-primary" id="download-btn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -564,6 +651,7 @@
             const content = document.getElementById("content");
             const footer = document.getElementById("footer");
             const downloadBtn = document.getElementById("download-btn");
+            const fullscreenBtn = document.getElementById("fullscreen-btn");
 
             let fileInfo = null;
             let password = "";
@@ -696,9 +784,48 @@
                     if (ext === "html" || ext === "htm") {
                         let renderUrl = `/api/fkteams/preview/${encodeURIComponent(linkId)}/render/`;
                         if (password) renderUrl += `?password=${encodeURIComponent(password)}`;
-                        content.innerHTML = showFileInfo() + `<div class="preview-area"><iframe class="html-sandbox" sandbox="allow-scripts allow-popups allow-forms" allowfullscreen></iframe></div>`;
+                        const fileName = escapeHtml(fileInfo.file_name || "");
+                        content.innerHTML = showFileInfo() + `<div class="preview-area" id="html-preview-wrap">
+                            <div class="preview-fs-toolbar">
+                                <span class="fs-filename">${fileName}</span>
+                                <button id="fs-download-btn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    下载
+                                </button>
+                                <button id="fs-exit-btn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                                    退出全屏
+                                </button>
+                            </div>
+                            <iframe class="html-sandbox" sandbox="allow-scripts allow-popups allow-forms" allowfullscreen></iframe>
+                        </div>`;
                         const iframe = content.querySelector("iframe");
                         iframe.src = renderUrl;
+                        // 全屏功能（由底部按钮触发）
+                        const fsWrap = document.getElementById("html-preview-wrap");
+                        const exitFS = () => {
+                            fsWrap.classList.remove("preview-fullscreen-active");
+                            document.body.style.overflow = "";
+                        };
+                        window._htmlPreviewEnterFullscreen = () => {
+                            fsWrap.classList.add("preview-fullscreen-active");
+                            document.body.style.overflow = "hidden";
+                        };
+                        document.getElementById("fs-exit-btn").addEventListener("click", exitFS);
+                        document.getElementById("fs-download-btn").addEventListener("click", () => {
+                            const a = document.createElement("a");
+                            a.href = fileUrl();
+                            a.download = fileInfo.file_name || "file";
+                            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        });
+                        document.addEventListener("keydown", (e) => {
+                            if (e.key === "Escape" && fsWrap.classList.contains("preview-fullscreen-active")) exitFS();
+                        });
+                        // 底部栏显示全屏按钮
+                        fullscreenBtn.style.display = "";
+                        fullscreenBtn.addEventListener("click", () => {
+                            if (window._htmlPreviewEnterFullscreen) window._htmlPreviewEnterFullscreen();
+                        });
                         footer.style.display = "flex";
                         return;
                     }
