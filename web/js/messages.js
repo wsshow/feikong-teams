@@ -109,6 +109,29 @@ FKTeamsChat.prototype.sendMessage = async function () {
   this.isProcessing = true;
   this.updateSendButtonState();
   this.updateStatus("processing", "处理中...");
+  this.showThinkingIndicator();
+};
+
+// 显示等待模型响应的思考指示器
+FKTeamsChat.prototype.showThinkingIndicator = function () {
+  this.hideThinkingIndicator();
+  const el = document.createElement("div");
+  el.className = "thinking-indicator";
+  el.id = "thinking-indicator";
+  el.innerHTML = `
+    <div class="thinking-dots">
+      <span></span><span></span><span></span>
+    </div>
+    <span class="thinking-text">思考中</span>
+  `;
+  this.messagesContainer.appendChild(el);
+  this.scrollToBottom();
+};
+
+// 隐藏思考指示器
+FKTeamsChat.prototype.hideThinkingIndicator = function () {
+  const el = document.getElementById("thinking-indicator");
+  if (el) el.remove();
 };
 
 // 显示智能体切换通知
@@ -201,6 +224,11 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       }
     }
     return;
+  }
+
+  // 首个内容事件到来时移除思考指示器
+  if (!["connected", "processing_start", "pong"].includes(event.type)) {
+    this.hideThinkingIndicator();
   }
 
   switch (event.type) {
@@ -1303,6 +1331,7 @@ FKTeamsChat.prototype.continueAfterMaxIterations = function () {
   this.isProcessing = true;
   this.updateSendButtonState();
   this.updateStatus("processing", "处理中...");
+  this.showThinkingIndicator();
 };
 
 FKTeamsChat.prototype.addUserMessage = function (content, attachments) {
