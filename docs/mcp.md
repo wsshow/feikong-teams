@@ -49,15 +49,13 @@ transport_type = "stdio"
 [[custom.agents]]
 name = "数据处理专家"
 desc = "专门处理数据相关任务"
+model = "default"  # 引用 [[models]] 中的模型名称
 system_prompt = "你是一个数据处理专家..."
 tools = [
   "file",              # 内置文件工具
   "mcp-filesystem",    # MCP 文件系统工具（需加 mcp- 前缀）
   "mcp-postgres"       # MCP 数据库工具
 ]
-base_url = "https://api.openai.com/v1"
-api_key = "your_api_key"
-model_name = "gpt-4"
 ```
 
 ## MCP 工具命名规则

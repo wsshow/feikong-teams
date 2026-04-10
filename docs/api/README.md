@@ -75,12 +75,34 @@ secret = "your_jwt_secret"  # Token 签名密钥（启用时必填）
 | -------- | ----------------------- | ------ |
 | 通用     | [通用接口](misc.md)     | 4      |
 | 聊天     | [聊天接口](chat.md)     | 2      |
-| 流式任务 | [流式任务](stream.md)   | 6      |
+| 流式任务 | [流式任务](stream.md)   | 7      |
 | 会话     | [会话管理](sessions.md) | 5      |
 | 文件     | [文件管理](files.md)    | 7      |
 | 预览     | [文件预览](preview.md)  | 5      |
 | 记忆     | [长期记忆](memory.md)   | 3      |
 | 定时任务 | [定时任务](schedule.md) | 2      |
+
+### 配置与系统管理
+
+| 方法 | 路径                                | 说明                               |
+| ---- | ----------------------------------- | ---------------------------------- |
+| GET  | `/api/fkteams/config`               | 获取当前配置                       |
+| PUT  | `/api/fkteams/config`               | 更新配置                           |
+| GET  | `/api/fkteams/config/tools`         | 获取所有可用工具名称列表           |
+| GET  | `/api/fkteams/config/template-vars` | 获取模板变量（系统提示词可用变量） |
+| GET  | `/api/fkteams/providers`            | 获取已知模型提供者列表             |
+| POST | `/api/fkteams/providers/models`     | 查询指定提供者的可用模型           |
+| POST | `/api/fkteams/shutdown`             | 优雅关闭服务                       |
+| POST | `/api/fkteams/restart`              | 重启服务                           |
+
+### OpenAI 兼容 API
+
+需通过 `[openai_api] api_keys` 配置密钥，使用 `Authorization: Bearer <api_key>` 认证。
+
+| 方法 | 路径                   | 说明                 |
+| ---- | ---------------------- | -------------------- |
+| GET  | `/v1/models`           | 获取可用模型列表     |
+| POST | `/v1/chat/completions` | 聊天补全（支持流式） |
 
 ### 页面路由
 

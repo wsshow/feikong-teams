@@ -11,6 +11,7 @@
 4. GET  /stream/status/:id     → 查询任务状态
 5. GET  /stream/events/:id     → 一次性拉取已缓冲事件
 6. POST /stream/approval       → 提交 HITL 审批决定
+7. POST /stream/ask-response   → 提交交互式提问的回答
 ```
 
 ## 接口详情
@@ -267,6 +268,49 @@ POST /api/fkteams/stream/approval
 | ------ | -------------------- |
 | 404    | 无运行中的任务       |
 | 409    | 当前没有待审批的请求 |
+
+---
+
+### 提交交互式提问回答
+
+```
+POST /api/fkteams/stream/ask-response
+```
+
+当智能体通过 `ask_questions` 工具向用户提问时，前端通过此接口提交用户的回答。
+
+**请求体**：
+
+```json
+{
+  "session_id": "abc-123",
+  "selected": ["选项1", "选项2"],
+  "free_text": "用户的自由输入文本"
+}
+```
+
+| 字段         | 类型     | 必填 | 说明               |
+| ------------ | -------- | ---- | ------------------ |
+| `session_id` | string   | ✓    | 会话 ID            |
+| `selected`   | string[] | 否   | 用户选择的选项列表 |
+| `free_text`  | string   | 否   | 用户的自由文本输入 |
+
+**成功响应**：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "message": "response submitted"
+  }
+}
+```
+
+| 状态码 | 说明                     |
+| ------ | ------------------------ |
+| 404    | 无运行中的任务           |
+| 409    | 当前没有待回答的提问请求 |
 
 ---
 

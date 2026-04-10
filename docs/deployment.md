@@ -27,7 +27,7 @@ mkdir -p data
 docker run --rm \
   -e FEIKONG_APP_DIR=/app \
   -v ./data:/app \
-  fkteams fkteams generate config
+  fkteams generate config
 ```
 
 3. 启动服务：
