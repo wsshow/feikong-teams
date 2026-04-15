@@ -131,6 +131,7 @@ func printEvent() func(Event) {
 			}
 			fmt.Println()
 
+		case "tool_calls_args_delta":
 		default:
 			fmt.Printf("\n\033[1;90m? 未知事件: %s\033[0m\n", event.Type)
 			if event.AgentName != "" {
