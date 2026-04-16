@@ -679,7 +679,7 @@ func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoic
 		}
 		ofAuto := &anthropic.ToolChoiceAutoParam{}
 		if disableParallelToolUse != nil {
-			ofAuto.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
+			ofAuto.DisableParallelToolUse = param.NewOpt(*disableParallelToolUse)
 		}
 		params.ToolChoice = anthropic.ToolChoiceUnionParam{
 			OfAuto: ofAuto,
@@ -716,7 +716,7 @@ func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoic
 		} else {
 			ofAny := &anthropic.ToolChoiceAnyParam{}
 			if disableParallelToolUse != nil {
-				ofAny.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
+				ofAny.DisableParallelToolUse = param.NewOpt(*disableParallelToolUse)
 			}
 			params.ToolChoice = anthropic.ToolChoiceUnionParam{
 				OfAny: ofAny,
