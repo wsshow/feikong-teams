@@ -3,7 +3,6 @@ package claude
 import (
 	"context"
 
-	claudeModel "github.com/cloudwego/eino-ext/components/model/claude"
 	"github.com/cloudwego/eino/components/model"
 
 	"fkteams/providers/internal"
@@ -11,7 +10,7 @@ import (
 
 // New 创建 Anthropic Claude 的聊天模型
 func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel, error) {
-	modelCfg := &claudeModel.Config{
+	modelCfg := &Config{
 		APIKey:     cfg.APIKey,
 		Model:      cfg.Model,
 		HTTPClient: internal.HTTPClientWithHeaders(cfg.ExtraHeaders),
@@ -19,5 +18,5 @@ func New(ctx context.Context, cfg *internal.Config) (model.ToolCallingChatModel,
 	if cfg.BaseURL != "" {
 		modelCfg.BaseURL = &cfg.BaseURL
 	}
-	return claudeModel.NewChatModel(ctx, modelCfg)
+	return NewChatModel(ctx, modelCfg)
 }
