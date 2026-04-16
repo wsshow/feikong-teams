@@ -103,7 +103,7 @@ func (up Updater) Apply(rel *Release,
 	defer os.RemoveAll(tmpDir)
 
 	downloadURL := rel.Assets[idx].BrowserDownloadURL
-	fkDir := filepath.Join(tmpDir, "fkteams")
+	fkDir := filepath.Join(tmpDir, "fkteams_update")
 	srcFilename := filepath.Join(fkDir, filepath.Base(downloadURL))
 	dstFilename := srcFilename
 
