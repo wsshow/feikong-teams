@@ -147,8 +147,8 @@ function Add-ToUserPath {
     param([string]$Dir)
 
     $currentPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-    # 拆分后逐条比较，避免部分路径误匹配
-    $pathItems = $currentPath -split ";" | Where-Object { $_ -ne "" }
+    # 拆分后逐条 trim 并过滤空项，避免路径粘连
+    $pathItems = $currentPath -split ";" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 
     if ($pathItems -contains $Dir) {
         Write-Info "$Dir 已在用户 PATH 中，无需修改"
