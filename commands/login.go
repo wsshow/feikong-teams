@@ -352,6 +352,17 @@ func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
 		})
 	}
 
+	// 如果还没有 default 模型，自动将当前配置设为默认
+	if name != "default" && cfg.ResolveModel("default") == nil {
+		cfg.Models = append(cfg.Models, config.ModelConfig{
+			Name:     "default",
+			Provider: provider,
+			APIKey:   apiKey,
+			BaseURL:  baseURL,
+			Model:    model,
+		})
+	}
+
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("保存配置失败: %w", err)
 	}
@@ -363,6 +374,11 @@ func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
 	fmt.Printf("✓ 已%s供应商配置「%s」（%s）\n", action, name, provider)
 	if baseURL != "" {
 		fmt.Printf("  API 地址: %s\n", baseURL)
+	}
+	if name != "default" && !found {
+		if hasDefault := cfg.ResolveModel("default"); hasDefault != nil && hasDefault.Provider == provider && hasDefault.Model == model {
+			fmt.Printf("✓ 已自动设为默认模型\n")
+		}
 	}
 	return nil
 }
