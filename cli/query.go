@@ -233,6 +233,10 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	startTime := time.Now()
 	_, err := engine.New(e.runner, "fkteams").Run(queryCtx, inputMessages, engine.WithInterruptHandler(handler))
+
+	// 刷新残留的流式输出缓冲
+	fkevent.FlushPrintEvent()
+
 	if err != nil {
 		if queryCtx.Err() != nil {
 			pterm.Warning.Println("查询已中断")

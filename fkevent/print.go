@@ -5,40 +5,189 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	lipgloss "charm.land/lipgloss/v2"
+	"github.com/mattn/go-runewidth"
 )
 
-var PrintEvent = printEvent()
+var (
+	PrintEvent      func(Event)
+	FlushPrintEvent func() // 刷新流式缓冲
+)
 
-func printEvent() func(Event) {
+func init() {
+	PrintEvent, FlushPrintEvent = newPrintEvent()
+}
+
+// streamBuf 累积流式文本并增量差分渲染
+type streamBuf struct {
+	buf          strings.Builder
+	agent        string
+	path         string
+	lastRendered string
+	lastRender   time.Time
+	hasRendered  bool
+}
+
+const renderInterval = 100 * time.Millisecond
+
+func (s *streamBuf) reset() {
+	s.buf.Reset()
+	s.agent = ""
+	s.path = ""
+	s.lastRendered = ""
+	s.hasRendered = false
+	s.lastRender = time.Time{}
+}
+
+func (s *streamBuf) addChunk(content string) {
+	s.buf.WriteString(content)
+	if !s.hasRendered || time.Since(s.lastRender) >= renderInterval {
+		s.render()
+	}
+}
+
+// render 对比新旧输出，只清除并重绘变化的尾部
+func (s *streamBuf) render() {
+	content := s.buf.String()
+	if content == "" {
+		return
+	}
+	rendered := RenderMarkdown(content)
+	if rendered == "" || rendered == s.lastRendered {
+		return
+	}
+
+	if !s.hasRendered {
+		lipgloss.Print(rendered)
+		fmt.Print("\n")
+	} else {
+		diffIdx := commonPrefixLen(s.lastRendered, rendered)
+		// 回退到换行边界
+		snapIdx := strings.LastIndex(s.lastRendered[:diffIdx], "\n")
+		if snapIdx < 0 {
+			snapIdx = 0
+		} else {
+			snapIdx++
+		}
+		oldTail := s.lastRendered[snapIdx:]
+		clearLines := strings.Count(oldTail, "\n") + 1
+		if clearLines > 0 {
+			fmt.Printf("\033[%dF\033[J", clearLines)
+		}
+		lipgloss.Print(rendered[snapIdx:])
+		fmt.Print("\n")
+	}
+
+	s.lastRendered = rendered
+	s.lastRender = time.Now()
+	s.hasRendered = true
+}
+
+func (s *streamBuf) flush() {
+	if s.buf.Len() == 0 {
+		s.reset()
+		return
+	}
+	s.render()
+	s.reset()
+}
+
+func commonPrefixLen(a, b string) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+// reasoningWriter 按终端宽度换行，每行补 │ 前缀
+type reasoningWriter struct {
+	col      int
+	maxWidth int
+}
+
+const reasoningPrefix = "\033[1;36m│\033[0m  \033[3;90m"
+
+func newReasoningWriter() *reasoningWriter {
+	w := termWidth() - 4
+	if w < 20 {
+		w = 20
+	}
+	return &reasoningWriter{maxWidth: w}
+}
+
+func (rw *reasoningWriter) writeChunk(content string) {
+	for _, r := range content {
+		if r == '\n' {
+			fmt.Printf("\033[0m\n%s", reasoningPrefix)
+			rw.col = 0
+			continue
+		}
+		cw := runewidth.RuneWidth(r)
+		if rw.col+cw > rw.maxWidth {
+			fmt.Printf("\033[0m\n%s", reasoningPrefix)
+			rw.col = 0
+		}
+		fmt.Printf("%c", r)
+		rw.col += cw
+	}
+}
+
+func newPrintEvent() (func(Event), func()) {
 	agentName := ""
 	lastToolName := ""
-	inReasoning := false // 是否正在输出推理内容
-	return func(event Event) {
+	inReasoning := false
+	var sb streamBuf
+	var rw *reasoningWriter
+
+	tryFlush := func() {
+		if sb.buf.Len() > 0 {
+			sb.flush()
+		}
+	}
+
+	printFn := func(event Event) {
 		switch event.Type {
 		case "reasoning_chunk":
+			tryFlush()
 			if agentName != event.AgentName {
 				agentName = event.AgentName
 				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
 			}
 			if !inReasoning {
 				inReasoning = true
-				fmt.Printf("\033[90m[思考] \033[0m\033[3;90m")
+				rw = newReasoningWriter()
+				fmt.Printf("%s\033[90m[思考] \033[0m%s", reasoningPrefix, "\033[3;90m")
+				rw.col = 6 // "[思考] " 占 6 列
 			}
-			fmt.Printf("%s", event.Content)
+			rw.writeChunk(event.Content)
 
 		case "stream_chunk":
+			wasReasoning := inReasoning
 			if inReasoning {
 				inReasoning = false
-				fmt.Printf("\033[0m\n") // 结束斜体和灰色
+				fmt.Printf("\033[0m\n")
 			}
 			if agentName != event.AgentName {
+				tryFlush()
 				agentName = event.AgentName
 				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
-				fmt.Printf("\033[1;36m╰─▶\033[0m ")
+				fmt.Printf("\033[1;36m╰─▶\033[0m\n")
+				sb.agent = agentName
+				sb.path = event.RunPath
+			} else if wasReasoning {
+				fmt.Printf("\033[1;36m╰─▶\033[0m\n")
 			}
-			fmt.Printf("%s", event.Content)
+			sb.addChunk(event.Content)
 
 		case "message":
+			tryFlush()
 			if inReasoning {
 				inReasoning = false
 				fmt.Printf("\033[0m\n")
@@ -47,10 +196,12 @@ func printEvent() func(Event) {
 				fmt.Printf("\n\033[90m[%s] 思考:\033[0m \033[3;90m%s\033[0m\n", event.AgentName, event.ReasoningContent)
 			}
 			if event.Content != "" {
-				fmt.Printf("\n\033[1;32m✓ [%s] 消息:\033[0m %s\n", event.AgentName, event.Content)
+				fmt.Printf("\n\033[1;32m✓ [%s]\033[0m\n", event.AgentName)
+				lipgloss.Println(RenderMarkdown(event.Content))
 			}
 
 		case "tool_result":
+			tryFlush()
 			fmt.Printf("\n\033[1;33m⚙ [%s] 工具结果:\033[0m\n", event.AgentName)
 			if event.Content != "" {
 				var formatted string
@@ -72,7 +223,6 @@ func printEvent() func(Event) {
 				case "dispatch_tasks":
 					formatted = formatDispatchResult(event.Content)
 				}
-
 				if formatted != "" {
 					fmt.Print(formatted)
 				} else {
@@ -85,6 +235,7 @@ func printEvent() func(Event) {
 			fmt.Printf("%s", event.Content)
 
 		case "tool_calls_preparing":
+			tryFlush()
 			if inReasoning {
 				inReasoning = false
 				fmt.Printf("\033[0m\n")
@@ -97,6 +248,7 @@ func printEvent() func(Event) {
 			}
 
 		case "tool_calls":
+			tryFlush()
 			fmt.Printf("\n\033[1;35m[%s] 调用工具:\033[0m\n", event.AgentName)
 			for i, tool := range event.ToolCalls {
 				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, tool.Function.Name)
@@ -111,11 +263,12 @@ func printEvent() func(Event) {
 			fmt.Println()
 
 		case "action":
+			tryFlush()
 			switch event.ActionType {
 			case "context_compress_start":
 				fmt.Printf("\n\033[1;33m~ [%s] %s\033[0m", event.AgentName, event.Content)
 			case "context_compress":
-				fmt.Printf("\n\033[1;33m\u2713 [%s] %s\033[0m\n", event.AgentName, event.Content)
+				fmt.Printf("\n\033[1;33m✓ [%s] %s\033[0m\n", event.AgentName, event.Content)
 			default:
 				fmt.Printf("\n\033[1;34m▸ [%s] 动作: %s\033[0m\n", event.AgentName, event.ActionType)
 				if event.Content != "" {
@@ -124,6 +277,7 @@ func printEvent() func(Event) {
 			}
 
 		case "error":
+			tryFlush()
 			fmt.Printf("\n\033[1;31m✗ [%s] 错误:\033[0m\n", event.AgentName)
 			fmt.Printf("  \033[31m%s\033[0m\n", event.Error)
 			if event.RunPath != "" {
@@ -142,6 +296,8 @@ func printEvent() func(Event) {
 			}
 		}
 	}
+
+	return printFn, func() { tryFlush() }
 }
 
 func printPlainResult(content string) {
@@ -194,7 +350,6 @@ func formatSearchResults(content string) string {
 	return output.String()
 }
 
-// formatCommandResult 格式化命令执行结果
 func formatCommandResult(content string) string {
 	var result struct {
 		Stdout         string `json:"stdout"`
@@ -312,7 +467,6 @@ func formatFileOpResult(content string) string {
 		}
 	}
 
-	// 显示错误信息
 	if result.ErrorMessage != "" {
 		output.WriteString(fmt.Sprintf("  \033[31m错误: %s\033[0m\n", result.ErrorMessage))
 	}
@@ -419,7 +573,6 @@ func formatTodoResult(content string, toolName string) string {
 		output.WriteString(fmt.Sprintf("  %s\n", msg))
 	}
 
-	// 按工具类型格式化
 	switch toolName {
 	case "todo_add", "todo_update":
 		if todoData, ok := result["todo"].(map[string]interface{}); ok {
@@ -453,7 +606,6 @@ func formatTodoResult(content string, toolName string) string {
 				for i, todoItem := range todosData {
 					if todoMap, ok := todoItem.(map[string]interface{}); ok {
 						output.WriteString(formatSingleTodo(todoMap))
-						// 分隔线
 						if i < len(todosData)-1 {
 							output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
 						}
@@ -463,7 +615,6 @@ func formatTodoResult(content string, toolName string) string {
 		}
 
 	case "todo_delete":
-		// no additional output
 
 	case "todo_batch_delete":
 		if deletedCount, ok := result["deleted_count"].(float64); ok {
@@ -539,7 +690,6 @@ func formatSingleTodo(todo map[string]interface{}) string {
 		priorityText = "紧急"
 	}
 
-	// 标题行
 	output.WriteString(fmt.Sprintf("  %s%s\033[0m \033[1m%s\033[0m", statusColor, statusIcon, title))
 	if priority != "" {
 		output.WriteString(fmt.Sprintf(" %s[%s]\033[0m", priorityColor, priorityText))
@@ -618,8 +768,7 @@ func formatFilePatchResult(content string) string {
 	return output.String()
 }
 
-// NewMarkdownCollector 创建将事件格式化为 Markdown 的收集器，供后台任务使用
-// 返回：callback（用于 WithCallback），getResult（获取完整结果）
+// NewMarkdownCollector 创建事件 Markdown 收集器，供后台任务使用
 func NewMarkdownCollector() (callback func(Event) error, getResult func() string) {
 	var buf strings.Builder
 	lastAgent := ""
@@ -711,7 +860,6 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 	return
 }
 
-// formatToolResultMarkdown 将工具结果格式化为 Markdown 简洁摘要
 func formatToolResultMarkdown(content string, toolName string) string {
 	switch toolName {
 	case "duckduckgo_search":
@@ -735,7 +883,6 @@ func formatToolResultMarkdown(content string, toolName string) string {
 	}
 }
 
-// formatSearchResultMarkdown 将搜索结果格式化为 Markdown
 func formatSearchResultMarkdown(content string) string {
 	var result struct {
 		Message string `json:"message"`
@@ -770,7 +917,6 @@ func formatSearchResultMarkdown(content string) string {
 	return output.String()
 }
 
-// formatSchedulerResult 格式化定时任务工具结果
 func formatSchedulerResult(content string, toolName string) string {
 	var output strings.Builder
 
@@ -869,7 +1015,6 @@ func formatSchedulerResult(content string, toolName string) string {
 	return output.String()
 }
 
-// formatDispatchResult 格式化分发任务结果（终端 ANSI）
 func formatDispatchResult(content string) string {
 	var data struct {
 		Results []struct {
@@ -912,7 +1057,6 @@ func formatDispatchResult(content string) string {
 	return b.String()
 }
 
-// formatDispatchResultMarkdown 格式化分发任务结果（Markdown）
 func formatDispatchResultMarkdown(content string) string {
 	var data struct {
 		Results []struct {
