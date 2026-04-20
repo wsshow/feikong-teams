@@ -17,6 +17,19 @@ function Write-Ok    { param([string]$Msg) Write-Host "==> $Msg" -ForegroundColo
 function Write-Warn  { param([string]$Msg) Write-Host "警告: $Msg" -ForegroundColor Yellow }
 function Write-Fail  { param([string]$Msg) Write-Host "错误: $Msg" -ForegroundColor Red; exit 1 }
 
+# ---- 获取终端代理参数（供 Invoke-WebRequest / Invoke-RestMethod 使用）----
+function Get-ProxyParams {
+    $proxyUrl = if ($env:https_proxy) { $env:https_proxy }
+                elseif ($env:HTTPS_PROXY) { $env:HTTPS_PROXY }
+                elseif ($env:http_proxy) { $env:http_proxy }
+                elseif ($env:HTTP_PROXY) { $env:HTTP_PROXY }
+                else { $null }
+    if ($proxyUrl) {
+        return @{ Proxy = $proxyUrl; ProxyUseDefaultCredentials = $true }
+    }
+    return @{}
+}
+
 # ---- 检测 CPU 架构 ----
 function Get-Arch {
     $arch = $env:PROCESSOR_ARCHITECTURE
@@ -32,7 +45,8 @@ function Get-LatestVersion {
     $apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     try {
         $headers = @{ "Accept" = "application/vnd.github.v3+json"; "User-Agent" = "fkteams-installer" }
-        $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing
+        $proxyParams = Get-ProxyParams
+        $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing @proxyParams
         return $release.tag_name
     }
     catch {
@@ -54,6 +68,16 @@ function Invoke-DownloadWithProgress {
 
     Add-Type -AssemblyName System.Net.Http
 
+    # 用于 Ctrl+C 取消网络请求
+    $cts = [System.Threading.CancellationTokenSource]::new()
+    $cancelHandler = [System.ConsoleCancelEventHandler]{
+        param($sender, $e)
+        $e.Cancel = $true  # 阻止立即退出，让 finally 块清理资源
+        $cts.Cancel()
+    }
+    [Console]::add_CancelKeyPress($cancelHandler)
+
+    try {
     for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
         # 若文件已存在则尝试断点续传
         $resumeOffset = 0
@@ -63,6 +87,18 @@ function Invoke-DownloadWithProgress {
 
         try {
             $handler = [System.Net.Http.HttpClientHandler]::new()
+
+            # 继承终端的 https_proxy / http_proxy 环境变量
+            $proxyUrl = if ($env:https_proxy) { $env:https_proxy }
+                        elseif ($env:HTTPS_PROXY) { $env:HTTPS_PROXY }
+                        elseif ($env:http_proxy) { $env:http_proxy }
+                        elseif ($env:HTTP_PROXY) { $env:HTTP_PROXY }
+                        else { $null }
+            if ($proxyUrl) {
+                $handler.Proxy = [System.Net.WebProxy]::new($proxyUrl)
+                $handler.UseProxy = $true
+            }
+
             $client  = [System.Net.Http.HttpClient]::new($handler)
             $client.DefaultRequestHeaders.UserAgent.ParseAdd("fkteams-installer/1.0")
             $client.Timeout = [System.TimeSpan]::FromMinutes(30)
@@ -74,7 +110,8 @@ function Invoke-DownloadWithProgress {
 
             $response = $client.GetAsync(
                 $Url,
-                [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
+                [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+                $cts.Token
             ).GetAwaiter().GetResult()
 
             # 200: 服务器不支持 Range，重头下载；206: 断点续传
@@ -102,7 +139,11 @@ function Invoke-DownloadWithProgress {
             $barWidth   = 40
 
             try {
-                while (($bytesRead = $inStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                while (-not $cts.IsCancellationRequested) {
+                    $readTask = $inStream.ReadAsync($buffer, 0, $buffer.Length, $cts.Token)
+                    $bytesRead = $readTask.GetAwaiter().GetResult()
+                    if ($bytesRead -eq 0) { break }
+
                     $outStream.Write($buffer, 0, $bytesRead)
                     $downloaded += $bytesRead
 
@@ -119,6 +160,11 @@ function Invoke-DownloadWithProgress {
                         }
                     }
                 }
+                if ($cts.IsCancellationRequested) {
+                    Write-Host ""
+                    Write-Warn "下载已被用户取消"
+                    exit 1
+                }
                 Write-Host ""
                 return
             }
@@ -127,10 +173,20 @@ function Invoke-DownloadWithProgress {
                 $inStream.Dispose()
             }
         }
+        catch [System.OperationCanceledException] {
+            Write-Host ""
+            Write-Warn "下载已被用户取消"
+            exit 1
+        }
         catch {
             if ($attempt -lt $MaxRetries) {
                 Write-Warn "下载出错（第 ${attempt}/${MaxRetries} 次），${RetryDelay}s 后重试..."
                 Start-Sleep -Seconds $RetryDelay
+                if ($cts.IsCancellationRequested) {
+                    Write-Host ""
+                    Write-Warn "下载已被用户取消"
+                    exit 1
+                }
             }
             else {
                 Write-Fail "下载失败（已重试 $MaxRetries 次）: $_"
@@ -139,6 +195,11 @@ function Invoke-DownloadWithProgress {
         finally {
             if ($null -ne $client) { $client.Dispose() }
         }
+    }
+    }
+    finally {
+        [Console]::remove_CancelKeyPress($cancelHandler)
+        $cts.Dispose()
     }
 }
 
@@ -191,7 +252,8 @@ try {
     $checksumsUrl  = "https://github.com/$GITHUB_REPO/releases/download/$tag/checksums.txt"
     $checksumsPath = Join-Path $tmpDir "checksums.txt"
     Write-Info "正在验证文件完整性..."
-    Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsPath -UseBasicParsing
+    $proxyParams = Get-ProxyParams
+    Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsPath -UseBasicParsing @proxyParams
 
     $expectedLine = Get-Content $checksumsPath | Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($zipName))$" }
     if ($expectedLine) {
