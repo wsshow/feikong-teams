@@ -25,6 +25,11 @@ func maskAPIKey(key string) string {
 	return strings.Repeat("*", len(key)-4) + key[len(key)-4:]
 }
 
+// isMasked 检测字段值是否为脱敏后的掩码值
+func isMasked(s string) bool {
+	return strings.Contains(s, "**")
+}
+
 const sensitivePassword = "***"
 
 // GetConfigHandler 获取配置（敏感字段脱敏）
@@ -92,15 +97,20 @@ func UpdateConfigHandler() gin.HandlerFunc {
 			modelNames[m.Name] = true
 		}
 
-		// 合并敏感字段：前端传 "***" 或掩码时保留旧值
+		// 合并敏感字段：前端传掩码值时保留旧值
 		for i := range newCfg.Models {
-			if strings.Contains(newCfg.Models[i].APIKey, "****") {
-				// 查找旧配置中同名模型的 APIKey
+			if isMasked(newCfg.Models[i].APIKey) {
+				// 优先按名称匹配旧模型，其次按索引回填
+				restored := false
 				for _, old := range oldCfg.Models {
 					if old.Name == newCfg.Models[i].Name {
 						newCfg.Models[i].APIKey = old.APIKey
+						restored = true
 						break
 					}
+				}
+				if !restored && i < len(oldCfg.Models) {
+					newCfg.Models[i].APIKey = oldCfg.Models[i].APIKey
 				}
 			}
 		}
@@ -116,7 +126,7 @@ func UpdateConfigHandler() gin.HandlerFunc {
 		if newCfg.Channels.QQ.AppSecret == sensitivePassword {
 			newCfg.Channels.QQ.AppSecret = oldCfg.Channels.QQ.AppSecret
 		}
-		if strings.Contains(newCfg.Channels.Discord.Token, "****") {
+		if isMasked(newCfg.Channels.Discord.Token) {
 			newCfg.Channels.Discord.Token = oldCfg.Channels.Discord.Token
 		}
 
