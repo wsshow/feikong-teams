@@ -50,42 +50,59 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 		return ResultExit
 
 	case "help":
-		pterm.Println("=== fkteams 命令帮助 ===")
-		pterm.Println()
-		pterm.Println("基本操作:")
-		pterm.Println("  help                             显示此帮助信息")
-		pterm.Println("  q, quit, Enter                   退出程序")
-		pterm.Println()
-		pterm.Println("智能体切换:")
-		pterm.Println("  list_agents                     列出所有可用的智能体")
-		pterm.Println("  @智能体名 [查询内容]              切换到指定智能体并可选执行查询")
-		pterm.Println()
-		pterm.Println("文件引用:")
-		pterm.Println("  #文件路径                        快速引用工作目录中的文件或文件夹")
-		pterm.Println()
-		pterm.Println("聊天历史管理:")
-		pterm.Println("  list_chat_history               列出所有可用的聊天历史会话")
-		pterm.Println("  load_chat_history               选择并加载聊天历史会话")
-		pterm.Println("  save_chat_history               保存聊天历史到当前会话文件")
-		pterm.Println("  clear_chat_history              清空当前聊天历史")
-		pterm.Println("  save_chat_history_to_markdown   导出聊天历史为 Markdown 文件")
-		pterm.Println("  save_chat_history_to_html       导出聊天历史为 HTML 文件")
-		pterm.Println()
-		pterm.Println("任务管理:")
-		pterm.Println("  list_schedule                   列出所有定时任务")
-		pterm.Println("  cancel_schedule                 选择并取消定时任务")
-		pterm.Println("  delete_schedule                 选择并删除定时任务")
-		pterm.Println()
-		pterm.Println("模式切换:")
-		pterm.Println("  switch_work_mode               切换当前工作模式")
-		pterm.Println()
-		pterm.Println("长期记忆管理:")
-		pterm.Println("  list_memory                    列出所有长期记忆条目")
-		pterm.Println("  delete_memory                  选择并删除记忆条目")
-		pterm.Println("  clear_memory                   清空所有长期记忆")
-		pterm.Println()
-		pterm.Println("其他操作:")
-		pterm.Println("  直接输入问题                     与智能体团队对话")
+		helpMD := `# fkteams 命令帮助
+
+## 基本操作
+| 命令 | 说明 |
+|------|------|
+| ` + "`help`" + ` | 显示此帮助信息 |
+| ` + "`q`" + ` / ` + "`quit`" + ` | 退出程序 |
+
+## 智能体切换
+| 命令 | 说明 |
+|------|------|
+| ` + "`list_agents`" + ` | 列出所有可用的智能体 |
+| ` + "`@智能体名 [查询内容]`" + ` | 切换到指定智能体并可选执行查询 |
+
+## 文件引用
+| 命令 | 说明 |
+|------|------|
+| ` + "`#文件路径`" + ` | 快速引用工作目录中的文件或文件夹 |
+
+## 聊天历史管理
+| 命令 | 说明 |
+|------|------|
+| ` + "`list_chat_history`" + ` | 列出所有可用的聊天历史会话 |
+| ` + "`load_chat_history`" + ` | 选择并加载聊天历史会话 |
+| ` + "`save_chat_history`" + ` | 保存聊天历史到当前会话文件 |
+| ` + "`clear_chat_history`" + ` | 清空当前聊天历史 |
+| ` + "`save_chat_history_to_markdown`" + ` | 导出聊天历史为 Markdown 文件 |
+| ` + "`save_chat_history_to_html`" + ` | 导出聊天历史为 HTML 文件 |
+
+## 任务管理
+| 命令 | 说明 |
+|------|------|
+| ` + "`list_schedule`" + ` | 列出所有定时任务 |
+| ` + "`cancel_schedule`" + ` | 选择并取消定时任务 |
+| ` + "`delete_schedule`" + ` | 选择并删除定时任务 |
+
+## 模式切换
+| 命令 | 说明 |
+|------|------|
+| ` + "`switch_work_mode`" + ` | 切换当前工作模式 |
+
+## 长期记忆管理
+| 命令 | 说明 |
+|------|------|
+| ` + "`list_memory`" + ` | 列出所有长期记忆条目 |
+| ` + "`delete_memory`" + ` | 选择并删除记忆条目 |
+| ` + "`clear_memory`" + ` | 清空所有长期记忆 |
+
+## 其他
+> 直接输入问题即可与智能体团队对话
+
+---`
+		fmt.Println(fkevent.RenderMarkdown(helpMD))
 		return ResultHandled
 
 	case "list_chat_history":
@@ -197,9 +214,10 @@ func ListSessions(interactive ...bool) {
 		return
 	}
 
-	pterm.Println()
-	pterm.Println("=== 可用的聊天历史会话 ===")
-	pterm.Println()
+	var sb strings.Builder
+	sb.WriteString("# 可用的聊天历史会话\n\n")
+	sb.WriteString("| 会话 ID | 标题 | 修改时间 | 大小 |\n")
+	sb.WriteString("|---------|------|----------|------|\n")
 
 	count := 0
 	for _, entry := range entries {
@@ -209,33 +227,33 @@ func ListSessions(interactive ...bool) {
 		sessionID := entry.Name()
 		sessionDir := filepath.Join(CLIHistoryDir, sessionID)
 
-		// 读取标题
 		title := sessionID
 		if meta, err := fkevent.LoadMetadata(sessionDir); err == nil {
 			title = meta.Title
 		}
 
-		// 获取 history.json 信息
 		histFile := filepath.Join(sessionDir, "history.json")
 		if info, err := os.Stat(histFile); err == nil {
-			pterm.Printf("  %s  [%s]  (%s, %d bytes)\n", sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
+			sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %d B |\n",
+				sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size()))
 		} else {
-			pterm.Printf("  %s  [%s]\n", sessionID, title)
+			sb.WriteString(fmt.Sprintf("| `%s` | %s | - | - |\n", sessionID, title))
 		}
 		count++
 	}
 
 	if count == 0 {
 		pterm.Info.Println("暂无聊天历史文件")
-	} else {
-		pterm.Println()
-		if len(interactive) > 0 && interactive[0] {
-			pterm.Printf("共 %d 个会话，使用 load_chat_history <session_id> 加载\n", count)
-		} else {
-			pterm.Printf("共 %d 个会话，使用 -r <session_id> 恢复会话\n", count)
-		}
+		return
 	}
-	pterm.Println()
+
+	if len(interactive) > 0 && interactive[0] {
+		sb.WriteString(fmt.Sprintf("\n共 **%d** 个会话，使用 `load_chat_history` 加载\n", count))
+	} else {
+		sb.WriteString(fmt.Sprintf("\n共 **%d** 个会话，使用 `-r <session_id>` 恢复会话\n", count))
+	}
+	sb.WriteString("\n---\n")
+	fmt.Println(fkevent.RenderMarkdown(sb.String()))
 }
 
 // loadSession 加载指定 session ID 的聊天历史
@@ -261,20 +279,17 @@ func loadSession(sessionID string) {
 
 // ListAvailableAgents 列出所有可用的智能体
 func ListAvailableAgents() {
-	pterm.Println()
-	pterm.Println("=== 可用智能体列表 ===")
-	pterm.Println()
-	pterm.Println("使用方式: 输入 @智能体名 [查询内容] 即可切换到该智能体")
-	pterm.Println()
+	var sb strings.Builder
+	sb.WriteString("# 可用智能体列表\n\n")
+	sb.WriteString("> 使用方式: 输入 `@智能体名 [查询内容]` 即可切换到该智能体\n\n")
 
 	for _, agent := range agents.GetRegistry() {
-		pterm.Printf("  @%s\n", agent.Name)
-		pterm.Printf("    描述: %s\n", agent.Description)
-		pterm.Println()
+		sb.WriteString(fmt.Sprintf("- **@%s** — %s\n", agent.Name, agent.Description))
 	}
 
-	pterm.Println("提示: 输入 @ 后会自动提示可用的智能体")
-	pterm.Println()
+	sb.WriteString("\n> 输入 `@` 后会自动提示可用的智能体")
+	sb.WriteString("\n---\n")
+	fmt.Println(fkevent.RenderMarkdown(sb.String()))
 }
 
 // handleListMemory 列出所有长期记忆条目
@@ -290,15 +305,11 @@ func handleListMemory() {
 		return
 	}
 
-	pterm.Println()
-	pterm.Println("=== 长期记忆列表 ===")
-	pterm.Println()
-
-	printMemoryEntries(entries)
-
-	pterm.Printf("共 %d 条记忆\n", len(entries))
-	pterm.Printf("使用 delete_memory 选择删除条目，或 clear_memory 清空全部\n")
-	pterm.Println()
+	var sb strings.Builder
+	sb.WriteString("# 长期记忆列表\n\n")
+	printMemoryEntries(entries, &sb)
+	sb.WriteString(fmt.Sprintf("---\n共 **%d** 条记忆，使用 `delete_memory` 删除条目，或 `clear_memory` 清空全部", len(entries)))
+	fmt.Println(fkevent.RenderMarkdown(sb.String()))
 }
 
 // handleDeleteMemory 交互式选择并删除记忆条目
@@ -471,14 +482,13 @@ func handleLoadSession() {
 	loadSession(selected)
 }
 
-// printMemoryEntries 打印记忆条目列表
-func printMemoryEntries(entries []memory.MemoryEntry) {
+// printMemoryEntries 将记忆条目写入 strings.Builder
+func printMemoryEntries(entries []memory.MemoryEntry, sb *strings.Builder) {
 	for i, e := range entries {
-		pterm.Printf("  %d. [%s] %s\n", i+1, e.Type, e.Summary)
-		pterm.Printf("     %s\n", e.Detail)
-		pterm.Printf("     标签: %s | 命中: %d 次 | 创建: %s\n",
-			strings.Join(e.Tags, ", "), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04"))
-		pterm.Println()
+		sb.WriteString(fmt.Sprintf("%d. **[%s]** %s\n", i+1, e.Type, e.Summary))
+		sb.WriteString(fmt.Sprintf("   %s\n", e.Detail))
+		sb.WriteString(fmt.Sprintf("   标签: `%s` | 命中: **%d** 次 | 创建: %s\n\n",
+			strings.Join(e.Tags, "`, `"), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04")))
 	}
 }
 
