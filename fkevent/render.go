@@ -166,6 +166,7 @@ func RenderMarkdown(content string) string {
 	if content == "" {
 		return ""
 	}
+	content = strings.ReplaceAll(content, "[^", `\[^`)
 	r := initRenderer()
 	if r == nil {
 		return content
