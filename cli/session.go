@@ -255,6 +255,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 			switch result {
 			case ResultExit:
 				exitSignals <- syscall.SIGTERM
+				fmt.Println()
 				return
 			case ResultHandled:
 				continue
