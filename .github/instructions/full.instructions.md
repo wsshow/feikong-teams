@@ -34,8 +34,11 @@ fkteams/
 │   │   ├── dispatch/       # 子任务并行分发中间件
 │   │   ├── fkfs/           # 文件系统后端（内存/本地）
 │   │   ├── skills/         # 技能学习中间件（读取 workspace/skills/ 目录）
-│   │   ├── summary/        # 自动摘要中间件（80K token 阈值）
-│   │   └── tools/warperror/# 工具错误包装中间件
+│   │   ├── summary/        # 自动摘要中间件（80K token 阈值，支持环境变量覆盖）
+│   │   └── tools/          # 工具层中间件
+│   │       ├── patch/      # ToolCall 数据修复（patchtoolcalls，默认启用）
+│   │       ├── trimresult/ # 噪声工具结果修剪（fetch/doc 已消化历史结果）
+│   │       └── warperror/  # 工具错误包装（错误 → 成功输出，不中断 Agent 流程）
 │   ├── coder/              # 代码专家 (小码)
 │   ├── searcher/           # 搜索专家 (小搜)
 │   ├── cmder/              # 命令行专家 (小令)
@@ -49,7 +52,8 @@ fkteams/
 │   ├── moderator/          # 自定义模式主持人 (小议)
 │   ├── deep/               # 深度探索协调者
 │   ├── discussant/         # 圆桌讨论者（多模型支持）
-│   └── custom/             # 自定义智能体（配置驱动）
+│   ├── custom/             # 自定义智能体（配置驱动）
+│   └── retry/              # ChatModel 重试包装器（指数退避 + 随机抖动，最大 3 次）
 ├── tools/                  # 工具实现
 │   ├── tools.go            # GetToolsByName 统一工具注册入口
 │   ├── approval/           # 审批机制 (HITL / Reject)
@@ -95,13 +99,27 @@ fkteams/
 │   │   ├── websocket.go    # WS handler + 消息路由 + WS 聊天处理
 │   │   ├── http_chat.go    # HTTP POST 聊天处理
 │   │   ├── stream.go       # 流式任务 API（SSE 订阅模式）
+│   │   ├── taskstream/     # 流式任务状态管理
 │   │   ├── session.go      # 会话 CRUD
 │   │   ├── agents.go       # 智能体列表
 │   │   ├── auth.go         # 认证（AuthEnabled 返回 error）
-│   │   ├── files.go        # 文件列表
+│   │   ├── files.go        # 文件列表 + 上传/下载/搜索
+│   │   ├── preview.go      # 文件预览链接管理
+│   │   ├── memory.go       # 长期记忆管理
+│   │   ├── config.go       # 配置读写
+│   │   ├── models.go       # 模型/提供者列表
+│   │   ├── openai_api.go   # OpenAI 兼容 API
+│   │   ├── schedule.go     # 定时任务管理
+│   │   ├── system.go       # 系统管理（shutdown/restart）
+│   │   ├── health.go       # 健康检查
+│   │   ├── globals.go      # 全局处理器变量
 │   │   └── version.go      # 版本信息
 │   ├── router/             # 路由注册（Init/InitAPI 返回 error）
 │   └── middleware/         # 中间件 (CORS)
+├── channels/               # 多平台消息通道（Discord、微信、QQ）
+│   ├── channel.go          # Channel 接口定义
+│   ├── bridge.go           # 通道与引擎的桥接
+│   └── service.go          # 通道服务管理
 └── web/                    # 前端静态资源（embed.go 嵌入）
 ```
 
@@ -141,7 +159,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 **AgentBuilder API**:
 | 方法 | 说明 |
 |------|------|
-| `NewAgentBuilder(name, desc)` | 创建构建器（自动设置 `current_time` 模板变量） |
+| `NewAgentBuilder(name, desc)` | 创建构建器（自动设置 `current_time`、`os_type`、`os_arch`、`workspace_dir` 模板变量） |
 | `WithTools(tools...)` | 添加工具实例 |
 | `WithToolNames(names...)` | 通过名称添加工具（Build 时通过 `GetToolsByName` 解析） |
 | `WithTemplate(t)` | 设置提示词模板 |
@@ -184,17 +202,23 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 ### 中间件栈
 
 ```
-┌──────────────────────────────┐
-│  Warperror Middleware        │  ← 工具错误 → 成功输出（不中断 Agent 流程）
-├──────────────────────────────┤
-│  AutoContinue Middleware     │  ← 检测 max_tokens 截断，注入续接工具调用
-├──────────────────────────────┤
-│  TrimResult Middleware       │  ← 修剪旧轮次噪声工具结果（fetch/doc）
-├──────────────────────────────┤
-│  Summary Middleware          │  ← 80K token 阈值自动摘要历史
-├──────────────────────────────┤
-│  Skills Handler              │  ← 读取 workspace/skills/ 注入上下文
-└──────────────────────────────┘
+┌────────────────────────────────┐  ← AgentMiddleware（按此顺序叠加）
+│  Warperror Middleware          │  ← 工具错误 → 成功输出（不中断 Agent 流程）
+├────────────────────────────────┤
+│  AutoContinue Middleware       │  ← 检测 max_tokens 截断，注入续接工具调用
+├────────────────────────────────┤
+│  TrimResult Middleware         │  ← 修剪旧轮次噪声工具结果（fetch/doc）
+├────────────────────────────────┤
+│  Summary Middleware（可选）    │  ← token 超阈自动摘要历史（默认 80K）
+└────────────────────────────────┘
+
+┌────────────────────────────────┐  ← ChatModelAgentMiddleware Handler（按此顺序叠加）
+│  Patch Handler                 │  ← ToolCall 数据修复（patchtoolcalls，默认启用）
+├────────────────────────────────┤
+│  Skills Handler（可选）        │  ← 读取 workspace/skills/ 注入上下文
+├────────────────────────────────┤
+│  Dispatch Handler（可选）      │  ← 子任务并行分发
+└────────────────────────────────┘
 ```
 
 ### 审批机制
@@ -221,6 +245,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 | `search` | DuckDuckGo 搜索 |
 | `fetch` | 网页抓取 |
 | `doc` | 文档工具 |
+| `ask` | 向用户提问以收集信息（HITL 辅助） |
 | `uv` | Python uv 工具 |
 | `bun` | JavaScript bun 工具 |
 | `mcp-{name}` | MCP 协议动态工具（前缀匹配） |
@@ -340,10 +365,11 @@ secret = "your_jwt_secret"
 ### 环境变量
 
 ```bash
-FEIKONG_APP_DIR            # 应用数据目录 (默认 ~/.fkteams)
-FEIKONG_PROXY_URL          # 代理地址（唯一的代理配置方式）
-FEIKONG_MAX_ITERATIONS     # 智能体最大迭代次数 (默认 60，0/-1 不限制)
-FEIKONG_NO_SELF_RESTART    # 禁用自动重启（systemd 等场景）
+FEIKONG_APP_DIR                    # 应用数据目录 (默认 ~/.fkteams)
+FEIKONG_PROXY_URL                  # 代理地址（唯一的代理配置方式）
+FEIKONG_MAX_ITERATIONS             # 智能体最大迭代次数 (默认 60，0/-1 不限制)
+FEIKONG_NO_SELF_RESTART            # 禁用自动重启（systemd 等场景）
+FEIKONG_MAX_TOKENS_BEFORE_SUMMARY  # 触发自动摘要的 token 阈值 (默认 80K)
 ```
 
 ## Web 服务
@@ -358,12 +384,33 @@ FEIKONG_NO_SELF_RESTART    # 禁用自动重启（systemd 等场景）
 **API 端点**:
 
 ```
-GET    /agents      # 获取智能体列表
-GET    /files       # 获取文件列表
-WS     /ws          # WebSocket 聊天
-GET    /history     # 历史管理
-GET    /version     # 版本信息
-POST   /login       # 登录（若启用认证）
+# 根路径（无前缀）
+GET    /health                              # 健康检查
+WS     /ws                                  # WebSocket 聊天
+GET    /v1/models                           # OpenAI 兼容模型列表（APIKey 认证）
+POST   /v1/chat/completions                 # OpenAI 兼容聊天（APIKey 认证）
+
+# /api/fkteams 前缀
+POST   /api/fkteams/login                   # 登录（若启用认证）
+GET    /api/fkteams/version                 # 版本信息
+GET    /api/fkteams/agents                  # 智能体列表
+POST   /api/fkteams/chat                    # HTTP POST 聊天
+POST   /api/fkteams/stream/start            # 启动流式任务
+POST   /api/fkteams/stream/stop/:id         # 停止流式任务
+GET    /api/fkteams/stream/subscribe/:id    # SSE 订阅流式输出
+GET    /api/fkteams/stream/events/:id       # 获取任务事件列表
+GET    /api/fkteams/stream/status/:id       # 获取任务状态
+POST   /api/fkteams/stream/approval         # 审批响应
+POST   /api/fkteams/stream/ask-response     # ask 工具回复
+GET    /api/fkteams/files                   # 文件列表/搜索/下载/上传
+POST   /api/fkteams/preview                 # 文件预览链接管理
+GET    /api/fkteams/sessions                # 会话管理 CRUD
+GET    /api/fkteams/schedules               # 定时任务管理
+GET    /api/fkteams/memory                  # 长期记忆管理
+GET    /api/fkteams/config                  # 配置读写
+GET    /api/fkteams/providers               # 模型提供者列表
+POST   /api/fkteams/shutdown                # 关闭服务
+POST   /api/fkteams/restart                 # 重启服务
 ```
 
 ## CLI 命令
@@ -384,7 +431,7 @@ POST   /login       # 登录（若启用认证）
 ## 构建与运行
 
 ```bash
-make build                                         # 构建到 release/
+make build                                          # 构建到 release/
 ./release/fkteams_darwin_arm64 -m team -q "问题"    # CLI 模式
 ./release/fkteams_darwin_arm64 -m team -w           # Web 模式
 ./release/fkteams_darwin_arm64 serve --port 8080    # API 服务模式
