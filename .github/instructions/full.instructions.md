@@ -189,6 +189,8 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 ├──────────────────────────────┤
 │  AutoContinue Middleware     │  ← 检测 max_tokens 截断，注入续接工具调用
 ├──────────────────────────────┤
+│  TrimResult Middleware       │  ← 修剪旧轮次噪声工具结果（fetch/doc）
+├──────────────────────────────┤
 │  Summary Middleware          │  ← 80K token 阈值自动摘要历史
 ├──────────────────────────────┤
 │  Skills Handler              │  ← 读取 workspace/skills/ 注入上下文

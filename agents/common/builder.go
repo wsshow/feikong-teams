@@ -7,6 +7,7 @@ import (
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/agents/middlewares/tools/patch"
+	"fkteams/agents/middlewares/tools/trimresult"
 	"fkteams/agents/middlewares/tools/warperror"
 	"fkteams/agents/retry"
 	rootcommon "fkteams/common"
@@ -184,7 +185,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		}
 	}
 
-	// 中间件（warperror + autocontinue 默认启用）
+	// 中间件（warperror + autocontinue + trimresult 默认启用）
 	cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
 
 	acMiddleware, err := autocontinue.NewAgentMiddleware()
@@ -192,6 +193,8 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		return nil, fmt.Errorf("init autocontinue middleware: %w", err)
 	}
 	cfg.Middlewares = append(cfg.Middlewares, acMiddleware)
+
+	cfg.Middlewares = append(cfg.Middlewares, trimresult.New(nil))
 
 	if b.enableSummary {
 		maxTokens := summary.DefaultMaxTokensBeforeSummary

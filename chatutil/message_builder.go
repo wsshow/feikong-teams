@@ -154,7 +154,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 		if summarizedCount < len(agentMessages) {
 			historyMessage.WriteString("\n\n## 最近的对话记录\n")
 			for _, msg := range agentMessages[summarizedCount:] {
-				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithTools())
+				fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithToolsFiltered())
 			}
 		}
 
@@ -169,7 +169,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 		// 无摘要时：使用全部历史记录
 		var historyMessage strings.Builder
 		for _, msg := range agentMessages {
-			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithTools())
+			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithToolsFiltered())
 		}
 		return []adk.Message{
 			schema.SystemMessage(

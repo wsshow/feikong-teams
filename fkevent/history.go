@@ -56,6 +56,20 @@ func (m *AgentMessage) GetTextContent() string {
 	return builder.String()
 }
 
+// NoisyToolPrefixes 定义高输出量噪声工具的名称前缀列表。
+// 这类工具（如网页抓取、文档读取）会产生大量输出，在历史上下文中属于冗余内容。
+var NoisyToolPrefixes = []string{"fetch", "doc"}
+
+// isNoisyTool 判断工具名是否属于噪声工具
+func isNoisyTool(name string) bool {
+	for _, p := range NoisyToolPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // maxToolArgLen 工具参数摘要最大长度（rune）
 const maxToolArgLen = 200
 
@@ -64,6 +78,15 @@ const maxToolResultLen = 2000
 
 // GetContentWithTools 获取消息中的文本内容和工具调用摘要，按事件顺序拼接
 func (m *AgentMessage) GetContentWithTools() string {
+	return m.getContentWithToolsInternal(false)
+}
+
+// GetContentWithToolsFiltered 获取消息中的文本内容和工具调用摘要，过滤掉噪声工具的结果
+func (m *AgentMessage) GetContentWithToolsFiltered() string {
+	return m.getContentWithToolsInternal(true)
+}
+
+func (m *AgentMessage) getContentWithToolsInternal(filterNoisy bool) string {
 	var builder strings.Builder
 	for _, event := range m.Events {
 		switch event.Type {
@@ -80,8 +103,12 @@ func (m *AgentMessage) GetContentWithTools() string {
 				}
 				builder.WriteString("]")
 				if tc.Result != "" {
-					builder.WriteString(" → ")
-					builder.WriteString(truncateRunes(tc.Result, maxToolResultLen))
+					if filterNoisy && isNoisyTool(tc.Name) {
+						builder.WriteString(fmt.Sprintf(" → [result omitted] (~%d chars)", len([]rune(tc.Result))))
+					} else {
+						builder.WriteString(" → ")
+						builder.WriteString(truncateRunes(tc.Result, maxToolResultLen))
+					}
 				}
 				builder.WriteString("\n")
 			}
