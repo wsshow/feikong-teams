@@ -35,11 +35,11 @@ func GetProviderModelsHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 前端传入的 APIKey 为空时，从已保存配置中还原真实密钥（按 provider 匹配）
+		// 前端传入的 APIKey 为空时，从已保存配置中按 base_url 还原真实密钥
 		apiKey := req.APIKey
-		if apiKey == "" {
+		if apiKey == "" && req.BaseURL != "" {
 			for _, m := range config.Get().Models {
-				if m.Provider == req.Provider && m.APIKey != "" {
+				if m.BaseURL == req.BaseURL && m.APIKey != "" {
 					apiKey = m.APIKey
 					break
 				}

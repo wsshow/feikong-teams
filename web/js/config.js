@@ -442,10 +442,9 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
       });
       const result = await resp.json();
       if (result.code !== 0 || !result.data) {
-        self.showNotification(
-          "获取模型列表失败: " + (result.message || "未知错误"),
-          "error",
-        );
+        const msg = result.message || "未知错误";
+        const notifType = msg.includes("不支持模型列表") ? "warning" : "error";
+        self.showNotification("获取模型列表失败: " + msg, notifType);
         return;
       }
       self._modelCache[cacheKey] = result.data;

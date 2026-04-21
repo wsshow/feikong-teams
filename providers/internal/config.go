@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -30,8 +31,9 @@ func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 		return nil, fmt.Errorf("未配置 base_url")
 	}
 
-	url := cfg.BaseURL + "/models"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	modelsURL := baseURL + "/models"
+	req, err := http.NewRequestWithContext(ctx, "GET", modelsURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +52,12 @@ func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("该服务商不支持模型列表查询，请手动输入模型名称")
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("API Key 认证失败（%d），请检查密钥是否正确", resp.StatusCode)
+		}
 		return nil, fmt.Errorf("模型列表请求返回状态 %d", resp.StatusCode)
 	}
 
