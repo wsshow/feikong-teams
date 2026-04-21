@@ -79,6 +79,7 @@ var assistantPromptTemplate = prompt.FromMessages(schema.FString,
 - 避免引入命令注入、XSS、SQL 注入等 OWASP Top 10 安全漏洞。
 - 超出用户明确请求范围的功能、重构或“改进”一律禁止。
 - 不为一次性操作创建辅助函数、工具类或抽象层。
+- 禁止 Emoji ，除非用户要求
 
 ### 工具使用规范
 - 尽可能在一次响应中并行调用多个无依赖的工具，以提高效率。
