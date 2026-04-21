@@ -40,11 +40,12 @@ func GetConfigHandler() gin.HandlerFunc {
 		// 深拷贝并脱敏
 		resp := *cfg
 
-		// 脱敏模型 APIKey
+		// 处理模型 APIKey：不返回真实密钥，仅标记是否已配置
 		models := make([]config.ModelConfig, len(cfg.Models))
 		for i, m := range cfg.Models {
 			models[i] = m
-			models[i].APIKey = maskAPIKey(m.APIKey)
+			models[i].HasAPIKey = m.APIKey != ""
+			models[i].APIKey = ""
 		}
 		resp.Models = models
 
@@ -97,13 +98,16 @@ func UpdateConfigHandler() gin.HandlerFunc {
 			modelNames[m.Name] = true
 		}
 
-		// 合并敏感字段：前端传掩码值时保留旧值
+		// 合并敏感字段：前端传空字符串时保留旧值
 		for i := range newCfg.Models {
-			if isMasked(newCfg.Models[i].APIKey) {
-				// 优先按名称匹配旧模型，其次按索引回填
+			if newCfg.Models[i].APIKey == "" {
+				lookupName := newCfg.Models[i].OriginalName
+				if lookupName == "" {
+					lookupName = newCfg.Models[i].Name
+				}
 				restored := false
 				for _, old := range oldCfg.Models {
-					if old.Name == newCfg.Models[i].Name {
+					if old.Name == lookupName {
 						newCfg.Models[i].APIKey = old.APIKey
 						restored = true
 						break

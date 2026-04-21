@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"fkteams/config"
@@ -36,9 +35,9 @@ func GetProviderModelsHandler() gin.HandlerFunc {
 			return
 		}
 
-		// 前端传入的 APIKey 是脱敏后的掩码值，需还原为真实密钥
+		// 前端传入的 APIKey 为空时，从已保存配置中还原真实密钥（按 provider 匹配）
 		apiKey := req.APIKey
-		if strings.Contains(apiKey, "****") {
+		if apiKey == "" {
 			for _, m := range config.Get().Models {
 				if m.Provider == req.Provider && m.APIKey != "" {
 					apiKey = m.APIKey

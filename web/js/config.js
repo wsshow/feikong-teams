@@ -235,10 +235,12 @@ FKTeamsChat.prototype.fillChannelForm = function (ch) {
 FKTeamsChat.prototype.addModelCard = function (m, expanded) {
   const card = document.createElement("div");
   card.className = "config-model-card" + (expanded ? " open" : "");
+  card.dataset.apiLookupName = m.name || "";
 
   const displayName = m.name || "未命名模型";
   const displayModel = m.model || "";
   const displayProvider = m.provider || "openai";
+  const apiKeyPlaceholder = m.has_api_key ? "已配置，留空则不修改" : "sk-...";
 
   const isDefault = m.name === "default";
 
@@ -306,7 +308,7 @@ FKTeamsChat.prototype.addModelCard = function (m, expanded) {
       <div class="config-row">
         <div class="config-field">
           <label>密钥</label>
-          <input type="password" class="config-input model-apikey" value="${this.escapeHtml(m.api_key || "")}" placeholder="sk-..." autocomplete="new-password" />
+          <input type="password" class="config-input model-apikey" value="" placeholder="${apiKeyPlaceholder}" autocomplete="new-password" />
         </div>
         <div class="config-field">
           <label>额外请求头</label>
@@ -948,6 +950,7 @@ FKTeamsChat.prototype.collectConfigData = function () {
     .forEach((card) => {
       cfg.models.push({
         name: card.querySelector(".model-name").value.trim(),
+        original_name: card.dataset.apiLookupName || "",
         provider: card.querySelector(".model-provider").value,
         base_url: card.querySelector(".model-baseurl").value.trim(),
         api_key: card.querySelector(".model-apikey").value,

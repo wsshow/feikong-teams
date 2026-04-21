@@ -24,6 +24,8 @@ type ModelConfig struct {
 	APIKey       string `toml:"api_key" json:"api_key"`
 	Model        string `toml:"model" json:"model"`
 	ExtraHeaders string `toml:"extra_headers,omitempty" json:"extra_headers"` // 格式: Key1:Value1,Key2:Value2
+	HasAPIKey    bool   `toml:"-" json:"has_api_key,omitempty"`               // 是否已配置 APIKey（前端展示用）
+	OriginalName string `toml:"-" json:"original_name,omitempty"`             // 前端加载时的原始名称，用于 APIKey 还原匹配
 }
 
 // ParseExtraHeaders 解析额外请求头字符串为 map
