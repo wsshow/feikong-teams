@@ -13,7 +13,7 @@ import (
 
 // ConvertMarkdownToHTML 将 Markdown 字节数据转换为 HTML
 func ConvertMarkdownToHTML(markdownByteData []byte) (htmlByteData []byte) {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock | parser.Footnotes
 	p := parser.NewWithExtensions(extensions)
 	doc := p.Parse(markdownByteData)
 
@@ -346,6 +346,58 @@ const htmlTemplate = `<!DOCTYPE html>
             .markdown-body table td {
                 padding: 8px 12px;
             }
+        }
+
+        /* 注脚样式 */
+        .markdown-body .footnotes {
+            margin-top: 32px;
+            font-size: 0.875em;
+            color: #4a5568;
+        }
+
+        /* 隐藏 gomarkdown 在 .footnotes 内部自动插入的 <hr> */
+        .markdown-body .footnotes > hr {
+            display: none;
+        }
+
+        .markdown-body .footnotes ol {
+            padding-left: 1.5em;
+        }
+
+        .markdown-body .footnotes li {
+            margin-bottom: 6px;
+        }
+
+        .markdown-body .footnotes li p {
+            margin-bottom: 0;
+        }
+
+        .markdown-body sup {
+            font-size: 0.75em;
+            line-height: 0;
+            position: relative;
+            vertical-align: baseline;
+            top: -0.5em;
+        }
+
+        .markdown-body sup a {
+            color: #3182ce;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .markdown-body sup a:hover {
+            text-decoration: underline;
+        }
+
+        .markdown-body .footnotes a.footnote-return {
+            margin-left: 4px;
+            color: #718096;
+            text-decoration: none;
+        }
+
+        .markdown-body .footnotes a.footnote-return:hover {
+            color: #3182ce;
         }
 
         /* 打印样式优化 */
