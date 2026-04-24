@@ -14,42 +14,96 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const DefaultMaxTokensBeforeSummary = 80 * 1024
-const PromptOfSummary = `<role>
-Conversation Summarization Assistant for Multi-turn LLM Agent
-</role>
+const DefaultMaxTokensBeforeSummary = 800 * 1024
+const PromptOfSummary = `关键提示：仅以纯文本响应，不要调用任何工具。
+- 你已拥有上述对话中所需的全部上下文，无需再读取文件或执行命令。
+- 工具调用将被拒绝，并会浪费你唯一的回复机会——你将无法完成任务。
+- 你的整个回复必须是纯文本：先输出一个 <analysis> 分析块，后面紧跟一个 <summary> 总结块。
 
-<primary_objective>
-Summarize the older portion of the conversation history into a concise, accurate, and information-rich context summary. 
-The summary must preserve essential reasoning, actions, outcomes, and lessons learned, 
-allowing the agent to continue reasoning seamlessly without re-accessing the raw conversation data.
-</primary_objective>
+你的任务是对目前为止的对话创建一份详细的总结，重点关注用户的明确请求和你之前的操作。
+总结应全面捕捉技术细节、代码模式和架构决策，以便在不丢失上下文的情况下继续工作。
 
-<contextual_goals>
-- Include major progress, decisions made, reasoning steps, intermediate or final results, and lessons (both successes and failures).
-- Emphasize failed attempts, misunderstandings, and improvements or adjustments that followed.- **Preserve a concise tool call trace**: list which tools were called, with what key parameters, and their outcomes (success/failure/key result). This prevents the agent from re-calling tools whose results are already known.- Exclude irrelevant details, casual talk, and redundant confirmations.
-- Maintain consistency with the current System Prompt and the user’s long-term goals.
-</contextual_goals>
+在输出最终总结之前，将分析过程放入 <analysis> 标签中，整理思路并确保覆盖所有必要要点：
 
-<instructions>
-1. You will receive five tagged sections:
-   - The **system_prompt tag** — provides the current System Prompt (for reference only, do not summarize).
-   - The **user_messages tag** — contains early or persistent user instructions, preferences, and goals. Use it to maintain alignment with the user's long-term intent(for reference only, do not summarize).
-   - The **previous_summary tag** — contains the existing long-term summary, if available.
-   - The **older_messages tag** — includes earlier conversation messages to be summarized.
-   - The **recent_messages tag** — contains the most recent conversation window (for reference only, do not summarize).
+1. 按时间顺序分析对话中的每条消息，对每个章节详细识别：
+   - 用户的明确请求与意图
+   - 你应对用户请求所采取的方法
+   - 关键决策、技术概念和代码模式
+   - 具体细节：文件名、完整代码片段、函数签名、文件编辑内容
+   - 遇到的错误及修复方式
+   - 特别关注用户的具体反馈，尤其是用户要求以不同方式处理的情况
 
-2. Your task:
-   - Merge the content from the previous_summary tag and the older_messages tag into a new refined long-term summary.
-   - When summarizing, integrate the key takeaways, decisions, lessons, and relevant state information.
-   - Use the user_messages tag to ensure the summary preserves the user's persistent intent and constraints (ignore transient chit-chat).
-   - Use the recent_messages tag only to maintain temporal and contextual continuity across turns.
+2. 仔细核查技术准确性与完整性，确保每个必要要素都得到充分处理。
 
-3. Output requirements:
-   - Respond **only** with the updated long-term summary that replaces the older conversation history.
-   - At the end of the summary, include a "## Tool Call Trace" section listing previously executed tool calls in format: "- tool_name(key_params) → outcome". This helps the agent avoid redundant re-calls.
-   - Do **not** include any extra headers, XML tags, or meta explanations in your output (the Tool Call Trace section is part of the summary, not meta).
-</instructions>
+总结应包含以下章节：
+
+1. **主要请求与意图**：详细记录用户的所有明确请求和意图
+2. **关键技术概念**：列举讨论中涉及的所有重要技术概念、技术栈和框架
+3. **文件与代码片段**：列举审查、修改或创建的具体文件和代码片段，特别关注最近的消息，在适用时包含完整代码片段，并说明该文件被读取或编辑的重要原因
+4. **错误与修复**：列举所有遇到的错误及其修复方式，特别关注用户的具体反馈，尤其是用户要求以不同方式处理的情况
+5. **问题解决**：记录已解决的问题及任何正在进行的故障排查
+6. **所有用户消息**：列举所有非工具结果的用户消息，并将其包裹在 <all_user_messages>...</all_user_messages> 标签中，这些消息对于理解用户反馈和意图变化至关重要
+7. **待处理任务**：列出明确要求你处理的所有待处理任务
+8. **当前工作**：详细描述此总结请求前正在进行的工作，特别关注用户和助手的最近消息，在适用时包含文件名和代码片段
+9. **可选的下一步**：列出与最近工作相关的下一步操作。确保该步骤与用户最近的明确请求及此总结请求前正在处理的任务直接相关。如果上一个任务已完成，仅在明确符合用户请求时才列出下一步，不要在未与用户确认的情况下开始处理无关请求。如果有下一步，请包含最近对话的直接引用，逐字引用以避免任务理解偏离
+
+以下是输出结构示例：
+
+<example>
+<analysis>
+[你的思考过程，确保全面准确地覆盖所有要点]
+</analysis>
+<summary>
+1. 主要请求与意图：
+   [详细描述]
+
+2. 关键技术概念：
+   - [概念 1]
+   - [概念 2]
+
+3. 文件与代码片段：
+   - [文件名 1]
+      - [该文件重要性说明]
+      - [对文件所做更改的说明（如有）]
+      - [重要代码片段]
+
+4. 错误与修复：
+   - [错误 1 的详细描述]：
+      - [修复方式]
+
+5. 问题解决：
+   [已解决问题及正在进行的故障排查描述]
+
+6. 所有用户消息：
+<all_user_messages>
+   - [详细的非工具用户消息]
+</all_user_messages>
+
+7. 待处理任务：
+   - [任务 1]
+
+8. 当前工作：
+   [详细描述此总结请求前正在进行的工作]
+
+9. 可选的下一步：
+   [与最近工作直接相关的下一步，包含对话的直接引用]
+
+</summary>
+</example>
+
+提醒：不要调用任何工具，仅以纯文本响应——先输出 <analysis> 块，再输出 <summary> 块。工具调用将被拒绝，你将无法完成任务。
+
+---
+
+以下是你将收到的五个标记章节：
+
+- **system_prompt**：当前系统提示（仅供参考，不要总结）
+- **user_messages**：用户的早期或持续性指令、偏好和目标（仅供参考，不要总结，但要确保总结与用户长期意图保持一致）
+- **previous_summary**：已有的长期摘要（如有）
+- **older_messages**：需要被总结的早期对话消息
+- **recent_messages**：最近的对话窗口（仅供参考，不要总结，仅用于保持时序和上下文连续性）
+
+你的任务：将 previous_summary 和 older_messages 的内容合并为一份新的、精炼的长期摘要。总结时整合关键要点、决策、经验和相关状态信息，使用 user_messages 确保总结保留用户的持久意图和约束（忽略短暂的闲聊），使用 recent_messages 仅用于保持跨轮次的时序和上下文连续性。
 
 <messages>
 <system_prompt>
@@ -119,7 +173,7 @@ func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
 
 	tpl := prompt.FromMessages(schema.FString,
 		schema.SystemMessage(systemPrompt),
-		schema.UserMessage("summarize 'older_messages': "))
+		schema.UserMessage("请根据以上五个标记章节，将 older_messages 与 previous_summary 合并为新的长期摘要："))
 
 	summarizer, err := compose.NewChain[map[string]any, *schema.Message]().
 		AppendChatTemplate(tpl).
@@ -142,7 +196,7 @@ func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
 	return adk.AgentMiddleware{BeforeChatModel: sm.BeforeModel}, nil
 }
 
-const summaryMessageFlag = "_agent_middleware_summary_message"
+const summaryMessageFlag = "_fkteams_agent_middleware_summary_message"
 
 type summaryMiddleware struct {
 	counter            TokenCounter
@@ -297,8 +351,10 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	}
 
 	// 截断 olderBlocks 确保压缩模型输入不超出上下文限制
+	// userBlock 也使用截断渲染，防止超长初始消息永久占用 token 预算
+	userBlockText := joinBlocksTruncated([]block{userBlock})
 	overheadTokens := countTokensInString(joinBlocks([]block{systemBlock})) +
-		countTokensInString(joinBlocks([]block{userBlock})) +
+		countTokensInString(userBlockText) +
 		countTokensInString(joinBlocks([]block{summaryBlock})) +
 		recentTokens + 1024 // 1024 为 prompt 模板开销
 	maxOlderTokens := int64(s.maxSummarizerInput) - overheadTokens
@@ -315,6 +371,15 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	}
 
 	olderText := joinBlocksTruncated(olderBlocks)
+	// 最终安全截断：若 olderText 估算 token 仍超出预算，从头部截断保留尾部内容
+	if olderTextEst := countTokensInString(olderText); olderTextEst > maxOlderTokens {
+		ratio := float64(maxOlderTokens) / float64(olderTextEst)
+		cutStart := int(float64(len(olderText)) * (1.0 - ratio))
+		for cutStart < len(olderText) && olderText[cutStart]&0xC0 == 0x80 {
+			cutStart++
+		}
+		olderText = "...[部分早期内容已截断]\n" + olderText[cutStart:]
+	}
 	recentText := joinBlocksTruncated(recentBlocks)
 
 	// 通知上下文压缩开始
@@ -327,7 +392,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 
 	msg, err := s.summarizer.Invoke(copilot.WithAgentInitiator(ctx), map[string]any{
 		"system_prompt":    joinBlocks([]block{systemBlock}),
-		"user_messages":    joinBlocks([]block{userBlock}),
+		"user_messages":    userBlockText,
 		"previous_summary": joinBlocks([]block{summaryBlock}),
 		"older_messages":   olderText,
 		"recent_messages":  recentText,
@@ -337,7 +402,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	}
 
 	summaryMsg := schema.AssistantMessage(msg.Content, nil)
-	msg.Name = "summary"
+	summaryMsg.Name = "summary"
 	summaryMsg.Extra = map[string]any{
 		summaryMessageFlag: true,
 	}
