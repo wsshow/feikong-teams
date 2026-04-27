@@ -47,52 +47,114 @@ func formatConversation(messages []Message) string {
 	return text
 }
 
-const extractPrompt = `你是个人助手的记忆提取专家。你的任务是从对话中识别两类值得长期记住的信息：
-1. 关于「用户本人」的持久性信息
-2. AI 在执行任务过程中积累的「操作经验」
+const extractPrompt = `你是一个记忆提取专家。从对话中识别值得长期记住的信息，这些信息将在未来的对话中通过搜索自动注入。
 
 ## 对话格式
-- [用户]：真实用户的消息
-- [AI助手]：AI 的回复，包含执行过程和结果
+- [用户]：用户消息
+- [AI助手]：AI 回复（可能截断）
 
-## 核心原则
+## 提取原则
 
-- 用户信息：必须由用户明确表达或可直接推断
-- 操作经验：从 AI 的执行过程中提取遇到的问题和有效的解决方法，这些经验应具有通用参考价值
-- **关注通用共性**：提取可复用的偏好、习惯、方法论，而非当前话题的具体细节
+- 提取可复用的偏好、习惯、方法论，而非当前任务的一次性细节
 - 同类型且主题相关的多条信息合并为一条
-- 经验类记忆应随对话迭代不断更新完善
+- 记忆是给未来的对话用的——问自己：下次对话时这条信息还有用吗？
 
-## 六种记忆类型
+## 七种记忆类型
 
-| 类型 | 定义 |
-|------|------|
-| preference | 用户的主观偏好、习惯、风格倾向 |
-| fact | 用户的客观背景信息 |
-| lesson | 用户提到的踩坑经验、需要避免的做法 |
-| decision | 经讨论确定的方案或结论 |
-| insight | 用户的原则性观点或价值判断 |
-| experience | AI 操作中遇到的问题及有效解决方法 |
+<types>
+<type>
+<name>preference</name>
+<desc>用户的主观偏好和习惯</desc>
+<when_to_save>用户表达对某种风格、工具、方案的偏好时提取</when_to_save>
+<how_to_use>据此调整回复风格和方案选择，使回复更贴合用户口味</how_to_use>
+<examples>
+- 用户说"我喜欢简洁的回答" → preference: 偏好简洁回答
+- 用户说"用 React 方案，别用 Vue" → preference: 偏好 React 技术栈
+</examples>
+</type>
+
+<type>
+<name>fact</name>
+<desc>用户的客观背景信息</desc>
+<when_to_save>用户提及自己的技能、角色、项目、环境等背景时提取</when_to_save>
+<how_to_use>据此调整技术深度和解释方式，用用户熟悉的领域知识类比</how_to_use>
+<examples>
+- 用户说"我写了十年 Go" → fact: 资深 Go 工程师
+- 用户说"我在负责后端 API 重构" → fact: 当前负责后端 API 重构项目
+</examples>
+</type>
+
+<type>
+<name>feedback</name>
+<desc>用户对工作方式的纠正或确认。这是最重要的记忆类型——记录用户希望你如何做事</desc>
+<when_to_save>用户纠正你的做法（"别这样"、"不要 X"、"停"）或确认做法正确（"对"、"就按这个来"）时提取。纠正容易注意，确认容易被忽略——请主动留意。都要存，包括 WHY，以便判断边界情况</when_to_save>
+<how_to_use>让这些反馈指导你的行为，避免重复犯错。记录原因才能在未来变通</how_to_use>
+<structure>规则本身 + Why:（原因）+ How to apply:（何时适用）</structure>
+<examples>
+- 用户说"测试别 mock 数据库，上次线上事故就是因为 mock 没发现" → feedback: 集成测试必须连真实数据库。Why: 上次 mock 和生产环境不一致导致事故。How to apply: 涉及数据库的测试不要 mock
+- 用户说"不用总结改动，我能看 diff" → feedback: 回复要简洁，不要结尾总结
+</examples>
+</type>
+
+<type>
+<name>lesson</name>
+<desc>用户分享的踩坑经验、需要避免的做法</desc>
+<when_to_save>用户描述过去遇到的问题或给出"小心 X"类警告时提取</when_to_save>
+<how_to_use>遇到类似场景时主动提醒，避免重蹈覆辙</how_to_use>
+<examples>
+- 用户说"上次升级依赖版本导致兼容性问题" → lesson: 升级依赖需先检查 breaking changes
+</examples>
+</type>
+
+<type>
+<name>decision</name>
+<desc>讨论后确定的方案或结论</desc>
+<when_to_save>用户明确拍板或达成共识时提取。记录决策的 WHY，帮助未来判断是否仍适用</when_to_save>
+<how_to_use>后续涉及该方向时以此为出发点，但如果状态已变化需重新评估</how_to_use>
+<structure>方案/结论 + Why:（决策原因）+ How to apply:（适用场景）</structure>
+<examples>
+- 用户说"我们就用 Eino 框架，不用 LangChain 了" → decision: 确定使用 Eino 框架。Why: 后续功能均基于 Eino 构建
+</examples>
+</type>
+
+<type>
+<name>insight</name>
+<desc>用户的原则性观点或价值判断</desc>
+<when_to_save>用户表达深层信念、方法论、价值观时提取</when_to_save>
+<how_to_use>作为决策的顶层原则，在面临 trade-off 时以此为参考</how_to_use>
+<examples>
+- 用户说"测试覆盖率比开发速度更重要" → insight: 测试优先于速度
+</examples>
+</type>
+
+<type>
+<name>experience</name>
+<desc>AI 执行过程中发现的问题及有效解决方法，具有可复用性</desc>
+<when_to_save>遇到错误、发现更优方案、学到新工具用法时提取。记录失败 + 成功</when_to_save>
+<how_to_use>后续类似任务直接参考，避免重复摸索</how_to_use>
+<examples>
+- AI 发现 grep 对中文搜索效果差，改用 bigram 分词 → experience: 中文搜索需用 bigram 分词提升匹配效果
+</examples>
+</type>
+</types>
 
 ## 不要提取
 
-- 一次性任务指令
-- 通用知识和常规技术细节
+- 一次性任务指令（"帮我写脚本"、"把 X 改成 Y"）
+- 通用技术知识（语言的语法、框架基础概念）
 - 假设性讨论和已否定的方案
-- 对话中的临时状态和当前话题的具体细节（除非能反映持久的偏好、习惯或可复用的经验）
+- 当前话题的一次性细节
+- 代码模式、文件路径、git 历史——这些可以从项目代码中直接读取
+- 用户在明确要求你保存之前，不要保存 PR 列表、活动摘要等临时信息
 
 ## 输出格式
 
-JSON 数组，每个元素：
-- type: 上述六种之一
-- summary: 一句话摘要（20字以内）
-- detail: 补充说明（100字以内）
-- tags: 3-5个关键词
+JSON 数组（无 markdown 包裹，无多余文字）：
+[{"type":"preference","summary":"≤20字摘要","detail":"≤100字补充","tags":["关键词1","关键词2","关键词3"]}]
 
-没有值得提取的内容时返回空数组 []
-只返回 JSON，不要任何解释或 markdown 代码块。
+无值得提取内容时返回 []
 
-## 对话内容
+## 对话
 
 %s`
 
@@ -118,9 +180,12 @@ func Extract(ctx context.Context, messages []Message, sessionID string, llmClien
 	}
 
 	result = strings.TrimSpace(result)
-	// 清理可能的 markdown 代码块包裹
+	// 清理可能的 markdown 代码块包裹（含换行符的情况）
+	result = strings.TrimPrefix(result, "```json\n")
+	result = strings.TrimPrefix(result, "```\n")
 	result = strings.TrimPrefix(result, "```json")
 	result = strings.TrimPrefix(result, "```")
+	result = strings.TrimSuffix(result, "\n```")
 	result = strings.TrimSuffix(result, "```")
 	result = strings.TrimSpace(result)
 

@@ -37,6 +37,7 @@ func tokenize(entry *MemoryEntry) []string {
 		tokens = append(tokens, strings.ToLower(tag))
 	}
 	tokens = append(tokens, textTokenize(entry.Summary)...)
+	tokens = append(tokens, textTokenize(entry.Detail)...)
 	return tokens
 }
 
@@ -45,23 +46,39 @@ func queryTokenize(query string) []string { return textTokenize(query) }
 func textTokenize(text string) []string {
 	var tokens []string
 	var wordBuf strings.Builder
-	for _, r := range strings.ToLower(text) {
-		if unicode.Is(unicode.Han, r) {
-			if wordBuf.Len() > 0 {
-				tokens = append(tokens, wordBuf.String())
-				wordBuf.Reset()
-			}
-			tokens = append(tokens, string(r))
-		} else if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			wordBuf.WriteRune(r)
-		} else if wordBuf.Len() > 0 {
+	var hanBuf []rune
+
+	flushWord := func() {
+		if wordBuf.Len() > 0 {
 			tokens = append(tokens, wordBuf.String())
 			wordBuf.Reset()
 		}
 	}
-	if wordBuf.Len() > 0 {
-		tokens = append(tokens, wordBuf.String())
+	flushHanBigrams := func() {
+		if len(hanBuf) >= 2 {
+			for i := 0; i < len(hanBuf)-1; i++ {
+				tokens = append(tokens, string(hanBuf[i])+string(hanBuf[i+1]))
+			}
+		} else if len(hanBuf) == 1 {
+			tokens = append(tokens, string(hanBuf[0]))
+		}
+		hanBuf = hanBuf[:0]
 	}
+
+	for _, r := range strings.ToLower(text) {
+		if unicode.Is(unicode.Han, r) {
+			flushWord()
+			hanBuf = append(hanBuf, r)
+		} else if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			flushHanBigrams()
+			wordBuf.WriteRune(r)
+		} else {
+			flushHanBigrams()
+			flushWord()
+		}
+	}
+	flushHanBigrams()
+	flushWord()
 	return tokens
 }
 

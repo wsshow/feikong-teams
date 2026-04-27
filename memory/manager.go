@@ -17,9 +17,6 @@ const (
 	defaultMinScore     = 1.0
 	defaultEvictionDays = 30
 
-	// 小规模全量注入阈值：条目数 ≤ 此值时直接返回全部记忆，不依赖 BM25 搜索
-	fullInjectThreshold = 20
-
 	// 提取触发条件
 	minNewUserMessages = 2   // 新增至少 2 条用户消息才触发提取
 	minNewContentLen   = 300 // 新增消息总字符数至少 300
@@ -44,15 +41,36 @@ type Manager struct {
 	dirty            bool
 }
 
+// Config 记忆管理器可选配置
+type Config struct {
+	MaxEntries   int
+	MinScore     float64
+	EvictionDays int
+}
+
 // NewManager 创建记忆管理器
-func NewManager(workspaceDir string, llmClient LLMClient) *Manager {
+func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager {
+	maxEntries := defaultMaxEntries
+	minScore := defaultMinScore
+	evictionDays := defaultEvictionDays
+	if cfg != nil {
+		if cfg.MaxEntries > 0 {
+			maxEntries = cfg.MaxEntries
+		}
+		if cfg.MinScore > 0 {
+			minScore = cfg.MinScore
+		}
+		if cfg.EvictionDays > 0 {
+			evictionDays = cfg.EvictionDays
+		}
+	}
 	m := &Manager{
 		storeDir:         filepath.Join(workspaceDir, "memory"),
 		bm25:             &BM25{},
 		llm:              llmClient,
-		maxEntries:       defaultMaxEntries,
-		minScore:         defaultMinScore,
-		evictionDays:     defaultEvictionDays,
+		maxEntries:       maxEntries,
+		minScore:         minScore,
+		evictionDays:     evictionDays,
 		extractedOffsets: make(map[string]int),
 		lastExtractTime:  make(map[string]time.Time),
 	}
@@ -131,46 +149,26 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	}
 }
 
-// Search 检索记忆
-// 当条目总数 ≤ fullInjectThreshold 时直接返回全部，否则走 BM25 搜索并过滤低分结果
+// Search 检索记忆，使用 BM25 bigram 分词进行语义匹配
 func (m *Manager) Search(query string, topK int) []MemoryEntry {
 	m.mu.RLock()
-
-	// 小规模全量注入：条目少时直接返回全部，避免纯词法搜索遗漏语义关联
-	if len(m.entries) <= fullInjectThreshold {
-		result := make([]MemoryEntry, len(m.entries))
-		copy(result, m.entries)
-		hitIDs := make([]string, len(result))
-		for i := range result {
-			hitIDs[i] = result[i].ID
-		}
-		m.mu.RUnlock()
-		if len(hitIDs) > 0 {
-			go m.updateHitStats(hitIDs)
-		}
-		return result
-	}
+	defer m.mu.RUnlock()
 
 	results := m.bm25.Search(query, m.entries, topK)
 
-	// 过滤低于最低分数阈值的结果
-	var filtered []SearchResult
+	var entries []MemoryEntry
 	for _, r := range results {
 		if r.Score >= m.minScore {
-			filtered = append(filtered, r)
+			entries = append(entries, *r.Entry)
 		}
 	}
 
-	entries := make([]MemoryEntry, len(filtered))
-	hitIDs := make([]string, len(filtered))
-	for i, r := range filtered {
-		entries[i] = *r.Entry
-		hitIDs[i] = r.Entry.ID
-	}
-	m.mu.RUnlock()
-
 	// 异步更新命中统计
-	if len(hitIDs) > 0 {
+	if len(entries) > 0 {
+		hitIDs := make([]string, len(entries))
+		for i := range entries {
+			hitIDs[i] = entries[i].ID
+		}
 		go m.updateHitStats(hitIDs)
 	}
 

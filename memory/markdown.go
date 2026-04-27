@@ -20,9 +20,11 @@ var memoryTypeFile = []struct {
 }{
 	{Preference, "preference.md", "用户偏好"},
 	{Fact, "fact.md", "个人信息"},
+	{Feedback, "feedback.md", "行为反馈"},
 	{Lesson, "lesson.md", "避坑记录"},
 	{Decision, "decision.md", "已确定方案"},
 	{Insight, "insight.md", "认知洞察"},
+	{Experience, "experience.md", "操作经验"},
 }
 
 // saveAllMarkdown 按类型保存到多个 Markdown 文件
@@ -47,6 +49,10 @@ func saveAllMarkdown(dir string, entries []MemoryEntry) error {
 		if err := writeMarkdownFile(path, tf.Title, items); err != nil {
 			return fmt.Errorf("failed to save %s: %w", tf.File, err)
 		}
+	}
+	// 生成 MEMORY.md 入口索引
+	if err := writeIndexFile(dir, entries); err != nil {
+		return fmt.Errorf("failed to save MEMORY.md: %w", err)
 	}
 	return nil
 }
@@ -164,4 +170,35 @@ func loadMarkdownFile(path string, memType MemoryType) ([]MemoryEntry, error) {
 	}
 
 	return entries, scanner.Err()
+}
+
+// writeIndexFile 生成 MEMORY.md 入口索引，人类可读
+func writeIndexFile(dir string, entries []MemoryEntry) error {
+	if len(entries) == 0 {
+		os.Remove(filepath.Join(dir, "MEMORY.md"))
+		return nil
+	}
+
+	grouped := make(map[MemoryType][]MemoryEntry)
+	for _, e := range entries {
+		grouped[e.Type] = append(grouped[e.Type], e)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# 记忆索引\n\n")
+	fmt.Fprintf(&sb, "共 %d 条记忆，最后更新: %s\n\n", len(entries), time.Now().Format(timeLayout))
+
+	for _, tf := range memoryTypeFile {
+		items := grouped[tf.Type]
+		if len(items) == 0 {
+			continue
+		}
+		fmt.Fprintf(&sb, "## %s (%d 条)\n\n", tf.Title, len(items))
+		for _, e := range items {
+			fmt.Fprintf(&sb, "- **%s**：%s\n", e.Summary, e.Detail)
+		}
+		sb.WriteString("\n")
+	}
+
+	return os.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte(sb.String()), 0644)
 }

@@ -30,7 +30,7 @@ func (s *MemoryService) Start(ctx context.Context) error {
 		log.Printf("[memory] 创建模型失败，记忆服务未启动: %v", err)
 		return nil
 	}
-	g.MemoryManager = memory.NewManager(s.workspaceDir, memory.NewLLMClient(chatModel))
+	g.MemoryManager = memory.NewManager(s.workspaceDir, memory.NewLLMClient(chatModel), nil)
 	log.Println("[memory] 长期记忆服务已启动")
 	return nil
 }
