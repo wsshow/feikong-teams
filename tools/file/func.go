@@ -13,6 +13,7 @@ import (
 	"fkteams/mdiff"
 	"fkteams/tools/approval"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/spf13/afero"
 )
 
@@ -29,7 +30,6 @@ type FileTools struct {
 // NewFileTools 创建一个新的文件工具实例
 // baseDir 是允许操作的基础目录（默认 ~/.fkteams/workspace）
 func NewFileTools(baseDir string) (*FileTools, error) {
-	// 转换为绝对路径
 	absPath, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
@@ -42,8 +42,6 @@ func NewFileTools(baseDir string) (*FileTools, error) {
 		}
 	}
 
-	// 使用 BasePathFs 限制文件系统访问范围
-	// 所有相对路径操作都会被限制在这个目录下
 	securedFs := afero.NewBasePathFs(afero.NewOsFs(), absPath)
 
 	return &FileTools{
@@ -90,29 +88,79 @@ func (ft *FileTools) resolvePath(ctx context.Context, userPath string) (*resolve
 	return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
 }
 
-// readFileLinesFrom 读取文件全部内容并按行分割，同时记录是否有尾部换行
-func readFileLinesFrom(fs afero.Fs, path string) (lines []string, hasTrailingNewline bool, err error) {
-	content, err := afero.ReadFile(fs, path)
+// readFileLines 流式读取文件全部行
+func readFileLines(fs afero.Fs, path string) (lines []string, totalLines int, hasTrailingNewline bool, err error) {
+	scanner, file, err := openScanner(fs, path)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, false, err
 	}
-	text := string(content)
-	hasTrailingNewline = len(text) > 0 && text[len(text)-1] == '\n'
-	// 移除尾部换行后分割，避免产生多余的空行
-	text = strings.TrimRight(text, "\n")
-	if text == "" {
-		return []string{}, hasTrailingNewline, nil
+	defer file.Close()
+
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
 	}
-	lines = strings.Split(text, "\n")
-	return lines, hasTrailingNewline, nil
+	if err := scanner.Err(); err != nil {
+		return nil, 0, false, err
+	}
+
+	totalLines = len(lines)
+	hasTrailingNewline = hasFileTrailingNewline(fs, path)
+
+	// Scanner 在 "text\n\n" 时会产出尾随空行，需去掉以还原真实内容
+	if totalLines > 0 && hasTrailingNewline && lines[totalLines-1] == "" {
+		lines = lines[:totalLines-1]
+		totalLines--
+	}
+	return lines, totalLines, hasTrailingNewline, nil
 }
 
-// readFileLines 使用工作目录文件系统读取文件（兼容 fsAccessor）
-func (ft *FileTools) readFileLines(relPath string) ([]string, bool, error) {
-	return readFileLinesFrom(ft.securedFs, relPath)
+// readFileLinesRange 流式读取指定行范围，同时统计总行数
+func readFileLinesRange(fs afero.Fs, path string, startLine, endLine int) (lines []string, totalLines int, err error) {
+	scanner, file, err := openScanner(fs, path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer file.Close()
+
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		if lineNum >= startLine && (endLine == 0 || lineNum <= endLine) {
+			lines = append(lines, scanner.Text())
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, 0, err
+	}
+	return lines, lineNum, nil
 }
 
-// joinLines 将行数组拼接为文件内容，根据原始文件情况保留尾部换行
+// hasFileTrailingNewline 检测文件末尾是否为换行符
+func hasFileTrailingNewline(fs afero.Fs, path string) bool {
+	info, err := fs.Stat(path)
+	if err != nil || info.Size() == 0 {
+		return false
+	}
+	f, err := fs.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	buf := make([]byte, 1)
+	_, err = f.ReadAt(buf, info.Size()-1)
+	if err == nil {
+		return buf[0] == '\n'
+	}
+	// ReadAt 不可用时的 fallback
+	if _, seekErr := f.Seek(info.Size()-1, 0); seekErr != nil {
+		return false
+	}
+	_, readErr := f.Read(buf)
+	return readErr == nil && buf[0] == '\n'
+}
+
+// joinLines 将行数组拼接为文件内容，按需保留尾部换行
 func joinLines(lines []string, hasTrailingNewline bool) string {
 	content := strings.Join(lines, "\n")
 	if hasTrailingNewline {
@@ -130,8 +178,7 @@ func countLines(content string) int {
 	return strings.Count(text, "\n") + 1
 }
 
-// workspacePath 验证并规范化路径（仅限工作目录内）
-// 确保路径在允许的目录范围内，并返回相对路径
+// workspacePath 验证路径在工作目录内，返回相对路径
 func (ft *FileTools) workspacePath(userPath string) (string, error) {
 	if userPath == "" {
 		return "", fmt.Errorf("路径不能为空")
@@ -173,7 +220,34 @@ func (ft *FileTools) workspacePath(userPath string) (string, error) {
 }
 
 // maxDefaultLines 默认最大读取行数限制
-const maxDefaultLines = 200
+const maxDefaultLines = 1000
+
+// maxFileSize 单文件最大大小 (10MB)，防止 OOM
+const maxFileSize = 10 << 20
+
+// maxScannerLineSize bufio.Scanner 单行最大长度 (1MB)
+const maxScannerLineSize = 1 << 20
+
+// maxReadLines 单次读取最大行数
+const maxReadLines = 2000
+
+// openScanner 打开文件并返回配置好的 bufio.Scanner
+func openScanner(fs afero.Fs, path string) (*bufio.Scanner, afero.File, error) {
+	info, err := fs.Stat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if info.Size() > maxFileSize {
+		return nil, nil, fmt.Errorf("文件过大 (%d bytes)，超过限制 (%d bytes)", info.Size(), maxFileSize)
+	}
+	file, err := fs.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(nil, maxScannerLineSize)
+	return scanner, file, nil
+}
 
 // FileReadRequest 读取文件请求
 type FileReadRequest struct {
@@ -194,9 +268,7 @@ type FileReadResponse struct {
 // FileRead 读取文件内容
 func (ft *FileTools) FileRead(ctx context.Context, req *FileReadRequest) (*FileReadResponse, error) {
 	if req.Filepath == "" {
-		return &FileReadResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
+		return &FileReadResponse{ErrorMessage: "filepath 参数是必需的"}, nil
 	}
 
 	rp, err := ft.resolvePath(ctx, req.Filepath)
@@ -204,57 +276,55 @@ func (ft *FileTools) FileRead(ctx context.Context, req *FileReadRequest) (*FileR
 		return nil, err
 	}
 
-	// 读取文件所有行
-	lines, _, err := readFileLinesFrom(rp.fs, rp.path)
-	if err != nil {
-		return &FileReadResponse{
-			ErrorMessage: fmt.Sprintf("读取文件失败: %v", err),
-		}, nil
-	}
-
-	totalLines := len(lines)
-
-	// 如果没有指定行范围
-	if req.StartLine == 0 && req.EndLine == 0 {
-		// 超过限制时截断，只返回前 N 行
-		if totalLines > maxDefaultLines {
-			content := strings.Join(lines[:maxDefaultLines], "\n")
-			content += fmt.Sprintf("\n\n... 已截断，用 start_line=%d 继续读取剩余 %d 行", maxDefaultLines+1, totalLines-maxDefaultLines)
+	// 部分读取：只读需要的行，同时统计总行数
+	if req.StartLine > 0 || req.EndLine > 0 {
+		startLine := req.StartLine
+		if startLine < 1 {
+			startLine = 1
+		}
+		endLine := req.EndLine
+		if endLine > 0 && endLine-startLine+1 > maxReadLines {
 			return &FileReadResponse{
-				Content:    content,
-				TotalLines: totalLines,
-				ReadRange:  fmt.Sprintf("1-%d", maxDefaultLines),
-				Truncated:  true,
+				ErrorMessage: fmt.Sprintf("读取范围过大 (%d 行)，超过上限 %d 行", endLine-startLine+1, maxReadLines),
+			}, nil
+		}
+
+		lines, totalLines, err := readFileLinesRange(rp.fs, rp.path, startLine, endLine)
+		if err != nil {
+			return &FileReadResponse{ErrorMessage: fmt.Sprintf("读取文件失败: %v", err)}, nil
+		}
+		if len(lines) == 0 {
+			return &FileReadResponse{
+				ErrorMessage: fmt.Sprintf("起始行号 %d 超出文件总行数 %d", startLine, totalLines),
+				TotalLines:   totalLines,
 			}, nil
 		}
 		return &FileReadResponse{
 			Content:    strings.Join(lines, "\n"),
 			TotalLines: totalLines,
-			ReadRange:  fmt.Sprintf("1-%d", totalLines),
+			ReadRange:  fmt.Sprintf("%d-%d", startLine, startLine+len(lines)-1),
 		}, nil
 	}
 
-	// 指定行范围的部分读取
-	startIdx := req.StartLine - 1
-	if startIdx < 0 {
-		startIdx = 0
+	// 全量读取：默认限制前 N 行
+	lines, totalLines, _, err := readFileLines(rp.fs, rp.path)
+	if err != nil {
+		return &FileReadResponse{ErrorMessage: fmt.Sprintf("读取文件失败: %v", err)}, nil
 	}
-	if startIdx >= totalLines {
+	if totalLines > maxDefaultLines {
+		content := strings.Join(lines[:maxDefaultLines], "\n")
+		content += fmt.Sprintf("\n\n... 已截断，用 start_line=%d 继续读取剩余 %d 行", maxDefaultLines+1, totalLines-maxDefaultLines)
 		return &FileReadResponse{
-			ErrorMessage: fmt.Sprintf("起始行号 %d 超出文件总行数 %d", req.StartLine, totalLines),
-			TotalLines:   totalLines,
+			Content:    content,
+			TotalLines: totalLines,
+			ReadRange:  fmt.Sprintf("1-%d", maxDefaultLines),
+			Truncated:  true,
 		}, nil
 	}
-
-	endIdx := totalLines
-	if req.EndLine > 0 && req.EndLine < totalLines {
-		endIdx = req.EndLine
-	}
-
 	return &FileReadResponse{
-		Content:    strings.Join(lines[startIdx:endIdx], "\n"),
+		Content:    strings.Join(lines, "\n"),
 		TotalLines: totalLines,
-		ReadRange:  fmt.Sprintf("%d-%d", startIdx+1, endIdx),
+		ReadRange:  fmt.Sprintf("1-%d", totalLines),
 	}, nil
 }
 
@@ -318,16 +388,14 @@ type FileAppendRequest struct {
 // FileAppendResponse 追加写入文件响应
 type FileAppendResponse struct {
 	Message      string `json:"message" jsonschema:"description=操作结果消息"`
-	TotalLines   int    `json:"total_lines" jsonschema:"description=追加后文件总行数"`
+	TotalLines   int    `json:"total_lines" jsonschema:"description=追加内容的行数"`
 	ErrorMessage string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
 }
 
 // FileAppend 追加内容到文件末尾（文件不存在则创建）
 func (ft *FileTools) FileAppend(ctx context.Context, req *FileAppendRequest) (*FileAppendResponse, error) {
 	if req.Filepath == "" {
-		return &FileAppendResponse{
-			ErrorMessage: "filepath 参数是必需的",
-		}, nil
+		return &FileAppendResponse{ErrorMessage: "filepath 参数是必需的"}, nil
 	}
 
 	rp, err := ft.resolvePath(ctx, req.Filepath)
@@ -339,29 +407,25 @@ func (ft *FileTools) FileAppend(ctx context.Context, req *FileAppendRequest) (*F
 	dir := filepath.Dir(rp.path)
 	if dir != "." {
 		if err := rp.fs.MkdirAll(dir, 0755); err != nil {
-			return &FileAppendResponse{
-				ErrorMessage: fmt.Sprintf("创建目录失败: %v", err),
-			}, nil
+			return &FileAppendResponse{ErrorMessage: fmt.Sprintf("创建目录失败: %v", err)}, nil
 		}
 	}
 
-	// 读取已有内容
-	existing, _ := afero.ReadFile(rp.fs, rp.path)
-
-	// 追加新内容
-	newContent := string(existing) + req.Content
-	err = afero.WriteFile(rp.fs, rp.path, []byte(newContent), 0644)
+	// 使用 O_APPEND 直接追加，避免读全文件
+	file, err := rp.fs.OpenFile(rp.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return &FileAppendResponse{
-			ErrorMessage: fmt.Sprintf("追加写入文件失败: %v", err),
-		}, nil
+		return &FileAppendResponse{ErrorMessage: fmt.Sprintf("打开文件失败: %v", err)}, nil
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(req.Content); err != nil {
+		return &FileAppendResponse{ErrorMessage: fmt.Sprintf("追加写入失败: %v", err)}, nil
 	}
 
-	totalLines := countLines(newContent)
-
+	addedLines := countLines(req.Content)
 	return &FileAppendResponse{
-		Message:    fmt.Sprintf("已追加到 %s (共 %d 行)", req.Filepath, totalLines),
-		TotalLines: totalLines,
+		Message:    fmt.Sprintf("已追加到 %s (+%d 行)", req.Filepath, addedLines),
+		TotalLines: addedLines,
 	}, nil
 }
 
@@ -463,10 +527,8 @@ func (ft *FileTools) Glob(ctx context.Context, req *GlobRequest) (*GlobResponse,
 			return fmt.Errorf("max reached")
 		}
 
-		matched, _ := filepath.Match(req.Pattern, fi.Name())
-		if !matched {
-			matched, _ = filepath.Match(req.Pattern, path)
-		}
+		matchPath := filepath.ToSlash(path)
+		matched, _ := doublestar.Match(req.Pattern, matchPath)
 		if matched {
 			files = append(files, path)
 		}
@@ -534,12 +596,7 @@ func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse,
 		matcher = func(line string) bool { return strings.Contains(line, req.Pattern) }
 	}
 
-	// 编译 glob 过滤器
-	var includePattern string
-	if req.Include != "" {
-		includePattern = req.Include
-	}
-
+	includePattern := req.Include
 	maxCount := req.MaxCount
 	if maxCount <= 0 {
 		maxCount = 100
@@ -573,25 +630,19 @@ func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse,
 
 			// glob 过滤
 			if includePattern != "" {
-				matched, _ := filepath.Match(includePattern, fi.Name())
+				matched, _ := doublestar.Match(includePattern, fi.Name())
 				if !matched {
 					return nil
 				}
 			}
 
-			// 跳过二进制文件（简单检测：大于 1MB 或扩展名为常见二进制）
-			if fi.Size() > 1<<20 {
+			// 跳过超大文件
+			if fi.Size() > maxFileSize {
 				return nil
 			}
 
-			// 构建显示路径
-			displayPath := path
-			if rp.path == "." {
-				displayPath = path
-			}
-
 			remaining := maxCount - len(matches)
-			fileMatches := ft.grepFile(rp.fs, path, displayPath, matcher, contextLines, remaining)
+			fileMatches := ft.grepFile(rp.fs, path, path, matcher, contextLines, remaining)
 			matches = append(matches, fileMatches...)
 			return nil
 		})
@@ -603,8 +654,12 @@ func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse,
 	}, nil
 }
 
-// grepFile 在单个文件中搜索
+// grepFile 在单个文件中搜索，流式匹配不加载全文件
 func (ft *FileTools) grepFile(fs afero.Fs, fsPath, displayPath string, matcher func(string) bool, contextLines, maxCount int) []GrepMatch {
+	info, err := fs.Stat(fsPath)
+	if err != nil || info.Size() > maxFileSize {
+		return nil
+	}
 	file, err := fs.Open(fsPath)
 	if err != nil {
 		return nil
@@ -612,53 +667,103 @@ func (ft *FileTools) grepFile(fs afero.Fs, fsPath, displayPath string, matcher f
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	var allLines []string
-	for scanner.Scan() {
-		allLines = append(allLines, scanner.Text())
-	}
-	if scanner.Err() != nil {
-		return nil
-	}
+	scanner.Buffer(nil, maxScannerLineSize)
 
 	var matches []GrepMatch
-	for i, line := range allLines {
-		if len(matches) >= maxCount {
-			break
-		}
+	var beforeCtx *ringBuffer
+	if contextLines > 0 {
+		beforeCtx = newRingBuffer(contextLines)
+	}
+
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+
 		if !matcher(line) {
+			if beforeCtx != nil {
+				beforeCtx.add(lineNum, line)
+			}
 			continue
 		}
 
 		m := GrepMatch{
 			File:       displayPath,
-			LineNumber: i + 1,
+			LineNumber: lineNum,
 			Text:       line,
 		}
 
-		// 添加上下文
 		if contextLines > 0 {
-			start := i - contextLines
-			if start < 0 {
-				start = 0
-			}
-			end := i + contextLines + 1
-			if end > len(allLines) {
-				end = len(allLines)
-			}
-			var ctxLines []string
-			for j := start; j < end; j++ {
-				prefix := " "
-				if j == i {
-					prefix = ">"
-				}
-				ctxLines = append(ctxLines, fmt.Sprintf("%s%d: %s", prefix, j+1, allLines[j]))
-			}
-			m.Context = strings.Join(ctxLines, "\n")
+			m.Context = ft.buildGrepContext(scanner, beforeCtx, lineNum, contextLines)
 		}
 
 		matches = append(matches, m)
+		if len(matches) >= maxCount {
+			break
+		}
+
+		// 重置前置缓冲区
+		if beforeCtx != nil {
+			beforeCtx.add(lineNum, line)
+		}
 	}
+
 	return matches
+}
+
+func (ft *FileTools) buildGrepContext(scanner *bufio.Scanner, beforeCtx *ringBuffer, matchLine, contextLines int) string {
+	var ctxLines []string
+
+	// 前置上下文
+	if beforeCtx != nil {
+		for _, entry := range beforeCtx.getAll() {
+			ctxLines = append(ctxLines, fmt.Sprintf(" %d: %s", entry.line, entry.text))
+		}
+	}
+
+	// 后置上下文：继续读 contextLines 行
+	for i := 1; i <= contextLines; i++ {
+		if !scanner.Scan() {
+			break
+		}
+		ctxLines = append(ctxLines, fmt.Sprintf(" %d: %s", matchLine+i, scanner.Text()))
+	}
+
+	return strings.Join(ctxLines, "\n")
+}
+
+type ringEntry struct {
+	line int
+	text string
+}
+
+type ringBuffer struct {
+	entries []ringEntry
+	size    int
+	pos     int
+	full    bool
+}
+
+func newRingBuffer(size int) *ringBuffer {
+	return &ringBuffer{entries: make([]ringEntry, size), size: size}
+}
+
+func (rb *ringBuffer) add(lineNum int, line string) {
+	rb.entries[rb.pos] = ringEntry{line: lineNum, text: line}
+	rb.pos = (rb.pos + 1) % rb.size
+	if rb.pos == 0 {
+		rb.full = true
+	}
+}
+
+func (rb *ringBuffer) getAll() []ringEntry {
+	if !rb.full {
+		return rb.entries[:rb.pos]
+	}
+	result := make([]ringEntry, rb.size)
+	copy(result, rb.entries[rb.pos:])
+	copy(result[rb.size-rb.pos:], rb.entries[:rb.pos])
+	return result
 }
 
 // FileEditRequest 精确查找替换请求
@@ -689,23 +794,24 @@ func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileE
 		return nil, err
 	}
 
-	content, err := afero.ReadFile(rp.fs, rp.path)
+	// 流式读取文件内容
+	lines, totalLines, hasTrailing, err := readFileLines(rp.fs, rp.path)
 	if err != nil {
 		return &FileEditResponse{ErrorMessage: fmt.Sprintf("读取文件失败: %v", err)}, nil
 	}
 
-	original := string(content)
+	original := joinLines(lines, hasTrailing)
 	matchCount := strings.Count(original, req.OldString)
 	if matchCount == 0 {
 		return &FileEditResponse{
-			ErrorMessage: fmt.Sprintf("未找到匹配文本。请先用 file_read 确认文件内容，确保 old_string 的缩进和空白完全一致 (文件共 %d 行)", countLines(original)),
-			TotalLines:   countLines(original),
+			ErrorMessage: fmt.Sprintf("未找到匹配文本。请先用 file_read 确认文件内容，确保 old_string 的缩进和空白完全一致 (文件共 %d 行)", totalLines),
+			TotalLines:   totalLines,
 		}, nil
 	}
 	if matchCount > 1 {
 		return &FileEditResponse{
-			ErrorMessage: fmt.Sprintf("找到 %d 处匹配，old_string 不唯一。请包含更多上下文行使其唯一 (文件共 %d 行)", matchCount, countLines(original)),
-			TotalLines:   countLines(original),
+			ErrorMessage: fmt.Sprintf("找到 %d 处匹配，old_string 不唯一。请包含更多上下文行使其唯一 (文件共 %d 行)", matchCount, totalLines),
+			TotalLines:   totalLines,
 		}, nil
 	}
 
@@ -812,11 +918,11 @@ func (a *fsAccessor) ReadFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	content, err := afero.ReadFile(a.ft.securedFs, relPath)
+	lines, _, hasTrailing, err := readFileLines(a.ft.securedFs, relPath)
 	if err != nil {
 		return "", err
 	}
-	return string(content), nil
+	return joinLines(lines, hasTrailing), nil
 }
 
 func (a *fsAccessor) WriteFile(path string, content string) error {
