@@ -20,7 +20,7 @@ func BuildInputMessages(recorder *fkevent.HistoryRecorder, userInput string) []a
 	if g.MemoryManager != nil {
 		memories := g.MemoryManager.Search(userInput, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
+			inputMessages = append(inputMessages, schema.UserMessage(memCtx))
 		}
 	}
 
@@ -40,7 +40,7 @@ func BuildMultimodalInputMessages(recorder *fkevent.HistoryRecorder, textContent
 	if g.MemoryManager != nil {
 		memories := g.MemoryManager.Search(textContent, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			inputMessages = append(inputMessages, schema.SystemMessage(memCtx))
+			inputMessages = append(inputMessages, schema.UserMessage(memCtx))
 		}
 	}
 
@@ -159,7 +159,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 		}
 
 		return []adk.Message{
-			schema.SystemMessage(
+			schema.UserMessage(
 				fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
 			),
 		}
@@ -172,7 +172,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 			fmt.Fprintf(&historyMessage, "%s: %s\n", msg.AgentName, msg.GetContentWithToolsFiltered())
 		}
 		return []adk.Message{
-			schema.SystemMessage(
+			schema.UserMessage(
 				fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
 			),
 		}

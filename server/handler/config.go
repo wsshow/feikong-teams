@@ -186,7 +186,6 @@ func GetTemplateVarsHandler() gin.HandlerFunc {
 		Example     string `json:"example"`
 	}
 	vars := []templateVar{
-		{Name: "current_time", Description: "当前时间", Example: "2025-01-01 12:00:00"},
 		{Name: "os_type", Description: "操作系统类型", Example: runtime.GOOS},
 		{Name: "os_arch", Description: "系统架构", Example: runtime.GOARCH},
 		{Name: "workspace_dir", Description: "工作目录路径", Example: "/path/to/workspace"},

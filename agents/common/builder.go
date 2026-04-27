@@ -4,6 +4,7 @@ import (
 	"context"
 	"fkteams/agents/middlewares/autocontinue"
 	"fkteams/agents/middlewares/dispatch"
+	"fkteams/agents/middlewares/inject"
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
 	"fkteams/agents/middlewares/tools/patch"
@@ -16,7 +17,6 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
-	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
@@ -54,7 +54,6 @@ func NewAgentBuilder(name, description string) *AgentBuilder {
 		name:        name,
 		description: description,
 		templateVars: map[string]any{
-			"current_time":  time.Now().Format("2006-01-02 15:04:05"),
 			"os_type":       runtime.GOOS,
 			"os_arch":       runtime.GOARCH,
 			"workspace_dir": rootcommon.WorkspaceDir(),
@@ -80,7 +79,7 @@ func (b *AgentBuilder) WithTemplate(t prompt.ChatTemplate) *AgentBuilder {
 	return b
 }
 
-// WithTemplateVar 添加模板变量（current_time 已默认设置）
+// WithTemplateVar 添加模板变量
 func (b *AgentBuilder) WithTemplateVar(key string, value any) *AgentBuilder {
 	b.templateVars[key] = value
 	return b
@@ -154,7 +153,8 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		b.tools = append(b.tools, resolved...)
 	}
 
-	// 用自定义重试包装模型
+	// 注入动态上下文 + 重试包装
+	chatModel = inject.New(chatModel)
 	retryModel := retry.NewRetryChatModel(chatModel, &retry.ModelRetryConfig{
 		MaxRetries:  rootcommon.MaxRetries,
 		IsRetryAble: rootcommon.IsRetryAble,

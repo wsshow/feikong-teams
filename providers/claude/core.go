@@ -139,6 +139,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		topK:                   config.TopK,
 		topP:                   config.TopP,
 		disableParallelToolUse: config.DisableParallelToolUse,
+		autoCacheControl:       &CacheControl{TTL: CacheTTL1h},
 	}, nil
 }
 
@@ -263,6 +264,8 @@ type ChatModel struct {
 	origTools              []*schema.ToolInfo
 	toolChoice             *schema.ToolChoice
 	disableParallelToolUse *bool
+
+	autoCacheControl *CacheControl
 }
 
 func hasDirectAnthropicConfigAuth(config *Config) bool {
@@ -543,7 +546,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	specOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
 		Thinking:               cm.thinking,
-		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
+		DisableParallelToolUse: cm.disableParallelToolUse,
+		AutoCacheControl:       cm.autoCacheControl,
+	}, opts...)
 
 	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {

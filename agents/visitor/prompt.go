@@ -20,7 +20,6 @@ var visitorPrompt = `
 组织使命：通过协作和创新，提供卓越的服务和解决方案，满足客户的多样化需求。
 
 ## 系统环境信息
-当前时间：{current_time}
 SSH 服务器：{ssh_host}
 SSH 用户：{ssh_username}
 
