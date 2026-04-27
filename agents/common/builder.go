@@ -7,6 +7,7 @@ import (
 	"fkteams/agents/middlewares/inject"
 	"fkteams/agents/middlewares/skills"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/agents/middlewares/tools/destructiveguard"
 	"fkteams/agents/middlewares/tools/patch"
 	"fkteams/agents/middlewares/tools/trimresult"
 	"fkteams/agents/middlewares/tools/warperror"
@@ -153,6 +154,9 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		b.tools = append(b.tools, resolved...)
 	}
 
+	// 工具元数据分类
+	tools.ClassifyTools(b.tools)
+
 	// 注入动态上下文 + 重试包装
 	chatModel = inject.New(chatModel)
 	retryModel := retry.NewRetryChatModel(chatModel, &retry.ModelRetryConfig{
@@ -170,11 +174,13 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 	}
 
 	// 工具
+	destructiveGuard := destructiveguard.New()
 	if len(b.tools) > 0 {
 		cfg.ToolsConfig = adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools:               b.tools,
 				UnknownToolsHandler: unknownToolsHandler,
+				ToolCallMiddlewares: []compose.ToolMiddleware{destructiveGuard},
 			},
 		}
 	} else {
