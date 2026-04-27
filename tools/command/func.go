@@ -236,7 +236,7 @@ func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequ
 
 	go func() { ec.done <- cmd.Wait() }()
 
-	bgTimer := time.NewTimer(backgroundBudget)
+	bgTimer := time.NewTimer(backgroundThreshold)
 	defer bgTimer.Stop()
 
 	select {
@@ -282,7 +282,7 @@ func (t *CommandTools) backgroundExecution(ec *executionContext) (*SmartExecuteR
 		TaskID:        taskID,
 		WarningMessage: fmt.Sprintf(
 			"命令执行超过%s未完成，已转入后台执行。请告知用户任务已在后台运行，稍后可以让你查看任务完成情况。查询时调用 execute 工具传入 {\"task_id\": \"%s\", \"task_action\": \"status\"} 即可，不需要传 command 和 reason。不要主动轮询",
-			backgroundBudget, taskID,
+			backgroundThreshold, taskID,
 		),
 	}, nil
 }

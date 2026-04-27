@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	backgroundBudget = 15 * time.Second
+	backgroundThreshold = 15 * time.Second
 	bgTaskTTL        = 1 * time.Hour // 后台任务结果保留时间
 )
 

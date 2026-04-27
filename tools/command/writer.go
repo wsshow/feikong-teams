@@ -10,17 +10,18 @@ type limitedWriter struct {
 	truncated bool
 }
 
-func (lw *limitedWriter) Write(p []byte) (n int, err error) {
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	origLen := len(p)
 	remaining := lw.limit - lw.written
 	if remaining <= 0 {
 		lw.truncated = true
-		return len(p), nil
+		return origLen, nil
 	}
-	if int64(len(p)) > remaining {
+	if int64(origLen) > remaining {
 		p = p[:remaining]
 		lw.truncated = true
 	}
-	n, err = lw.w.Write(p)
+	n, err := lw.w.Write(p)
 	lw.written += int64(n)
-	return len(p), err
+	return origLen, err
 }

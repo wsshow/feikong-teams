@@ -19,25 +19,43 @@ type SecurityEvaluation struct {
 }
 
 // 危险命令黑名单
-var dangerousCommands = map[string]SecurityEvaluation{
-	// Unix/Linux
-	"rm -rf /":        {Level: LevelDangerous, Description: "删除根目录", Risks: []string{"会导致系统完全崩溃"}},
-	"rm -rf /*":       {Level: LevelDangerous, Description: "删除根目录下所有内容", Risks: []string{"会导致系统完全崩溃"}},
-	"mkfs":            {Level: LevelDangerous, Description: "格式化文件系统", Risks: []string{"会清除磁盘上的所有数据"}},
-	"dd if=/dev/zero": {Level: LevelDangerous, Description: "覆盖设备", Risks: []string{"可能永久性擦除数据"}},
-	":(){ :|:& };:":   {Level: LevelDangerous, Description: "fork 炸弹", Risks: []string{"会耗尽系统资源"}},
-	"chmod -r 777 /":  {Level: LevelDangerous, Description: "递归修改根目录权限", Risks: []string{"严重的安全风险"}},
-	"chown -r":        {Level: LevelDangerous, Description: "递归修改所有者", Risks: []string{"可能破坏系统权限"}},
-	"mv /":            {Level: LevelDangerous, Description: "移动根目录", Risks: []string{"会破坏系统结构"}},
-	"kill -9 -1":      {Level: LevelDangerous, Description: "杀死所有进程", Risks: []string{"会导致系统崩溃"}},
-	// Windows/PowerShell
-	"remove-item -recurse -force c:\\": {Level: LevelDangerous, Description: "递归删除系统盘", Risks: []string{"会导致系统完全崩溃"}},
-	"format-volume":                    {Level: LevelDangerous, Description: "格式化卷", Risks: []string{"会清除磁盘数据"}},
-	"clear-disk":                       {Level: LevelDangerous, Description: "清除磁盘", Risks: []string{"会永久擦除数据"}},
-	"stop-process -id 0":               {Level: LevelDangerous, Description: "终止系统关键进程", Risks: []string{"会导致系统崩溃"}},
-	"stop-computer":                    {Level: LevelDangerous, Description: "关闭计算机", Risks: []string{"会立即关机"}},
-	"restart-computer":                 {Level: LevelDangerous, Description: "重启计算机", Risks: []string{"会立即重启"}},
-	"set-executionpolicy unrestricted": {Level: LevelDangerous, Description: "解除脚本执行限制", Risks: []string{"严重安全风险"}},
+// dangerousPatterns 精确匹配模式，按优先级排列。
+// 模式末尾带 / 或空白表示仅当该位置后无更多字符时才触发（避免 rm -rf / 误匹配 rm -rf /tmp）
+var dangerousPatterns = []struct {
+	Pattern     string
+	MatchFn     func(cmd string) bool
+	Description string
+	Risks       []string
+}{
+	{Pattern: "rm -rf /", Description: "删除根目录", Risks: []string{"会导致系统完全崩溃"},
+		MatchFn: func(cmd string) bool {
+			// 仅匹配 rm -rf / (无后续路径) 或 rm -rf /* (根下通配)
+			return strings.Contains(cmd, "rm -rf /") &&
+				(strings.HasSuffix(strings.TrimSpace(cmd), "rm -rf /") ||
+					strings.Contains(cmd, "rm -rf /*") ||
+					strings.Contains(cmd, "rm -rf / "))
+		}},
+	{Pattern: "mkfs", Description: "格式化文件系统", Risks: []string{"会清除磁盘上的所有数据"}},
+	{Pattern: "dd if=/dev/zero", Description: "覆盖设备", Risks: []string{"可能永久性擦除数据"}},
+	{Pattern: ":(){ :|:& };:", Description: "fork 炸弹", Risks: []string{"会耗尽系统资源"}},
+	{Pattern: "chmod -r 777 /", Description: "递归修改根目录权限", Risks: []string{"严重的安全风险"}},
+	{Pattern: "chown -r", Description: "递归修改所有者", Risks: []string{"可能破坏系统权限"}},
+	{Pattern: "mv /", Description: "移动根目录", Risks: []string{"会破坏系统结构"},
+		MatchFn: func(cmd string) bool {
+			return strings.Contains(cmd, "mv /") &&
+				(strings.HasSuffix(strings.TrimSpace(cmd), "mv /") || strings.Contains(cmd, "mv / "))
+		}},
+	{Pattern: "kill -9 -1", Description: "杀死所有进程", Risks: []string{"会导致系统崩溃"}},
+	{Pattern: "remove-item -recurse -force c:\\", Description: "递归删除系统盘", Risks: []string{"会导致系统完全崩溃"},
+		MatchFn: func(cmd string) bool {
+			return strings.Contains(cmd, "remove-item -recurse -force c:\\")
+		}},
+	{Pattern: "format-volume", Description: "格式化卷", Risks: []string{"会清除磁盘数据"}},
+	{Pattern: "clear-disk", Description: "清除磁盘", Risks: []string{"会永久擦除数据"}},
+	{Pattern: "stop-process -id 0", Description: "终止系统关键进程", Risks: []string{"会导致系统崩溃"}},
+	{Pattern: "stop-computer", Description: "关闭计算机", Risks: []string{"会立即关机"}},
+	{Pattern: "restart-computer", Description: "重启计算机", Risks: []string{"会立即重启"}},
+	{Pattern: "set-executionpolicy unrestricted", Description: "解除脚本执行限制", Risks: []string{"严重安全风险"}},
 }
 
 // 需要特别审查的命令模式
@@ -48,7 +66,7 @@ var riskyPatterns = []struct {
 	Risk        string
 }{
 	// Unix/Linux
-	{"rm -rf", LevelDangerous, "强制递归删除", "可能意外删除重要文件"},
+	{"rm -rf", LevelModerate, "强制递归删除", "可能意外删除重要文件"},
 	{"rm -r", LevelModerate, "递归删除", "可能意外删除文件"},
 	{"dd if=", LevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
 	{"> /etc/", LevelDangerous, "重定向到系统配置", "可能破坏系统配置"},
@@ -76,9 +94,17 @@ var riskyPatterns = []struct {
 func evaluateSecurity(command string) SecurityEvaluation {
 	cmdLower := strings.ToLower(strings.TrimSpace(command))
 
-	for pattern, eval := range dangerousCommands {
-		if strings.Contains(cmdLower, pattern) {
-			return eval
+	for _, p := range dangerousPatterns {
+		matched := strings.Contains(cmdLower, p.Pattern)
+		if matched && p.MatchFn != nil {
+			matched = p.MatchFn(cmdLower)
+		}
+		if matched {
+			return SecurityEvaluation{
+				Level:       LevelDangerous,
+				Description: p.Description,
+				Risks:       p.Risks,
+			}
 		}
 	}
 
