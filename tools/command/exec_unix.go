@@ -4,6 +4,7 @@ package command
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -17,14 +18,26 @@ func setupProcessGroup(cmd *exec.Cmd) {
 	}
 }
 
-// startBackgroundProcess 以 nohup 后台方式启动命令，返回 PID。
-// 通过将 command 包裹进子 shell（bash -c '...'）后再传给 nohup，可以正确处理
-// command 中包含 &&、||、管道、cd 以及末尾 & 等 shell 元字符的情况；若直接拼接
-// 则 nohup 只会作用于第一个 token，导致进程在前台运行并阻塞 cmd.Output()。
-func startBackgroundProcess(command, workDir string) (int, error) {
-	// 用单引号包裹 command，转义其中已有的单引号（' → '\''）
+// startBackgroundProcess 以 nohup 后台方式启动命令，stdout/stderr 写入临时文件。
+func startBackgroundProcess(command, workDir string) (*backgroundProcessResult, error) {
+	stdoutFile, err := os.CreateTemp(workDir, "bg_stdout_*.txt")
+	if err != nil {
+		return nil, err
+	}
+	stdoutPath := stdoutFile.Name()
+	stdoutFile.Close()
+
+	stderrFile, err := os.CreateTemp(workDir, "bg_stderr_*.txt")
+	if err != nil {
+		os.Remove(stdoutPath)
+		return nil, err
+	}
+	stderrPath := stderrFile.Name()
+	stderrFile.Close()
+
 	escaped := strings.ReplaceAll(command, "'", `'\''`)
-	bgCommand := fmt.Sprintf("nohup bash -c '%s' > /dev/null 2>&1 & echo $!", escaped)
+	bgCommand := fmt.Sprintf("nohup bash -c '%s' > %s 2> %s & echo $!",
+		escaped, shellQuote(stdoutPath), shellQuote(stderrPath))
 	shell, shellArgs := buildShellCommand(bgCommand)
 
 	cmd := exec.Command(shell, shellArgs...)
@@ -32,12 +45,21 @@ func startBackgroundProcess(command, workDir string) (int, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		os.Remove(stdoutPath)
+		os.Remove(stderrPath)
+		return nil, err
 	}
 
 	pid := 0
 	if _, err := fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &pid); err != nil {
-		return 0, fmt.Errorf("failed to parse PID from output: %s", strings.TrimSpace(string(output)))
+		os.Remove(stdoutPath)
+		os.Remove(stderrPath)
+		return nil, fmt.Errorf("failed to parse PID: %s", strings.TrimSpace(string(output)))
 	}
-	return pid, nil
+	return &backgroundProcessResult{PID: pid, StdoutFile: stdoutPath, StderrFile: stderrPath}, nil
+}
+
+// shellQuote 用单引号包裹路径，转义其中已有的单引号
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

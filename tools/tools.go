@@ -86,6 +86,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		cmdCleanupOnce.Do(func() {
 			g.ProcessCleaner.Add(func() error {
 				command.TerminateAll()
+				command.CleanupTempFiles(workspacePath())
 				return nil
 			})
 		})

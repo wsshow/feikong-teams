@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fkteams/tools/approval"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"fkteams/tools/approval"
 )
 
 // ApprovalMode 审批模式
@@ -65,6 +68,8 @@ type SmartExecuteResponse struct {
 	ErrorMessage    string               `json:"error_message,omitempty"`
 	WarningMessage  string               `json:"warning_message,omitempty"`
 	OutputTruncated bool                 `json:"output_truncated,omitempty" jsonschema:"description=输出内容因超出大小限制被截断，可能需要将输出重定向到文件以获取完整内容"`
+	OutputFilePath  string               `json:"output_file_path,omitempty" jsonschema:"description=完整输出已写入此文件"`
+	OutputPreview   string               `json:"output_preview,omitempty" jsonschema:"description=输出内容的预览片段"`
 	IsBackground    bool                 `json:"is_background,omitempty" jsonschema:"description=命令已转入后台执行，使用返回的 task_id 查询结果"`
 	TaskID          string               `json:"task_id,omitempty" jsonschema:"description=后台任务ID"`
 	PID             int                  `json:"pid,omitempty" jsonschema:"description=后台进程PID，可通过 kill PID 终止"`
@@ -82,6 +87,13 @@ type BackgroundTaskInfo struct {
 // intPtr 辅助函数，返回 int 指针
 func intPtr(v int) *int { return &v }
 
+// backgroundProcessResult 后台进程启动结果
+type backgroundProcessResult struct {
+	PID        int
+	StdoutFile string
+	StderrFile string
+}
+
 // executionContext 单次命令执行的上下文，封装所有执行期间的共享状态
 type executionContext struct {
 	req       *SmartExecuteRequest
@@ -95,11 +107,18 @@ type executionContext struct {
 	startTime time.Time
 	timeout   time.Duration
 	done      chan error // cmd.Wait() 结果
+	workDir   string
 }
 
 const maxOutputSize = 1 << 20
 
-func newExecutionContext(req *SmartExecuteRequest, eval SecurityEvaluation, timeout time.Duration) *executionContext {
+// 输出超过此大小时写入临时文件而非截断
+const outputFileThreshold = 100 << 10
+
+// 存文件后返回的预览行数
+const outputPreviewLines = 100
+
+func newExecutionContext(req *SmartExecuteRequest, eval SecurityEvaluation, timeout time.Duration, workDir string) *executionContext {
 	// 使用独立 context 控制超时，不依赖父 context（后台化时需要继续执行）
 	cmdCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	ec := &executionContext{
@@ -109,6 +128,7 @@ func newExecutionContext(req *SmartExecuteRequest, eval SecurityEvaluation, time
 		cancel:  cancel,
 		timeout: timeout,
 		done:    make(chan error, 1),
+		workDir: workDir,
 	}
 	ec.stdoutLW = &limitedWriter{w: &ec.stdout, limit: maxOutputSize}
 	ec.stderrLW = &limitedWriter{w: &ec.stderr, limit: maxOutputSize}
@@ -119,19 +139,39 @@ func newExecutionContext(req *SmartExecuteRequest, eval SecurityEvaluation, time
 func (ec *executionContext) buildResponse(err error) *SmartExecuteResponse {
 	elapsed := time.Since(ec.startTime)
 
+	stdout := ec.stdout.String()
 	resp := &SmartExecuteResponse{
 		Success:         err == nil,
 		Command:         ec.req.Command,
-		Stdout:          ec.stdout.String(),
 		Stderr:          ec.stderr.String(),
 		ExecutionTime:   elapsed.Round(time.Millisecond).String(),
 		SecurityLevel:   securityLevelName(ec.eval.Level),
 		OutputTruncated: ec.stdoutLW.truncated || ec.stderrLW.truncated,
 	}
 
+	// 大输出存文件：超过阈值时写入临时文件，返回路径和预览
+	if len(stdout) > outputFileThreshold {
+		if filePath, preview, writeErr := saveOutputToFile(stdout, ec.workDir); writeErr == nil {
+			resp.OutputFilePath = filePath
+			resp.OutputPreview = preview
+			// 已落盘，不占用消息上下文
+			resp.Stdout = fmt.Sprintf("输出已写入 %s（共 %d 字节）\n\n%s",
+				filePath, len(stdout), preview)
+		} else {
+			resp.Stdout = stdout
+		}
+	} else {
+		resp.Stdout = stdout
+	}
+
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			resp.ExitCode = intPtr(exitErr.ExitCode())
+			code := exitErr.ExitCode()
+			resp.ExitCode = intPtr(code)
+			// 非零退出码语义映射
+			if msg := interpretExitCode(ec.req.Command, code); msg != "" {
+				resp.ErrorMessage = msg
+			}
 		} else if ec.cmdCtx.Err() != nil {
 			resp.ExitCode = intPtr(-1)
 			resp.ErrorMessage = fmt.Sprintf("command timed out after %s", ec.timeout)
@@ -215,7 +255,7 @@ func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequ
 	}
 
 	shell, shellArgs := buildShellCommand(req.Command)
-	ec := newExecutionContext(req, eval, timeout)
+	ec := newExecutionContext(req, eval, timeout, t.workDir)
 
 	cmd := exec.CommandContext(ec.cmdCtx, shell, shellArgs...)
 	cmd.Dir = t.workDir
@@ -287,10 +327,9 @@ func (t *CommandTools) backgroundExecution(ec *executionContext) (*SmartExecuteR
 	}, nil
 }
 
-// executeBackground 立即以后台方式启动命令，返回 PID。
-// 平台特定实现在 exec_unix.go / exec_windows.go 中。
+// executeBackground 立即以后台方式启动命令，stdout/stderr 写入临时文件。
 func (t *CommandTools) executeBackground(req *SmartExecuteRequest, eval SecurityEvaluation) (*SmartExecuteResponse, error) {
-	pid, err := startBackgroundProcess(req.Command, t.workDir)
+	result, err := startBackgroundProcess(req.Command, t.workDir)
 	if err != nil {
 		return &SmartExecuteResponse{
 			Command:       req.Command,
@@ -299,15 +338,19 @@ func (t *CommandTools) executeBackground(req *SmartExecuteRequest, eval Security
 		}, nil
 	}
 
+	stdoutRel, _ := filepath.Rel(t.workDir, result.StdoutFile)
+	stderrRel, _ := filepath.Rel(t.workDir, result.StderrFile)
+
 	return &SmartExecuteResponse{
-		Success:       true,
-		Command:       req.Command,
-		SecurityLevel: securityLevelName(eval.Level),
-		IsBackground:  true,
-		PID:           pid,
+		Success:        true,
+		Command:        req.Command,
+		SecurityLevel:  securityLevelName(eval.Level),
+		IsBackground:   true,
+		PID:            result.PID,
+		OutputFilePath: stdoutRel,
 		WarningMessage: fmt.Sprintf(
-			"命令已在后台启动，PID: %d。可通过 kill %d 终止，或通过 ps -p %d 检查是否仍在运行。",
-			pid, pid, pid,
+			"命令已在后台启动，PID: %d。stdout: %s, stderr: %s。可通过 kill %d 终止，执行完毕后用 file_read 读取输出文件。",
+			result.PID, stdoutRel, stderrRel, result.PID,
 		),
 	}, nil
 }
@@ -322,4 +365,88 @@ func buildShellCommand(command string) (shell string, args []string) {
 	default:
 		return "/bin/sh", []string{"-l", "-c", command}
 	}
+}
+
+// interpretExitCode 将非零退出码映射为人类可读的解释
+func interpretExitCode(command string, code int) string {
+	cmd := strings.TrimSpace(strings.ToLower(command))
+
+	matches := func(prefix string) bool { return strings.HasPrefix(cmd, prefix) }
+
+	switch {
+	case matches("grep") && code == 1:
+		return "grep: 未找到匹配项（此为退出码 1，非错误）"
+	case matches("diff") && code == 1:
+		return "diff: 文件存在差异（此为退出码 1，非错误）"
+	case matches("curl") && code >= 6 && code <= 89:
+		return fmt.Sprintf("curl: %s", curlExitMeaning(code))
+	case matches("git diff") && code == 1:
+		return "git diff: 文件存在差异（此为退出码 1，非错误）"
+	case matches("go test") && code == 1:
+		return "go test: 测试失败"
+	case matches("go build") && code > 0:
+		return "go build: 编译失败，请检查错误输出"
+	case matches("git grep") && code == 1:
+		return "git grep: 未找到匹配项"
+	}
+	if code >= 126 && code <= 128 {
+		return fmt.Sprintf("命令无法执行（退出码 %d：%s）", code, shellExitMeaning(code))
+	}
+	if code > 128 {
+		return fmt.Sprintf("命令被信号 %d 终止", code-128)
+	}
+	return ""
+}
+
+func curlExitMeaning(code int) string {
+	switch code {
+	case 6:
+		return "DNS 解析失败"
+	case 7:
+		return "连接被拒绝"
+	case 28:
+		return "连接超时"
+	case 35:
+		return "TLS 握手失败"
+	default:
+		return fmt.Sprintf("错误码 %d", code)
+	}
+}
+
+func shellExitMeaning(code int) string {
+	switch code {
+	case 126:
+		return "命令不可执行（权限问题）"
+	case 127:
+		return "命令未找到"
+	case 128:
+		return "exit 参数无效"
+	}
+	return ""
+}
+
+// saveOutputToFile 将大输出写入临时文件，返回文件路径和预览
+func saveOutputToFile(content, workDir string) (string, string, error) {
+	file, err := os.CreateTemp(workDir, "cmd_output_*.txt")
+	if err != nil {
+		return "", "", err
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(content); err != nil {
+		os.Remove(file.Name())
+		return "", "", err
+	}
+
+	// 生成预览：截取前 outputPreviewLines 行
+	preview := content
+	lines := strings.Split(content, "\n")
+	if len(lines) > outputPreviewLines {
+		preview = strings.Join(lines[:outputPreviewLines], "\n")
+		preview += fmt.Sprintf("\n\n... 已截断（共 %d 行，完整内容见文件）", len(lines))
+	}
+
+	// 返回相对路径，让 file_read 直接在工作目录内解析，避免外部路径审批
+	relPath, _ := filepath.Rel(workDir, file.Name())
+	return relPath, preview, nil
 }

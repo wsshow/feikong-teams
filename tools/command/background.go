@@ -3,6 +3,8 @@ package command
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -28,7 +30,7 @@ var (
 	bgTasksMu sync.Mutex
 )
 
-// TerminateAll 终止所有运行中的后台任务，在进程退出时调用
+// TerminateAll 终止所有运行中的后台任务并清理临时文件，在进程退出时调用
 func TerminateAll() {
 	bgTasksMu.Lock()
 	defer bgTasksMu.Unlock()
@@ -39,6 +41,20 @@ func TerminateAll() {
 		}
 		task.mu.Unlock()
 		delete(bgTasks, id)
+	}
+}
+
+// CleanupTempFiles 清理 workDir 下的命令临时输出文件
+func CleanupTempFiles(workDir string) {
+	patterns := []string{"cmd_output_*.txt", "bg_stdout_*.txt", "bg_stderr_*.txt"}
+	for _, pat := range patterns {
+		files, err := filepath.Glob(filepath.Join(workDir, pat))
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			os.Remove(f)
+		}
 	}
 }
 

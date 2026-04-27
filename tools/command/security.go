@@ -68,7 +68,8 @@ var riskyPatterns = []struct {
 	// Unix/Linux
 	{"rm -rf", LevelModerate, "强制递归删除", "可能意外删除重要文件"},
 	{"rm -r", LevelModerate, "递归删除", "可能意外删除文件"},
-	{"dd if=", LevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
+	{"dd of=", LevelDangerous, "dd 磁盘写入命令", "可能覆盖重要数据"},
+	{"dd if=/dev/", LevelDangerous, "dd 读取设备文件", "可能读取敏感设备"},
 	{"> /etc/", LevelDangerous, "重定向到系统配置", "可能破坏系统配置"},
 	{"> /", LevelDangerous, "重定向到系统目录", "可能破坏系统文件"},
 	{"chmod 777", LevelModerate, "设置全局可写权限", "安全风险"},
@@ -92,7 +93,35 @@ var riskyPatterns = []struct {
 }
 
 func evaluateSecurity(command string) SecurityEvaluation {
-	cmdLower := strings.ToLower(strings.TrimSpace(command))
+	segments := splitShellCommands(command)
+	if len(segments) > 1 {
+		// 复合命令：取所有子命令中最高的安全等级
+		var maxEval SecurityEvaluation
+		for _, seg := range segments {
+			eval := evaluateSingleCommand(seg)
+			if eval.Level > maxEval.Level {
+				maxEval = eval
+				if maxEval.Level == LevelDangerous {
+					return maxEval
+				}
+			}
+		}
+		return maxEval
+	}
+	return evaluateSingleCommand(command)
+}
+
+func evaluateSingleCommand(cmdLower string) SecurityEvaluation {
+	cmdLower = strings.ToLower(strings.TrimSpace(cmdLower))
+
+	// 末尾裸 & 导致进程脱离 Setpgid 管控，超时/取消时 kill 不到
+	if cmdLower != "" && cmdLower[len(cmdLower)-1] == '&' && !strings.HasSuffix(cmdLower, "&&") {
+		return SecurityEvaluation{
+			Level:       LevelDangerous,
+			Description: "后台符号 & 会导致进程脱离管控",
+			Risks:       []string{"进程逃逸后无法被超时或取消终止，请移除末尾的 & 符号，改用 background=true 参数"},
+		}
+	}
 
 	for _, p := range dangerousPatterns {
 		matched := strings.Contains(cmdLower, p.Pattern)
@@ -119,6 +148,43 @@ func evaluateSecurity(command string) SecurityEvaluation {
 	}
 
 	return SecurityEvaluation{Level: LevelSafe, Description: "常规命令"}
+}
+
+// splitShellCommands 按 &&、;、| 拆分为独立子命令，关注引号
+// 注：& 在 evaluateSingleCommand 中单独检测，不在此拆分
+func splitShellCommands(command string) []string {
+	var segments []string
+	var current strings.Builder
+	inSingle, inDouble := false, false
+
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+		switch {
+		case ch == '\'' && !inDouble:
+			inSingle = !inSingle
+			current.WriteByte(ch)
+		case ch == '"' && !inSingle:
+			inDouble = !inDouble
+			current.WriteByte(ch)
+		case !inSingle && !inDouble && ch == '&' && i+1 < len(command) && command[i+1] == '&':
+			segments = append(segments, strings.TrimSpace(current.String()))
+			current.Reset()
+			i++ // skip second &
+		case !inSingle && !inDouble && ch == ';':
+			segments = append(segments, strings.TrimSpace(current.String()))
+			current.Reset()
+		case !inSingle && !inDouble && ch == '|' && (i == 0 || command[i-1] != '|'):
+			// split on | but preserve
+			segments = append(segments, strings.TrimSpace(current.String()))
+			current.Reset()
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	if current.Len() > 0 {
+		segments = append(segments, strings.TrimSpace(current.String()))
+	}
+	return segments
 }
 
 func securityLevelName(level SecurityLevel) string {
