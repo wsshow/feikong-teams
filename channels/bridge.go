@@ -371,11 +371,11 @@ func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector
 // handleEvent 处理引擎产生的各类事件
 func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 	switch event.Type {
-	case "message":
+	case fkevent.EventMessage:
 		// 非流式完整消息：先 flush 累积文本，再直接发送
 		rc.flush()
 		rc.send(event.Content)
-	case "stream_chunk":
+	case fkevent.EventStreamChunk:
 		// 流式文本块：累积，检测到 agent 切换时 flush
 		rc.mu.Lock()
 		if event.AgentName != rc.currentAgent && rc.currentAgent != "" {
@@ -388,12 +388,12 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			rc.pendingParts = append(rc.pendingParts, event.Content)
 		}
 		rc.mu.Unlock()
-	case "action":
+	case fkevent.EventAction:
 		// 智能体切换时 flush
-		if event.ActionType == "transfer" {
+		if event.ActionType == fkevent.ActionTransfer {
 			rc.flush()
 		}
-	case "tool_calls":
+	case fkevent.EventToolCalls:
 		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
 		rc.flush()
 		rc.mu.Lock()
@@ -404,9 +404,9 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 			}
 		}
 		rc.mu.Unlock()
-	case "tool_calls_preparing":
+	case fkevent.EventToolCallsPreparing:
 		rc.flush()
-	case "tool_result":
+	case fkevent.EventToolResult:
 		// 工具调用完成：按 ToolCallID 匹配调用，发送摘要
 		rc.mu.Lock()
 		call, found := rc.pendingCalls[event.ToolCallID]

@@ -384,9 +384,9 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 
 	// 通知上下文压缩开始
 	_ = fkevent.DispatchEvent(ctx, fkevent.Event{
-		Type:       "action",
+		Type:       fkevent.EventAction,
 		AgentName:  "系统",
-		ActionType: "context_compress_start",
+		ActionType: fkevent.ActionContextCompressStart,
 		Content:    "对话上下文压缩中...",
 	})
 
@@ -414,9 +414,9 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 
 	// 通知上下文压缩已触发
 	_ = fkevent.DispatchEvent(ctx, fkevent.Event{
-		Type:       "action",
+		Type:       fkevent.EventAction,
 		AgentName:  "系统",
-		ActionType: "context_compress",
+		ActionType: fkevent.ActionContextCompress,
 		Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
 		Detail:     msg.Content,
 	})

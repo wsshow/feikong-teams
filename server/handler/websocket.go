@@ -178,8 +178,8 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
 			recorder.RecordEvent(fkevent.Event{
-				Type:       "action",
-				ActionType: "ask_questions",
+				Type:       fkevent.EventAction,
+				ActionType: fkevent.ActionAskQuestions,
 				Content:    info.Question,
 			})
 			payload := map[string]any{
@@ -195,8 +195,8 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 
 			if err == nil {
 				recorder.RecordEvent(fkevent.Event{
-					Type:       "action",
-					ActionType: "ask_response",
+					Type:       fkevent.EventAction,
+					ActionType: fkevent.ActionAskResponse,
 					Content:    askResponseText(result),
 				})
 			}
@@ -207,8 +207,8 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 		msg := extractInterruptMessage(interrupts)
 
 		recorder.RecordEvent(fkevent.Event{
-			Type:       "action",
-			ActionType: "approval_required",
+			Type:       fkevent.EventAction,
+			ActionType: fkevent.ActionApprovalRequired,
 			Content:    msg,
 		})
 		_ = writeJSON(map[string]any{
@@ -222,8 +222,8 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
 				recorder.RecordEvent(fkevent.Event{
-					Type:       "action",
-					ActionType: "approval_decision",
+					Type:       fkevent.EventAction,
+					ActionType: fkevent.ActionApprovalDecision,
 					Content:    text,
 				})
 			}
@@ -238,7 +238,7 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 // wsEventCallbackBuffered 构建支持断线缓冲的事件回调
 func wsEventCallbackBuffered(recorder *fkevent.HistoryRecorder, sessionID string, stream *taskstream.Stream) func(fkevent.Event) error {
 	return func(event fkevent.Event) error {
-		if event.Type == "action" && event.ActionType == "interrupted" {
+		if event.Type == fkevent.EventAction && event.ActionType == fkevent.ActionInterrupted {
 			return nil
 		}
 		recorder.RecordEvent(event)

@@ -117,7 +117,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 	engine.New(r, sessionID).Run(ctx, engine.RunConfig{
 		Messages: inputMessages,
 		EventCallback: func(event fkevent.Event) error {
-			if event.Type == "action" && event.ActionType == "interrupted" {
+			if event.Type == fkevent.EventAction && event.ActionType == fkevent.ActionInterrupted {
 				return nil
 			}
 			recorder.RecordEvent(event)
@@ -425,8 +425,8 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 		// 检查是否为 ask_questions 中断
 		if info := extractAskInfo(interrupts); info != nil {
 			recorder.RecordEvent(fkevent.Event{
-				Type:       "action",
-				ActionType: "ask_questions",
+				Type:       fkevent.EventAction,
+				ActionType: fkevent.ActionAskQuestions,
 				Content:    info.Question,
 			})
 			stream.Publish(map[string]any{
@@ -440,8 +440,8 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 			result, err := channelHandler(ctx, interrupts)
 			if err == nil {
 				recorder.RecordEvent(fkevent.Event{
-					Type:       "action",
-					ActionType: "ask_response",
+					Type:       fkevent.EventAction,
+					ActionType: fkevent.ActionAskResponse,
 					Content:    askResponseText(result),
 				})
 			}
@@ -452,8 +452,8 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 		msg := extractInterruptMessage(interrupts)
 
 		recorder.RecordEvent(fkevent.Event{
-			Type:       "action",
-			ActionType: "approval_required",
+			Type:       fkevent.EventAction,
+			ActionType: fkevent.ActionApprovalRequired,
 			Content:    msg,
 		})
 		stream.Publish(map[string]any{
@@ -466,8 +466,8 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
 				recorder.RecordEvent(fkevent.Event{
-					Type:       "action",
-					ActionType: "approval_decision",
+					Type:       fkevent.EventAction,
+					ActionType: fkevent.ActionApprovalDecision,
 					Content:    text,
 				})
 			}

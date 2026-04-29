@@ -154,7 +154,7 @@ func newPrintEvent() (func(Event), func()) {
 
 	printFn := func(event Event) {
 		switch event.Type {
-		case "reasoning_chunk":
+		case EventReasoningChunk:
 			tryFlush()
 			if agentName != event.AgentName {
 				agentName = event.AgentName
@@ -168,7 +168,7 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			rw.writeChunk(event.Content)
 
-		case "stream_chunk":
+		case EventStreamChunk:
 			wasReasoning := inReasoning
 			if inReasoning {
 				inReasoning = false
@@ -186,7 +186,7 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			sb.addChunk(event.Content)
 
-		case "message":
+		case EventMessage:
 			tryFlush()
 			if inReasoning {
 				inReasoning = false
@@ -200,7 +200,7 @@ func newPrintEvent() (func(Event), func()) {
 				lipgloss.Println(RenderMarkdown(event.Content))
 			}
 
-		case "tool_result":
+		case EventToolResult:
 			tryFlush()
 			fmt.Printf("\n\033[1;33m⚙ [%s] 工具结果:\033[0m\n", event.AgentName)
 			if event.Content != "" {
@@ -231,10 +231,10 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			fmt.Println()
 
-		case "tool_result_chunk":
+		case EventToolResultChunk:
 			fmt.Printf("%s", event.Content)
 
-		case "tool_calls_preparing":
+		case EventToolCallsPreparing:
 			tryFlush()
 			if inReasoning {
 				inReasoning = false
@@ -247,7 +247,7 @@ func newPrintEvent() (func(Event), func()) {
 				}
 			}
 
-		case "tool_calls":
+		case EventToolCalls:
 			tryFlush()
 			fmt.Printf("\n\033[1;35m[%s] 调用工具:\033[0m\n", event.AgentName)
 			for i, tool := range event.ToolCalls {
@@ -262,12 +262,12 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			fmt.Println()
 
-		case "action":
+		case EventAction:
 			tryFlush()
 			switch event.ActionType {
-			case "context_compress_start":
+			case ActionContextCompressStart:
 				fmt.Printf("\n\033[1;33m~ [%s] %s\033[0m", event.AgentName, event.Content)
-			case "context_compress":
+			case ActionContextCompress:
 				fmt.Printf("\n\033[1;33m✓ [%s] %s\033[0m\n", event.AgentName, event.Content)
 			default:
 				fmt.Printf("\n\033[1;34m▸ [%s] 动作: %s\033[0m\n", event.AgentName, event.ActionType)
@@ -276,7 +276,7 @@ func newPrintEvent() (func(Event), func()) {
 				}
 			}
 
-		case "error":
+		case EventError:
 			tryFlush()
 			fmt.Printf("\n\033[1;31m✗ [%s] 错误:\033[0m\n", event.AgentName)
 			fmt.Printf("  \033[31m%s\033[0m\n", event.Error)
@@ -285,7 +285,7 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			fmt.Println()
 
-		case "tool_calls_args_delta":
+		case EventToolCallsArgsDelta:
 		default:
 			fmt.Printf("\n\033[1;90m? 未知事件: %s\033[0m\n", event.Type)
 			if event.AgentName != "" {
@@ -784,7 +784,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 	callback = func(event Event) error {
 		switch event.Type {
-		case "stream_chunk":
+		case EventStreamChunk:
 			if lastAgent != event.AgentName {
 				flushStream()
 				lastAgent = event.AgentName
@@ -793,7 +793,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			buf.WriteString(event.Content)
 			inStream = true
 
-		case "message":
+		case EventMessage:
 			if event.Content != "" {
 				flushStream()
 				if lastAgent != event.AgentName {
@@ -803,14 +803,14 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 				buf.WriteString(event.Content)
 			}
 
-		case "tool_calls_preparing":
+		case EventToolCallsPreparing:
 			for _, tc := range event.ToolCalls {
 				if tc.Function.Name != "" {
 					lastToolName = tc.Function.Name
 				}
 			}
 
-		case "tool_calls":
+		case EventToolCalls:
 			flushStream()
 			for i, tc := range event.ToolCalls {
 				if i == len(event.ToolCalls)-1 {
@@ -825,7 +825,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			}
 			lastAgent = ""
 
-		case "tool_result":
+		case EventToolResult:
 			if event.Content != "" {
 				if formatted := formatToolResultMarkdown(event.Content, lastToolName); formatted != "" {
 					buf.WriteString(formatted)
@@ -833,17 +833,17 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			}
 			lastAgent = ""
 
-		case "action":
+		case EventAction:
 			switch event.ActionType {
-			case "transfer":
+			case ActionTransfer:
 				flushStream()
 				buf.WriteString(fmt.Sprintf("\n\n> **[%s]** → %s", event.AgentName, event.Content))
 				lastAgent = ""
-			case "context_compress_start", "context_compress":
+			case ActionContextCompressStart, ActionContextCompress:
 				// 跳过上下文压缩提示
 			}
 
-		case "error":
+		case EventError:
 			flushStream()
 			buf.WriteString(fmt.Sprintf("\n\n**错误 [%s]**: %s", event.AgentName, event.Error))
 		}

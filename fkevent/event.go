@@ -15,9 +15,41 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// EventType 事件类型
+type EventType string
+
+const (
+	EventError              EventType = "error"
+	EventMessage            EventType = "message"
+	EventToolResult         EventType = "tool_result"
+	EventReasoningChunk     EventType = "reasoning_chunk"
+	EventStreamChunk        EventType = "stream_chunk"
+	EventToolResultChunk    EventType = "tool_result_chunk"
+	EventToolCallsPreparing EventType = "tool_calls_preparing"
+	EventToolCallsArgsDelta EventType = "tool_calls_args_delta"
+	EventToolCalls          EventType = "tool_calls"
+	EventAction             EventType = "action"
+	EventDispatchProgress   EventType = "dispatch_progress"
+)
+
+// ActionType 动作类型（EventAction 事件下的子类型）
+type ActionType string
+
+const (
+	ActionTransfer             ActionType = "transfer"
+	ActionInterrupted          ActionType = "interrupted"
+	ActionExit                 ActionType = "exit"
+	ActionAskQuestions         ActionType = "ask_questions"
+	ActionAskResponse          ActionType = "ask_response"
+	ActionApprovalRequired     ActionType = "approval_required"
+	ActionApprovalDecision     ActionType = "approval_decision"
+	ActionContextCompressStart ActionType = "context_compress_start"
+	ActionContextCompress      ActionType = "context_compress"
+)
+
 // Event 统一的事件结构，承载各类智能体输出
 type Event struct {
-	Type             string            `json:"type"`
+	Type             EventType         `json:"type"`
 	AgentName        string            `json:"agent_name,omitempty"`
 	RunPath          string            `json:"run_path,omitempty"`
 	Content          string            `json:"content,omitempty"`
@@ -25,7 +57,7 @@ type Event struct {
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 推理模型思考内容
 	ToolCalls        []schema.ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string            `json:"tool_call_id,omitempty"` // 工具结果对应的调用 ID
-	ActionType       string            `json:"action_type,omitempty"`
+	ActionType       ActionType        `json:"action_type,omitempty"`
 	Error            string            `json:"error,omitempty"`
 }
 
@@ -71,7 +103,7 @@ func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 			return nil
 		}
 		return handleEvent(ctx, Event{
-			Type:      "error",
+			Type:      EventError,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			Error:     event.Err.Error(),
@@ -111,9 +143,9 @@ func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
 
 // handleRegularMessage 处理非流式的完整消息
 func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schema.Message) error {
-	eventType := "message"
+	eventType := EventMessage
 	if msg.Role == schema.Tool {
-		eventType = "tool_result"
+		eventType = EventToolResult
 	}
 
 	nEvent := Event{
@@ -187,7 +219,7 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 					break
 				}
 				return handleEvent(ctx, Event{
-					Type:      "error",
+					Type:      EventError,
 					AgentName: event.AgentName,
 					RunPath:   formatRunPath(event.RunPath),
 					Error:     fmt.Sprintf("stream error: %v", r.err),
@@ -212,7 +244,7 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState) error {
 	if chunk.ReasoningContent != "" {
 		if err := handleEvent(ctx, Event{
-			Type:      "reasoning_chunk",
+			Type:      EventReasoningChunk,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			Content:   chunk.ReasoningContent,
@@ -222,9 +254,9 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 	}
 
 	if chunk.Content != "" {
-		eventType := "stream_chunk"
+		var eventType EventType = EventStreamChunk
 		if chunk.Role == schema.Tool {
-			eventType = "tool_result_chunk"
+			eventType = EventToolResultChunk
 		}
 		if err := handleEvent(ctx, Event{
 			Type:      eventType,
@@ -256,7 +288,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 		if !ss.toolCallStarted[idx] && tc.Function.Name != "" {
 			ss.toolCallStarted[idx] = true
 			if err := handleEvent(ctx, Event{
-				Type:      "tool_calls_preparing",
+				Type:      EventToolCallsPreparing,
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
 				ToolCalls: []schema.ToolCall{
@@ -293,7 +325,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 				continue
 			}
 			if err := handleEvent(ctx, Event{
-				Type:      "tool_calls_args_delta",
+				Type:      EventToolCallsArgsDelta,
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
 				Content:   delta,
@@ -316,7 +348,7 @@ func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamS
 			continue
 		}
 		_ = handleEvent(ctx, Event{
-			Type:      "tool_calls_args_delta",
+			Type:      EventToolCallsArgsDelta,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			Content:   delta,
@@ -344,7 +376,7 @@ func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamS
 
 	if len(allToolCalls) > 0 {
 		return handleEvent(ctx, Event{
-			Type:      "tool_calls",
+			Type:      EventToolCalls,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			ToolCalls: allToolCalls,
@@ -360,10 +392,10 @@ func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 
 	if action.TransferToAgent != nil {
 		return handleEvent(ctx, Event{
-			Type:       "action",
+			Type:       EventAction,
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
-			ActionType: "transfer",
+			ActionType: ActionTransfer,
 			Content:    fmt.Sprintf("Transfer to agent: %s", action.TransferToAgent.DestAgentName),
 		})
 	}
@@ -376,10 +408,10 @@ func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 			}
 
 			if err := handleEvent(ctx, Event{
-				Type:       "action",
+				Type:       EventAction,
 				AgentName:  event.AgentName,
 				RunPath:    formatRunPath(event.RunPath),
-				ActionType: "interrupted",
+				ActionType: ActionInterrupted,
 				Content:    content,
 			}); err != nil {
 				return err
@@ -389,10 +421,10 @@ func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 
 	if action.Exit {
 		return handleEvent(ctx, Event{
-			Type:       "action",
+			Type:       EventAction,
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
-			ActionType: "exit",
+			ActionType: ActionExit,
 			Content:    "Agent execution completed",
 		})
 	}

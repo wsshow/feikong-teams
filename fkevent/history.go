@@ -18,9 +18,9 @@ type ToolCallRecord struct {
 }
 
 type ActionRecord struct {
-	ActionType string `json:"action_type"`
-	Content    string `json:"content"`
-	Detail     string `json:"detail,omitempty"`
+	ActionType ActionType `json:"action_type"`
+	Content    string     `json:"content"`
+	Detail     string     `json:"detail,omitempty"`
 }
 
 // HistoryData 持久化数据结构
@@ -28,9 +28,20 @@ type HistoryData struct {
 	Messages []AgentMessage `json:"messages"`
 }
 
-// MessageEvent 单个消息事件，Type: "text" | "reasoning" | "tool_call" | "action"
+// MsgEventType 历史消息事件类型
+type MsgEventType string
+
+const (
+	MsgTypeText      MsgEventType = "text"
+	MsgTypeReasoning MsgEventType = "reasoning"
+	MsgTypeToolCall  MsgEventType = "tool_call"
+	MsgTypeAction    MsgEventType = "action"
+	MsgTypeError     MsgEventType = "error"
+)
+
+// MessageEvent 单个消息事件
 type MessageEvent struct {
-	Type     string          `json:"type"`
+	Type     MsgEventType    `json:"type"`
 	Content  string          `json:"content,omitempty"`
 	ToolCall *ToolCallRecord `json:"tool_call,omitempty"`
 	Action   *ActionRecord   `json:"action,omitempty"`
@@ -49,7 +60,7 @@ type AgentMessage struct {
 func (m *AgentMessage) GetTextContent() string {
 	var builder strings.Builder
 	for _, event := range m.Events {
-		if event.Type == "text" {
+		if event.Type == MsgTypeText {
 			builder.WriteString(event.Content)
 		}
 	}
@@ -90,9 +101,9 @@ func (m *AgentMessage) getContentWithToolsInternal(filterNoisy bool) string {
 	var builder strings.Builder
 	for _, event := range m.Events {
 		switch event.Type {
-		case "text":
+		case MsgTypeText:
 			builder.WriteString(event.Content)
-		case "tool_call":
+		case MsgTypeToolCall:
 			if tc := event.ToolCall; tc != nil {
 				builder.WriteString("\n[调用工具: ")
 				builder.WriteString(tc.Name)
@@ -130,7 +141,7 @@ func truncateRunes(s string, maxLen int) string {
 func (m *AgentMessage) GetReasoningContent() string {
 	var builder strings.Builder
 	for _, event := range m.Events {
-		if event.Type == "reasoning" {
+		if event.Type == MsgTypeReasoning {
 			builder.WriteString(event.Content)
 		}
 	}
@@ -183,31 +194,31 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	defer h.mu.Unlock()
 
 	switch event.Type {
-	case "reasoning_chunk":
+	case EventReasoningChunk:
 		h.ensureAgentContext(event)
 		// 合并连续推理事件
-		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == "reasoning" {
+		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == MsgTypeReasoning {
 			h.currentEvents[n-1].Content += event.Content
 		} else {
 			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type:    "reasoning",
+				Type:    MsgTypeReasoning,
 				Content: event.Content,
 			})
 		}
 
-	case "stream_chunk":
+	case EventStreamChunk:
 		h.ensureAgentContext(event)
 		// 合并连续文本事件
-		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == "text" {
+		if n := len(h.currentEvents); n > 0 && h.currentEvents[n-1].Type == MsgTypeText {
 			h.currentEvents[n-1].Content += event.Content
 		} else {
 			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type:    "text",
+				Type:    MsgTypeText,
 				Content: event.Content,
 			})
 		}
 
-	case "tool_calls_preparing":
+	case EventToolCallsPreparing:
 		h.ensureAgentContext(event)
 		for _, tc := range event.ToolCalls {
 			if tc.Function.Name != "" {
@@ -217,7 +228,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 
-	case "tool_calls":
+	case EventToolCalls:
 		h.ensureAgentContext(event)
 		// tool_calls 事件带有完整参数，更新对应的 pending 记录
 		for _, tc := range event.ToolCalls {
@@ -237,12 +248,12 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 
-	case "tool_result", "tool_result_chunk":
+	case EventToolResult, EventToolResultChunk:
 		if len(h.pendingToolCalls) > 0 {
 			tc := h.pendingToolCalls[0]
 			h.pendingToolCalls = h.pendingToolCalls[1:]
 			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type: "tool_call",
+				Type: MsgTypeToolCall,
 				ToolCall: &ToolCallRecord{
 					Name:      tc.Name,
 					Arguments: tc.Arguments,
@@ -251,24 +262,24 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			})
 		}
 
-	case "message":
+	case EventMessage:
 		h.ensureAgentContext(event)
 		if event.ReasoningContent != "" {
 			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type:    "reasoning",
+				Type:    MsgTypeReasoning,
 				Content: event.ReasoningContent,
 			})
 		}
 		if event.Content != "" {
 			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type:    "text",
+				Type:    MsgTypeText,
 				Content: event.Content,
 			})
 		}
 
-	case "action":
+	case EventAction:
 		h.currentEvents = append(h.currentEvents, MessageEvent{
-			Type: "action",
+			Type: MsgTypeAction,
 			Action: &ActionRecord{
 				ActionType: event.ActionType,
 				Content:    event.Content,
@@ -276,10 +287,10 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			},
 		})
 
-	case "error":
+	case EventError:
 		h.ensureAgentContext(event)
 		h.currentEvents = append(h.currentEvents, MessageEvent{
-			Type:    "error",
+			Type:    MsgTypeError,
 			Content: truncateErrorContent(event.Error),
 		})
 
@@ -315,7 +326,7 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 		StartTime: time.Now(),
 		EndTime:   time.Now(),
 		Events: []MessageEvent{
-			{Type: "text", Content: input},
+			{Type: MsgTypeText, Content: input},
 		},
 	})
 
@@ -374,7 +385,7 @@ func (h *HistoryRecorder) GetCurrentMessage() (agentName, content string) {
 
 	var builder strings.Builder
 	for _, event := range h.currentEvents {
-		if event.Type == "text" {
+		if event.Type == MsgTypeText {
 			builder.WriteString(event.Content)
 		}
 	}
@@ -394,7 +405,7 @@ func (h *HistoryRecorder) GetFullHistory() string {
 		result.WriteString(msg.AgentName)
 		result.WriteString(" ===\n")
 		for _, event := range msg.Events {
-			if event.Type == "text" {
+			if event.Type == MsgTypeText {
 				result.WriteString(event.Content)
 			}
 		}
@@ -409,7 +420,7 @@ func (h *HistoryRecorder) GetFullHistory() string {
 		result.WriteString(h.currentAgent)
 		result.WriteString(" (当前) ===\n")
 		for _, event := range h.currentEvents {
-			if event.Type == "text" {
+			if event.Type == MsgTypeText {
 				result.WriteString(event.Content)
 			}
 		}
@@ -427,7 +438,7 @@ func (h *HistoryRecorder) GetConversationSummary() string {
 		duration := msg.EndTime.Sub(msg.StartTime)
 		var contentLen int
 		for _, event := range msg.Events {
-			if event.Type == "text" {
+			if event.Type == MsgTypeText {
 				contentLen += len([]rune(event.Content))
 			}
 		}
@@ -473,7 +484,7 @@ func (h *HistoryRecorder) reconstructSummaryFromEvents() {
 	// 从后向前查找最后一个 context_compress 事件
 	for i := len(h.messages) - 1; i >= 0; i-- {
 		for _, evt := range h.messages[i].Events {
-			if evt.Type == "action" && evt.Action != nil &&
+			if evt.Type == MsgTypeAction && evt.Action != nil &&
 				evt.Action.ActionType == "context_compress" && evt.Action.Detail != "" {
 				h.summary = evt.Action.Detail
 				// 向前查找该事件所属执行轮次的用户输入
@@ -650,11 +661,11 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 		md.WriteString("**内容**:\n\n")
 		for _, event := range msg.Events {
 			switch event.Type {
-			case "text":
+			case MsgTypeText:
 				md.WriteString(event.Content)
 				md.WriteString("\n\n")
 
-			case "tool_call":
+			case MsgTypeToolCall:
 				if event.ToolCall != nil {
 					md.WriteString(fmt.Sprintf("> **工具调用**: %s\n", event.ToolCall.Name))
 					if event.ToolCall.Arguments != "" {
@@ -666,12 +677,12 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 					md.WriteString("\n")
 				}
 
-			case "action":
+			case MsgTypeAction:
 				if event.Action != nil {
 					md.WriteString(fmt.Sprintf("> **[Action]**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content))
 				}
 
-			case "error":
+			case MsgTypeError:
 				md.WriteString(fmt.Sprintf("> **[错误]**: %s\n\n", event.Content))
 			}
 		}
