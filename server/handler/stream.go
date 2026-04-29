@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fkteams/agents/middlewares/summary"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
@@ -79,8 +78,6 @@ func StreamStartHandler() gin.HandlerFunc {
 
 		recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 		inputMessages, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
-		countBeforeRun := recorder.GetMessageCount()
-		recorder.RecordUserInput(userDisplayText)
 
 		// 创建任务——统一使用 GlobalStreams
 		taskCtx, taskCancel := context.WithCancel(ctx)
@@ -102,7 +99,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		})
 
 		// 后台执行任务
-		go runStreamTask(taskCtx, stream, sessionID, r, recorder, inputMessages, countBeforeRun, userDisplayText)
+		go runStreamTask(taskCtx, stream, sessionID, r, recorder, inputMessages, userDisplayText)
 
 		OK(c, gin.H{
 			"session_id": sessionID,
@@ -113,62 +110,61 @@ func StreamStartHandler() gin.HandlerFunc {
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, userDisplayText string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, userDisplayText string) {
 	defer stream.Done()
 
-	ctx = fkevent.WithNonInteractive(ctx)
-	ctx = fkevent.WithCallback(ctx, func(event fkevent.Event) error {
-		if event.Type == "action" && event.ActionType == "interrupted" {
-			return nil
-		}
-		recorder.RecordEvent(event)
-		data := convertEventToMap(event)
-		data["session_id"] = sessionID
-		stream.Publish(data)
-		return nil
-	})
-	ctx = summary.WithSummaryPersistCallback(ctx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
-	ctx = approval.WithRegistry(ctx, approval.NewRegistry(
-		approval.StoreConfig{Name: approval.StoreCommand},
-		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-		approval.StoreConfig{Name: approval.StoreDispatch},
-	))
-
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
-	_, err := engine.New(r, sessionID).Run(ctx, inputMessages, engine.WithInterruptHandler(interruptHandler))
-
-	if err != nil {
-		if isConnectionClosed(ctx, err) {
-			log.Printf("stream task cancelled: session=%s", sessionID)
-			stream.SetStatus("cancelled")
-			stream.Publish(map[string]any{
-				"type":       "cancelled",
-				"session_id": sessionID,
-				"message":    "任务已取消",
-			})
-			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-			ensureSessionMetadata(sessionID, userDisplayText)
-			return
-		}
-		log.Printf("stream task error: session=%s, err=%v", sessionID, err)
-		stream.SetStatus("error")
-		stream.Publish(map[string]any{
-			"type":       "error",
-			"session_id": sessionID,
-			"error":      err.Error(),
-		})
-		finishChat(recorder, sessionID, userDisplayText)
-		return
-	}
-
-	stream.SetStatus("completed")
-	finishChat(recorder, sessionID, userDisplayText)
-	stream.Publish(map[string]any{
-		"type":       "processing_end",
-		"session_id": sessionID,
-		"message":    "处理完成",
+	engine.New(r, sessionID).Run(ctx, engine.RunConfig{
+		Messages: inputMessages,
+		EventCallback: func(event fkevent.Event) error {
+			if event.Type == "action" && event.ActionType == "interrupted" {
+				return nil
+			}
+			recorder.RecordEvent(event)
+			data := convertEventToMap(event)
+			data["session_id"] = sessionID
+			stream.Publish(data)
+			return nil
+		},
+		Recorder:       recorder,
+		OnInterrupt:    interruptHandler,
+		NonInteractive: true,
+		ApprovalReg: approval.NewRegistry(
+			approval.StoreConfig{Name: approval.StoreCommand},
+			approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+			approval.StoreConfig{Name: approval.StoreDispatch},
+		),
+		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+			if err != nil {
+				if isConnectionClosed(ctx, err) {
+					log.Printf("stream task cancelled: session=%s", sessionID)
+					stream.SetStatus("cancelled")
+					stream.Publish(map[string]any{
+						"type":       "cancelled",
+						"session_id": sessionID,
+						"message":    "任务已取消",
+					})
+					saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+					ensureSessionMetadata(sessionID, userDisplayText)
+					return
+				}
+				log.Printf("stream task error: session=%s, err=%v", sessionID, err)
+				stream.SetStatus("error")
+				stream.Publish(map[string]any{
+					"type":       "error",
+					"session_id": sessionID,
+					"error":      err.Error(),
+				})
+			} else {
+				stream.SetStatus("completed")
+				stream.Publish(map[string]any{
+					"type":       "processing_end",
+					"session_id": sessionID,
+					"message":    "处理完成",
+				})
+			}
+			finishChat(recorder, sessionID, userDisplayText)
+		},
 	})
 }
 

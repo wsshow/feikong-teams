@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fkteams/agents/middlewares/summary"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fmt"
@@ -63,19 +62,17 @@ func ChatHandler() gin.HandlerFunc {
 
 		recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 		inputMessages, userDisplayText := buildChatInput(recorder, req.Message, req.Contents)
-		countBeforeRun := recorder.GetMessageCount()
-		recorder.RecordUserInput(userDisplayText)
 
 		if req.Stream {
-			handleStreamChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID, userDisplayText)
+			handleStreamChat(c, ctx, r, recorder, inputMessages, sessionID, userDisplayText)
 		} else {
-			handleSyncChat(c, ctx, r, recorder, inputMessages, countBeforeRun, sessionID, userDisplayText)
+			handleSyncChat(c, ctx, r, recorder, inputMessages, sessionID, userDisplayText)
 		}
 	}
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID, userDisplayText string) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, sessionID, userDisplayText string) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -83,58 +80,55 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
-	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
-		recorder.RecordEvent(event)
-		data, _ := json.Marshal(convertEventToMap(event))
-		_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		c.Writer.Flush()
-		return err
+	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
+		Messages: inputMessages,
+		EventCallback: func(event fkevent.Event) error {
+			recorder.RecordEvent(event)
+			data, _ := json.Marshal(convertEventToMap(event))
+			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+			c.Writer.Flush()
+			return err
+		},
+		Recorder: recorder,
+		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+			if err != nil {
+				if isConnectionClosed(ctx, err) {
+					log.Printf("connection closed, stopping: session=%s", sessionID)
+					saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+					return
+				}
+				log.Printf("error processing event: %v", err)
+			}
+			finishChat(recorder, sessionID, userDisplayText)
+			data, _ := json.Marshal(map[string]string{"type": "processing_end", "message": "处理完成"})
+			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+			c.Writer.Flush()
+		},
 	})
-
-	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
-
-	_, err := engine.New(r, sessionID).Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
-	if err != nil {
-		if isConnectionClosed(taskCtx, err) {
-			log.Printf("connection closed, stopping: session=%s", sessionID)
-			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-			return
-		}
-		log.Printf("error processing event: %v", err)
-	}
-
-	finishChat(recorder, sessionID, userDisplayText)
-
-	data, _ := json.Marshal(map[string]string{"type": "processing_end", "message": "处理完成"})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-	c.Writer.Flush()
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, countBeforeRun int, sessionID, userDisplayText string) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder *fkevent.HistoryRecorder, inputMessages []adk.Message, sessionID, userDisplayText string) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
 	var events []fkevent.Event
 
-	taskCtx = fkevent.WithCallback(taskCtx, func(event fkevent.Event) error {
-		recorder.RecordEvent(event)
-		events = append(events, event)
-		return nil
+	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
+		Messages: inputMessages,
+		EventCallback: func(event fkevent.Event) error {
+			recorder.RecordEvent(event)
+			events = append(events, event)
+			return nil
+		},
+		Recorder: recorder,
+		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+			if err != nil {
+				log.Printf("error processing event: %v", err)
+			}
+			finishChat(recorder, sessionID, userDisplayText)
+		},
 	})
-
-	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
-
-	_, err := engine.New(r, sessionID).Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
-	if err != nil {
-		log.Printf("error processing event: %v", err)
-	}
-
-	finishChat(recorder, sessionID, userDisplayText)
 
 	var content strings.Builder
 	for _, e := range events {

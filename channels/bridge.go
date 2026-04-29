@@ -3,7 +3,6 @@ package channels
 import (
 	"context"
 	"fkteams/agents"
-	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
@@ -262,43 +261,37 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 
 	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, channelHistoryDir)
 	messages := chatutil.BuildInputMessages(recorder, combinedInput)
-	countBeforeRun := recorder.GetMessageCount()
-	recorder.RecordUserInput(combinedInput)
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
-	ctx = fkevent.WithNonInteractive(ctx)
-	ctx = fkevent.WithCallback(ctx, func(event fkevent.Event) error {
-		recorder.RecordEvent(event)
-		return rc.handleEvent(event)
+	engine.New(r, sessionID).Run(ctx, engine.RunConfig{
+		Messages: messages,
+		EventCallback: func(event fkevent.Event) error {
+			recorder.RecordEvent(event)
+			return rc.handleEvent(event)
+		},
+		Recorder:       recorder,
+		NonInteractive: true,
+		ApprovalReg:    approval.NewAutoApproveRegistry(),
+		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+			if err != nil {
+				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
+			}
+			recorder.FinalizeCurrent()
+			rc.flush()
+			historyFile := filepath.Join(channelHistoryDir, sessionID, "history.json")
+			if err := recorder.SaveToFile(historyFile); err != nil {
+				log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
+			}
+			saveChannelSessionMetadata(sessionID, combinedInput)
+			if g.MemoryManager != nil {
+				g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
+			}
+			if !rc.replied {
+				_ = b.manager.SendText(ctx, channelName, chatID, "...")
+			}
+		},
 	})
-	ctx = summary.WithSummaryPersistCallback(ctx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
-	ctx = approval.WithRegistry(ctx, approval.NewAutoApproveRegistry())
-
-	_, err = engine.New(r, sessionID).Run(ctx, messages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
-	if err != nil {
-		log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
-	}
-
-	recorder.FinalizeCurrent()
-	rc.flush()
-
-	// 持久化会话历史和元数据
-	historyFile := filepath.Join(channelHistoryDir, sessionID, "history.json")
-	if err := recorder.SaveToFile(historyFile); err != nil {
-		log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
-	}
-	saveChannelSessionMetadata(sessionID, combinedInput)
-
-	if g.MemoryManager != nil {
-		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
-	}
-
-	if !rc.replied {
-		_ = b.manager.SendText(ctx, channelName, chatID, "...")
-	}
 }
 
 // saveChannelSessionMetadata 保存通道会话的元数据

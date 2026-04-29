@@ -40,11 +40,13 @@ func (e *BackgroundExecutor) Execute(task string) (string, error) {
 	}
 
 	callback, getResult := fkevent.NewMarkdownCollector()
-	ctx = fkevent.WithCallback(ctx, callback)
 
 	inputMessages := []adk.Message{schema.UserMessage(task)}
 
-	_, err = engine.New(r, "fkteams_scheduler").Run(ctx, inputMessages)
+	_, err = engine.New(r, "fkteams_scheduler").Run(ctx, engine.RunConfig{
+		Messages:      inputMessages,
+		EventCallback: callback,
+	})
 	if err != nil {
 		errMsg := fmt.Sprintf("执行出错: %v", err)
 		e.writeResult(task, errMsg)

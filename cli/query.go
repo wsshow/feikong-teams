@@ -3,7 +3,6 @@ package cli
 
 import (
 	"context"
-	"fkteams/agents/middlewares/summary"
 	"fkteams/chatutil"
 	"fkteams/common"
 	"fkteams/engine"
@@ -171,8 +170,6 @@ func BuildInputMessages(input string) []adk.Message {
 func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	inputMessages := BuildInputMessages(input)
 	recorder := getCliRecorder()
-	countBeforeRun := recorder.GetMessageCount()
-	recorder.RecordUserInput(input)
 
 	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）
 	if cliSessionTitle == "" {
@@ -188,51 +185,45 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	stopSpinner := sync.OnceFunc(func() { spinner.Stop() })
 
 	innerCallback := e.callbackBuilder(recorder)
-	queryCtx = fkevent.WithCallback(queryCtx, func(event fkevent.Event) error {
-		stopSpinner()
-		return innerCallback(event)
-	})
 
-	// 注入统一审批注册表
 	storeConfigs := []approval.StoreConfig{
 		{Name: approval.StoreCommand},
 		{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
 		{Name: approval.StoreDispatch},
 	}
+	var approvalReg *approval.Registry
 	if len(e.approveStores) > 0 {
-		queryCtx = approval.WithRegistry(queryCtx, approval.NewSelectiveRegistry(e.approveStores, storeConfigs...))
+		approvalReg = approval.NewSelectiveRegistry(e.approveStores, storeConfigs...)
 	} else {
-		queryCtx = approval.WithRegistry(queryCtx, approval.NewRegistry(storeConfigs...))
+		approvalReg = approval.NewRegistry(storeConfigs...)
 	}
 
-	// 设置摘要持久化回调
-	queryCtx = summary.WithSummaryPersistCallback(queryCtx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
+	var handler engine.InterruptHandler
+	if !e.autoReject {
+		handler = engine.CompositeCallbackHandler(e.promptApproval, e.promptAskQuestions)
+	}
 
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
 
-	defer func() {
-		stopSpinner()
-		e.state.EndQuery()
-
-		// 异步提取记忆
-		if g.MemoryManager != nil {
-			g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
-		}
-	}()
-
-	// 构建中断处理器
-	var handler engine.InterruptHandler
-	if e.autoReject {
-		handler = engine.AutoRejectHandler()
-	} else {
-		handler = engine.CompositeCallbackHandler(e.promptApproval, e.promptAskQuestions)
-	}
-
 	startTime := time.Now()
-	_, err := engine.New(e.runner, activeSessionID).Run(queryCtx, inputMessages, engine.WithInterruptHandler(handler))
+	_, err := engine.New(e.runner, activeSessionID).Run(queryCtx, engine.RunConfig{
+		Messages: inputMessages,
+		EventCallback: func(event fkevent.Event) error {
+			stopSpinner()
+			return innerCallback(event)
+		},
+		Recorder: recorder,
+		OnInterrupt: handler,
+		ApprovalReg:   approvalReg,
+		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, _ error) {
+			stopSpinner()
+			e.state.EndQuery()
+			if g.MemoryManager != nil {
+				g.MemoryManager.ExtractFromRecorder(recorder, activeSessionID)
+			}
+		},
+	})
 
 	if queryCtx.Err() == nil {
 		fkevent.FlushPrintEvent()

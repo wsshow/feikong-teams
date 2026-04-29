@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fkteams/agents/middlewares/summary"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
@@ -298,54 +297,49 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	// 构建输入消息
 	recorder := fkevent.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 	inputMessages, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents)
-	countBeforeRun := recorder.GetMessageCount()
-	recorder.RecordUserInput(userDisplayText)
 
-	// 装配 context —— 事件回调通过 stream.Publish 发送（支持缓冲）
-	taskCtx = fkevent.WithNonInteractive(taskCtx)
-	taskCtx = fkevent.WithCallback(taskCtx, wsEventCallbackBuffered(recorder, sessionID, stream))
-	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
-		recorder.SetSummary(summaryText, countBeforeRun)
-	})
-	taskCtx = approval.WithRegistry(taskCtx, approval.NewRegistry(
-		approval.StoreConfig{Name: approval.StoreCommand},
-		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
-		approval.StoreConfig{Name: approval.StoreDispatch},
-	))
-
-	// 更新会话标题和状态
-	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
-
-	stream.Publish(map[string]any{
-		"type":       "processing_start",
-		"session_id": sessionID,
-		"message":    "开始处理您的请求...",
-	})
-
-	// 执行——中断处理使用 stream 的审批通道
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream.InterruptCh())
-	_, err = engine.New(r, sessionID).Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
-	if err != nil {
-		if taskCtx.Err() != nil {
-			log.Printf("task cancelled: session=%s", sessionID)
-			stream.SetStatus("cancelled")
-			saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-			ensureSessionMetadata(sessionID, userDisplayText)
-			return
-		}
-		log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
-		stream.SetStatus("error")
-		stream.Publish(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
-		finishChat(recorder, sessionID, userDisplayText)
-		return
-	}
-
-	stream.SetStatus("completed")
-	finishChat(recorder, sessionID, userDisplayText)
-	stream.Publish(map[string]any{
-		"type":       "processing_end",
-		"session_id": sessionID,
-		"message":    "处理完成",
+	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
+		Messages:      inputMessages,
+		EventCallback: wsEventCallbackBuffered(recorder, sessionID, stream),
+		Recorder: recorder,
+		OnStart: func(ctx context.Context) {
+			updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+			stream.Publish(map[string]any{
+				"type":       "processing_start",
+				"session_id": sessionID,
+				"message":    "开始处理您的请求...",
+			})
+		},
+		OnInterrupt: interruptHandler,
+		NonInteractive: true,
+		ApprovalReg: approval.NewRegistry(
+			approval.StoreConfig{Name: approval.StoreCommand},
+			approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
+			approval.StoreConfig{Name: approval.StoreDispatch},
+		),
+		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, err error) {
+			if err != nil {
+				if ctx.Err() != nil {
+					log.Printf("task cancelled: session=%s", sessionID)
+					stream.SetStatus("cancelled")
+					saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+					ensureSessionMetadata(sessionID, userDisplayText)
+					return
+				}
+				log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
+				stream.SetStatus("error")
+				stream.Publish(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+			} else {
+				stream.SetStatus("completed")
+				stream.Publish(map[string]any{
+					"type":       "processing_end",
+					"session_id": sessionID,
+					"message":    "处理完成",
+				})
+			}
+			finishChat(recorder, sessionID, userDisplayText)
+		},
 	})
 }
