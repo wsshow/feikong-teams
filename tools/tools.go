@@ -92,7 +92,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		})
 		return command.NewCommandTools(workspacePath()).GetTools()
 	case "scheduler":
-		s, err := scheduler.InitGlobal(workspacePath())
+		s, err := scheduler.InitGlobal(common.SchedulerDir())
 		if err != nil {
 			return nil, fmt.Errorf("初始化调度器工具失败: %w", err)
 		}

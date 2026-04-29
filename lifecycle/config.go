@@ -13,7 +13,7 @@ type AppConfig struct {
 	WorkspaceDir       string // 工作目录
 	MemoryEnabled      bool   // 是否启用长期记忆
 	SchedulerEnabled   bool   // 是否启用定时任务
-	SchedulerOutputDir string // 定时任务输出目录
+	SchedulerDir       string // 定时任务调度器数据目录
 	InputHistoryPath   string // 输入历史文件路径
 	ChatHistoryDir     string // 聊天历史目录
 
@@ -29,7 +29,7 @@ func DefaultConfig() *AppConfig {
 		WorkspaceDir:       cfg.WorkspaceDir(),
 		MemoryEnabled:      cfg.Memory.Enabled,
 		SchedulerEnabled:   true,
-		SchedulerOutputDir: filepath.Join(appDir, "result", "scheduled_tasks"),
+		SchedulerDir:       common.SchedulerDir(),
 		InputHistoryPath:   filepath.Join(appDir, "history", "input_history", "fkteams_input_history"),
 		ChatHistoryDir:     filepath.Join(appDir, "history", "chat_history"),
 		ExitSignals:        []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP},
@@ -60,10 +60,10 @@ func WithSchedulerEnabled(enabled bool) Option {
 	}
 }
 
-// WithSchedulerOutputDir 设置定时任务输出目录
-func WithSchedulerOutputDir(dir string) Option {
+// WithSchedulerDir 设置定时任务调度器数据目录
+func WithSchedulerDir(dir string) Option {
 	return func(c *AppConfig) {
-		c.SchedulerOutputDir = dir
+		c.SchedulerDir = dir
 	}
 }
 

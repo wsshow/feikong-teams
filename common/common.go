@@ -76,6 +76,11 @@ func WorkspaceDir() string {
 	return filepath.Join(AppDir(), "workspace")
 }
 
+// SchedulerDir 返回定时任务调度器数据目录
+func SchedulerDir() string {
+	return filepath.Join(AppDir(), "scheduler")
+}
+
 // IsRetryAble 判断错误是否可重试（网络错误、HTTP/2 stream 错误、限流等）
 func IsRetryAble(ctx context.Context, err error) bool {
 	if err == nil {

@@ -77,7 +77,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		pterm.Info.Println("全局长期记忆已启用")
 	}
 	if cfg.SchedulerEnabled {
-		app.RegisterService(lifecycle.NewSchedulerService(cfg.WorkspaceDir, cfg.SchedulerOutputDir))
+		app.RegisterService(lifecycle.NewSchedulerService(cfg.SchedulerDir))
 	}
 
 	var session *cli.Session

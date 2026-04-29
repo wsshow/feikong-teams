@@ -129,7 +129,7 @@ func run(mode serverMode, opts *ServeOptions) error {
 		app.RegisterService(lifecycle.NewMemoryService(appCfg.WorkspaceDir))
 	}
 	if appCfg.SchedulerEnabled {
-		app.RegisterService(lifecycle.NewSchedulerService(appCfg.WorkspaceDir, appCfg.SchedulerOutputDir))
+		app.RegisterService(lifecycle.NewSchedulerService(appCfg.SchedulerDir))
 	}
 
 	host := "127.0.0.1"
