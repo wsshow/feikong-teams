@@ -93,7 +93,7 @@ func StreamStartHandler() gin.HandlerFunc {
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 
 		stream.Publish(map[string]any{
-			"type":       "processing_start",
+			"type":       fkevent.NotifyProcessingStart,
 			"session_id": sessionID,
 			"message":    "开始处理您的请求...",
 		})
@@ -140,7 +140,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 					log.Printf("stream task cancelled: session=%s", sessionID)
 					stream.SetStatus("cancelled")
 					stream.Publish(map[string]any{
-						"type":       "cancelled",
+						"type":       fkevent.NotifyCancelled,
 						"session_id": sessionID,
 						"message":    "任务已取消",
 					})
@@ -151,14 +151,14 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				log.Printf("stream task error: session=%s, err=%v", sessionID, err)
 				stream.SetStatus("error")
 				stream.Publish(map[string]any{
-					"type":       "error",
+					"type":       fkevent.NotifyError,
 					"session_id": sessionID,
 					"error":      err.Error(),
 				})
 			} else {
 				stream.SetStatus("completed")
 				stream.Publish(map[string]any{
-					"type":       "processing_end",
+					"type":       fkevent.NotifyProcessingEnd,
 					"session_id": sessionID,
 					"message":    "处理完成",
 				})
@@ -430,7 +430,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 				Content:    info.Question,
 			})
 			stream.Publish(map[string]any{
-				"type":         "ask_questions",
+				"type":         fkevent.NotifyAskQuestions,
 				"session_id":   sessionID,
 				"question":     info.Question,
 				"options":      info.Options,
@@ -457,7 +457,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *fkevent.Hi
 			Content:    msg,
 		})
 		stream.Publish(map[string]any{
-			"type":       "approval_required",
+			"type":       fkevent.NotifyApprovalRequired,
 			"session_id": sessionID,
 			"message":    msg,
 		})

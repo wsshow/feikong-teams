@@ -100,7 +100,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 				log.Printf("error processing event: %v", err)
 			}
 			finishChat(recorder, sessionID, userDisplayText)
-			data, _ := json.Marshal(map[string]string{"type": "processing_end", "message": "处理完成"})
+			data, _ := json.Marshal(map[string]string{"type": string(fkevent.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 		},

@@ -485,7 +485,7 @@ func (h *HistoryRecorder) reconstructSummaryFromEvents() {
 	for i := len(h.messages) - 1; i >= 0; i-- {
 		for _, evt := range h.messages[i].Events {
 			if evt.Type == MsgTypeAction && evt.Action != nil &&
-				evt.Action.ActionType == "context_compress" && evt.Action.Detail != "" {
+				evt.Action.ActionType == ActionContextCompress && evt.Action.Detail != "" {
 				h.summary = evt.Action.Detail
 				// 向前查找该事件所属执行轮次的用户输入
 				for j := i - 1; j >= 0; j-- {

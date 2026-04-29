@@ -72,7 +72,7 @@ func WebSocketHandler() gin.HandlerFunc {
 		}
 
 		_ = writeJSON(map[string]any{
-			"type":    "connected",
+			"type":    fkevent.NotifyConnected,
 			"message": "欢迎连接到非空小队",
 		})
 
@@ -87,14 +87,14 @@ func WebSocketHandler() gin.HandlerFunc {
 
 			var wsMsg WSMessage
 			if err := json.Unmarshal(msgBytes, &wsMsg); err != nil {
-				_ = writeJSON(map[string]any{"type": "error", "error": "invalid message format"})
+				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "invalid message format"})
 				continue
 			}
 
 			switch wsMsg.Type {
 			case "chat":
 				if wsMsg.SessionID == "" {
-					_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
+					_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "session_id is required"})
 					continue
 				}
 				go handleChatMessage(sm, wsMsg, writeJSON)
@@ -102,7 +102,7 @@ func WebSocketHandler() gin.HandlerFunc {
 			case "resume":
 				sid := wsMsg.SessionID
 				if sid == "" {
-					_ = writeJSON(map[string]any{"type": "error", "error": "session_id is required"})
+					_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "session_id is required"})
 					continue
 				}
 				stream := GlobalStreams.Get(sid)
@@ -116,14 +116,14 @@ func WebSocketHandler() gin.HandlerFunc {
 						log.Printf("task resumed: session=%s", sid)
 					} else {
 						_ = writeJSON(map[string]any{
-							"type":       "processing_end",
+							"type":       fkevent.NotifyProcessingEnd,
 							"session_id": sid,
 							"message":    "任务已完成或不存在",
 						})
 					}
 				} else {
 					_ = writeJSON(map[string]any{
-						"type":       "processing_end",
+						"type":       fkevent.NotifyProcessingEnd,
 						"session_id": sid,
 						"message":    "任务已完成或不存在",
 					})
@@ -135,7 +135,7 @@ func WebSocketHandler() gin.HandlerFunc {
 					GlobalStreams.CancelAndRemove(sid)
 					sm.cancelTask(sid)
 				}
-				_ = writeJSON(map[string]any{"type": "cancelled", "session_id": sid, "message": "任务已取消"})
+				_ = writeJSON(map[string]any{"type": fkevent.NotifyCancelled, "session_id": sid, "message": "任务已取消"})
 
 			case "approval":
 				sid := wsMsg.SessionID
@@ -160,10 +160,10 @@ func WebSocketHandler() gin.HandlerFunc {
 				}
 
 			case "ping":
-				_ = writeJSON(map[string]any{"type": "pong"})
+				_ = writeJSON(map[string]any{"type": fkevent.NotifyPong})
 
 			default:
-				_ = writeJSON(map[string]any{"type": "error", "error": "unknown message type"})
+				_ = writeJSON(map[string]any{"type": fkevent.NotifyError, "error": "unknown message type"})
 			}
 		}
 	}
@@ -183,7 +183,7 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 				Content:    info.Question,
 			})
 			payload := map[string]any{
-				"type":         "ask_questions",
+				"type":         fkevent.NotifyAskQuestions,
 				"session_id":   sessionID,
 				"question":     info.Question,
 				"options":      info.Options,
@@ -212,7 +212,7 @@ func buildInterruptHandler(recorder *fkevent.HistoryRecorder, sessionID string, 
 			Content:    msg,
 		})
 		_ = writeJSON(map[string]any{
-			"type":       "approval_required",
+			"type":       fkevent.NotifyApprovalRequired,
 			"session_id": sessionID,
 			"message":    msg,
 		})
@@ -290,7 +290,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		stream.Publish(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+		stream.Publish(map[string]any{"type": fkevent.NotifyError, "session_id": sessionID, "error": err.Error()})
 		return
 	}
 
@@ -307,7 +307,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		OnStart: func(ctx context.Context) {
 			updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 			stream.Publish(map[string]any{
-				"type":       "processing_start",
+				"type":       fkevent.NotifyProcessingStart,
 				"session_id": sessionID,
 				"message":    "开始处理您的请求...",
 			})
@@ -330,11 +330,11 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 				}
 				log.Printf("failed to run task: session=%s, err=%v", sessionID, err)
 				stream.SetStatus("error")
-				stream.Publish(map[string]any{"type": "error", "session_id": sessionID, "error": err.Error()})
+				stream.Publish(map[string]any{"type": fkevent.NotifyError, "session_id": sessionID, "error": err.Error()})
 			} else {
 				stream.SetStatus("completed")
 				stream.Publish(map[string]any{
-					"type":       "processing_end",
+					"type":       fkevent.NotifyProcessingEnd,
 					"session_id": sessionID,
 					"message":    "处理完成",
 				})
