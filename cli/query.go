@@ -210,6 +210,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
+	queryCtx = common.WithSessionID(queryCtx, activeSessionID)
+
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
 

@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+
+	"fkteams/common"
 )
 
 // Todo 待办事项结构
@@ -26,48 +29,48 @@ type TodoList struct {
 	Todos []Todo `json:"todos"`
 }
 
-// TodoTools Todo工具实例，每个agent可以有独立的实例
+// TodoTools Todo工具实例，按会话隔离
 type TodoTools struct {
-	filePath string
+	sessionsDir string
+	mu          sync.Mutex
 }
 
 // NewTodoTools 创建一个新的Todo工具实例
-func NewTodoTools(baseDir string) (*TodoTools, error) {
-	// 转换为绝对路径
-	absPath, err := filepath.Abs(baseDir)
+func NewTodoTools(sessionsDir string) (*TodoTools, error) {
+	absPath, err := filepath.Abs(sessionsDir)
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
 	}
+	return &TodoTools{sessionsDir: absPath}, nil
+}
 
-	// 检查目录是否存在，如果不存在则创建
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(absPath, 0755); err != nil {
-			return nil, fmt.Errorf("无法创建目录 %s: %w", absPath, err)
-		}
+// getFilePath 从 context 中提取会话 ID，返回该会话的 todos.json 路径
+func (tt *TodoTools) getFilePath(ctx context.Context) (string, error) {
+	sessionID, ok := common.SessionIDFromCtx(ctx)
+	if !ok || sessionID == "" {
+		return "", fmt.Errorf("会话 ID 未设置，todo 工具需要在会话上下文中使用")
 	}
-
-	filePath := filepath.Join(absPath, "todos.json")
-
-	// 如果文件不存在，创建一个空的待办列表
+	sessionDir := filepath.Join(tt.sessionsDir, filepath.Base(sessionID))
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return "", fmt.Errorf("无法创建会话目录: %w", err)
+	}
+	filePath := filepath.Join(sessionDir, "todos.json")
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		emptyList := TodoList{Todos: []Todo{}}
 		data, err := json.MarshalIndent(emptyList, "", "  ")
 		if err != nil {
-			return nil, fmt.Errorf("无法序列化待办列表: %w", err)
+			return "", fmt.Errorf("无法序列化待办列表: %w", err)
 		}
 		if err := os.WriteFile(filePath, data, 0644); err != nil {
-			return nil, fmt.Errorf("无法创建待办列表文件: %w", err)
+			return "", fmt.Errorf("无法创建待办列表文件: %w", err)
 		}
 	}
-
-	return &TodoTools{
-		filePath: filePath,
-	}, nil
+	return filePath, nil
 }
 
-// loadTodoList 加载待办列表
-func (tt *TodoTools) loadTodoList() (*TodoList, error) {
-	data, err := os.ReadFile(tt.filePath)
+// loadFrom 从指定路径加载待办列表
+func (tt *TodoTools) loadFrom(filePath string) (*TodoList, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取待办列表: %w", err)
 	}
@@ -80,14 +83,14 @@ func (tt *TodoTools) loadTodoList() (*TodoList, error) {
 	return &list, nil
 }
 
-// saveTodoList 保存待办列表
-func (tt *TodoTools) saveTodoList(list *TodoList) error {
+// saveTo 保存待办列表到指定路径
+func (tt *TodoTools) saveTo(filePath string, list *TodoList) error {
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return fmt.Errorf("无法序列化待办列表: %w", err)
 	}
 
-	if err := os.WriteFile(tt.filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("无法保存待办列表: %w", err)
 	}
 
@@ -131,7 +134,15 @@ func (tt *TodoTools) TodoAdd(ctx context.Context, req *TodoAddRequest) (*TodoAdd
 		}, nil
 	}
 
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoAddResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoAddResponse{
 			Success:      false,
@@ -152,7 +163,7 @@ func (tt *TodoTools) TodoAdd(ctx context.Context, req *TodoAddRequest) (*TodoAdd
 
 	list.Todos = append(list.Todos, todo)
 
-	if err := tt.saveTodoList(list); err != nil {
+	if err := tt.saveTo(filePath, list); err != nil {
 		return &TodoAddResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
@@ -183,7 +194,15 @@ type TodoListResponse struct {
 
 // TodoListFunc 列出待办事项
 func (tt *TodoTools) TodoListFunc(ctx context.Context, req *TodoListRequest) (*TodoListResponse, error) {
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoListResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoListResponse{
 			Success:      false,
@@ -269,7 +288,15 @@ func (tt *TodoTools) TodoUpdate(ctx context.Context, req *TodoUpdateRequest) (*T
 		}
 	}
 
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoUpdateResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoUpdateResponse{
 			Success:      false,
@@ -313,7 +340,7 @@ func (tt *TodoTools) TodoUpdate(ctx context.Context, req *TodoUpdateRequest) (*T
 		}, nil
 	}
 
-	if err := tt.saveTodoList(list); err != nil {
+	if err := tt.saveTo(filePath, list); err != nil {
 		return &TodoUpdateResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
@@ -348,7 +375,15 @@ func (tt *TodoTools) TodoDelete(ctx context.Context, req *TodoDeleteRequest) (*T
 		}, nil
 	}
 
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoDeleteResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoDeleteResponse{
 			Success:      false,
@@ -376,7 +411,7 @@ func (tt *TodoTools) TodoDelete(ctx context.Context, req *TodoDeleteRequest) (*T
 
 	list.Todos = newTodos
 
-	if err := tt.saveTodoList(list); err != nil {
+	if err := tt.saveTo(filePath, list); err != nil {
 		return &TodoDeleteResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
@@ -432,7 +467,15 @@ func (tt *TodoTools) TodoBatchAdd(ctx context.Context, req *TodoBatchAddRequest)
 		}
 	}
 
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoBatchAddResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoBatchAddResponse{
 			Success:      false,
@@ -460,7 +503,7 @@ func (tt *TodoTools) TodoBatchAdd(ctx context.Context, req *TodoBatchAddRequest)
 		time.Sleep(time.Microsecond)
 	}
 
-	if err := tt.saveTodoList(list); err != nil {
+	if err := tt.saveTo(filePath, list); err != nil {
 		return &TodoBatchAddResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
@@ -498,7 +541,15 @@ func (tt *TodoTools) TodoBatchDelete(ctx context.Context, req *TodoBatchDeleteRe
 		}, nil
 	}
 
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoBatchDeleteResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoBatchDeleteResponse{
 			Success:      false,
@@ -533,7 +584,7 @@ func (tt *TodoTools) TodoBatchDelete(ctx context.Context, req *TodoBatchDeleteRe
 
 	list.Todos = newTodos
 
-	if err := tt.saveTodoList(list); err != nil {
+	if err := tt.saveTo(filePath, list); err != nil {
 		return &TodoBatchDeleteResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),
@@ -576,7 +627,15 @@ func (tt *TodoTools) TodoClear(ctx context.Context, req *TodoClearRequest) (*Tod
 		}, nil
 	}
 
-	list, err := tt.loadTodoList()
+	filePath, err := tt.getFilePath(ctx)
+	if err != nil {
+		return &TodoClearResponse{Success: false, ErrorMessage: err.Error()}, nil
+	}
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	list, err := tt.loadFrom(filePath)
 	if err != nil {
 		return &TodoClearResponse{
 			Success:      false,
@@ -602,7 +661,7 @@ func (tt *TodoTools) TodoClear(ctx context.Context, req *TodoClearRequest) (*Tod
 
 	clearedCount := originalCount - len(list.Todos)
 
-	if err := tt.saveTodoList(list); err != nil {
+	if err := tt.saveTo(filePath, list); err != nil {
 		return &TodoClearResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("保存待办列表失败: %v", err),

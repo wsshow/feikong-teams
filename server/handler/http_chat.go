@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fmt"
@@ -95,7 +96,8 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
-	// HTTP 模式自动拒绝危险命令
+	taskCtx = common.WithSessionID(taskCtx, sessionID)
+
 	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
 	if err != nil {
 		if isConnectionClosed(taskCtx, err) {
@@ -129,6 +131,8 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 	taskCtx = summary.WithSummaryPersistCallback(taskCtx, func(summaryText string) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
+
+	taskCtx = common.WithSessionID(taskCtx, sessionID)
 
 	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
 	if err != nil {

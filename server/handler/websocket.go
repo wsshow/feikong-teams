@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agents/middlewares/summary"
+	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
@@ -312,6 +313,8 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		approval.StoreConfig{Name: approval.StoreFile, Matcher: approval.DirMatchFunc},
 		approval.StoreConfig{Name: approval.StoreDispatch},
 	))
+
+	taskCtx = common.WithSessionID(taskCtx, sessionID)
 
 	// 更新会话标题和状态
 	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")

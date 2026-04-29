@@ -60,7 +60,7 @@ func GetToolsByName(name string) ([]tool.BaseTool, error) {
 		}
 		return excelTools.GetTools()
 	case "todo":
-		todoTools, err := todo.NewTodoTools(workspacePath())
+		todoTools, err := todo.NewTodoTools(common.SessionsDir())
 		if err != nil {
 			return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 		}

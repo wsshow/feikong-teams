@@ -14,6 +14,20 @@ import (
 	"github.com/google/uuid"
 )
 
+// sessionIDKey 会话 ID 的 context key
+type sessionIDKey struct{}
+
+// WithSessionID 将会话 ID 注入 context
+func WithSessionID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, sessionIDKey{}, id)
+}
+
+// SessionIDFromCtx 从 context 中提取会话 ID
+func SessionIDFromCtx(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(sessionIDKey{}).(string)
+	return id, ok
+}
+
 const (
 	// MaxRetries 模型调用最大重试次数
 	MaxRetries = 3
