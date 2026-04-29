@@ -3,6 +3,7 @@ package engine
 
 import (
 	"context"
+	"fkteams/common"
 	"fkteams/fkevent"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -45,6 +46,7 @@ func (e *Engine) Run(ctx context.Context, messages []adk.Message, opts ...RunOpt
 		opt(cfg)
 	}
 
+	ctx = common.WithSessionID(ctx, e.checkpointID)
 	iter := e.runner.Run(ctx, messages, adk.WithCheckPointID(e.checkpointID))
 	for {
 		lastEvent, err := drainEvents(ctx, iter)

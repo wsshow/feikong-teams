@@ -276,7 +276,6 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 	ctx = approval.WithRegistry(ctx, approval.NewAutoApproveRegistry())
-	ctx = common.WithSessionID(ctx, sessionID)
 
 	_, err = engine.New(r, sessionID).Run(ctx, messages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
 	if err != nil {

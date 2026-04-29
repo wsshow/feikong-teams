@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agents/middlewares/summary"
-	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fmt"
@@ -96,9 +95,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r *adk.Runner, record
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
-	taskCtx = common.WithSessionID(taskCtx, sessionID)
-
-	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
+	_, err := engine.New(r, sessionID).Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
 	if err != nil {
 		if isConnectionClosed(taskCtx, err) {
 			log.Printf("connection closed, stopping: session=%s", sessionID)
@@ -132,9 +129,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r *adk.Runner, recorder
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
-	taskCtx = common.WithSessionID(taskCtx, sessionID)
-
-	_, err := engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
+	_, err := engine.New(r, sessionID).Run(taskCtx, inputMessages, engine.WithInterruptHandler(engine.AutoRejectHandler()))
 	if err != nil {
 		log.Printf("error processing event: %v", err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agents/middlewares/summary"
-	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/fkevent"
 	"fkteams/server/handler/taskstream"
@@ -314,8 +313,6 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		approval.StoreConfig{Name: approval.StoreDispatch},
 	))
 
-	taskCtx = common.WithSessionID(taskCtx, sessionID)
-
 	// 更新会话标题和状态
 	updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 
@@ -328,7 +325,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	// 执行——中断处理使用 stream 的审批通道
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream.InterruptCh())
-	_, err = engine.New(r, "fkteams").Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
+	_, err = engine.New(r, sessionID).Run(taskCtx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 	if err != nil {
 		if taskCtx.Err() != nil {
 			log.Printf("task cancelled: session=%s", sessionID)

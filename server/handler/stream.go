@@ -137,7 +137,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 	))
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
-	_, err := engine.New(r, "fkteams").Run(ctx, inputMessages, engine.WithInterruptHandler(interruptHandler))
+	_, err := engine.New(r, sessionID).Run(ctx, inputMessages, engine.WithInterruptHandler(interruptHandler))
 
 	if err != nil {
 		if isConnectionClosed(ctx, err) {

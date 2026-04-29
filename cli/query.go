@@ -210,8 +210,6 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		recorder.SetSummary(summaryText, countBeforeRun)
 	})
 
-	queryCtx = common.WithSessionID(queryCtx, activeSessionID)
-
 	e.state.SetCancelFunc(cancelFunc)
 	e.state.StartQuery()
 
@@ -234,7 +232,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	}
 
 	startTime := time.Now()
-	_, err := engine.New(e.runner, "fkteams").Run(queryCtx, inputMessages, engine.WithInterruptHandler(handler))
+	_, err := engine.New(e.runner, activeSessionID).Run(queryCtx, inputMessages, engine.WithInterruptHandler(handler))
 
 	if queryCtx.Err() == nil {
 		fkevent.FlushPrintEvent()
