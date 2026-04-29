@@ -223,11 +223,11 @@ cancel_schedule
 delete_schedule
 ```
 
-- 定时任务在后台静默执行，执行结果保存在 `result/scheduled_tasks/` 目录
+- 定时任务在后台静默执行，执行结果保存在 `~/.fkteams/scheduler/results/` 目录
 - 支持标准 cron 表达式（重复任务）和一次性定时任务
 - 当时间、频率或任务内容存在歧义时，会先进行必要澄清，再创建任务
 - 终端模式下使用 `list_schedule` 命令查看任务状态
-- 定时任务配置存储在 workspace 同级目录的 `scheduled_tasks.json` 文件中
+- 定时任务配置存储在 `~/.fkteams/scheduler/scheduled_tasks.json` 文件中
 
 ## 命令行用法
 

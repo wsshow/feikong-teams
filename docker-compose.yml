@@ -15,7 +15,7 @@ services:
       # 持久化数据目录
       - ./data/config:/app/config
       - ./data/workspace:/app/workspace
+      - ./data/scheduler:/app/scheduler
       - ./data/history:/app/history
       - ./data/sessions:/app/sessions
-      - ./data/result:/app/result
       - ./data/log:/app/log

@@ -25,7 +25,7 @@ COPY --from=builder /build/fkteams .
 
 # 创建运行时目录
 RUN mkdir -p config workspace history/input_history history/chat_history \
-    result/scheduled_tasks sessions log
+    scheduler/results sessions log
 
 # 复制默认配置（用户可通过挂载覆盖）
 COPY release/config/config.toml config/config.toml

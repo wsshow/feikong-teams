@@ -51,9 +51,9 @@ docker run -d \
   -e FEIKONG_APP_DIR=/app \
   -v ./data/config:/app/config \
   -v ./data/workspace:/app/workspace \
+  -v ./data/scheduler:/app/scheduler \
   -v ./data/history:/app/history \
   -v ./data/sessions:/app/sessions \
-  -v ./data/result:/app/result \
   -v ./data/log:/app/log \
   fkteams
 ```
@@ -63,4 +63,4 @@ docker run -d \
 - 环境变量通过 `docker-compose.yml` 的 `environment` 或 `docker run -e` 传入，无需 `.env` 文件
 - **`FEIKONG_APP_DIR=/app`**：将应用数据目录设置为容器内的 `/app`，与 volume 挂载路径对应
 - `config/config.toml` 通过 volume 挂载，可在容器外编辑
-- 数据目录（workspace、history、sessions 等）建议挂载到宿主机以持久化
+- 数据目录（workspace、scheduler、history、sessions 等）建议挂载到宿主机以持久化
