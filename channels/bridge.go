@@ -240,13 +240,13 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	} else {
 		// 多条消息：通知用户将要执行的任务列表
 		var preview strings.Builder
-		preview.WriteString(fmt.Sprintf("收到 %d 条消息，将依次处理：", len(batch)))
+		fmt.Fprintf(&preview, "收到 %d 条消息，将依次处理：", len(batch))
 		for i, m := range batch {
 			line := m.userInput
 			if len([]rune(line)) > 50 {
 				line = string([]rune(line)[:50]) + "..."
 			}
-			preview.WriteString(fmt.Sprintf("\n%d. %s", i+1, line))
+			fmt.Fprintf(&preview, "\n%d. %s", i+1, line)
 		}
 		_ = b.manager.SendText(ctx, channelName, chatID, preview.String())
 
@@ -254,7 +254,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 		var merged strings.Builder
 		merged.WriteString("以下是用户连续发送的多条消息，请依次处理每一条：\n\n")
 		for i, m := range batch {
-			merged.WriteString(fmt.Sprintf("--- 消息 %d ---\n%s\n\n", i+1, m.userInput))
+			fmt.Fprintf(&merged, "--- 消息 %d ---\n%s\n\n", i+1, m.userInput)
 		}
 		combinedInput = merged.String()
 	}

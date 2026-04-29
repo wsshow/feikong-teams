@@ -326,20 +326,20 @@ func formatSearchResults(content string) string {
 	var output strings.Builder
 
 	if result.Message != "" {
-		output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n\n", result.Message))
+		fmt.Fprintf(&output, "  \033[32m✓ %s\033[0m\n\n", result.Message)
 	}
 
 	for i, r := range result.Results {
-		output.WriteString(fmt.Sprintf("  \033[1;36m%d. %s\033[0m\n", i+1, r.Title))
+		fmt.Fprintf(&output, "  \033[1;36m%d. %s\033[0m\n", i+1, r.Title)
 
 		if r.URL != "" {
-			output.WriteString(fmt.Sprintf("     \033[90mURL: %s\033[0m\n", r.URL))
+			fmt.Fprintf(&output, "     \033[90mURL: %s\033[0m\n", r.URL)
 		}
 
 		if r.Summary != "" {
 			summary := strings.ReplaceAll(r.Summary, "\n", " ")
 			summary = truncateString(summary, 120)
-			output.WriteString(fmt.Sprintf("     %s\n", summary))
+			fmt.Fprintf(&output, "     %s\n", summary)
 		}
 
 		if i < len(result.Results)-1 {
@@ -368,18 +368,18 @@ func formatCommandResult(content string) string {
 	var output strings.Builder
 
 	if result.ErrorMessage != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		fmt.Fprintf(&output, "  \033[31m✗ %s\033[0m\n", result.ErrorMessage)
 		return output.String()
 	}
 
 	if result.ExitCode == 0 {
-		output.WriteString(fmt.Sprintf("  \033[32m✓ 执行成功\033[0m (退出码: 0, 耗时: %s)\n", result.ExecutionTime))
+		fmt.Fprintf(&output, "  \033[32m✓ 执行成功\033[0m (退出码: 0, 耗时: %s)\n", result.ExecutionTime)
 	} else {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ 执行失败\033[0m (退出码: %d, 耗时: %s)\n", result.ExitCode, result.ExecutionTime))
+		fmt.Fprintf(&output, "  \033[31m✗ 执行失败\033[0m (退出码: %d, 耗时: %s)\n", result.ExitCode, result.ExecutionTime)
 	}
 
 	if result.WarningMessage != "" {
-		output.WriteString(fmt.Sprintf("  \033[33m⚠ %s\033[0m\n", result.WarningMessage))
+		fmt.Fprintf(&output, "  \033[33m⚠ %s\033[0m\n", result.WarningMessage)
 	}
 
 	if result.Stdout != "" {
@@ -387,7 +387,7 @@ func formatCommandResult(content string) string {
 		lines := strings.Split(result.Stdout, "\n")
 		for _, line := range lines {
 			if line != "" {
-				output.WriteString(fmt.Sprintf("  │ %s\n", line))
+				fmt.Fprintf(&output, "  │ %s\n", line)
 			}
 		}
 	}
@@ -397,7 +397,7 @@ func formatCommandResult(content string) string {
 		lines := strings.Split(result.Stderr, "\n")
 		for _, line := range lines {
 			if line != "" {
-				output.WriteString(fmt.Sprintf("  │ %s\n", line))
+				fmt.Fprintf(&output, "  │ %s\n", line)
 			}
 		}
 	}
@@ -431,24 +431,24 @@ func formatFileOpResult(content string) string {
 	}
 
 	if result.Message != "" {
-		output.WriteString(fmt.Sprintf("  %s\n", result.Message))
+		fmt.Fprintf(&output, "  %s\n", result.Message)
 	}
 
 	if result.FilePath != "" {
-		output.WriteString(fmt.Sprintf("  \033[90m路径: %s\033[0m\n", result.FilePath))
+		fmt.Fprintf(&output, "  \033[90m路径: %s\033[0m\n", result.FilePath)
 	}
 
 	if result.Size > 0 {
-		output.WriteString(fmt.Sprintf("  大小: %s\n", formatFileSize(result.Size)))
+		fmt.Fprintf(&output, "  大小: %s\n", formatFileSize(result.Size))
 	}
 
 	if len(result.Files) > 0 {
 		output.WriteString("\n  \033[1m文件列表:\033[0m\n")
 		for i, file := range result.Files {
 			if i < 20 { // 限制显示数量
-				output.WriteString(fmt.Sprintf("  │ %s\n", file))
+				fmt.Fprintf(&output, "  │ %s\n", file)
 			} else if i == 20 {
-				output.WriteString(fmt.Sprintf("  │ ... 还有 %d 个文件\n", len(result.Files)-20))
+				fmt.Fprintf(&output, "  │ ... 还有 %d 个文件\n", len(result.Files)-20)
 				break
 			}
 		}
@@ -459,23 +459,23 @@ func formatFileOpResult(content string) string {
 		lines := strings.Split(result.Content, "\n")
 		for i, line := range lines {
 			if i < 30 {
-				output.WriteString(fmt.Sprintf("  %3d │ %s\n", i+1, line))
+				fmt.Fprintf(&output, "  %3d │ %s\n", i+1, line)
 			} else if i == 30 {
-				output.WriteString(fmt.Sprintf("  ... 还有 %d 行\n", len(lines)-30))
+				fmt.Fprintf(&output, "  ... 还有 %d 行\n", len(lines)-30)
 				break
 			}
 		}
 	}
 
 	if result.ErrorMessage != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m错误: %s\033[0m\n", result.ErrorMessage))
+		fmt.Fprintf(&output, "  \033[31m错误: %s\033[0m\n", result.ErrorMessage)
 	}
 
 	return output.String()
 }
 
 func formatSSHResult(content string, toolName string) string {
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return ""
 	}
@@ -483,11 +483,11 @@ func formatSSHResult(content string, toolName string) string {
 	var output strings.Builder
 
 	if execTime, ok := result["execution_time"].(string); ok && execTime != "" {
-		output.WriteString(fmt.Sprintf("  执行时间: %s\n", execTime))
+		fmt.Fprintf(&output, "  执行时间: %s\n", execTime)
 	}
 
 	if errMsg, ok := result["error_message"].(string); ok && errMsg != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", errMsg))
+		fmt.Fprintf(&output, "  \033[31m✗ %s\033[0m\n", errMsg)
 		return output.String()
 	}
 
@@ -500,27 +500,27 @@ func formatSSHResult(content string, toolName string) string {
 			lines := strings.Split(out, "\n")
 			for _, line := range lines {
 				if line != "" {
-					output.WriteString(fmt.Sprintf("  │ %s\n", line))
+					fmt.Fprintf(&output, "  │ %s\n", line)
 				}
 			}
 		}
 
 	case "ssh_file_upload", "ssh_file_download":
 		if msg, ok := result["message"].(string); ok {
-			output.WriteString(fmt.Sprintf("  %s\n", msg))
+			fmt.Fprintf(&output, "  %s\n", msg)
 		}
 		if size, ok := result["bytes_transferred"].(float64); ok {
-			output.WriteString(fmt.Sprintf("  传输大小: %s\n", formatFileSize(int64(size))))
+			fmt.Fprintf(&output, "  传输大小: %s\n", formatFileSize(int64(size)))
 		}
 
 	case "ssh_list_dir":
-		if files, ok := result["files"].([]interface{}); ok && len(files) > 0 {
+		if files, ok := result["files"].([]any); ok && len(files) > 0 {
 			output.WriteString("  \033[1m文件列表:\033[0m\n")
 			for i, f := range files {
 				if i < 20 {
-					output.WriteString(fmt.Sprintf("  │ %v\n", f))
+					fmt.Fprintf(&output, "  │ %v\n", f)
 				} else if i == 20 {
-					output.WriteString(fmt.Sprintf("  │ ... 还有 %d 个文件\n", len(files)-20))
+					fmt.Fprintf(&output, "  │ ... 还有 %d 个文件\n", len(files)-20)
 					break
 				}
 			}
@@ -552,7 +552,7 @@ func truncateString(s string, maxLen int) string {
 }
 
 func formatTodoResult(content string, toolName string) string {
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return ""
 	}
@@ -563,30 +563,30 @@ func formatTodoResult(content string, toolName string) string {
 	errorMsg, _ := result["error_message"].(string)
 
 	if !success || errorMsg != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ 操作失败: %s\033[0m\n", errorMsg))
+		fmt.Fprintf(&output, "  \033[31m✗ 操作失败: %s\033[0m\n", errorMsg)
 		return output.String()
 	}
 
 	output.WriteString("  \033[32m✓ 操作成功\033[0m\n")
 
 	if msg, ok := result["message"].(string); ok && msg != "" {
-		output.WriteString(fmt.Sprintf("  %s\n", msg))
+		fmt.Fprintf(&output, "  %s\n", msg)
 	}
 
 	switch toolName {
 	case "todo_add", "todo_update":
-		if todoData, ok := result["todo"].(map[string]interface{}); ok {
+		if todoData, ok := result["todo"].(map[string]any); ok {
 			output.WriteString("\n")
 			output.WriteString(formatSingleTodo(todoData))
 		}
 
 	case "todo_batch_add":
-		if todosData, ok := result["added_todos"].([]interface{}); ok {
+		if todosData, ok := result["added_todos"].([]any); ok {
 			addedCount, _ := result["added_count"].(float64)
-			output.WriteString(fmt.Sprintf("\n  \033[1m已添加 %d 个待办事项:\033[0m\n\n", int(addedCount)))
+			fmt.Fprintf(&output, "\n  \033[1m已添加 %d 个待办事项:\033[0m\n\n", int(addedCount))
 
 			for i, todoItem := range todosData {
-				if todoMap, ok := todoItem.(map[string]interface{}); ok {
+				if todoMap, ok := todoItem.(map[string]any); ok {
 					output.WriteString(formatSingleTodo(todoMap))
 					if i < len(todosData)-1 {
 						output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
@@ -596,15 +596,15 @@ func formatTodoResult(content string, toolName string) string {
 		}
 
 	case "todo_list":
-		if todosData, ok := result["todos"].([]interface{}); ok {
+		if todosData, ok := result["todos"].([]any); ok {
 			totalCount, _ := result["total_count"].(float64)
-			output.WriteString(fmt.Sprintf("\n  \033[1m共 %d 个待办事项:\033[0m\n\n", int(totalCount)))
+			fmt.Fprintf(&output, "\n  \033[1m共 %d 个待办事项:\033[0m\n\n", int(totalCount))
 
 			if len(todosData) == 0 {
 				output.WriteString("  \033[90m（暂无待办事项）\033[0m\n")
 			} else {
 				for i, todoItem := range todosData {
-					if todoMap, ok := todoItem.(map[string]interface{}); ok {
+					if todoMap, ok := todoItem.(map[string]any); ok {
 						output.WriteString(formatSingleTodo(todoMap))
 						if i < len(todosData)-1 {
 							output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
@@ -618,14 +618,14 @@ func formatTodoResult(content string, toolName string) string {
 
 	case "todo_batch_delete":
 		if deletedCount, ok := result["deleted_count"].(float64); ok {
-			output.WriteString(fmt.Sprintf("\n  已删除 %d 个待办事项\n", int(deletedCount)))
+			fmt.Fprintf(&output, "\n  已删除 %d 个待办事项\n", int(deletedCount))
 		}
-		if notFoundIDs, ok := result["not_found_ids"].([]interface{}); ok && len(notFoundIDs) > 0 {
-			output.WriteString(fmt.Sprintf("  \033[33m注意: %d 个 ID 未找到\033[0m\n", len(notFoundIDs)))
+		if notFoundIDs, ok := result["not_found_ids"].([]any); ok && len(notFoundIDs) > 0 {
+			fmt.Fprintf(&output, "  \033[33m注意: %d 个 ID 未找到\033[0m\n", len(notFoundIDs))
 			if len(notFoundIDs) <= 5 {
 				for _, id := range notFoundIDs {
 					if idStr, ok := id.(string); ok {
-						output.WriteString(fmt.Sprintf("    - %s\n", idStr))
+						fmt.Fprintf(&output, "    - %s\n", idStr)
 					}
 				}
 			}
@@ -633,14 +633,14 @@ func formatTodoResult(content string, toolName string) string {
 
 	case "todo_clear":
 		if clearedCount, ok := result["cleared_count"].(float64); ok {
-			output.WriteString(fmt.Sprintf("\n  已清空 %d 个待办事项\n", int(clearedCount)))
+			fmt.Fprintf(&output, "\n  已清空 %d 个待办事项\n", int(clearedCount))
 		}
 	}
 
 	return output.String()
 }
 
-func formatSingleTodo(todo map[string]interface{}) string {
+func formatSingleTodo(todo map[string]any) string {
 	var output strings.Builder
 
 	id, _ := todo["id"].(string)
@@ -690,27 +690,27 @@ func formatSingleTodo(todo map[string]interface{}) string {
 		priorityText = "紧急"
 	}
 
-	output.WriteString(fmt.Sprintf("  %s%s\033[0m \033[1m%s\033[0m", statusColor, statusIcon, title))
+	fmt.Fprintf(&output, "  %s%s\033[0m \033[1m%s\033[0m", statusColor, statusIcon, title)
 	if priority != "" {
-		output.WriteString(fmt.Sprintf(" %s[%s]\033[0m", priorityColor, priorityText))
+		fmt.Fprintf(&output, " %s[%s]\033[0m", priorityColor, priorityText)
 	}
 	output.WriteString("\n")
 
-	output.WriteString(fmt.Sprintf("  │ 状态: %s%s\033[0m\n", statusColor, statusText))
+	fmt.Fprintf(&output, "  │ 状态: %s%s\033[0m\n", statusColor, statusText)
 
 	if id != "" {
-		output.WriteString(fmt.Sprintf("  │ \033[90mID: %s\033[0m\n", truncateString(id, 30)))
+		fmt.Fprintf(&output, "  │ \033[90mID: %s\033[0m\n", truncateString(id, 30))
 	}
 
 	if description != "" {
-		output.WriteString(fmt.Sprintf("  │ 描述: %s\n", description))
+		fmt.Fprintf(&output, "  │ 描述: %s\n", description)
 	}
 
 	if createdAt, ok := todo["created_at"].(string); ok && createdAt != "" {
-		output.WriteString(fmt.Sprintf("  │ \033[90m创建时间: %s\033[0m\n", formatTime(createdAt)))
+		fmt.Fprintf(&output, "  │ \033[90m创建时间: %s\033[0m\n", formatTime(createdAt))
 	}
 	if completedAt, ok := todo["completed_at"].(string); ok && completedAt != "" {
-		output.WriteString(fmt.Sprintf("  │ \033[90m完成时间: %s\033[0m\n", formatTime(completedAt)))
+		fmt.Fprintf(&output, "  │ \033[90m完成时间: %s\033[0m\n", formatTime(completedAt))
 	}
 
 	output.WriteString("\n")
@@ -747,21 +747,21 @@ func formatFilePatchResult(content string) string {
 	var output strings.Builder
 
 	if result.ErrorMessage != "" {
-		output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+		fmt.Fprintf(&output, "  \033[31m✗ %s\033[0m\n", result.ErrorMessage)
 		return output.String()
 	}
 
 	if result.Failed == 0 {
-		output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
+		fmt.Fprintf(&output, "  \033[32m✓ %s\033[0m\n", result.Message)
 	} else {
-		output.WriteString(fmt.Sprintf("  \033[33m⚠ %s\033[0m\n", result.Message))
+		fmt.Fprintf(&output, "  \033[33m⚠ %s\033[0m\n", result.Message)
 	}
 
 	for _, r := range result.Results {
 		if r.Success {
-			output.WriteString(fmt.Sprintf("  │ \033[32m✓\033[0m %s\n", r.Path))
+			fmt.Fprintf(&output, "  │ \033[32m✓\033[0m %s\n", r.Path)
 		} else {
-			output.WriteString(fmt.Sprintf("  │ \033[31m✗\033[0m %s: %s\n", r.Path, r.Error))
+			fmt.Fprintf(&output, "  │ \033[31m✗\033[0m %s: %s\n", r.Path, r.Error)
 		}
 	}
 
@@ -788,7 +788,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			if lastAgent != event.AgentName {
 				flushStream()
 				lastAgent = event.AgentName
-				buf.WriteString(fmt.Sprintf("\n\n**[%s]**\n\n", event.AgentName))
+				fmt.Fprintf(&buf, "\n\n**[%s]**\n\n", event.AgentName)
 			}
 			buf.WriteString(event.Content)
 			inStream = true
@@ -798,7 +798,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 				flushStream()
 				if lastAgent != event.AgentName {
 					lastAgent = event.AgentName
-					buf.WriteString(fmt.Sprintf("\n\n**[%s]**\n\n", event.AgentName))
+					fmt.Fprintf(&buf, "\n\n**[%s]**\n\n", event.AgentName)
 				}
 				buf.WriteString(event.Content)
 			}
@@ -818,9 +818,9 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 				}
 				args := truncateString(tc.Function.Arguments, 100)
 				if args != "" {
-					buf.WriteString(fmt.Sprintf("\n\n> **[%s]** 调用工具: `%s`\n> 参数: `%s`", event.AgentName, tc.Function.Name, args))
+					fmt.Fprintf(&buf, "\n\n> **[%s]** 调用工具: `%s`\n> 参数: `%s`", event.AgentName, tc.Function.Name, args)
 				} else {
-					buf.WriteString(fmt.Sprintf("\n\n> **[%s]** 调用工具: `%s`", event.AgentName, tc.Function.Name))
+					fmt.Fprintf(&buf, "\n\n> **[%s]** 调用工具: `%s`", event.AgentName, tc.Function.Name)
 				}
 			}
 			lastAgent = ""
@@ -837,7 +837,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			switch event.ActionType {
 			case ActionTransfer:
 				flushStream()
-				buf.WriteString(fmt.Sprintf("\n\n> **[%s]** → %s", event.AgentName, event.Content))
+				fmt.Fprintf(&buf, "\n\n> **[%s]** → %s", event.AgentName, event.Content)
 				lastAgent = ""
 			case ActionContextCompressStart, ActionContextCompress:
 				// 跳过上下文压缩提示
@@ -845,7 +845,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 		case EventError:
 			flushStream()
-			buf.WriteString(fmt.Sprintf("\n\n**错误 [%s]**: %s", event.AgentName, event.Error))
+			fmt.Fprintf(&buf, "\n\n**错误 [%s]**: %s", event.AgentName, event.Error)
 		}
 		return nil
 	}
@@ -898,20 +898,20 @@ func formatSearchResultMarkdown(content string) string {
 
 	var output strings.Builder
 	if result.Message != "" {
-		output.WriteString(fmt.Sprintf("\n\n> ✓ %s", result.Message))
+		fmt.Fprintf(&output, "\n\n> ✓ %s", result.Message)
 	}
 	for i, r := range result.Results {
 		if i >= 5 {
-			output.WriteString(fmt.Sprintf("\n>\n> _...还有 %d 条结果_", len(result.Results)-5))
+			fmt.Fprintf(&output, "\n>\n> _...还有 %d 条结果_", len(result.Results)-5)
 			break
 		}
-		output.WriteString(fmt.Sprintf("\n>\n> %d. **%s**", i+1, r.Title))
+		fmt.Fprintf(&output, "\n>\n> %d. **%s**", i+1, r.Title)
 		if r.URL != "" {
-			output.WriteString(fmt.Sprintf(" <%s>", r.URL))
+			fmt.Fprintf(&output, " <%s>", r.URL)
 		}
 		if r.Summary != "" {
 			summary := truncateString(strings.ReplaceAll(r.Summary, "\n", " "), 100)
-			output.WriteString(fmt.Sprintf("\n>    %s", summary))
+			fmt.Fprintf(&output, "\n>    %s", summary)
 		}
 	}
 	return output.String()
@@ -939,15 +939,15 @@ func formatSchedulerResult(content string, toolName string) string {
 			return ""
 		}
 		if result.ErrorMessage != "" {
-			output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+			fmt.Fprintf(&output, "  \033[31m✗ %s\033[0m\n", result.ErrorMessage)
 		} else if result.Task != nil {
-			output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
-			output.WriteString(fmt.Sprintf("  \033[90mID: %s\033[0m\n", result.Task.ID))
-			output.WriteString(fmt.Sprintf("  任务: %s\n", result.Task.Task))
+			fmt.Fprintf(&output, "  \033[32m✓ %s\033[0m\n", result.Message)
+			fmt.Fprintf(&output, "  \033[90mID: %s\033[0m\n", result.Task.ID)
+			fmt.Fprintf(&output, "  任务: %s\n", result.Task.Task)
 			if result.Task.CronExpr != "" {
-				output.WriteString(fmt.Sprintf("  Cron: %s\n", result.Task.CronExpr))
+				fmt.Fprintf(&output, "  Cron: %s\n", result.Task.CronExpr)
 			}
-			output.WriteString(fmt.Sprintf("  下次执行: %s\n", formatTime(result.Task.NextRunAt)))
+			fmt.Fprintf(&output, "  下次执行: %s\n", formatTime(result.Task.NextRunAt))
 		}
 
 	case "schedule_list":
@@ -970,9 +970,9 @@ func formatSchedulerResult(content string, toolName string) string {
 			return ""
 		}
 		if result.ErrorMessage != "" {
-			output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+			fmt.Fprintf(&output, "  \033[31m✗ %s\033[0m\n", result.ErrorMessage)
 		} else {
-			output.WriteString(fmt.Sprintf("  \033[32m✓ 共 %d 个定时任务\033[0m\n", result.TotalCount))
+			fmt.Fprintf(&output, "  \033[32m✓ 共 %d 个定时任务\033[0m\n", result.TotalCount)
 			for i, t := range result.Tasks {
 				var statusIcon string
 				switch t.Status {
@@ -987,12 +987,12 @@ func formatSchedulerResult(content string, toolName string) string {
 				default:
 					statusIcon = "[等待]"
 				}
-				output.WriteString(fmt.Sprintf("\n  %s \033[1m%d. %s\033[0m\n", statusIcon, i+1, t.Task))
-				output.WriteString(fmt.Sprintf("     \033[90mID: %s | 状态: %s\033[0m\n", t.ID, t.Status))
+				fmt.Fprintf(&output, "\n  %s \033[1m%d. %s\033[0m\n", statusIcon, i+1, t.Task)
+				fmt.Fprintf(&output, "     \033[90mID: %s | 状态: %s\033[0m\n", t.ID, t.Status)
 				if t.CronExpr != "" {
-					output.WriteString(fmt.Sprintf("     Cron: %s\n", t.CronExpr))
+					fmt.Fprintf(&output, "     Cron: %s\n", t.CronExpr)
 				}
-				output.WriteString(fmt.Sprintf("     下次执行: %s\n", formatTime(t.NextRunAt)))
+				fmt.Fprintf(&output, "     下次执行: %s\n", formatTime(t.NextRunAt))
 			}
 		}
 
@@ -1006,9 +1006,9 @@ func formatSchedulerResult(content string, toolName string) string {
 			return ""
 		}
 		if result.ErrorMessage != "" {
-			output.WriteString(fmt.Sprintf("  \033[31m✗ %s\033[0m\n", result.ErrorMessage))
+			fmt.Fprintf(&output, "  \033[31m✗ %s\033[0m\n", result.ErrorMessage)
 		} else {
-			output.WriteString(fmt.Sprintf("  \033[32m✓ %s\033[0m\n", result.Message))
+			fmt.Fprintf(&output, "  \033[32m✓ %s\033[0m\n", result.Message)
 		}
 	}
 
@@ -1038,19 +1038,19 @@ func formatDispatchResult(content string) string {
 			failed++
 		}
 	}
-	b.WriteString(fmt.Sprintf("  \033[1m分发完成: %d 成功, %d 失败\033[0m\n", success, failed))
+	fmt.Fprintf(&b, "  \033[1m分发完成: %d 成功, %d 失败\033[0m\n", success, failed)
 
 	for _, r := range data.Results {
 		icon := "\033[32m✓\033[0m"
 		if r.Status != "success" {
 			icon = "\033[31m✗\033[0m"
 		}
-		b.WriteString(fmt.Sprintf("  %s [%d] %s", icon, r.TaskIndex, truncateString(r.Description, 60)))
+		fmt.Fprintf(&b, "  %s [%d] %s", icon, r.TaskIndex, truncateString(r.Description, 60))
 		if r.Error != "" {
-			b.WriteString(fmt.Sprintf(" \033[31m— %s\033[0m", truncateString(r.Error, 40)))
+			fmt.Fprintf(&b, " \033[31m— %s\033[0m", truncateString(r.Error, 40))
 		}
 		if len(r.Operations) > 0 {
-			b.WriteString(fmt.Sprintf(" \033[90m(%d 项操作)\033[0m", len(r.Operations)))
+			fmt.Fprintf(&b, " \033[90m(%d 项操作)\033[0m", len(r.Operations))
 		}
 		b.WriteString("\n")
 	}
@@ -1080,18 +1080,18 @@ func formatDispatchResultMarkdown(content string) string {
 			failed++
 		}
 	}
-	b.WriteString(fmt.Sprintf("\n\n> **分发完成**: %d 成功, %d 失败\n", success, failed))
+	fmt.Fprintf(&b, "\n\n> **分发完成**: %d 成功, %d 失败\n", success, failed)
 	for _, r := range data.Results {
 		icon := "✓"
 		if r.Status != "success" {
 			icon = "✗"
 		}
-		b.WriteString(fmt.Sprintf("> %s [%d] %s", icon, r.TaskIndex, r.Description))
+		fmt.Fprintf(&b, "> %s [%d] %s", icon, r.TaskIndex, r.Description)
 		if r.Error != "" {
-			b.WriteString(fmt.Sprintf(" — %s", r.Error))
+			fmt.Fprintf(&b, " — %s", r.Error)
 		}
 		if len(r.Operations) > 0 {
-			b.WriteString(fmt.Sprintf(" (%d 项操作)", len(r.Operations)))
+			fmt.Fprintf(&b, " (%d 项操作)", len(r.Operations))
 		}
 		b.WriteString("\n")
 	}

@@ -227,7 +227,7 @@ func FormatTasksForDisplay(tasks []ScheduledTask) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("共 %d 个定时任务:\n\n", len(tasks)))
+	fmt.Fprintf(&sb, "共 %d 个定时任务:\n\n", len(tasks))
 
 	for i, t := range tasks {
 		statusIcon := "[等待]"
@@ -242,17 +242,17 @@ func FormatTasksForDisplay(tasks []ScheduledTask) string {
 			statusIcon = "[取消]"
 		}
 
-		sb.WriteString(fmt.Sprintf("  %s %d. %s\n", statusIcon, i+1, t.Task))
-		sb.WriteString(fmt.Sprintf("     ID: %s | 状态: %s\n", t.ID, t.Status))
+		fmt.Fprintf(&sb, "  %s %d. %s\n", statusIcon, i+1, t.Task)
+		fmt.Fprintf(&sb, "     ID: %s | 状态: %s\n", t.ID, t.Status)
 
 		if t.CronExpr != "" {
-			sb.WriteString(fmt.Sprintf("     Cron: %s\n", t.CronExpr))
+			fmt.Fprintf(&sb, "     Cron: %s\n", t.CronExpr)
 		}
 
-		sb.WriteString(fmt.Sprintf("     下次执行: %s\n", t.NextRunAt.Format("2006-01-02 15:04:05")))
+		fmt.Fprintf(&sb, "     下次执行: %s\n", t.NextRunAt.Format("2006-01-02 15:04:05"))
 
 		if t.LastRunAt != nil {
-			sb.WriteString(fmt.Sprintf("     上次执行: %s\n", t.LastRunAt.Format("2006-01-02 15:04:05")))
+			fmt.Fprintf(&sb, "     上次执行: %s\n", t.LastRunAt.Format("2006-01-02 15:04:05"))
 		}
 
 		if t.Result != "" {
@@ -260,7 +260,7 @@ func FormatTasksForDisplay(tasks []ScheduledTask) string {
 			if len(result) > 100 {
 				result = result[:100] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("     结果: %s\n", result))
+			fmt.Fprintf(&sb, "     结果: %s\n", result)
 		}
 
 		if i < len(tasks)-1 {

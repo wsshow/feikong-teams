@@ -202,11 +202,11 @@ func FormatFileDiff(fd *FileDiff) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("--- %s\n", formatFileName(fd.OldName)))
-	sb.WriteString(fmt.Sprintf("+++ %s\n", formatFileName(fd.NewName)))
+	fmt.Fprintf(&sb, "--- %s\n", formatFileName(fd.OldName))
+	fmt.Fprintf(&sb, "+++ %s\n", formatFileName(fd.NewName))
 
 	for _, h := range fd.Hunks {
-		sb.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n", h.OldStart, h.OldLines, h.NewStart, h.NewLines))
+		fmt.Fprintf(&sb, "@@ -%d,%d +%d,%d @@\n", h.OldStart, h.OldLines, h.NewStart, h.NewLines)
 		for _, line := range h.Lines {
 			switch line.Kind {
 			case OpEqual:

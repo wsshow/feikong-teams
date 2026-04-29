@@ -445,7 +445,7 @@ func toToolParam(s *jsonschema.Schema) *deepseek.FunctionParameters {
 	}
 	ret := &deepseek.FunctionParameters{
 		Type:       s.Type,
-		Properties: map[string]interface{}{},
+		Properties: map[string]any{},
 		Required:   nil,
 	}
 	if len(s.Required) > 0 {

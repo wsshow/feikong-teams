@@ -231,7 +231,7 @@ func forwardEvents(ctx context.Context, tasks []taskItem, eventCh <-chan viewEve
 		if e.TaskIndex >= 0 && e.TaskIndex < len(tasks) {
 			desc = tasks[e.TaskIndex].Description
 		}
-		detail, _ := json.Marshal(map[string]interface{}{
+		detail, _ := json.Marshal(map[string]any{
 			"task_index":   e.TaskIndex,
 			"description":  desc,
 			"event_type":   e.Type,

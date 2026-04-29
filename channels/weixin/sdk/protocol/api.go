@@ -133,7 +133,7 @@ func (c *Client) PollQRStatus(ctx context.Context, baseURL, qrcode string) (*QRS
 }
 
 // apiPost sends a POST to the iLink API and parses the response.
-func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, body interface{}, timeout time.Duration) (json.RawMessage, error) {
+func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, body any, timeout time.Duration) (json.RawMessage, error) {
 	data, _ := json.Marshal(body)
 	u := baseURL + endpoint
 	httpCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -179,7 +179,7 @@ func (c *Client) apiPost(ctx context.Context, baseURL, endpoint, token string, b
 
 // GetUpdates performs a long-poll for new messages.
 func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string) (*GetUpdatesResponse, error) {
-	body := map[string]interface{}{
+	body := map[string]any{
 		"get_updates_buf": cursor,
 		"base_info":       baseInfo(),
 	}
@@ -193,8 +193,8 @@ func (c *Client) GetUpdates(ctx context.Context, baseURL, token, cursor string) 
 }
 
 // SendMessage sends a message through the iLink API.
-func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg interface{}) error {
-	body := map[string]interface{}{
+func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg any) error {
+	body := map[string]any{
 		"msg":       msg,
 		"base_info": baseInfo(),
 	}
@@ -204,7 +204,7 @@ func (c *Client) SendMessage(ctx context.Context, baseURL, token string, msg int
 
 // GetConfig gets the typing ticket for a user.
 func (c *Client) GetConfig(ctx context.Context, baseURL, token, userID, contextToken string) (*GetConfigResponse, error) {
-	body := map[string]interface{}{
+	body := map[string]any{
 		"ilink_user_id": userID,
 		"context_token": contextToken,
 		"base_info":     baseInfo(),
@@ -220,7 +220,7 @@ func (c *Client) GetConfig(ctx context.Context, baseURL, token, userID, contextT
 
 // SendTyping sends or cancels the typing indicator.
 func (c *Client) SendTyping(ctx context.Context, baseURL, token, userID, ticket string, status int) error {
-	body := map[string]interface{}{
+	body := map[string]any{
 		"ilink_user_id": userID,
 		"typing_ticket": ticket,
 		"status":        status,
@@ -249,7 +249,7 @@ type GetUploadURLResponse struct {
 
 // GetUploadURL requests an upload URL for CDN media upload.
 func (c *Client) GetUploadURL(ctx context.Context, baseURL, token string, req GetUploadURLRequest) (*GetUploadURLResponse, error) {
-	body := map[string]interface{}{
+	body := map[string]any{
 		"filekey":       req.FileKey,
 		"media_type":    req.MediaType,
 		"to_user_id":    req.ToUserID,
@@ -272,8 +272,8 @@ func (c *Client) GetUploadURL(ctx context.Context, baseURL, token string, req Ge
 }
 
 // BuildMediaMessage creates a media message payload.
-func BuildMediaMessage(userID, contextToken string, itemList []map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{
+func BuildMediaMessage(userID, contextToken string, itemList []map[string]any) map[string]any {
+	return map[string]any{
 		"from_user_id":  "",
 		"to_user_id":    userID,
 		"client_id":     newUUID(),
@@ -285,15 +285,15 @@ func BuildMediaMessage(userID, contextToken string, itemList []map[string]interf
 }
 
 // BuildTextMessage creates a text message payload.
-func BuildTextMessage(userID, contextToken, text string) map[string]interface{} {
-	return map[string]interface{}{
+func BuildTextMessage(userID, contextToken, text string) map[string]any {
+	return map[string]any{
 		"from_user_id":  "",
 		"to_user_id":    userID,
 		"client_id":     newUUID(),
 		"message_type":  2,
 		"message_state": 2,
 		"context_token": contextToken,
-		"item_list": []map[string]interface{}{
+		"item_list": []map[string]any{
 			{"type": 1, "text_item": map[string]string{"text": text}},
 		},
 	}

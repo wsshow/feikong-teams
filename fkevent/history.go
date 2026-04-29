@@ -115,7 +115,7 @@ func (m *AgentMessage) getContentWithToolsInternal(filterNoisy bool) string {
 				builder.WriteString("]")
 				if tc.Result != "" {
 					if filterNoisy && isNoisyTool(tc.Name) {
-						builder.WriteString(fmt.Sprintf(" → [result omitted] (~%d chars)", len([]rune(tc.Result))))
+						fmt.Fprintf(&builder, " → [result omitted] (~%d chars)", len([]rune(tc.Result)))
 					} else {
 						builder.WriteString(" → ")
 						builder.WriteString(truncateRunes(tc.Result, maxToolResultLen))
@@ -442,8 +442,8 @@ func (h *HistoryRecorder) GetConversationSummary() string {
 				contentLen += len([]rune(event.Content))
 			}
 		}
-		result.WriteString(fmt.Sprintf("%d. [%s] %s - %d字 (%v)\n",
-			i+1, msg.StartTime.Format("15:04:05"), msg.AgentName, contentLen, duration.Round(time.Millisecond)))
+		fmt.Fprintf(&result, "%d. [%s] %s - %d字 (%v)\n",
+			i+1, msg.StartTime.Format("15:04:05"), msg.AgentName, contentLen, duration.Round(time.Millisecond))
 	}
 	return result.String()
 }
@@ -625,8 +625,8 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 	var md strings.Builder
 
 	md.WriteString("# 对话历史\n\n")
-	md.WriteString(fmt.Sprintf("**生成时间**: %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
-	md.WriteString(fmt.Sprintf("**对话轮次**: %d\n\n", len(messages)))
+	fmt.Fprintf(&md, "**生成时间**: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&md, "**对话轮次**: %d\n\n", len(messages))
 
 	agentMap := make(map[string]int)
 	for _, msg := range messages {
@@ -638,23 +638,23 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 		if !first {
 			md.WriteString(", ")
 		}
-		md.WriteString(fmt.Sprintf("%s (%d次)", agent, count))
+		fmt.Fprintf(&md, "%s (%d次)", agent, count)
 		first = false
 	}
 	md.WriteString("\n\n---\n\n")
 
 	// 对话内容
 	for i, msg := range messages {
-		md.WriteString(fmt.Sprintf("## %d. %s\n\n", i+1, msg.AgentName))
+		fmt.Fprintf(&md, "## %d. %s\n\n", i+1, msg.AgentName)
 
 		duration := msg.EndTime.Sub(msg.StartTime)
-		md.WriteString(fmt.Sprintf("**时间**: %s - %s (%v)\n\n",
+		fmt.Fprintf(&md, "**时间**: %s - %s (%v)\n\n",
 			msg.StartTime.Format("15:04:05"),
 			msg.EndTime.Format("15:04:05"),
-			duration.Round(time.Millisecond)))
+			duration.Round(time.Millisecond))
 
 		if msg.RunPath != "" {
-			md.WriteString(fmt.Sprintf("**路径**: `%s`\n\n", msg.RunPath))
+			fmt.Fprintf(&md, "**路径**: `%s`\n\n", msg.RunPath)
 		}
 
 		// 事件内容
@@ -667,23 +667,23 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case MsgTypeToolCall:
 				if event.ToolCall != nil {
-					md.WriteString(fmt.Sprintf("> **工具调用**: %s\n", event.ToolCall.Name))
+					fmt.Fprintf(&md, "> **工具调用**: %s\n", event.ToolCall.Name)
 					if event.ToolCall.Arguments != "" {
-						md.WriteString(fmt.Sprintf("> - **参数**: `%s`\n", event.ToolCall.Arguments))
+						fmt.Fprintf(&md, "> - **参数**: `%s`\n", event.ToolCall.Arguments)
 					}
 					if event.ToolCall.Result != "" {
-						md.WriteString(fmt.Sprintf("> - **结果**: %s\n", event.ToolCall.Result))
+						fmt.Fprintf(&md, "> - **结果**: %s\n", event.ToolCall.Result)
 					}
 					md.WriteString("\n")
 				}
 
 			case MsgTypeAction:
 				if event.Action != nil {
-					md.WriteString(fmt.Sprintf("> **[Action]**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content))
+					fmt.Fprintf(&md, "> **[Action]**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content)
 				}
 
 			case MsgTypeError:
-				md.WriteString(fmt.Sprintf("> **[错误]**: %s\n\n", event.Content))
+				fmt.Fprintf(&md, "> **[错误]**: %s\n\n", event.Content)
 			}
 		}
 

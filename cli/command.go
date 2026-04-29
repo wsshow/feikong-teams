@@ -234,10 +234,10 @@ func ListSessions(interactive ...bool) {
 
 		histFile := filepath.Join(sessionDir, "history.json")
 		if info, err := os.Stat(histFile); err == nil {
-			sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %d B |\n",
-				sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size()))
+			fmt.Fprintf(&sb, "| `%s` | %s | %s | %d B |\n",
+				sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
 		} else {
-			sb.WriteString(fmt.Sprintf("| `%s` | %s | - | - |\n", sessionID, title))
+			fmt.Fprintf(&sb, "| `%s` | %s | - | - |\n", sessionID, title)
 		}
 		count++
 	}
@@ -248,9 +248,9 @@ func ListSessions(interactive ...bool) {
 	}
 
 	if len(interactive) > 0 && interactive[0] {
-		sb.WriteString(fmt.Sprintf("\n共 **%d** 个会话，使用 `load_chat_history` 加载\n", count))
+		fmt.Fprintf(&sb, "\n共 **%d** 个会话，使用 `load_chat_history` 加载\n", count)
 	} else {
-		sb.WriteString(fmt.Sprintf("\n共 **%d** 个会话，使用 `-r <session_id>` 恢复会话\n", count))
+		fmt.Fprintf(&sb, "\n共 **%d** 个会话，使用 `-r <session_id>` 恢复会话\n", count)
 	}
 	sb.WriteString("\n---\n")
 	fmt.Println(fkevent.RenderMarkdown(sb.String()))
@@ -284,7 +284,7 @@ func ListAvailableAgents() {
 	sb.WriteString("> 使用方式: 输入 `@智能体名 [查询内容]` 即可切换到该智能体\n\n")
 
 	for _, agent := range agents.GetRegistry() {
-		sb.WriteString(fmt.Sprintf("- **@%s** — %s\n", agent.Name, agent.Description))
+		fmt.Fprintf(&sb, "- **@%s** — %s\n", agent.Name, agent.Description)
 	}
 
 	sb.WriteString("\n> 输入 `@` 后会自动提示可用的智能体")
@@ -308,7 +308,7 @@ func handleListMemory() {
 	var sb strings.Builder
 	sb.WriteString("# 长期记忆列表\n\n")
 	printMemoryEntries(entries, &sb)
-	sb.WriteString(fmt.Sprintf("---\n共 **%d** 条记忆，使用 `delete_memory` 删除条目，或 `clear_memory` 清空全部", len(entries)))
+	fmt.Fprintf(&sb, "---\n共 **%d** 条记忆，使用 `delete_memory` 删除条目，或 `clear_memory` 清空全部", len(entries))
 	fmt.Println(fkevent.RenderMarkdown(sb.String()))
 }
 
@@ -485,10 +485,10 @@ func handleLoadSession() {
 // printMemoryEntries 将记忆条目写入 strings.Builder
 func printMemoryEntries(entries []memory.MemoryEntry, sb *strings.Builder) {
 	for i, e := range entries {
-		sb.WriteString(fmt.Sprintf("%d. **[%s]** %s\n", i+1, e.Type, e.Summary))
-		sb.WriteString(fmt.Sprintf("   %s\n", e.Detail))
-		sb.WriteString(fmt.Sprintf("   标签: `%s` | 命中: **%d** 次 | 创建: %s\n\n",
-			strings.Join(e.Tags, "`, `"), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04")))
+		fmt.Fprintf(sb, "%d. **[%s]** %s\n", i+1, e.Type, e.Summary)
+		fmt.Fprintf(sb, "   %s\n", e.Detail)
+		fmt.Fprintf(sb, "   标签: `%s` | 命中: **%d** 次 | 创建: %s\n\n",
+			strings.Join(e.Tags, "`, `"), e.HitCount, e.CreatedAt.Format("2006-01-02 15:04"))
 	}
 }
 

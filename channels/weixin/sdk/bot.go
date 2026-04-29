@@ -352,14 +352,14 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		if err != nil {
 			return err
 		}
-		items := []map[string]interface{}{}
+		items := []map[string]any{}
 		if content.Caption != "" {
-			items = append(items, map[string]interface{}{
+			items = append(items, map[string]any{
 				"type": 1, "text_item": map[string]string{"text": content.Caption},
 			})
 		}
-		items = append(items, map[string]interface{}{
-			"type": 2, "image_item": map[string]interface{}{
+		items = append(items, map[string]any{
+			"type": 2, "image_item": map[string]any{
 				"media":    cdnMediaMap(&result.Media),
 				"mid_size": result.EncryptedFileSize,
 			},
@@ -374,14 +374,14 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		if err != nil {
 			return err
 		}
-		items := []map[string]interface{}{}
+		items := []map[string]any{}
 		if content.Caption != "" {
-			items = append(items, map[string]interface{}{
+			items = append(items, map[string]any{
 				"type": 1, "text_item": map[string]string{"text": content.Caption},
 			})
 		}
-		items = append(items, map[string]interface{}{
-			"type": 5, "video_item": map[string]interface{}{
+		items = append(items, map[string]any{
+			"type": 5, "video_item": map[string]any{
 				"media":      cdnMediaMap(&result.Media),
 				"video_size": result.EncryptedFileSize,
 			},
@@ -411,8 +411,8 @@ func (b *Bot) sendContent(ctx context.Context, userID, contextToken string, cont
 		if err != nil {
 			return err
 		}
-		items := []map[string]interface{}{
-			{"type": 4, "file_item": map[string]interface{}{
+		items := []map[string]any{
+			{"type": 4, "file_item": map[string]any{
 				"media":     cdnMediaMap(&result.Media),
 				"file_name": fileName,
 				"len":       strconv.Itoa(len(content.File)),
@@ -542,8 +542,8 @@ func (b *Bot) cdnUpload(ctx context.Context, creds *auth.Credentials, data []byt
 	}, nil
 }
 
-func cdnMediaMap(m *CDNMedia) map[string]interface{} {
-	return map[string]interface{}{
+func cdnMediaMap(m *CDNMedia) map[string]any {
+	return map[string]any{
 		"encrypt_query_param": m.EncryptQueryParam,
 		"aes_key":             m.AESKey,
 		"encrypt_type":        m.EncryptType,
@@ -652,7 +652,7 @@ func (b *Bot) reportError(err error) {
 	}
 }
 
-func (b *Bot) log(level, format string, args ...interface{}) {
+func (b *Bot) log(level, format string, args ...any) {
 	if b.opts.LogLevel == "silent" {
 		return
 	}

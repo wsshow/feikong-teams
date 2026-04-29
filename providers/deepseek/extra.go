@@ -14,7 +14,7 @@ func SetReasoningContent(message *schema.Message, content string) {
 		return
 	}
 	if message.Extra == nil {
-		message.Extra = make(map[string]interface{})
+		message.Extra = make(map[string]any)
 	}
 	message.Extra[extraKeyReasoningContent] = content
 }
@@ -32,7 +32,7 @@ func SetPrefix(message *schema.Message) {
 		return
 	}
 	if message.Extra == nil {
-		message.Extra = make(map[string]interface{})
+		message.Extra = make(map[string]any)
 	}
 	message.Extra[extraKeyPrefix] = true
 }

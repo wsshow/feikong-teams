@@ -174,7 +174,7 @@ func (et *ExcelTools) BatchDeleteSheets(ctx context.Context, req *BatchDeleteShe
 // CellValue 单元格值定义
 type CellValue struct {
 	Cell  string      `json:"cell" jsonschema:"description=单元格坐标(如A1),required"`
-	Value interface{} `json:"value" jsonschema:"description=单元格值,required"`
+	Value any `json:"value" jsonschema:"description=单元格值,required"`
 }
 
 // BatchSetCellValuesRequest 批量设置单元格值请求
