@@ -112,6 +112,14 @@ class FKTeamsChat {
     this.quickNavList = document.getElementById("quick-nav-list");
     this.newSessionBtn = document.getElementById("new-session-btn");
     this.sidebarSessionList = document.getElementById("sidebar-session-list");
+
+    // 当前工作上下文指示器（显示在输入框正上方）
+    this._contextIndicator = document.createElement("div");
+    this._contextIndicator.className = "current-context-indicator";
+    const inputWrapper = document.querySelector(".input-wrapper");
+    if (inputWrapper && inputWrapper.parentNode) {
+      inputWrapper.parentNode.insertBefore(this._contextIndicator, inputWrapper);
+    }
   }
 
   bindEvents() {
@@ -454,6 +462,59 @@ class FKTeamsChat {
     }
   }
 
+  setCurrentAgent(agent) {
+    this.currentAgent = agent;
+    // 持久化到 localStorage，页面刷新后恢复
+    if (agent) {
+      localStorage.setItem("fk_current_agent_" + this.sessionId, agent.name);
+    } else {
+      localStorage.removeItem("fk_current_agent_" + this.sessionId);
+    }
+    this.updateCurrentContextIndicator();
+  }
+
+  updateCurrentContextIndicator() {
+    // 桌面端指示器
+    if (this._contextIndicator) {
+      if (this.currentAgent) {
+        this._contextIndicator.className = "current-context-indicator agent-active active";
+        this._contextIndicator.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span class="context-label">@${this.escapeHtml(this.currentAgent.name)}</span>
+          <button class="context-dismiss" title="切换回团队模式">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        `;
+        this._contextIndicator.querySelector(".context-dismiss").addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.resetToTeamMode();
+        });
+      } else {
+        this._contextIndicator.className = "current-context-indicator";
+        this._contextIndicator.innerHTML = "";
+      }
+    }
+
+    // 移动端工具栏内嵌标签
+    const mobileTag = document.getElementById("mobile-agent-tag");
+    if (mobileTag) {
+      if (this.currentAgent) {
+        mobileTag.style.display = "flex";
+        mobileTag.querySelector(".mobile-agent-tag-name").textContent = "@" + this.currentAgent.name;
+      } else {
+        mobileTag.style.display = "none";
+      }
+    }
+  }
+
   setMode(mode) {
     this.mode = mode;
     this.modeButtons.forEach((btn) => {
@@ -462,7 +523,7 @@ class FKTeamsChat {
 
     // 切换模式时，清除当前智能体
     if (this.currentAgent) {
-      this.currentAgent = null;
+      this.setCurrentAgent(null);
       this.showNotification("已切换回团队模式", "success");
     }
 

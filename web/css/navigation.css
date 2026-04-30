@@ -347,6 +347,52 @@ pre::-webkit-scrollbar-thumb:hover {
     color: var(--text-tertiary);
 }
 
+/* 移动端智能体标签 — 嵌入工具栏一行展示 */
+.mobile-agent-tag {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 32px;
+    padding: 0 10px;
+    background: var(--warning-light);
+    border: 1.5px solid var(--warning);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--warning);
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.mobile-agent-tag-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+}
+
+.mobile-agent-tag-dismiss {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.mobile-agent-tag-dismiss svg {
+    width: 10px;
+    height: 10px;
+}
+
 /* Mobile quick nav popup */
 .mobile-nav-popup {
     position: absolute;

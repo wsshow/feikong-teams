@@ -185,6 +185,73 @@
     }
 }
 
+/* Current Context Indicator — 当前工作上下文指示器（移动端和桌面端通用） */
+.current-context-indicator {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.current-context-indicator.active {
+    display: inline-flex;
+}
+
+.current-context-indicator.agent-active {
+    background: var(--warning-light);
+    border: 2px solid var(--warning);
+    color: var(--warning);
+}
+
+.current-context-indicator svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.current-context-indicator .context-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.current-context-indicator .context-dismiss {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+    padding: 0;
+    margin-left: 2px;
+}
+
+.current-context-indicator .context-dismiss:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.current-context-indicator .context-dismiss svg {
+    width: 12px;
+    height: 12px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .sidebar {
@@ -236,6 +303,11 @@
     .input-wrapper {
         padding: 10px 12px;
         gap: 8px;
+    }
+
+    /* 移动端上下文指示器隐藏，改用工具栏内嵌标签 */
+    .current-context-indicator {
+        display: none !important;
     }
 
     .welcome-message {

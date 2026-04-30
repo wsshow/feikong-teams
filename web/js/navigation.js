@@ -104,6 +104,15 @@ FKTeamsChat.prototype.initMobileToolbar = function () {
     this.mobileToolbar.innerHTML = `
         <button class="mobile-tool-btn" id="mobile-at-btn">@</button>
         <button class="mobile-tool-btn" id="mobile-hash-btn">#</button>
+        <span class="mobile-agent-tag" id="mobile-agent-tag" style="display:none">
+            <span class="mobile-agent-tag-name"></span>
+            <button class="mobile-agent-tag-dismiss" title="切换回团队模式">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </span>
         <button class="mobile-tool-btn mobile-sidebar-btn" id="mobile-sidebar-btn" title="菜单">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 6h16M4 12h16M4 18h16"/>
@@ -117,6 +126,12 @@ FKTeamsChat.prototype.initMobileToolbar = function () {
             <span class="nav-count" id="mobile-nav-count"></span>
         </button>
     `;
+
+    // 移动端智能体标签关闭按钮
+    this.mobileToolbar.querySelector('#mobile-agent-tag .mobile-agent-tag-dismiss').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.resetToTeamMode();
+    });
 
     inputContainer.insertBefore(this.mobileToolbar, inputContainer.firstChild);
 

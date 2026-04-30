@@ -31,7 +31,7 @@ FKTeamsChat.prototype.createNewSession = async function (silent, title) {
   this.sessionId = newSessionId;
   this.sessionIdInput.value = newSessionId;
   this._hasLoadedSession = true;
-  this.currentAgent = null; // 重置当前智能体，防止新会话继承上一个 @agent
+  this.setCurrentAgent(null); // 重置当前智能体，防止新会话继承上一个 @agent
 
   // 同步处理状态
   this.isProcessing = false;
@@ -240,7 +240,7 @@ FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
   this.currentMessageElement = cached.currentMessageElement;
   this.hasToolCallAfterMessage = cached.hasToolCallAfterMessage;
   this.userQuestions = cached.userQuestions || [];
-  this.currentAgent = cached.currentAgent || null;
+  this.setCurrentAgent(cached.currentAgent || null);
   this.updateQuickNav();
   this.hideChatLoading();
 
@@ -951,6 +951,17 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
   }
 
   this.scrollToBottom();
+
+  // 从 localStorage 恢复当前 @智能体 状态（页面刷新后保持上下文）
+  const savedAgentName = localStorage.getItem("fk_current_agent_" + this.sessionId);
+  if (savedAgentName) {
+    const agent = this.agents.find((a) => a.name === savedAgentName);
+    if (agent) {
+      this.setCurrentAgent(agent);
+    } else {
+      localStorage.removeItem("fk_current_agent_" + this.sessionId);
+    }
+  }
 };
 
 FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {

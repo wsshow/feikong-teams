@@ -53,7 +53,7 @@ FKTeamsChat.prototype.sendMessage = async function () {
     // 查找智能体
     const agent = this.agents.find((a) => a.name === mention.agentName);
     if (agent) {
-      this.currentAgent = agent;
+      this.setCurrentAgent(agent);
 
       // 显示切换通知
       this.showAgentSwitchNotification(agent.name, agent.description);
@@ -165,7 +165,7 @@ FKTeamsChat.prototype.showAgentSwitchNotification = function (
 
 // 重置回团队模式
 FKTeamsChat.prototype.resetToTeamMode = function () {
-  this.currentAgent = null;
+  this.setCurrentAgent(null);
   const resetNotificationEl = document.createElement("div");
   resetNotificationEl.className = "action-event agent-switch";
   resetNotificationEl.innerHTML = `
