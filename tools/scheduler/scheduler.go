@@ -404,6 +404,15 @@ func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr stri
 						tasks.Tasks[i].Status = "failed"
 						log.Printf("[scheduler] cron parse failed: taskID=%s, err=%v", taskID, cronErr)
 					} else {
+						// if the next cron-aligned time is too close, skip to the one after
+						if nextRun.Sub(now) < 30*time.Second {
+							nextRun, cronErr = s.ComputeNextRun(cronExpr, nextRun)
+							if cronErr != nil {
+								tasks.Tasks[i].Status = "failed"
+								log.Printf("[scheduler] cron parse failed (skip): taskID=%s, err=%v", taskID, cronErr)
+								break
+							}
+						}
 						tasks.Tasks[i].Status = "pending"
 						tasks.Tasks[i].NextRunAt = nextRun
 					}

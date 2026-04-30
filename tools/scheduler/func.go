@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -106,7 +107,7 @@ func (s *Scheduler) ScheduleAdd(ctx context.Context, req *ScheduleAddRequest) (*
 
 	return &ScheduleAddResponse{
 		Success: true,
-		Message: "task created successfully",
+		Message: "task created, will be executed by background tasker on schedule",
 		Task:    &task,
 	}, nil
 }
@@ -261,6 +262,10 @@ func FormatTasksForDisplay(tasks []ScheduledTask) string {
 
 		if t.ResultPath != "" {
 			fmt.Fprintf(&sb, "     Result: %s\n", t.ResultPath)
+			historyDir := filepath.Join(filepath.Dir(t.ResultPath), "history")
+			if entries, err := os.ReadDir(historyDir); err == nil && len(entries) > 0 {
+				fmt.Fprintf(&sb, "     History: %d past results\n", len(entries))
+			}
 		}
 
 		if i < len(tasks)-1 {

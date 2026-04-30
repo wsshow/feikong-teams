@@ -16,7 +16,9 @@ func (s *Scheduler) GetTools() ([]tool.BaseTool, error) {
 	var tools []tool.BaseTool
 
 	scheduleAddTool, err := utils.InferTool("schedule_add",
-		"创建定时任务。支持两种模式：1) cron 表达式（重复任务），如 '*/5 * * * *' 每5分钟、'0 9 * * *' 每天9点；2) execute_at 指定时间（一次性任务）。cron 表达式为标准5字段格式：分 时 日 月 周。",
+		"创建定时任务，任务将由后台任务官（Tasker）独立执行，你不需要也无法参与执行。"+
+			"支持两种模式：1) cron 表达式（重复任务），如 '*/5 * * * *' 每5分钟、'0 9 * * *' 每天9点；2) execute_at 指定时间（一次性任务）。"+
+			"cron 表达式为标准5字段格式：分 时 日 月 周。创建成功后告知用户任务已交由后台调度器管理即可，不要承诺你会去执行。",
 		s.ScheduleAdd)
 	if err != nil {
 		return nil, err

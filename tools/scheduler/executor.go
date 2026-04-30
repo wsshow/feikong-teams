@@ -71,14 +71,23 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 	return output, nil
 }
 
-// writeResult writes the task result to the per-task directory
+// writeResult writes the task result to both the latest file and a timestamped history copy
 func (e *BackgroundExecutor) writeResult(taskID string, task string, result string) {
+	now := time.Now()
+	ts := now.Format("20060102_150405")
+
 	content := fmt.Sprintf("# Task Result\n\n**Task ID**: %s\n\n**Time**: %s\n\n**Task**: %s\n\n## Result\n\n%s\n",
 		taskID,
-		time.Now().Format("2006-01-02 15:04:05"),
+		now.Format("2006-01-02 15:04:05"),
 		task,
 		result,
 	)
 
+	// write latest result
 	_ = os.WriteFile(e.taskResultPath(taskID), []byte(content), 0644)
+
+	// archive a timestamped copy
+	historyDir := filepath.Join(e.taskDir(taskID), "history")
+	_ = os.MkdirAll(historyDir, 0755)
+	_ = os.WriteFile(filepath.Join(historyDir, ts+".md"), []byte(content), 0644)
 }
