@@ -104,9 +104,15 @@ FKTeamsChat.prototype.initMobileToolbar = function () {
     this.mobileToolbar.innerHTML = `
         <button class="mobile-tool-btn" id="mobile-at-btn">@</button>
         <button class="mobile-tool-btn" id="mobile-hash-btn">#</button>
-        <button class="mobile-tool-btn mobile-nav-btn" id="mobile-nav-btn">
+        <button class="mobile-tool-btn mobile-sidebar-btn" id="mobile-sidebar-btn" title="菜单">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+        </button>
+        <button class="mobile-tool-btn mobile-nav-btn" id="mobile-nav-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
             </svg>
             <span class="nav-count" id="mobile-nav-count"></span>
         </button>
@@ -126,6 +132,12 @@ FKTeamsChat.prototype.initMobileToolbar = function () {
         this.insertCharAtCursor('#');
         this.messageInput.focus();
         this.handleInputForMention();
+    });
+
+    // 侧边栏按钮：切换侧边栏
+    this.mobileToolbar.querySelector('#mobile-sidebar-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleSidebar();
     });
 
     // 导航按钮：切换快速导航弹窗

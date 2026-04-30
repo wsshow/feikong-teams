@@ -201,9 +201,23 @@
     }
 
     .sidebar-toggle {
+        display: none;
+    }
+
+    /* 移动端侧边栏遮罩层 */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
         left: 0;
-        width: 20px;
-        height: 36px;
+        right: 0;
+        bottom: 0;
+        background: rgba(40, 35, 25, 0.35);
+        z-index: 98;
+    }
+
+    .sidebar-overlay.active {
+        display: block;
     }
 
     .chat-container {
@@ -212,6 +226,7 @@
 
     .input-container {
         padding: 8px 0 12px;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
         margin-left: -12px;
         margin-right: -12px;
         padding-left: 12px;

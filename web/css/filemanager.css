@@ -612,7 +612,9 @@
     width: 100%;
     max-width: 100%;
     max-height: 100vh;
+    max-height: 100dvh;
     height: 100vh;
+    height: 100dvh;
     border-radius: 0;
     border: none;
 }
@@ -1126,9 +1128,13 @@
         width: 100%;
         max-width: 100%;
         max-height: 100vh;
+        max-height: 100dvh;
         height: 100vh;
+        height: 100dvh;
         border-radius: 0;
         border: none;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
     .fm-header {
@@ -1189,9 +1195,13 @@
         width: 100%;
         max-width: 100%;
         max-height: 100vh;
+        max-height: 100dvh;
         height: 100vh;
+        height: 100dvh;
         border-radius: 0;
         border: none;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
     .fm-preview-body {
@@ -1204,6 +1214,7 @@
     }
 
     .fm-preview-body img {
+        max-height: calc(100dvh - 80px);
         max-height: calc(100vh - 80px);
         object-fit: contain;
     }

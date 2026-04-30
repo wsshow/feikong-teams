@@ -1023,8 +1023,10 @@
   .config-modal-content {
     width: 100%;
     height: 92vh;
+    height: 92dvh;
     max-width: 100%;
     border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .config-modal-header {

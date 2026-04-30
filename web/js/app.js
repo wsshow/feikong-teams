@@ -269,8 +269,21 @@ class FKTeamsChat {
     if (this.scrollToBottomBtn) {
       this.scrollToBottomBtn.classList.toggle("sidebar-collapsed", isCollapsed);
     }
+    // 移动端遮罩层
+    this.updateSidebarOverlay();
     // 调整快速导航按钮和菜单的位置
     localStorage.setItem("sidebarCollapsed", isCollapsed);
+  }
+
+  updateSidebarOverlay() {
+    if (!this._sidebarOverlay) return;
+    const isMobile = window.innerWidth <= 768;
+    const isOpen = !this.sidebar.classList.contains("collapsed");
+    if (isMobile && isOpen) {
+      this._sidebarOverlay.classList.add("active");
+    } else {
+      this._sidebarOverlay.classList.remove("active");
+    }
   }
 
   restoreSidebarState() {
@@ -286,6 +299,14 @@ class FKTeamsChat {
         this.scrollToBottomBtn.classList.add("sidebar-collapsed");
       }
     }
+    // 创建移动端侧边栏遮罩层（延迟到 DOM 就绪）
+    if (!this._sidebarOverlay) {
+      this._sidebarOverlay = document.createElement("div");
+      this._sidebarOverlay.className = "sidebar-overlay";
+      this._sidebarOverlay.addEventListener("click", () => this.toggleSidebar());
+      document.body.appendChild(this._sidebarOverlay);
+    }
+    this.updateSidebarOverlay();
   }
 
   async loadVersion() {
