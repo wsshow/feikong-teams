@@ -160,7 +160,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 
 		return []adk.Message{
 			schema.UserMessage(
-				fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
+				fmt.Sprintf("以下是已完成的对话历史（仅供参考）:\n---\n%s\n---\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。", historyMessage.String()),
 			),
 		}
 	}
@@ -173,7 +173,7 @@ func buildHistoryMessages(recorder *fkevent.HistoryRecorder) []adk.Message {
 		}
 		return []adk.Message{
 			schema.UserMessage(
-				fmt.Sprintf("以下是之前的对话历史:\n---\n%s\n---\n", historyMessage.String()),
+				fmt.Sprintf("以下是已完成的对话历史（仅供参考）:\n---\n%s\n---\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。", historyMessage.String()),
 			),
 		}
 	}
