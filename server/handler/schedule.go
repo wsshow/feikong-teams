@@ -8,12 +8,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetScheduleTasksHandler 获取定时任务列表
+// GetScheduleTasksHandler returns all scheduled tasks
 func GetScheduleTasksHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		s := scheduler.Global()
 		if s == nil {
-			Fail(c, http.StatusServiceUnavailable, "调度器未初始化")
+			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return
 		}
 
@@ -32,18 +32,18 @@ func GetScheduleTasksHandler() gin.HandlerFunc {
 	}
 }
 
-// CancelScheduleTaskHandler 取消定时任务
+// CancelScheduleTaskHandler cancels a scheduled task
 func CancelScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
 		if taskID == "" {
-			Fail(c, http.StatusBadRequest, "任务 ID 不能为空")
+			Fail(c, http.StatusBadRequest, "task ID is required")
 			return
 		}
 
 		s := scheduler.Global()
 		if s == nil {
-			Fail(c, http.StatusServiceUnavailable, "调度器未初始化")
+			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return
 		}
 
@@ -59,5 +59,84 @@ func CancelScheduleTaskHandler() gin.HandlerFunc {
 		}
 
 		OK(c, gin.H{"message": resp.Message})
+	}
+}
+
+// GetTaskResultHandler returns the latest result for a task
+func GetTaskResultHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		taskID := c.Param("id")
+		if taskID == "" {
+			Fail(c, http.StatusBadRequest, "task ID is required")
+			return
+		}
+
+		s := scheduler.Global()
+		if s == nil {
+			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
+			return
+		}
+
+		result, err := s.ReadTaskResult(taskID)
+		if err != nil {
+			Fail(c, http.StatusNotFound, err.Error())
+			return
+		}
+
+		OK(c, gin.H{"task_id": taskID, "result": result})
+	}
+}
+
+// GetTaskHistoryHandler returns the list of history entries for a task
+func GetTaskHistoryHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		taskID := c.Param("id")
+		if taskID == "" {
+			Fail(c, http.StatusBadRequest, "task ID is required")
+			return
+		}
+
+		s := scheduler.Global()
+		if s == nil {
+			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
+			return
+		}
+
+		entries, err := s.ListHistoryEntries(taskID)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if entries == nil {
+			entries = []scheduler.HistoryEntry{}
+		}
+
+		OK(c, gin.H{"task_id": taskID, "history": entries, "total": len(entries)})
+	}
+}
+
+// GetTaskHistoryFileHandler returns a specific history file content
+func GetTaskHistoryFileHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		taskID := c.Param("id")
+		filename := c.Param("filename")
+		if taskID == "" || filename == "" {
+			Fail(c, http.StatusBadRequest, "task ID and filename are required")
+			return
+		}
+
+		s := scheduler.Global()
+		if s == nil {
+			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
+			return
+		}
+
+		content, err := s.ReadHistoryFile(taskID, filename)
+		if err != nil {
+			Fail(c, http.StatusNotFound, err.Error())
+			return
+		}
+
+		OK(c, gin.H{"task_id": taskID, "filename": filename, "content": content})
 	}
 }

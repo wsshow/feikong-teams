@@ -284,3 +284,64 @@ func FormatTaskDetailJSON(task ScheduledTask) string {
 	}
 	return string(data)
 }
+
+// HistoryEntry represents a single history result file
+type HistoryEntry struct {
+	Filename string `json:"filename"`
+	Time     string `json:"time"`
+}
+
+// ListHistoryEntries lists all history result files for a task
+func (s *Scheduler) ListHistoryEntries(taskID string) ([]HistoryEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	historyDir := filepath.Join(s.taskDir(taskID), "history")
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read history dir: %w", err)
+	}
+
+	var result []HistoryEntry
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
+			continue
+		}
+		name := e.Name()
+		// format: 20260430_150405.md → 2026-04-30 15:04:05
+		timeStr := ""
+		if len(name) >= 15 {
+			timeStr = fmt.Sprintf("%s-%s-%s %s:%s:%s",
+				name[0:4], name[4:6], name[6:8],
+				name[9:11], name[11:13], name[13:15])
+		}
+		result = append(result, HistoryEntry{
+			Filename: name,
+			Time:     timeStr,
+		})
+	}
+
+	return result, nil
+}
+
+// ReadHistoryFile reads a specific history file for a task
+func (s *Scheduler) ReadHistoryFile(taskID string, filename string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// prevent path traversal
+	filename = filepath.Base(filename)
+	if filepath.Ext(filename) != ".md" {
+		return "", fmt.Errorf("invalid file type")
+	}
+
+	filePath := filepath.Join(s.taskDir(taskID), "history", filename)
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read history file: %w", err)
+	}
+	return string(data), nil
+}

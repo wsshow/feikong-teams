@@ -1,205 +1,357 @@
 /**
- * schedule.js - 定时任务管理
+ * schedule.js - Scheduled task management drawer
  */
 
-// ===== 初始化 =====
+// ===== Init =====
 
 FKTeamsChat.prototype.initSchedule = function () {
-  this.scheduleModal = document.getElementById("schedule-modal");
-  this.scheduleModalClose = document.getElementById("schedule-modal-close");
+  this.scheduleDrawer = document.getElementById("schedule-drawer");
+  this.scheduleDrawerClose = document.getElementById("schedule-drawer-close");
   this.scheduleList = document.getElementById("schedule-list");
   this.scheduleFilter = document.getElementById("schedule-filter");
   this.scheduleRefreshBtn = document.getElementById("schedule-refresh-btn");
   this.scheduleManageBtn = document.getElementById("schedule-manage-btn");
+  this._scheduleSelected = null;
 
   if (this.scheduleManageBtn) {
-    this.scheduleManageBtn.addEventListener("click", () =>
-      this.openScheduleModal(),
-    );
+    this.scheduleManageBtn.addEventListener("click", () => this.openScheduleDrawer());
   }
-  if (this.scheduleModalClose) {
-    this.scheduleModalClose.addEventListener("click", () =>
-      this.closeScheduleModal(),
-    );
+  if (this.scheduleDrawerClose) {
+    this.scheduleDrawerClose.addEventListener("click", () => this.closeScheduleDrawer());
+  }
+  if (this.scheduleDrawer) {
+    this.scheduleDrawer.addEventListener("click", (e) => {
+      if (e.target === this.scheduleDrawer) this.closeScheduleDrawer();
+    });
   }
 
+  var self = this;
+  this._scheduleEscHandler = function (e) {
+    if (e.key === "Escape" && self.scheduleDrawer && self.scheduleDrawer.style.display !== "none") {
+      if (self._scheduleSelected) {
+        self._backToScheduleList();
+      } else {
+        self.closeScheduleDrawer();
+      }
+    }
+  };
+  document.addEventListener("keydown", this._scheduleEscHandler);
+
   if (this.scheduleFilter) {
-    this.scheduleFilter.addEventListener("change", () =>
-      this.loadScheduleTasks(),
-    );
+    this.scheduleFilter.addEventListener("change", () => this.loadScheduleTasks());
   }
   if (this.scheduleRefreshBtn) {
-    this.scheduleRefreshBtn.addEventListener("click", () =>
-      this.loadScheduleTasks(),
-    );
+    this.scheduleRefreshBtn.addEventListener("click", () => this.loadScheduleTasks());
   }
 };
 
-// ===== 弹窗控制 =====
+// ===== Drawer open / close =====
 
-FKTeamsChat.prototype.openScheduleModal = function () {
-  if (!this.scheduleModal) return;
-  this.scheduleModal.style.display = "flex";
+FKTeamsChat.prototype.openScheduleDrawer = function () {
+  if (!this.scheduleDrawer) return;
+  this.scheduleDrawer.style.display = "flex";
+  this._scheduleSelected = null;
   this.loadScheduleTasks();
 };
 
-FKTeamsChat.prototype.closeScheduleModal = function () {
-  if (!this.scheduleModal) return;
-  this.scheduleModal.style.display = "none";
+FKTeamsChat.prototype.closeScheduleDrawer = function () {
+  if (!this.scheduleDrawer) return;
+  var panel = document.getElementById("schedule-drawer-panel");
+  var isMobile = window.innerWidth <= 768;
+  panel.style.animation = isMobile
+    ? "bottomSheetUp 0.2s ease reverse"
+    : "drawerSlideIn 0.15s ease reverse";
+  panel.style.opacity = "0";
+  var self = this;
+  setTimeout(function () {
+    self.scheduleDrawer.style.display = "none";
+    panel.style.animation = "";
+    panel.style.opacity = "";
+  }, 180);
 };
 
-// ===== 加载任务列表 =====
+// ===== Load tasks =====
 
 FKTeamsChat.prototype.loadScheduleTasks = async function () {
   if (!this.scheduleList) return;
-  this.scheduleList.innerHTML = '<div class="schedule-loading">加载中...</div>';
+  this._scheduleSelected = null;
+  this.scheduleList.innerHTML = '<div class="schedule-loading">loading...</div>';
 
   try {
-    const status = this.scheduleFilter ? this.scheduleFilter.value : "";
-    const url = status
-      ? `/api/fkteams/schedules?status=${status}`
+    var status = this.scheduleFilter ? this.scheduleFilter.value : "";
+    var url = status
+      ? "/api/fkteams/schedules?status=" + encodeURIComponent(status)
       : "/api/fkteams/schedules";
-    const response = await this.fetchWithAuth(url);
-    if (!response.ok) {
-      this.scheduleList.innerHTML =
-        '<div class="schedule-empty">加载失败</div>';
-      return;
-    }
-
-    const result = await response.json();
+    var response = await this.fetchWithAuth(url);
+    if (!response.ok) { this.scheduleList.innerHTML = '<div class="schedule-empty">load failed</div>'; return; }
+    var result = await response.json();
     if (result.code !== 0 || !result.data || !result.data.tasks) {
-      this.scheduleList.innerHTML =
-        '<div class="schedule-empty">暂无定时任务</div>';
+      this.scheduleList.innerHTML = '<div class="schedule-empty">no scheduled tasks</div>';
       return;
     }
-
-    this.renderScheduleTasks(result.data.tasks);
-  } catch (error) {
-    console.error("Error loading schedule tasks:", error);
-    this.scheduleList.innerHTML = '<div class="schedule-empty">加载失败</div>';
+    this._renderTaskList(result.data.tasks);
+  } catch (e) {
+    console.error("Error loading schedule tasks:", e);
+    this.scheduleList.innerHTML = '<div class="schedule-empty">load failed</div>';
   }
 };
 
-// ===== 渲染任务列表 =====
+// ===== Render task list =====
 
-FKTeamsChat.prototype.renderScheduleTasks = function (tasks) {
+FKTeamsChat.prototype._renderTaskList = function (tasks) {
   if (!this.scheduleList) return;
-
   if (!tasks || tasks.length === 0) {
-    this.scheduleList.innerHTML =
-      '<div class="schedule-empty">暂无定时任务</div>';
+    this.scheduleList.innerHTML = '<div class="schedule-empty">no scheduled tasks</div>';
     return;
   }
 
-  // 排序：pending/running 在前，按下次执行时间排序
-  const statusOrder = {
-    running: 0,
-    pending: 1,
-    failed: 2,
-    completed: 3,
-    cancelled: 4,
-  };
-  tasks.sort((a, b) => {
-    const orderDiff =
-      (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
-    if (orderDiff !== 0) return orderDiff;
+  var statusOrder = { running: 0, pending: 1, failed: 2, completed: 3, cancelled: 4 };
+  tasks.sort(function (a, b) {
+    var o = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+    if (o !== 0) return o;
     return new Date(a.next_run_at) - new Date(b.next_run_at);
   });
 
-  this.scheduleList.innerHTML = "";
+  var self = this;
+  var html = "";
 
-  tasks.forEach((task) => {
-    const item = document.createElement("div");
-    item.className = `schedule-item schedule-status-${task.status}`;
+  tasks.forEach(function (task) {
+    var info = self.getScheduleStatusInfo(task.status);
+    var desc = self.escapeHtml(task.task);
+    if (desc.length > 100) desc = desc.substring(0, 100) + "...";
 
-    const statusInfo = this.getScheduleStatusInfo(task.status);
-    const taskDesc = this.escapeHtml(task.task);
-    const truncatedDesc =
-      taskDesc.length > 80 ? taskDesc.substring(0, 80) + "..." : taskDesc;
-
-    let metaHtml = "";
+    var meta = "";
     if (task.cron_expr) {
-      metaHtml += `<span class="schedule-meta-tag schedule-meta-cron">cron: ${this.escapeHtml(task.cron_expr)}</span>`;
+      meta += '<span class="schedule-meta-tag schedule-meta-cron">' + self.escapeHtml(task.cron_expr) + '</span>';
     } else {
-      metaHtml += `<span class="schedule-meta-tag schedule-meta-once">一次性</span>`;
+      meta += '<span class="schedule-meta-tag schedule-meta-once">one-time</span>';
     }
-    metaHtml += `<span class="schedule-meta-time">下次: ${this.formatScheduleTime(task.next_run_at)}</span>`;
-    if (task.last_run_at) {
-      metaHtml += `<span class="schedule-meta-time">上次: ${this.formatScheduleTime(task.last_run_at)}</span>`;
-    }
+    meta += '<span class="schedule-meta-time">' + self.formatScheduleTime(task.next_run_at) + '</span>';
 
-    let actionsHtml = "";
-    if (task.status === "pending") {
-      actionsHtml = `
-                <button class="schedule-action-btn cancel-schedule-btn" data-id="${this.escapeHtml(task.id)}" title="取消任务">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="15" y1="9" x2="9" y2="15" />
-                        <line x1="9" y1="9" x2="15" y2="15" />
-                    </svg>
-                </button>`;
-    }
+    html +=
+      '<div class="schedule-item status-' + task.status + '" data-id="' + self.escapeHtml(task.id) + '">' +
+        '<div class="schedule-item-header">' +
+          '<span class="schedule-status-badge ' + info.cls + '"><span class="status-dot"></span>' + info.label + '</span>' +
+          '<span class="schedule-item-id">' + self.escapeHtml(task.id.substring(0, 8)) + '</span>' +
+        '</div>' +
+        '<div class="schedule-item-task">' + desc + '</div>' +
+        '<div class="schedule-item-meta">' + meta + '</div>' +
+      '</div>';
+  });
 
-    item.innerHTML = `
-            <div class="schedule-item-header">
-                <span class="schedule-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
-                <span class="schedule-item-id">${this.escapeHtml(task.id)}</span>
-            </div>
-            <div class="schedule-item-task" title="${taskDesc}">${truncatedDesc}</div>
-            <div class="schedule-item-meta">${metaHtml}</div>
-            <div class="schedule-item-actions">${actionsHtml}</div>
-        `;
+  this.scheduleList.innerHTML = html;
 
-    // 绑定取消按钮
-    const cancelBtn = item.querySelector(".cancel-schedule-btn");
-    if (cancelBtn) {
-      cancelBtn.addEventListener("click", () =>
-        this.cancelScheduleTask(task.id),
-      );
-    }
-
-    this.scheduleList.appendChild(item);
+  // bind clicks
+  this.scheduleList.querySelectorAll(".schedule-item").forEach(function (el) {
+    el.addEventListener("click", function () {
+      self._showTaskDetail(el.dataset.id);
+    });
   });
 };
 
-// ===== 取消任务 =====
+// ===== Show task detail (replaces list) =====
 
-FKTeamsChat.prototype.cancelScheduleTask = async function (taskId) {
-  try {
-    const response = await this.fetchWithAuth(
-      `/api/fkteams/schedules/${taskId}/cancel`,
-      { method: "POST" },
-    );
-    const result = await response.json();
-    if (result.code === 0) {
-      this.showNotification("任务已取消", "success");
-      this.loadScheduleTasks();
-    } else {
-      this.showNotification(result.message || "取消失败", "error");
+FKTeamsChat.prototype._showTaskDetail = function (taskId) {
+  if (!this.scheduleList) return;
+
+  // find task data from the DOM
+  var itemEl = this.scheduleList.querySelector('[data-id="' + this.escapeHtml(taskId) + '"]');
+  var taskDesc = itemEl ? itemEl.querySelector(".schedule-item-task").textContent : "";
+  var statusCls = "";
+  if (itemEl) {
+    for (var i = 0; i < itemEl.classList.length; i++) {
+      if (itemEl.classList[i].indexOf("status-") === 0) { statusCls = itemEl.classList[i]; break; }
     }
-  } catch (error) {
-    console.error("Error cancelling task:", error);
-    this.showNotification("取消任务失败", "error");
+  }
+
+  this._scheduleSelected = taskId;
+  this.scheduleList.innerHTML =
+    '<div class="schedule-detail-view" id="schedule-detail-view">' +
+      '<div class="schedule-detail-back" id="schedule-detail-back">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>' +
+        '<span>back</span>' +
+      '</div>' +
+      '<div class="schedule-detail-task">' + this.escapeHtml(taskDesc) + '</div>' +
+      '<div class="schedule-detail-body" id="schedule-detail-body">' +
+        '<div class="schedule-detail-loading">loading result...</div>' +
+      '</div>' +
+    '</div>';
+
+  var self = this;
+  document.getElementById("schedule-detail-back").addEventListener("click", function () {
+    self._backToScheduleList();
+  });
+
+  this._loadTaskDetail(taskId);
+};
+
+FKTeamsChat.prototype._backToScheduleList = function () {
+  this._scheduleSelected = null;
+  this.loadScheduleTasks();
+};
+
+// ===== Load detail =====
+
+FKTeamsChat.prototype._loadTaskDetail = async function (taskId) {
+  var body = document.getElementById("schedule-detail-body");
+  if (!body) return;
+
+  var self = this;
+  var results = await Promise.all([
+    this._fetchTaskResult(taskId),
+    this._fetchTaskHistory(taskId)
+  ]);
+  var resultHtml = results[0];
+  var historyData = results[1];
+
+  var html = "";
+  if (resultHtml) {
+    html +=
+      '<div class="schedule-result">' +
+        '<div class="schedule-result-header">latest result</div>' +
+        '<div class="schedule-result-content markdown-body">' + resultHtml + '</div>' +
+      '</div>';
+  }
+  if (historyData) {
+    html +=
+      '<div class="schedule-history">' +
+        '<div class="schedule-history-header">history (' + historyData.count + ')</div>' +
+        '<div class="schedule-history-timeline">' + historyData.entries + '</div>' +
+        '<div class="schedule-history-viewer" id="shv-' + self.escapeHtml(taskId) + '" style="display:none"></div>' +
+      '</div>';
+  }
+  if (!html) {
+    html = '<div class="schedule-detail-empty">no results yet</div>';
+  }
+
+  body.innerHTML = html;
+
+  // bind history entries
+  body.querySelectorAll(".schedule-history-entry").forEach(function (entry) {
+    entry.addEventListener("click", function (e) {
+      e.stopPropagation();
+      self._loadHistoryContent(taskId, entry.dataset.filename);
+    });
+  });
+};
+
+FKTeamsChat.prototype._fetchTaskResult = async function (taskId) {
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/schedules/" + taskId + "/result");
+    if (!resp.ok) return "";
+    var r = await resp.json();
+    if (r.code !== 0 || !r.data || !r.data.result) return "";
+    return this.renderMarkdown(r.data.result);
+  } catch (e) { return ""; }
+};
+
+FKTeamsChat.prototype._fetchTaskHistory = async function (taskId) {
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/schedules/" + taskId + "/history");
+    if (!resp.ok) return "";
+    var r = await resp.json();
+    if (r.code !== 0 || !r.data || !r.data.history) return "";
+    var entries = r.data.history;
+    if (!entries || entries.length === 0) return "";
+
+    var self = this;
+    var items = entries.map(function (e) {
+      return '<div class="schedule-history-entry" data-filename="' + self.escapeHtml(e.filename) + '">' +
+        '<span class="schedule-history-entry-time">' + self.escapeHtml(e.time) + '</span>' +
+      '</div>';
+    }).join("");
+
+    return { count: entries.length, entries: items };
+  } catch (e) { return ""; }
+};
+
+// ===== History content viewer =====
+
+FKTeamsChat.prototype._loadHistoryContent = async function (taskId, filename) {
+  var viewer = document.getElementById("shv-" + this.escapeHtml(taskId));
+  if (!viewer) return;
+
+  if (viewer.dataset.currentFile === filename && viewer.style.display !== "none") {
+    viewer.style.display = "none";
+    viewer.dataset.currentFile = "";
+    viewer.parentElement.querySelectorAll(".schedule-history-entry.active").forEach(function (el) { el.classList.remove("active"); });
+    return;
+  }
+
+  viewer.style.display = "block";
+  viewer.innerHTML = '<div class="schedule-detail-loading">loading...</div>';
+  viewer.dataset.currentFile = filename;
+
+  var timeline = viewer.parentElement.querySelector(".schedule-history-timeline");
+  if (timeline) {
+    timeline.querySelectorAll(".schedule-history-entry.active").forEach(function (el) { el.classList.remove("active"); });
+    var active = timeline.querySelector('[data-filename="' + this.escapeHtml(filename) + '"]');
+    if (active) active.classList.add("active");
+  }
+
+  var self = this;
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/schedules/" + taskId + "/history/" + filename);
+    if (!resp.ok) throw new Error("fetch failed");
+    var r = await resp.json();
+    if (r.code !== 0 || !r.data || !r.data.content) {
+      viewer.innerHTML = '<div class="schedule-detail-error">no content</div>';
+      return;
+    }
+
+    viewer.innerHTML =
+      '<div class="schedule-history-viewer-header">' +
+        '<span>' + self.escapeHtml(filename) + '</span>' +
+        '<button class="schedule-history-viewer-close">&#10005;</button>' +
+      '</div>' +
+      '<div class="schedule-result-content markdown-body">' + self.renderMarkdown(r.data.content) + '</div>';
+
+    viewer.querySelector(".schedule-history-viewer-close").addEventListener("click", function (e) {
+      e.stopPropagation();
+      viewer.style.display = "none";
+      viewer.dataset.currentFile = "";
+      if (timeline) timeline.querySelectorAll(".schedule-history-entry.active").forEach(function (el) { el.classList.remove("active"); });
+    });
+  } catch (e) {
+    viewer.innerHTML = '<div class="schedule-detail-error">load failed</div>';
   }
 };
 
-// ===== 辅助函数 =====
+// ===== Cancel =====
+
+FKTeamsChat.prototype.cancelScheduleTask = async function (taskId) {
+  try {
+    var response = await this.fetchWithAuth("/api/fkteams/schedules/" + taskId + "/cancel", { method: "POST" });
+    var result = await response.json();
+    if (result.code === 0) {
+      this.showNotification("task cancelled", "success");
+      this.loadScheduleTasks();
+    } else {
+      this.showNotification(result.message || "cancel failed", "error");
+    }
+  } catch (e) {
+    this.showNotification("cancel failed", "error");
+  }
+};
+
+// ===== Helpers =====
 
 FKTeamsChat.prototype.getScheduleStatusInfo = function (status) {
-  const map = {
-    pending: { label: "等待中", cls: "status-pending" },
-    running: { label: "执行中", cls: "status-running" },
-    completed: { label: "已完成", cls: "status-completed" },
-    failed: { label: "已失败", cls: "status-failed" },
-    cancelled: { label: "已取消", cls: "status-cancelled" },
+  var map = {
+    pending:   { label: "pending",   cls: "status-pending" },
+    running:   { label: "running",   cls: "status-running" },
+    completed: { label: "done",      cls: "status-completed" },
+    failed:    { label: "failed",    cls: "status-failed" },
+    cancelled: { label: "cancelled", cls: "status-cancelled" }
   };
   return map[status] || { label: status, cls: "" };
 };
 
 FKTeamsChat.prototype.formatScheduleTime = function (timeStr) {
   if (!timeStr) return "-";
-  const d = new Date(timeStr);
+  var d = new Date(timeStr);
   if (isNaN(d.getTime())) return timeStr;
-  const pad = (n) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  var pad = function (n) { return n.toString().padStart(2, "0"); };
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+    " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
 };

@@ -103,6 +103,9 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		{
 			schedules.GET("", handler.GetScheduleTasksHandler())
 			schedules.POST("/:id/cancel", handler.CancelScheduleTaskHandler())
+				schedules.GET("/:id/result", handler.GetTaskResultHandler())
+				schedules.GET("/:id/history", handler.GetTaskHistoryHandler())
+				schedules.GET("/:id/history/:filename", handler.GetTaskHistoryFileHandler())
 		}
 
 		// 长期记忆管理 API

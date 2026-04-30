@@ -324,12 +324,19 @@
       </div>
     </div>
 
-    <!-- 定时任务弹窗 -->
-    <div class="schedule-modal" id="schedule-modal" style="display: none">
-      <div class="schedule-modal-content">
-        <div class="schedule-modal-header">
-          <h3>定时任务</h3>
-          <div class="schedule-header-actions">
+    <!-- 定时任务抽屉 -->
+    <div class="schedule-drawer" id="schedule-drawer" style="display: none">
+      <div class="schedule-drawer-panel" id="schedule-drawer-panel">
+        <div class="schedule-drawer-header">
+          <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            定时任务
+          </h3>
+          <div class="schedule-drawer-header-actions">
             <select class="schedule-filter" id="schedule-filter">
               <option value="">全部</option>
               <option value="pending">等待中</option>
@@ -338,13 +345,13 @@
               <option value="failed">已失败</option>
               <option value="cancelled">已取消</option>
             </select>
-            <button class="schedule-refresh-btn" id="schedule-refresh-btn" title="刷新">
+            <button class="schedule-drawer-icon-btn" id="schedule-refresh-btn" title="刷新">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="23 4 23 10 17 10" />
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
             </button>
-            <button class="schedule-modal-close" id="schedule-modal-close">
+            <button class="schedule-drawer-icon-btn" id="schedule-drawer-close">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -352,9 +359,9 @@
             </button>
           </div>
         </div>
-        <div class="schedule-modal-body">
+        <div class="schedule-drawer-body">
           <div class="schedule-list" id="schedule-list">
-            <div class="schedule-loading">加载中...</div>
+            <div class="schedule-loading">loading...</div>
           </div>
         </div>
       </div>

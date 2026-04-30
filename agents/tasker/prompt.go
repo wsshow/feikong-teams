@@ -90,7 +90,11 @@ Direct answer to the task. One clear statement in Chinese.
 Supporting data, steps taken, calculations. Keep it concise, all in Chinese.
 
 ### 3. 来源
-References with URLs in footnote format: body text [^1], then [^1]: https://...
+Use an unordered list. Each item: a brief description followed by the URL in parentheses.
+Example:
+- 非空小队项目仓库 (https://github.com/wsshow/feikong-teams)
+- GitHub 官方文档 (https://github.com/)
+- 某学术论文标题或报告名称 (https://example.edu/paper.pdf)
 
 If you genuinely cannot complete the task after exhausting all approaches (output in Chinese):
 - **任务结论**: state "无法完成: <原因>"
