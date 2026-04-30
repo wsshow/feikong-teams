@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -51,42 +52,40 @@ type ScheduleCancelResponse struct {
 // ScheduleAdd 添加定时任务
 func (s *Scheduler) ScheduleAdd(ctx context.Context, req *ScheduleAddRequest) (*ScheduleAddResponse, error) {
 	if req.Task == "" {
-		return &ScheduleAddResponse{ErrorMessage: "任务描述不能为空"}, nil
+		return &ScheduleAddResponse{ErrorMessage: "task description is required"}, nil
 	}
 
 	if req.CronExpr == "" && req.ExecuteAt == "" {
-		return &ScheduleAddResponse{ErrorMessage: "必须提供 cron_expr（重复任务）或 execute_at（一次性任务）"}, nil
+		return &ScheduleAddResponse{ErrorMessage: "must provide cron_expr (recurring) or execute_at (one-time)"}, nil
 	}
 
 	if req.CronExpr != "" && req.ExecuteAt != "" {
-		return &ScheduleAddResponse{ErrorMessage: "cron_expr 和 execute_at 不能同时指定"}, nil
+		return &ScheduleAddResponse{ErrorMessage: "cron_expr and execute_at are mutually exclusive"}, nil
 	}
 
 	task := ScheduledTask{
-		ID:        fmt.Sprintf("sched_%d", time.Now().UnixNano()),
+		ID:        generateTaskID(),
 		Task:      req.Task,
 		CreatedAt: time.Now(),
 		Status:    "pending",
 	}
 
 	if req.CronExpr != "" {
-		// 重复任务
 		expr := strings.TrimSpace(req.CronExpr)
 		nextRun, err := s.ParseCronExpr(expr)
 		if err != nil {
-			return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("无效的 cron 表达式: %v", err)}, nil
+			return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("invalid cron expression: %v", err)}, nil
 		}
 		task.CronExpr = expr
 		task.OneTime = false
 		task.NextRunAt = nextRun
 	} else {
-		// 一次性任务
 		executeAt, err := time.Parse(time.RFC3339, req.ExecuteAt)
 		if err != nil {
-			return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("无效的时间格式，请使用 ISO 8601 格式: %v", err)}, nil
+			return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("invalid time format, use ISO 8601: %v", err)}, nil
 		}
 		if executeAt.Before(time.Now()) {
-			return &ScheduleAddResponse{ErrorMessage: "执行时间不能是过去的时间"}, nil
+			return &ScheduleAddResponse{ErrorMessage: "execute_at must be in the future"}, nil
 		}
 		task.OneTime = true
 		task.NextRunAt = executeAt
@@ -97,17 +96,17 @@ func (s *Scheduler) ScheduleAdd(ctx context.Context, req *ScheduleAddRequest) (*
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("加载任务列表失败: %v", err)}, nil
+		return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("load task list failed: %v", err)}, nil
 	}
 
 	tasks.Tasks = append(tasks.Tasks, task)
 	if err := s.saveTasks(tasks); err != nil {
-		return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("保存任务列表失败: %v", err)}, nil
+		return &ScheduleAddResponse{ErrorMessage: fmt.Sprintf("save task list failed: %v", err)}, nil
 	}
 
 	return &ScheduleAddResponse{
 		Success: true,
-		Message: "定时任务创建成功",
+		Message: "task created successfully",
 		Task:    &task,
 	}, nil
 }
@@ -116,7 +115,7 @@ func (s *Scheduler) ScheduleAdd(ctx context.Context, req *ScheduleAddRequest) (*
 func (s *Scheduler) ScheduleList(ctx context.Context, req *ScheduleListRequest) (*ScheduleListResponse, error) {
 	tasks, err := s.GetTasks(req.StatusFilter)
 	if err != nil {
-		return &ScheduleListResponse{ErrorMessage: fmt.Sprintf("获取任务列表失败: %v", err)}, nil
+		return &ScheduleListResponse{ErrorMessage: fmt.Sprintf("get task list failed: %v", err)}, nil
 	}
 
 	return &ScheduleListResponse{
@@ -129,7 +128,7 @@ func (s *Scheduler) ScheduleList(ctx context.Context, req *ScheduleListRequest) 
 // ScheduleCancel 取消定时任务
 func (s *Scheduler) ScheduleCancel(ctx context.Context, req *ScheduleCancelRequest) (*ScheduleCancelResponse, error) {
 	if req.TaskID == "" {
-		return &ScheduleCancelResponse{ErrorMessage: "任务 ID 不能为空"}, nil
+		return &ScheduleCancelResponse{ErrorMessage: "task ID is required"}, nil
 	}
 
 	s.mu.Lock()
@@ -137,14 +136,14 @@ func (s *Scheduler) ScheduleCancel(ctx context.Context, req *ScheduleCancelReque
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return &ScheduleCancelResponse{ErrorMessage: fmt.Sprintf("加载任务列表失败: %v", err)}, nil
+		return &ScheduleCancelResponse{ErrorMessage: fmt.Sprintf("load task list failed: %v", err)}, nil
 	}
 
 	found := false
 	for i := range tasks.Tasks {
 		if tasks.Tasks[i].ID == req.TaskID {
 			if tasks.Tasks[i].Status != "pending" {
-				return &ScheduleCancelResponse{ErrorMessage: fmt.Sprintf("任务状态为 %s，只能取消 pending 状态的任务", tasks.Tasks[i].Status)}, nil
+				return &ScheduleCancelResponse{ErrorMessage: fmt.Sprintf("task status is %s, only pending tasks can be cancelled", tasks.Tasks[i].Status)}, nil
 			}
 			tasks.Tasks[i].Status = "cancelled"
 			found = true
@@ -153,16 +152,16 @@ func (s *Scheduler) ScheduleCancel(ctx context.Context, req *ScheduleCancelReque
 	}
 
 	if !found {
-		return &ScheduleCancelResponse{ErrorMessage: "未找到指定的任务"}, nil
+		return &ScheduleCancelResponse{ErrorMessage: "task not found"}, nil
 	}
 
 	if err := s.saveTasks(tasks); err != nil {
-		return &ScheduleCancelResponse{ErrorMessage: fmt.Sprintf("保存任务列表失败: %v", err)}, nil
+		return &ScheduleCancelResponse{ErrorMessage: fmt.Sprintf("save task list failed: %v", err)}, nil
 	}
 
 	return &ScheduleCancelResponse{
 		Success: true,
-		Message: "任务已取消",
+		Message: "task cancelled",
 	}, nil
 }
 
@@ -181,7 +180,7 @@ type ScheduleDeleteResponse struct {
 // ScheduleDelete 删除定时任务（从列表中永久移除）
 func (s *Scheduler) ScheduleDelete(ctx context.Context, req *ScheduleDeleteRequest) (*ScheduleDeleteResponse, error) {
 	if req.TaskID == "" {
-		return &ScheduleDeleteResponse{ErrorMessage: "任务 ID 不能为空"}, nil
+		return &ScheduleDeleteResponse{ErrorMessage: "task ID is required"}, nil
 	}
 
 	s.mu.Lock()
@@ -189,7 +188,7 @@ func (s *Scheduler) ScheduleDelete(ctx context.Context, req *ScheduleDeleteReque
 
 	tasks, err := s.loadTasks()
 	if err != nil {
-		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("加载任务列表失败: %v", err)}, nil
+		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("load task list failed: %v", err)}, nil
 	}
 
 	found := false
@@ -197,7 +196,7 @@ func (s *Scheduler) ScheduleDelete(ctx context.Context, req *ScheduleDeleteReque
 	for _, t := range tasks.Tasks {
 		if t.ID == req.TaskID {
 			if t.Status == "running" {
-				return &ScheduleDeleteResponse{ErrorMessage: "不能删除正在执行中的任务，请先取消"}, nil
+				return &ScheduleDeleteResponse{ErrorMessage: "cannot delete a running task, cancel it first"}, nil
 			}
 			found = true
 			continue
@@ -206,61 +205,62 @@ func (s *Scheduler) ScheduleDelete(ctx context.Context, req *ScheduleDeleteReque
 	}
 
 	if !found {
-		return &ScheduleDeleteResponse{ErrorMessage: "未找到指定的任务"}, nil
+		return &ScheduleDeleteResponse{ErrorMessage: "task not found"}, nil
+	}
+
+	// remove per-task result directory
+	if err := os.RemoveAll(s.taskDir(req.TaskID)); err != nil {
+		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("remove task dir failed: %v", err)}, nil
 	}
 
 	tasks.Tasks = remaining
 	if err := s.saveTasks(tasks); err != nil {
-		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("保存任务列表失败: %v", err)}, nil
+		return &ScheduleDeleteResponse{ErrorMessage: fmt.Sprintf("save task list failed: %v", err)}, nil
 	}
 
 	return &ScheduleDeleteResponse{
 		Success: true,
-		Message: "任务已删除",
+		Message: "task deleted",
 	}, nil
 }
 
 // FormatTasksForDisplay 格式化任务列表用于 CLI 显示
 func FormatTasksForDisplay(tasks []ScheduledTask) string {
 	if len(tasks) == 0 {
-		return "暂无定时任务"
+		return "no scheduled tasks"
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "共 %d 个定时任务:\n\n", len(tasks))
+	fmt.Fprintf(&sb, "%d scheduled tasks:\n\n", len(tasks))
 
 	for i, t := range tasks {
-		statusIcon := "[等待]"
+		statusIcon := "[pending]"
 		switch t.Status {
 		case "completed":
-			statusIcon = "[完成]"
+			statusIcon = "[done]"
 		case "running":
-			statusIcon = "[运行]"
+			statusIcon = "[running]"
 		case "failed":
-			statusIcon = "[失败]"
+			statusIcon = "[failed]"
 		case "cancelled":
-			statusIcon = "[取消]"
+			statusIcon = "[cancelled]"
 		}
 
 		fmt.Fprintf(&sb, "  %s %d. %s\n", statusIcon, i+1, t.Task)
-		fmt.Fprintf(&sb, "     ID: %s | 状态: %s\n", t.ID, t.Status)
+		fmt.Fprintf(&sb, "     ID: %s | Status: %s\n", t.ID, t.Status)
 
 		if t.CronExpr != "" {
 			fmt.Fprintf(&sb, "     Cron: %s\n", t.CronExpr)
 		}
 
-		fmt.Fprintf(&sb, "     下次执行: %s\n", t.NextRunAt.Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(&sb, "     Next run: %s\n", t.NextRunAt.Format("2006-01-02 15:04:05"))
 
 		if t.LastRunAt != nil {
-			fmt.Fprintf(&sb, "     上次执行: %s\n", t.LastRunAt.Format("2006-01-02 15:04:05"))
+			fmt.Fprintf(&sb, "     Last run: %s\n", t.LastRunAt.Format("2006-01-02 15:04:05"))
 		}
 
-		if t.Result != "" {
-			result := t.Result
-			if len(result) > 100 {
-				result = result[:100] + "..."
-			}
-			fmt.Fprintf(&sb, "     结果: %s\n", result)
+		if t.ResultPath != "" {
+			fmt.Fprintf(&sb, "     Result: %s\n", t.ResultPath)
 		}
 
 		if i < len(tasks)-1 {
@@ -275,7 +275,7 @@ func FormatTasksForDisplay(tasks []ScheduledTask) string {
 func FormatTaskDetailJSON(task ScheduledTask) string {
 	data, err := json.MarshalIndent(task, "", "  ")
 	if err != nil {
-		return fmt.Sprintf("格式化失败: %v", err)
+		return fmt.Sprintf("marshal failed: %v", err)
 	}
 	return string(data)
 }
