@@ -1014,6 +1014,132 @@
   display: block;
 }
 
+/* ===== MCP Tab ===== */
+
+.mcp-container { display: flex; flex-direction: column; gap: 14px; }
+
+.mcp-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.mcp-count { font-size: 13px; color: var(--text-secondary); font-family: var(--font-hand); }
+
+.mcp-add-btn {
+  padding: 6px 14px; font-size: 13px; font-family: var(--font-hand);
+  background: var(--accent-primary); color: white;
+  border: none; border-radius: 8px; cursor: pointer;
+  transition: all var(--transition);
+}
+.mcp-add-btn:hover { opacity: 0.9; box-shadow: var(--shadow-sketch); }
+
+.mcp-list { display: flex; flex-direction: column; gap: 8px; }
+
+.mcp-card {
+  padding: 12px 14px; background: var(--bg-tertiary);
+  border: 2px solid var(--border-color); border-radius: 10px;
+  display: flex; align-items: center; gap: 12px;
+  transition: all var(--transition);
+}
+.mcp-card:hover { border-color: var(--accent-primary); }
+
+.mcp-card-info { flex: 1; min-width: 0; }
+.mcp-card-name { font-size: 14px; font-weight: 600; }
+.mcp-card-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.mcp-card-meta {
+  font-size: 11px; color: var(--text-tertiary); font-family: monospace; margin-top: 2px;
+}
+
+.mcp-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.mcp-toggle {
+  width: 40px; height: 22px; border-radius: 11px;
+  border: 2px solid var(--border-color); background: var(--bg-primary);
+  cursor: pointer; position: relative; transition: all var(--transition);
+}
+.mcp-toggle.on { background: var(--success); border-color: var(--success); }
+.mcp-toggle::after {
+  content: ""; position: absolute;
+  top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--border-color);
+  transition: all var(--transition);
+}
+.mcp-toggle.on::after { left: 20px; background: white; }
+
+.mcp-card-btn {
+  padding: 4px 10px; font-size: 12px; font-family: var(--font-hand);
+  background: transparent; border-radius: 6px; cursor: pointer;
+  transition: all var(--transition);
+}
+.mcp-edit-btn { border: 1.5px solid var(--accent-primary); color: var(--accent-primary); }
+.mcp-edit-btn:hover { background: var(--accent-primary); color: white; }
+
+/* Editor panel */
+.mcp-editor {
+  padding: 16px; background: var(--bg-tertiary);
+  border: 2px solid var(--border-sketch); border-radius: 12px;
+  animation: fadeIn 0.2s ease;
+}
+
+.mcp-editor-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; font-family: var(--font-hand); font-size: 16px;
+}
+.mcp-editor-close {
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1.5px solid var(--border-color);
+  border-radius: 6px; cursor: pointer; font-size: 15px;
+  color: var(--text-secondary); transition: all var(--transition);
+}
+.mcp-editor-close:hover { background: var(--bg-hover); }
+
+.mcp-editor-body { display: flex; flex-direction: column; gap: 12px; }
+
+.mcp-field { display: flex; flex-direction: column; gap: 4px; }
+.mcp-field label {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  font-family: var(--font-body);
+}
+.mcp-field-row { flex-direction: row; align-items: center; gap: 10px; }
+.mcp-field-row label { min-width: 60px; }
+
+.mcp-input, .mcp-select, .mcp-textarea {
+  padding: 7px 10px; border: 2px solid var(--border-color);
+  border-radius: 8px; background: var(--bg-primary);
+  font-size: 13px; font-family: var(--font-body); color: var(--text-primary);
+  outline: none; transition: all var(--transition);
+}
+.mcp-input:focus, .mcp-select:focus, .mcp-textarea:focus { border-color: var(--accent-primary); }
+.mcp-input-sm { max-width: 100px; }
+.mcp-select { cursor: pointer; }
+.mcp-textarea { resize: vertical; font-family: monospace; font-size: 12px; }
+
+.mcp-editor-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; margin-top: 8px; padding-top: 14px;
+  border-top: 1.5px dashed var(--border-color);
+}
+
+.mcp-editor-delete {
+  padding: 6px 14px; font-size: 12px; font-family: var(--font-hand);
+  background: transparent; border: 1.5px solid var(--error);
+  border-radius: 8px; color: var(--error); cursor: pointer;
+  margin-right: auto; transition: all var(--transition);
+}
+.mcp-editor-delete:hover { background: var(--error); color: white; }
+
+.mcp-editor-save {
+  padding: 6px 18px; font-size: 13px; font-family: var(--font-hand);
+  background: var(--accent-primary); color: white;
+  border: none; border-radius: 8px; cursor: pointer;
+  transition: all var(--transition);
+}
+.mcp-editor-save:hover { opacity: 0.9; }
+
+.mcp-empty {
+  padding: 32px 16px; text-align: center;
+  color: var(--text-tertiary); font-family: var(--font-hand); font-size: 15px;
+}
+
 /* ===== Skills Tab ===== */
 
 .skills-container {

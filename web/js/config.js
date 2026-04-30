@@ -85,6 +85,8 @@ FKTeamsChat.prototype.switchConfigTab = function (tab) {
   });
   if (tab === "skills") {
     this._initSkillsTab();
+  } else if (tab === "mcp") {
+    this._initMcpTab();
   }
 };
 
@@ -1571,4 +1573,186 @@ FKTeamsChat.prototype._removeSkill = async function (slug) {
   } catch (e) {
     this.showNotification("remove failed", "error");
   }
+};
+
+// ===== MCP Server Management =====
+
+FKTeamsChat.prototype._initMcpTab = function () {
+  if (this._mcpInited) return;
+  this._mcpInited = true;
+  this._bindMcpEvents();
+  this._renderMcpList();
+};
+
+FKTeamsChat.prototype._getMcpServers = function () {
+  return this._configData?.custom?.mcp_servers || [];
+};
+
+FKTeamsChat.prototype._setMcpServers = function (servers) {
+  if (!this._configData.custom) this._configData.custom = {};
+  this._configData.custom.mcp_servers = servers;
+};
+
+FKTeamsChat.prototype._bindMcpEvents = function () {
+  var self = this;
+  var addBtn = document.getElementById("mcp-add-btn");
+  if (addBtn) addBtn.addEventListener("click", function () { self._openMcpEditor(-1); });
+
+  var closeBtn = document.getElementById("mcp-editor-close");
+  if (closeBtn) closeBtn.addEventListener("click", function () { self._closeMcpEditor(); });
+
+  var saveBtn = document.getElementById("mcp-editor-save");
+  if (saveBtn) saveBtn.addEventListener("click", function () { self._saveMcpServer(); });
+
+  var delBtn = document.getElementById("mcp-editor-delete");
+  if (delBtn) delBtn.addEventListener("click", function () { self._deleteMcpServer(); });
+
+  var transport = document.getElementById("mcp-edit-transport");
+  if (transport) transport.addEventListener("change", function () { self._onMcpTransportChange(); });
+};
+
+FKTeamsChat.prototype._renderMcpList = function () {
+  var list = document.getElementById("mcp-server-list");
+  var count = document.getElementById("mcp-server-count");
+  if (!list) return;
+  var servers = this._getMcpServers();
+  if (count) count.textContent = servers.length + " 个服务";
+
+  if (servers.length === 0) {
+    list.innerHTML = '<div class="mcp-empty">暂无 MCP 服务</div>';
+    return;
+  }
+
+  var self = this;
+  var html = "";
+  servers.forEach(function (s, idx) {
+    var transport = s.transport_type || "http";
+    var desc = s.desc || "";
+    var metaParts = [transport];
+    if (transport === "http" || transport === "sse") {
+      metaParts.push(s.url || "");
+    } else {
+      metaParts.push((s.command || "") + " " + (s.args || []).join(" "));
+    }
+    html +=
+      '<div class="mcp-card">' +
+        '<div class="mcp-toggle' + (s.enabled ? " on" : "") + '" data-idx="' + idx + '"></div>' +
+        '<div class="mcp-card-info">' +
+          '<div class="mcp-card-name">' + self.escapeHtml(s.name || "未命名") + '</div>' +
+          (desc ? '<div class="mcp-card-desc">' + self.escapeHtml(desc) + '</div>' : '') +
+          '<div class="mcp-card-meta">' + self.escapeHtml(metaParts.join(" - ")) + '</div>' +
+        '</div>' +
+        '<div class="mcp-card-actions">' +
+          '<button class="mcp-card-btn mcp-edit-btn" data-idx="' + idx + '">编辑</button>' +
+        '</div>' +
+      '</div>';
+  });
+  list.innerHTML = html;
+
+  list.querySelectorAll(".mcp-toggle").forEach(function (tog) {
+    tog.addEventListener("click", function () {
+      self._toggleMcpServer(parseInt(tog.dataset.idx));
+    });
+  });
+  list.querySelectorAll(".mcp-edit-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      self._openMcpEditor(parseInt(btn.dataset.idx));
+    });
+  });
+};
+
+FKTeamsChat.prototype._openMcpEditor = function (idx) {
+  var editor = document.getElementById("mcp-editor");
+  var list = document.getElementById("mcp-server-list");
+  if (!editor || !list) return;
+  this._mcpEditIdx = idx;
+  var servers = this._getMcpServers();
+  var s = idx >= 0 && idx < servers.length ? servers[idx] : {};
+
+  document.getElementById("mcp-edit-name").value = s.name || "";
+  document.getElementById("mcp-edit-desc").value = s.desc || "";
+  document.getElementById("mcp-edit-transport").value = s.transport_type || "http";
+  document.getElementById("mcp-edit-url").value = s.url || "";
+  document.getElementById("mcp-edit-command").value = s.command || "";
+  document.getElementById("mcp-edit-args").value = (s.args || []).join("\n");
+  document.getElementById("mcp-edit-env").value = (s.env_vars || []).join("\n");
+  document.getElementById("mcp-edit-timeout").value = s.timeout || 30;
+  document.getElementById("mcp-editor-delete").style.display = idx >= 0 ? "" : "none";
+
+  this._onMcpTransportChange();
+  list.style.display = "none";
+  editor.style.display = "";
+};
+
+FKTeamsChat.prototype._closeMcpEditor = function () {
+  var editor = document.getElementById("mcp-editor");
+  var list = document.getElementById("mcp-server-list");
+  if (!editor || !list) return;
+  editor.style.display = "none";
+  list.style.display = "";
+};
+
+FKTeamsChat.prototype._onMcpTransportChange = function () {
+  var t = document.getElementById("mcp-edit-transport").value;
+  var urlGroup = document.getElementById("mcp-edit-url-group");
+  var cmdGroup = document.getElementById("mcp-edit-command-group");
+  var argsGroup = document.getElementById("mcp-edit-args-group");
+  var envGroup = document.getElementById("mcp-edit-env-group");
+  var isStdio = t === "stdio";
+  if (urlGroup) urlGroup.style.display = isStdio ? "none" : "";
+  if (cmdGroup) cmdGroup.style.display = isStdio ? "" : "none";
+  if (argsGroup) argsGroup.style.display = isStdio ? "" : "none";
+  if (envGroup) envGroup.style.display = isStdio ? "" : "none";
+};
+
+FKTeamsChat.prototype._saveMcpServer = function () {
+  var servers = JSON.parse(JSON.stringify(this._getMcpServers()));
+  var s = {
+    name: document.getElementById("mcp-edit-name").value.trim(),
+    desc: document.getElementById("mcp-edit-desc").value.trim(),
+    enabled: true,
+    transport_type: document.getElementById("mcp-edit-transport").value,
+    url: document.getElementById("mcp-edit-url").value.trim(),
+    command: document.getElementById("mcp-edit-command").value.trim(),
+    args: document.getElementById("mcp-edit-args").value.split("\n").map(function (l) { return l.trim(); }).filter(Boolean),
+    env_vars: document.getElementById("mcp-edit-env").value.split("\n").map(function (l) { return l.trim(); }).filter(Boolean),
+    timeout: parseInt(document.getElementById("mcp-edit-timeout").value) || 30,
+  };
+
+  if (!s.name) { this.showNotification("名称不能为空", "error"); return; }
+
+  if (this._mcpEditIdx >= 0 && this._mcpEditIdx < servers.length) {
+    s.enabled = servers[this._mcpEditIdx].enabled;
+    servers[this._mcpEditIdx] = s;
+  } else {
+    servers.push(s);
+  }
+
+  this._setMcpServers(servers);
+  this._renderMcpList();
+  this._closeMcpEditor();
+  this.showNotification(s.name + " 已保存", "success");
+};
+
+FKTeamsChat.prototype._deleteMcpServer = function () {
+  if (this._mcpEditIdx < 0) return;
+  var servers = this._getMcpServers();
+  if (this._mcpEditIdx >= servers.length) return;
+  var name = servers[this._mcpEditIdx].name || "服务";
+  if (!confirm("确认删除 " + name + "？")) return;
+  servers = JSON.parse(JSON.stringify(servers));
+  servers.splice(this._mcpEditIdx, 1);
+  this._setMcpServers(servers);
+  this._renderMcpList();
+  this._closeMcpEditor();
+  this.showNotification(name + " 已删除", "success");
+};
+
+FKTeamsChat.prototype._toggleMcpServer = function (idx) {
+  var servers = this._getMcpServers();
+  if (idx < 0 || idx >= servers.length) return;
+  servers = JSON.parse(JSON.stringify(servers));
+  servers[idx].enabled = !servers[idx].enabled;
+  this._setMcpServers(servers);
+  this._renderMcpList();
 };

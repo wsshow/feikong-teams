@@ -640,6 +640,7 @@
             模型
           </button>
           <button class="config-tab-btn" data-tab="general">通用</button>
+          <button class="config-tab-btn" data-tab="mcp">MCP</button>
           <button class="config-tab-btn" data-tab="skills">技能</button>
           <button class="config-tab-btn" data-tab="agents">智能体</button>
           <button class="config-tab-btn" data-tab="custom-agents">
@@ -727,6 +728,64 @@
                   <label>JWT Secret</label>
                   <input type="password" class="config-input" id="config-auth-secret" placeholder="***"
                     autocomplete="new-password" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- MCP 面板 -->
+          <div class="config-panel" id="config-panel-mcp">
+            <div class="mcp-container">
+              <div class="mcp-toolbar">
+                <span class="mcp-count" id="mcp-server-count">0 个服务</span>
+                <button class="mcp-add-btn" id="mcp-add-btn">添加服务</button>
+              </div>
+              <div class="mcp-list" id="mcp-server-list"></div>
+              <div class="mcp-editor" id="mcp-editor" style="display:none">
+                <div class="mcp-editor-header">
+                  <span>编辑服务</span>
+                  <button class="mcp-editor-close" id="mcp-editor-close">&times;</button>
+                </div>
+                <div class="mcp-editor-body">
+                  <div class="mcp-field">
+                    <label>名称</label>
+                    <input type="text" class="mcp-input" id="mcp-edit-name" placeholder="my-server" />
+                  </div>
+                  <div class="mcp-field">
+                    <label>描述</label>
+                    <input type="text" class="mcp-input" id="mcp-edit-desc" placeholder="可选描述" />
+                  </div>
+                  <div class="mcp-field mcp-field-row">
+                    <label>传输方式</label>
+                    <select class="mcp-select" id="mcp-edit-transport">
+                      <option value="http">HTTP</option>
+                      <option value="sse">SSE</option>
+                      <option value="stdio">Stdio</option>
+                    </select>
+                  </div>
+                  <div class="mcp-field" id="mcp-edit-url-group">
+                    <label>地址 (URL)</label>
+                    <input type="text" class="mcp-input" id="mcp-edit-url" placeholder="http://127.0.0.1:12345/mcp" />
+                  </div>
+                  <div class="mcp-field" id="mcp-edit-command-group" style="display:none">
+                    <label>命令</label>
+                    <input type="text" class="mcp-input" id="mcp-edit-command" placeholder="uvx 或 npx 或可执行文件路径" />
+                  </div>
+                  <div class="mcp-field" id="mcp-edit-args-group" style="display:none">
+                    <label>参数（每行一个）</label>
+                    <textarea class="mcp-textarea" id="mcp-edit-args" rows="3" placeholder="run&#10;main.go"></textarea>
+                  </div>
+                  <div class="mcp-field" id="mcp-edit-env-group" style="display:none">
+                    <label>环境变量（KEY=值，每行一个）</label>
+                    <textarea class="mcp-textarea" id="mcp-edit-env" rows="3" placeholder="FEIKONG_MCP_LOG_LEVEL=info"></textarea>
+                  </div>
+                  <div class="mcp-field">
+                    <label>超时（秒）</label>
+                    <input type="number" class="mcp-input mcp-input-sm" id="mcp-edit-timeout" value="30" min="1" max="300" />
+                  </div>
+                </div>
+                <div class="mcp-editor-footer">
+                  <button class="mcp-editor-delete" id="mcp-editor-delete" style="display:none">删除</button>
+                  <button class="mcp-editor-save" id="mcp-editor-save">保存</button>
                 </div>
               </div>
             </div>
