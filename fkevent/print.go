@@ -206,15 +206,15 @@ func newPrintEvent() (func(Event), func()) {
 			if event.Content != "" {
 				var formatted string
 				switch lastToolName {
-				case "duckduckgo_search":
+				case "search":
 					formatted = formatSearchResults(event.Content)
-				case "execute_command", "command_execute", "smart_execute", "execute":
+				case "execute":
 					formatted = formatCommandResult(event.Content)
 				case "file_read", "file_write", "file_edit", "file_list", "grep":
 					formatted = formatFileOpResult(event.Content)
 				case "file_patch":
 					formatted = formatFilePatchResult(event.Content)
-				case "ssh_execute", "ssh_file_upload", "ssh_file_download", "ssh_list_dir":
+				case "ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir":
 					formatted = formatSSHResult(event.Content, lastToolName)
 				case "todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear":
 					formatted = formatTodoResult(event.Content, lastToolName)
@@ -505,7 +505,7 @@ func formatSSHResult(content string, toolName string) string {
 			}
 		}
 
-	case "ssh_file_upload", "ssh_file_download":
+	case "ssh_upload", "ssh_download":
 		if msg, ok := result["message"].(string); ok {
 			fmt.Fprintf(&output, "  %s\n", msg)
 		}
@@ -862,7 +862,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 func formatToolResultMarkdown(content string, toolName string) string {
 	switch toolName {
-	case "duckduckgo_search":
+	case "search":
 		return formatSearchResultMarkdown(content)
 	case "dispatch_tasks":
 		return formatDispatchResultMarkdown(content)
