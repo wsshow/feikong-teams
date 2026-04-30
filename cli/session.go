@@ -199,6 +199,7 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 					continue
 				}
 				s.switchAgent(ctx, executor, agentName)
+				fmt.Println()
 				continue
 			case "/":
 				cmd, selectErr := SelectCommand()
@@ -208,7 +209,11 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 					}
 					continue
 				}
+				// 回显命令
+				fmt.Printf("\n\033[1;90m╭─ [指令]\033[0m\n")
+				fmt.Printf("\033[1;90m╰─▶ /%s\033[0m\n\n", cmd)
 				result := cmdHandler.Handle(cmd)
+				fmt.Println()
 				if result == ResultExit {
 					exitSignals <- syscall.SIGTERM
 					return

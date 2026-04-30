@@ -380,10 +380,21 @@ func handleCancelSchedule() {
 		return
 	}
 
+	// 找到选中的任务以显示详情
+	var cancelledTask *scheduler.ScheduledTask
+	for i := range tasks {
+		if tasks[i].ID == selected {
+			cancelledTask = &tasks[i]
+			break
+		}
+	}
+
 	ctx := context.Background()
 	resp, _ := s.ScheduleCancel(ctx, &scheduler.ScheduleCancelRequest{TaskID: selected})
 	if resp.ErrorMessage != "" {
 		pterm.Error.Println(resp.ErrorMessage)
+	} else if cancelledTask != nil {
+		pterm.Success.Printfln("已取消: %s", cancelledTask.Task)
 	} else {
 		pterm.Success.Println(resp.Message)
 	}
@@ -430,10 +441,21 @@ func handleDeleteSchedule() {
 		return
 	}
 
+	// 找到选中的任务以显示详情
+	var deletedTask *scheduler.ScheduledTask
+	for i := range deletable {
+		if deletable[i].ID == selected {
+			deletedTask = &deletable[i]
+			break
+		}
+	}
+
 	ctx := context.Background()
 	resp, _ := s.ScheduleDelete(ctx, &scheduler.ScheduleDeleteRequest{TaskID: selected})
 	if resp.ErrorMessage != "" {
 		pterm.Error.Println(resp.ErrorMessage)
+	} else if deletedTask != nil {
+		pterm.Success.Printfln("已删除: %s", deletedTask.Task)
 	} else {
 		pterm.Success.Println(resp.Message)
 	}
