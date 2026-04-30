@@ -5,7 +5,7 @@
 class FKTeamsChat {
   constructor() {
     this.ws = null;
-    this.sessionId = "default";
+    this.sessionId = localStorage.getItem("fk_session_id") || "";
     this._hasLoadedSession = false;
     this.mode = "supervisor";
     this.isProcessing = false;
@@ -86,6 +86,9 @@ class FKTeamsChat {
     this.sendBtn = document.getElementById("send-btn");
     this.cancelBtn = document.getElementById("cancel-btn");
     this.sessionIdInput = document.getElementById("session-id");
+    if (this.sessionId) {
+      this.sessionIdInput.value = this.sessionId;
+    }
     this.statusIndicator = document.getElementById("status-indicator");
     this.historyManageBtn = document.getElementById("history-manage-btn");
     this.historySearchInput = document.getElementById("history-search-input");
@@ -462,13 +465,23 @@ class FKTeamsChat {
     }
   }
 
-  setCurrentAgent(agent) {
+  // setCurrentAgent 切换当前智能体
+  // save 为 true 时持久化到服务端（用户主动操作）；为 false 时仅更新本地 UI（如还原历史）
+  setCurrentAgent(agent, save) {
+    const newName = agent ? agent.name : "";
+    const oldName = this.currentAgent ? this.currentAgent.name : "";
+    if (newName === oldName) return;
+
     this.currentAgent = agent;
-    // 持久化到 localStorage，页面刷新后恢复
-    if (agent) {
-      localStorage.setItem("fk_current_agent_" + this.sessionId, agent.name);
-    } else {
-      localStorage.removeItem("fk_current_agent_" + this.sessionId);
+    if (save) {
+      this.fetchWithAuth("/api/fkteams/sessions/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: this.sessionId,
+          current_agent: newName,
+        }),
+      }).catch(() => {});
     }
     this.updateCurrentContextIndicator();
   }
@@ -523,7 +536,7 @@ class FKTeamsChat {
 
     // 切换模式时，清除当前智能体
     if (this.currentAgent) {
-      this.setCurrentAgent(null);
+      this.setCurrentAgent(null, true); // 切换模式，清除智能体并持久化
       this.showNotification("已切换回团队模式", "success");
     }
 

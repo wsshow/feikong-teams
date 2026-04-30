@@ -7,13 +7,18 @@ FKTeamsChat.prototype.sendMessage = async function () {
   const hasAttachments = this.attachments && this.attachments.length > 0;
   if ((!message && !hasAttachments) || this.isProcessing) return;
 
-  // 页面刷新后首次发送消息时，先创建新会话（等待完成后再发送消息）
+  // 页面刷新后首次发送消息时，先创建/复用会话并恢复状态
   if (!this._hasLoadedSession) {
     try {
+      const body = { title: message };
+      // 如果有持久化的会话 ID，尝试复用（跨刷新保留上下文）
+      if (this.sessionId) {
+        body.session_id = this.sessionId;
+      }
       const resp = await this.fetchWithAuth("/api/fkteams/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: message }),
+        body: JSON.stringify(body),
       });
       const result = await resp.json();
       if (result.code !== 0 || !result.data || !result.data.session_id) {
@@ -22,8 +27,16 @@ FKTeamsChat.prototype.sendMessage = async function () {
       }
       this.sessionId = result.data.session_id;
       this.sessionIdInput.value = this.sessionId;
+      localStorage.setItem("fk_session_id", this.sessionId);
       this._hasLoadedSession = true;
       this.loadSidebarHistory();
+      // 从服务端恢复当前 @智能体 状态（跨设备同步）
+      if (result.data.current_agent) {
+        const agent = this.agents.find((a) => a.name === result.data.current_agent);
+        if (agent) {
+          this.setCurrentAgent(agent, false); // 从服务端还原，仅更新 UI
+        }
+      }
     } catch (err) {
       console.error("Error creating session:", err);
       this.showNotification("创建会话失败", "error");
@@ -53,7 +66,7 @@ FKTeamsChat.prototype.sendMessage = async function () {
     // 查找智能体
     const agent = this.agents.find((a) => a.name === mention.agentName);
     if (agent) {
-      this.setCurrentAgent(agent);
+      this.setCurrentAgent(agent, true); // 用户主动 @智能体，持久化
 
       // 显示切换通知
       this.showAgentSwitchNotification(agent.name, agent.description);
@@ -165,7 +178,7 @@ FKTeamsChat.prototype.showAgentSwitchNotification = function (
 
 // 重置回团队模式
 FKTeamsChat.prototype.resetToTeamMode = function () {
-  this.setCurrentAgent(null);
+  this.setCurrentAgent(null, true); // 用户主动切回团队模式，持久化
   const resetNotificationEl = document.createElement("div");
   resetNotificationEl.className = "action-event agent-switch";
   resetNotificationEl.innerHTML = `

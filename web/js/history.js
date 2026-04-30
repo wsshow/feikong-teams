@@ -30,8 +30,9 @@ FKTeamsChat.prototype.createNewSession = async function (silent, title) {
 
   this.sessionId = newSessionId;
   this.sessionIdInput.value = newSessionId;
+  localStorage.setItem("fk_session_id", newSessionId);
   this._hasLoadedSession = true;
-  this.setCurrentAgent(null); // 重置当前智能体，防止新会话继承上一个 @agent
+  this.setCurrentAgent(null, true); // 新建会话，重置智能体并持久化
 
   // 同步处理状态
   this.isProcessing = false;
@@ -180,6 +181,7 @@ FKTeamsChat.prototype.loadSidebarSession = function (sessionId) {
   this._saveSessionDOM();
 
   this.sessionId = sessionId;
+  localStorage.setItem("fk_session_id", sessionId);
   this._hasLoadedSession = true;
   this.sessionIdInput.value = sessionId;
 
@@ -240,7 +242,7 @@ FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
   this.currentMessageElement = cached.currentMessageElement;
   this.hasToolCallAfterMessage = cached.hasToolCallAfterMessage;
   this.userQuestions = cached.userQuestions || [];
-  this.setCurrentAgent(cached.currentAgent || null);
+  this.setCurrentAgent(cached.currentAgent || null, false); // 从缓存还原，仅更新 UI
   this.updateQuickNav();
   this.hideChatLoading();
 
@@ -714,9 +716,11 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
   if (this.sessionId !== sessionId) {
     this._saveSessionDOM();
     this.sessionId = sessionId;
+    localStorage.setItem("fk_session_id", sessionId);
     this._hasLoadedSession = true;
-    this.sessionIdInput.value = sessionId;
   }
+  // 确保隐藏域始终反映当前会话 ID
+  this.sessionIdInput.value = sessionId;
 
   this.showChatLoading();
   this.messagesContainer.innerHTML = "";
@@ -729,7 +733,10 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
     if (!response.ok) {
       this.hideChatLoading();
       if (response.status === 404) {
-        this.showNotification("会话不存在", "error");
+        // 服务端会话已删除，清理本地残留
+        localStorage.removeItem("fk_session_id");
+        this.sessionId = "";
+        this._hasLoadedSession = false;
       } else {
         this.showNotification("加载会话失败", "error");
       }
@@ -746,6 +753,7 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
     // 复用已有的 handleHistoryLoaded 渲染逻辑
     this.handleHistoryLoaded({
       session_id: sessionId,
+      current_agent: result.data.current_agent || "",
       messages: result.data.messages || [],
     });
   } catch (error) {
@@ -952,15 +960,12 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
 
   this.scrollToBottom();
 
-  // 从 localStorage 恢复当前 @智能体 状态（页面刷新后保持上下文）
-  const savedAgentName = localStorage.getItem("fk_current_agent_" + this.sessionId);
-  if (savedAgentName) {
-    const agent = this.agents.find((a) => a.name === savedAgentName);
-    if (agent) {
-      this.setCurrentAgent(agent);
-    } else {
-      localStorage.removeItem("fk_current_agent_" + this.sessionId);
-    }
+  // 从服务端恢复当前 @智能体 状态（仅更新 UI，不写回）
+  if (event.current_agent) {
+    const agent = this.agents.find((a) => a.name === event.current_agent);
+    this.setCurrentAgent(agent || null, false);
+  } else {
+    this.setCurrentAgent(null, false);
   }
 };
 
@@ -1257,8 +1262,9 @@ FKTeamsChat.prototype.confirmDelete = async function () {
 
     // 如果删除的是当前活动会话，切回欢迎页面
     if (this._hasLoadedSession && sessionId === this.sessionId) {
-      this.sessionId = "default";
-      this.sessionIdInput.value = "default";
+      localStorage.removeItem("fk_session_id");
+      this.sessionId = "";
+      this.sessionIdInput.value = "";
       this._hasLoadedSession = false;
       this.clearChatUI();
     }

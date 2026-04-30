@@ -9,22 +9,13 @@ FKTeamsChat.prototype.loadAgents = async function () {
         const result = await response.json();
         if (result.code === 0 && result.data) {
             this.agents = result.data;
-            // 如果历史已加载但 agents 晚到，补充恢复 currentAgent
-            this._restoreCurrentAgentFromStorage();
         }
     } catch (error) {
         console.error('加载智能体列表失败:', error);
     }
-};
-
-FKTeamsChat.prototype._restoreCurrentAgentFromStorage = function () {
-    if (this.currentAgent || !this._hasLoadedSession) return;
-    const savedAgentName = localStorage.getItem("fk_current_agent_" + this.sessionId);
-    if (savedAgentName) {
-        const agent = this.agents.find((a) => a.name === savedAgentName);
-        if (agent) {
-            this.setCurrentAgent(agent);
-        }
+    // 智能体列表就绪后，尝试恢复上次会话
+    if (this.sessionId && !this._hasLoadedSession) {
+        this.loadSession(this.sessionId);
     }
 };
 

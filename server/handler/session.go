@@ -19,12 +19,13 @@ var historyDir = common.SessionsDir()
 
 // SessionInfo 会话信息
 type SessionInfo struct {
-	SessionID  string    `json:"session_id"`
-	Title      string    `json:"title"`
-	Status     string    `json:"status"`
-	ActiveTask bool      `json:"active_task"` // 是否有内存中的活跃流式任务可订阅
-	Size       int64     `json:"size"`
-	ModTime    time.Time `json:"mod_time"`
+	SessionID    string    `json:"session_id"`
+	Title        string    `json:"title"`
+	Status       string    `json:"status"`
+	CurrentAgent string    `json:"current_agent,omitempty"`
+	ActiveTask   bool      `json:"active_task"` // 是否有内存中的活跃流式任务可订阅
+	Size         int64     `json:"size"`
+	ModTime      time.Time `json:"mod_time"`
 }
 
 // validateSessionID 校验会话 ID 安全性（禁止路径穿越）
@@ -85,13 +86,19 @@ func ListSessionsHandler() gin.HandlerFunc {
 				modTime = meta.UpdatedAt
 			}
 
+			currentAgent := ""
+			if metaErr == nil {
+				currentAgent = meta.CurrentAgent
+			}
+
 			files = append(files, SessionInfo{
-				SessionID:  sessionID,
-				Title:      title,
-				Status:     status,
-				ActiveTask: GlobalStreams.Get(sessionID) != nil,
-				Size:       size,
-				ModTime:    modTime,
+				SessionID:    sessionID,
+				Title:        title,
+				Status:       status,
+				CurrentAgent: currentAgent,
+				ActiveTask:   GlobalStreams.Get(sessionID) != nil,
+				Size:         size,
+				ModTime:      modTime,
 			})
 		}
 
@@ -122,8 +129,16 @@ func CreateSessionHandler() gin.HandlerFunc {
 
 		sessionDir := sessionDirPath(req.SessionID)
 		if _, err := os.Stat(sessionDir); err == nil {
-			// 会话已存在，直接返回成功
-			OK(c, gin.H{"session_id": req.SessionID, "message": "session already exists"})
+			// 会话已存在，返回已有的元数据
+			currentAgent := ""
+			if meta, metaErr := fkevent.LoadMetadata(sessionDir); metaErr == nil {
+				currentAgent = meta.CurrentAgent
+			}
+			OK(c, gin.H{
+				"session_id":    req.SessionID,
+				"current_agent": currentAgent,
+				"message":       "session already exists",
+			})
 			return
 		}
 
@@ -182,9 +197,16 @@ func GetSessionHandler() gin.HandlerFunc {
 			return
 		}
 
+		currentAgent := ""
+		meta, metaErr := fkevent.LoadMetadata(sessionDirPath(sessionID))
+		if metaErr == nil {
+			currentAgent = meta.CurrentAgent
+		}
+
 		OK(c, gin.H{
-			"session_id": sessionID,
-			"messages":   histData.Messages,
+			"session_id":    sessionID,
+			"current_agent": currentAgent,
+			"messages":      histData.Messages,
 		})
 	}
 }
@@ -262,6 +284,50 @@ func RenameSessionHandler() gin.HandlerFunc {
 			"message":    "session renamed",
 			"session_id": req.SessionID,
 			"title":      req.Title,
+		})
+	}
+}
+
+// UpdateSessionAgentHandler 更新会话的当前智能体
+func UpdateSessionAgentHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			SessionID    string `json:"session_id" binding:"required"`
+			CurrentAgent string `json:"current_agent"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if !validateSessionID(req.SessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+
+		sessionDir := sessionDirPath(req.SessionID)
+		meta, err := fkevent.LoadMetadata(sessionDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				Fail(c, http.StatusNotFound, "session not found")
+			} else {
+				log.Printf("failed to load metadata: session=%s, err=%v", req.SessionID, err)
+				Fail(c, http.StatusInternalServerError, "failed to read metadata")
+			}
+			return
+		}
+
+		meta.CurrentAgent = req.CurrentAgent
+		meta.UpdatedAt = time.Now()
+		if err := fkevent.SaveMetadata(sessionDir, meta); err != nil {
+			log.Printf("failed to save metadata: session=%s, err=%v", req.SessionID, err)
+			Fail(c, http.StatusInternalServerError, "failed to save metadata")
+			return
+		}
+
+		OK(c, gin.H{
+			"message":       "agent updated",
+			"session_id":    req.SessionID,
+			"current_agent": req.CurrentAgent,
 		})
 	}
 }

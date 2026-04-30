@@ -95,6 +95,7 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 			sessions.GET("/:sessionID", handler.GetSessionHandler())
 			sessions.DELETE("/:sessionID", handler.DeleteSessionHandler())
 			sessions.POST("/rename", handler.RenameSessionHandler())
+			sessions.POST("/agent", handler.UpdateSessionAgentHandler())
 		}
 
 		// 定时任务管理 API

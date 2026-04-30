@@ -12,11 +12,12 @@ import (
 
 // SessionMetadata 会话元数据，存储于 metadata.json
 type SessionMetadata struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Status       string    `json:"status"`
+	CurrentAgent string    `json:"current_agent,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // SaveMetadata 保存会话元数据到指定目录
