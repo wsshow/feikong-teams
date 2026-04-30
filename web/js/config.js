@@ -83,6 +83,9 @@ FKTeamsChat.prototype.switchConfigTab = function (tab) {
   document.querySelectorAll(".config-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === "config-panel-" + tab);
   });
+  if (tab === "skills") {
+    this._initSkillsTab();
+  }
 };
 
 // ===== 加载配置 =====
@@ -1186,4 +1189,386 @@ FKTeamsChat.prototype._showRestartHint = function () {
   box.append(header, body, footer);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
+};
+
+// ===== Skills Management =====
+
+FKTeamsChat.prototype._initSkillsTab = function () {
+  if (this._skillsInited) return;
+  this._skillsInited = true;
+  this._bindSkillsTabs();
+  this._bindSkillsSearch();
+  this._loadInstalledSkills();
+};
+
+FKTeamsChat.prototype._bindSkillsTabs = function () {
+  var self = this;
+  var container = document.getElementById("config-panel-skills");
+  if (!container) return;
+  container.querySelector(".skills-tabs").addEventListener("click", function (e) {
+    var btn = e.target.closest(".skills-tab-btn");
+    if (!btn) return;
+    var tab = btn.dataset.skillsTab;
+    container.querySelectorAll(".skills-tab-btn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.skillsTab === tab);
+    });
+    container.querySelectorAll(".skills-panel").forEach(function (p) {
+      p.classList.toggle("active", p.id === "skills-panel-" + tab);
+    });
+    if (tab === "installed") { self._loadInstalledSkills(); }
+  });
+};
+
+FKTeamsChat.prototype._bindSkillsSearch = function () {
+  var self = this;
+  var input = document.getElementById("skills-search-input");
+  var btn = document.getElementById("skills-search-btn");
+  if (!input || !btn) return;
+  var doSearch = function () {
+    var q = input.value.trim();
+    if (!q) return;
+    self._searchSkills(q);
+  };
+  btn.addEventListener("click", doSearch);
+  input.addEventListener("keydown", function (e) { if (e.key === "Enter") doSearch(); });
+};
+
+FKTeamsChat.prototype._loadInstalledSkills = async function () {
+  var list = document.getElementById("skills-installed-list");
+  if (!list) return;
+  list.innerHTML = '<div class="skills-placeholder">loading...</div>';
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/skills");
+    var r = await resp.json();
+    if (r.code !== 0 || !r.data) { list.innerHTML = '<div class="skills-placeholder">load failed</div>'; return; }
+    var skills = r.data.skills || [];
+    if (skills.length === 0) {
+      list.innerHTML = '<div class="skills-placeholder">no installed skills</div>';
+      return;
+    }
+    this._renderSkillCards(list, skills, "remove");
+  } catch (e) { list.innerHTML = '<div class="skills-placeholder">load failed</div>'; }
+};
+
+FKTeamsChat.prototype._searchSkills = async function (keyword, page) {
+  page = page || 1;
+  var list = document.getElementById("skills-market-list");
+  var sortEl = document.getElementById("skills-sort-select");
+  if (!list) return;
+  list.innerHTML = '<div class="skills-placeholder">searching...</div>';
+  var sortBy = sortEl ? sortEl.value : "downloads";
+
+  try {
+    var url = "/api/fkteams/skills/search?q=" + encodeURIComponent(keyword) +
+      "&sort=" + sortBy + "&order=desc&page=" + page + "&size=10";
+    var results = await Promise.all([
+      this.fetchWithAuth(url),
+      this.fetchWithAuth("/api/fkteams/skills")
+    ]);
+    var searchR = await results[0].json();
+    var installedR = await results[1].json();
+
+    var installedSlugs = {};
+    if (installedR.code === 0 && installedR.data && installedR.data.skills) {
+      installedR.data.skills.forEach(function (s) { installedSlugs[s.slug] = true; });
+    }
+
+    if (searchR.code !== 0 || !searchR.data) { list.innerHTML = '<div class="skills-placeholder">search failed</div>'; return; }
+    var skills = searchR.data.skills || [];
+    if (skills.length === 0) {
+      list.innerHTML = '<div class="skills-placeholder">no results for "' + this.escapeHtml(keyword) + '"</div>';
+      this._renderPagination(keyword, page, 0, 0);
+      return;
+    }
+    this._renderSkillCards(list, skills, "install", installedSlugs);
+    this._renderPagination(keyword, page, searchR.data.total, searchR.data.size || 10);
+  } catch (e) { list.innerHTML = '<div class="skills-placeholder">search failed</div>'; }
+};
+
+FKTeamsChat.prototype._renderPagination = function (keyword, page, total, size) {
+  var pager = document.getElementById("skills-pagination");
+  if (!pager) return;
+  var totalPages = Math.ceil(total / size);
+  if (totalPages <= 1) { pager.style.display = "none"; return; }
+
+  var self = this;
+  pager.style.display = "flex";
+  var html = '<span class="skills-page-info">' + total + ' results, page ' + page + '/' + totalPages + '</span>';
+  if (page > 1) {
+    html += '<button class="skills-page-btn" data-page="' + (page - 1) + '">prev</button>';
+  }
+  if (page < totalPages) {
+    html += '<button class="skills-page-btn" data-page="' + (page + 1) + '">next</button>';
+  }
+  pager.innerHTML = html;
+
+  pager.querySelectorAll(".skills-page-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      self._searchSkills(keyword, parseInt(btn.dataset.page));
+    });
+  });
+};
+
+FKTeamsChat.prototype._renderSkillCards = function (container, skills, mode, installedSlugs) {
+  var self = this;
+  installedSlugs = installedSlugs || {};
+  var html = "";
+  skills.forEach(function (s) {
+    var slug = s.slug || "";
+    var name = s.name || slug || "";
+    var desc = s.description || "";
+    if (desc.length > 80) desc = desc.substring(0, 80) + "...";
+
+    var metaHtml = "";
+    if (mode === "install") {
+      var metaParts = [];
+      if (s.owner) metaParts.push("@" + s.owner);
+      if (s.version) metaParts.push("v" + s.version);
+      metaParts.push((s.downloads || 0) + " downloads");
+      if (s.stars) metaParts.push("★ " + s.stars);
+      metaHtml = '<div class="skill-market-meta">' + self.escapeHtml(metaParts.join(" · ")) + '</div>';
+    }
+
+    var actionHtml = "";
+    if (mode === "install") {
+      if (installedSlugs[slug]) {
+        actionHtml = '<span class="skill-installed-tag">已安装</span>';
+      } else {
+        actionHtml = '<button class="skill-card-btn skill-install-btn" data-slug="' + self.escapeHtml(slug) + '">install</button>';
+      }
+    } else {
+      actionHtml = '<button class="skill-card-btn skill-remove-btn" data-slug="' + self.escapeHtml(slug) + '">remove</button>';
+    }
+
+    var cardId = "skill-card-" + self.escapeHtml(slug);
+
+    html +=
+      '<div class="skill-card" id="' + cardId + '">' +
+        '<div class="skill-card-info">' +
+          '<div class="skill-card-name">' + self.escapeHtml(name) + '</div>' +
+          '<div class="skill-card-desc">' + self.escapeHtml(desc) + '</div>' +
+          metaHtml +
+        '</div>' +
+        '<div class="skill-card-actions">' + actionHtml + '</div>' +
+      '</div>';
+  });
+  container.innerHTML = html;
+
+  container.querySelectorAll(".skill-install-btn").forEach(function (btn) {
+    btn.addEventListener("click", function (e) { e.stopPropagation(); self._installSkill(btn.dataset.slug, btn); });
+  });
+  container.querySelectorAll(".skill-remove-btn").forEach(function (btn) {
+    btn.addEventListener("click", function (e) { e.stopPropagation(); self._removeSkill(btn.dataset.slug); });
+  });
+
+  // click card to toggle file tree (installed mode only)
+  if (mode === "remove") {
+    container.querySelectorAll(".skill-card").forEach(function (card) {
+      card.style.cursor = "pointer";
+      card.addEventListener("click", function (e) {
+        if (e.target.closest(".skill-card-btn")) return;
+        var slug = card.id.replace("skill-card-", "");
+        self._toggleSkillTree(slug);
+      });
+    });
+  }
+};
+
+FKTeamsChat.prototype._toggleSkillTree = function (slug) {
+  this._openSkillBrowser(slug, "");
+};
+
+FKTeamsChat.prototype._openSkillBrowser = function (slug, subPath) {
+  var self = this;
+  var overlay = document.createElement("div");
+  overlay.className = "skill-preview-overlay";
+  overlay.dataset.slug = slug;
+  overlay.dataset.path = subPath;
+
+  overlay.innerHTML =
+    '<div class="skill-preview-modal">' +
+      '<div class="skill-preview-header">' +
+        '<span class="skill-preview-title">' + self.escapeHtml(slug) + '</span>' +
+        '<button class="skill-preview-close">&times;</button>' +
+      '</div>' +
+      '<div class="skill-preview-paths" id="skill-breadcrumb"></div>' +
+      '<div class="skill-preview-list" id="skill-file-list">' +
+        '<div class="skills-placeholder">loading...</div>' +
+      '</div>' +
+      '<div class="skill-preview-content" id="skill-file-content" style="display:none"></div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  var close = function () {
+    overlay.style.animation = "fadeIn 0.15s ease reverse";
+    setTimeout(function () { document.body.removeChild(overlay); }, 150);
+  };
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+  overlay.querySelector(".skill-preview-close").addEventListener("click", close);
+
+  self._loadSkillBrowser(overlay, slug, subPath);
+};
+
+FKTeamsChat.prototype._loadSkillBrowser = async function (overlay, slug, subPath) {
+  var self = this;
+  subPath = (subPath || "").replace(/^\/+/, ""); // normalize: remove leading slashes
+  var list = overlay.querySelector("#skill-file-list");
+  var breadcrumb = overlay.querySelector("#skill-breadcrumb");
+  var content = overlay.querySelector("#skill-file-content");
+  list.style.display = "";
+  list.innerHTML = '<div class="skills-placeholder">loading...</div>';
+  content.style.display = "none";
+
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/skills/" + slug + "/files?path=" + encodeURIComponent(subPath));
+    var r = await resp.json();
+    if (r.code !== 0 || !r.data) { list.innerHTML = '<div class="skills-placeholder">load failed</div>'; return; }
+    var files = r.data.files || [];
+
+    // breadcrumb
+    var parts = subPath ? subPath.split("/").filter(Boolean) : [];
+    var bcHtml = '<span class="skill-bc-item" data-path="">root</span>';
+    var accum = "";
+    parts.forEach(function (p) {
+      accum = accum ? accum + "/" + p : p;
+      bcHtml += '<span class="skill-bc-sep">/</span><span class="skill-bc-item" data-path="' + self.escapeHtml(accum) + '">' + self.escapeHtml(p) + '</span>';
+    });
+    breadcrumb.innerHTML = bcHtml;
+
+    breadcrumb.querySelectorAll(".skill-bc-item").forEach(function (el) {
+      el.addEventListener("click", function () {
+        overlay.dataset.path = el.dataset.path;
+        self._loadSkillBrowser(overlay, slug, el.dataset.path);
+      });
+    });
+
+    // sort: dirs first
+    files.sort(function (a, b) {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    var html = "";
+    if (subPath) {
+      var parentPath = subPath.split("/").filter(Boolean).slice(0, -1).join("/");
+      html += '<div class="skill-file-entry skill-file-up" data-path="' + self.escapeHtml(parentPath) + '">..</div>';
+    }
+
+    files.forEach(function (f) {
+      var cls = f.is_dir ? "skill-file-entry skill-file-dir" : "skill-file-entry skill-file-file";
+      html +=
+        '<div class="' + cls + '" data-path="' + self.escapeHtml(f.path) + '">' +
+          '<span class="skill-file-name">' + self.escapeHtml(f.name) + '</span>' +
+          (f.is_dir ? '' : '<span class="skill-file-size">' + self._formatFileSize(f.size) + '</span>') +
+        '</div>';
+    });
+    list.innerHTML = html;
+
+    list.querySelectorAll(".skill-file-dir, .skill-file-up").forEach(function (el) {
+      el.addEventListener("click", function () {
+        overlay.dataset.path = el.dataset.path;
+        self._loadSkillBrowser(overlay, slug, el.dataset.path);
+      });
+    });
+    list.querySelectorAll(".skill-file-file").forEach(function (el) {
+      el.addEventListener("click", function () {
+        self._loadSkillFileContent(overlay, slug, el.dataset.path);
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="skills-placeholder">load failed</div>';
+  }
+};
+
+FKTeamsChat.prototype._loadSkillFileContent = async function (overlay, slug, filePath) {
+  var self = this;
+  var list = overlay.querySelector("#skill-file-list");
+  var breadcrumb = overlay.querySelector("#skill-breadcrumb");
+  var content = overlay.querySelector("#skill-file-content");
+
+  // update breadcrumb: append filename
+  var parts = filePath.replace(/^\/+/, "").split("/").filter(Boolean);
+  var accum = "";
+  var bcHtml = '<span class="skill-bc-item" data-path="">root</span>';
+  parts.forEach(function (p) {
+    accum = accum ? accum + "/" + p : p;
+    var isLast = accum === filePath.replace(/^\/+/, "");
+    bcHtml += '<span class="skill-bc-sep">/</span>';
+    bcHtml += isLast
+      ? '<span class="skill-bc-item skill-bc-last">' + self.escapeHtml(p) + '</span>'
+      : '<span class="skill-bc-item" data-path="' + self.escapeHtml(accum) + '">' + self.escapeHtml(p) + '</span>';
+  });
+  breadcrumb.innerHTML = bcHtml;
+
+  breadcrumb.querySelectorAll(".skill-bc-item:not(.skill-bc-last)").forEach(function (el) {
+    el.addEventListener("click", function () {
+      overlay.dataset.path = el.dataset.path;
+      self._loadSkillBrowser(overlay, slug, el.dataset.path);
+    });
+  });
+
+  list.style.display = "none";
+  content.style.display = "";
+  content.innerHTML = '<div class="skills-placeholder">loading...</div>';
+
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/skills/" + slug + "/file?path=" + encodeURIComponent(filePath));
+    var r = await resp.json();
+    if (r.code !== 0 || !r.data) { content.innerHTML = '<div class="skills-placeholder">load failed</div>'; return; }
+
+    var ext = (filePath.split(".").pop() || "").toLowerCase();
+    content.innerHTML =
+      (ext === "md"
+        ? '<div class="skill-file-content markdown-body">' + self.renderMarkdown(r.data.content) + '</div>'
+        : '<pre class="skill-file-content"><code>' + self.escapeHtml(r.data.content) + '</code></pre>');
+  } catch (e) {
+    content.innerHTML = '<div class="skills-placeholder">load failed</div>';
+  }
+};
+
+FKTeamsChat.prototype._formatFileSize = function (bytes) {
+  if (!bytes || bytes === 0) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+};
+
+FKTeamsChat.prototype._installSkill = async function (slug, btn) {
+  btn.disabled = true;
+  btn.textContent = "installing...";
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: slug })
+    });
+    var r = await resp.json();
+    if (r.code === 0) {
+      this.showNotification(slug + " installed", "success");
+      this._loadInstalledSkills();
+    } else {
+      this.showNotification(r.message || "install failed", "error");
+    }
+  } catch (e) {
+    this.showNotification("install failed", "error");
+  }
+  btn.disabled = false;
+  btn.textContent = "install";
+};
+
+FKTeamsChat.prototype._removeSkill = async function (slug) {
+  if (!confirm("remove " + slug + "?")) return;
+  try {
+    var resp = await this.fetchWithAuth("/api/fkteams/skills/" + slug, { method: "DELETE" });
+    var r = await resp.json();
+    if (r.code === 0) {
+      this.showNotification(slug + " removed", "success");
+      this._loadInstalledSkills();
+    } else {
+      this.showNotification(r.message || "remove failed", "error");
+    }
+  } catch (e) {
+    this.showNotification("remove failed", "error");
+  }
 };

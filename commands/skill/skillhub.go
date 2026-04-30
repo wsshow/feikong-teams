@@ -21,17 +21,23 @@ func NewSkillHubProvider(baseURL string) Provider {
 
 func (p *skillhubProvider) Name() string { return "SkillHub" }
 
-func (p *skillhubProvider) Search(ctx context.Context, keyword string, page, pageSize int) (*SearchResponse, error) {
+func (p *skillhubProvider) Search(ctx context.Context, keyword string, page, pageSize int, sortBy, order string) (*SearchResponse, error) {
 	u, err := url.Parse(p.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
+	if sortBy == "" {
+		sortBy = "downloads"
+	}
+	if order == "" {
+		order = "desc"
 	}
 	q := u.Query()
 	q.Set("keyword", keyword)
 	q.Set("page", fmt.Sprintf("%d", page))
 	q.Set("pageSize", fmt.Sprintf("%d", pageSize))
-	q.Set("sortBy", "downloads")
-	q.Set("order", "desc")
+	q.Set("sortBy", sortBy)
+	q.Set("order", order)
 	u.RawQuery = q.Encode()
 
 	client := &http.Client{Timeout: 15 * time.Second}

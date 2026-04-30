@@ -48,7 +48,7 @@ func searchCommand() *ucli.Command {
 
 func searchSkills(ctx context.Context, keyword string, page, size int, providers []Provider) error {
 	for _, p := range providers {
-		resp, err := p.Search(ctx, keyword, page, size)
+		resp, err := p.Search(ctx, keyword, page, size, "", "")
 		if err != nil {
 			pterm.Warning.Printfln("[%s] 搜索失败: %v", p.Name(), err)
 			continue

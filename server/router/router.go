@@ -108,6 +108,17 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 				schedules.GET("/:id/history/:filename", handler.GetTaskHistoryFileHandler())
 		}
 
+			// skills management API
+			skills := apiV1.Group("/skills")
+			{
+				skills.GET("", handler.GetInstalledSkillsHandler())
+				skills.GET("/search", handler.SearchSkillsHandler())
+				skills.POST("/install", handler.InstallSkillHandler())
+				skills.DELETE("/:slug", handler.RemoveSkillHandler())
+				skills.GET("/:slug/files", handler.GetSkillFilesHandler())
+				skills.GET("/:slug/file", handler.GetSkillFileContentHandler())
+			}
+
 		// 长期记忆管理 API
 		memory := apiV1.Group("/memory")
 		{

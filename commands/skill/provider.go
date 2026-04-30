@@ -29,7 +29,7 @@ type SearchResponse struct {
 // Provider 技能后端接口
 type Provider interface {
 	Name() string
-	Search(ctx context.Context, keyword string, page, pageSize int) (*SearchResponse, error)
+	Search(ctx context.Context, keyword string, page, pageSize int, sortBy, order string) (*SearchResponse, error)
 	Download(ctx context.Context, slug, version string) (io.ReadCloser, error)
 }
 

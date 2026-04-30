@@ -640,6 +640,7 @@
             模型
           </button>
           <button class="config-tab-btn" data-tab="general">通用</button>
+          <button class="config-tab-btn" data-tab="skills">技能</button>
           <button class="config-tab-btn" data-tab="agents">智能体</button>
           <button class="config-tab-btn" data-tab="custom-agents">
             自定义智能体
@@ -727,6 +728,35 @@
                   <input type="password" class="config-input" id="config-auth-secret" placeholder="***"
                     autocomplete="new-password" />
                 </div>
+              </div>
+            </div>
+          </div>
+          <!-- 技能面板 -->
+          <div class="config-panel" id="config-panel-skills">
+            <div class="skills-container">
+              <div class="skills-tabs">
+                <button class="skills-tab-btn active" data-skills-tab="installed">已安装</button>
+                <button class="skills-tab-btn" data-skills-tab="market">市场</button>
+              </div>
+              <div class="skills-panel active" id="skills-panel-installed">
+                <div class="skills-list" id="skills-installed-list">
+                  <div class="skills-placeholder">loading...</div>
+                </div>
+              </div>
+              <div class="skills-panel" id="skills-panel-market">
+                <div class="skills-search-bar">
+                  <input type="text" class="skills-search-input" id="skills-search-input" placeholder="搜索技能..." />
+                  <select class="skills-sort-select" id="skills-sort-select">
+                    <option value="downloads">下载量</option>
+                    <option value="stars">星数</option>
+                    <option value="updated">最近更新</option>
+                  </select>
+                  <button class="skills-search-btn" id="skills-search-btn">搜索</button>
+                </div>
+                <div class="skills-list" id="skills-market-list">
+                  <div class="skills-placeholder">enter keyword to search</div>
+                </div>
+                <div class="skills-pagination" id="skills-pagination" style="display:none"></div>
               </div>
             </div>
           </div>
