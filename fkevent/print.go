@@ -302,9 +302,13 @@ func newPrintEvent() (func(Event), func()) {
 
 func printPlainResult(content string) {
 	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	for i, line := range lines {
+		if i >= 30 {
+			fmt.Printf("  │ ... 还有 %d 行\n", len(lines)-30)
+			break
+		}
 		if line != "" {
-			fmt.Printf("  │ %s\n", line)
+			fmt.Printf("  │ %s\n", truncateString(line, 200))
 		}
 	}
 }
@@ -330,10 +334,14 @@ func formatSearchResults(content string) string {
 	}
 
 	for i, r := range result.Results {
+		if i >= 5 {
+			fmt.Fprintf(&output, "  \033[90m... 还有 %d 条结果\033[0m\n", len(result.Results)-5)
+			break
+		}
 		fmt.Fprintf(&output, "  \033[1;36m%d. %s\033[0m\n", i+1, r.Title)
 
 		if r.URL != "" {
-			fmt.Fprintf(&output, "     \033[90mURL: %s\033[0m\n", r.URL)
+			fmt.Fprintf(&output, "     \033[90mURL: %s\033[0m\n", truncateString(r.URL, 80))
 		}
 
 		if r.Summary != "" {
@@ -342,7 +350,7 @@ func formatSearchResults(content string) string {
 			fmt.Fprintf(&output, "     %s\n", summary)
 		}
 
-		if i < len(result.Results)-1 {
+		if i < min(len(result.Results)-1, 4) {
 			output.WriteString("\n")
 		}
 	}
@@ -385,9 +393,13 @@ func formatCommandResult(content string) string {
 	if result.Stdout != "" {
 		output.WriteString("\n")
 		lines := strings.Split(result.Stdout, "\n")
-		for _, line := range lines {
+		for i, line := range lines {
+			if i >= 30 {
+				fmt.Fprintf(&output, "  │ ... 还有 %d 行\n", len(lines)-30)
+				break
+			}
 			if line != "" {
-				fmt.Fprintf(&output, "  │ %s\n", line)
+				fmt.Fprintf(&output, "  │ %s\n", truncateString(line, 200))
 			}
 		}
 	}
@@ -395,9 +407,13 @@ func formatCommandResult(content string) string {
 	if result.Stderr != "" {
 		output.WriteString("\n  \033[31m标准错误:\033[0m\n")
 		lines := strings.Split(result.Stderr, "\n")
-		for _, line := range lines {
+		for i, line := range lines {
+			if i >= 20 {
+				fmt.Fprintf(&output, "  │ ... 还有 %d 行\n", len(lines)-20)
+				break
+			}
 			if line != "" {
-				fmt.Fprintf(&output, "  │ %s\n", line)
+				fmt.Fprintf(&output, "  │ %s\n", truncateString(line, 200))
 			}
 		}
 	}
@@ -498,9 +514,13 @@ func formatSSHResult(content string, toolName string) string {
 		if out, ok := result["output"].(string); ok && out != "" {
 			output.WriteString("  \033[1m输出:\033[0m\n")
 			lines := strings.Split(out, "\n")
-			for _, line := range lines {
+			for i, line := range lines {
+				if i >= 30 {
+					fmt.Fprintf(&output, "  │ ... 还有 %d 行\n", len(lines)-30)
+					break
+				}
 				if line != "" {
-					fmt.Fprintf(&output, "  │ %s\n", line)
+					fmt.Fprintf(&output, "  │ %s\n", truncateString(line, 200))
 				}
 			}
 		}
@@ -585,13 +605,17 @@ func formatTodoResult(content string, toolName string) string {
 			addedCount, _ := result["added_count"].(float64)
 			fmt.Fprintf(&output, "\n  \033[1m已添加 %d 个待办事项:\033[0m\n\n", int(addedCount))
 
-			for i, todoItem := range todosData {
+			limit := min(len(todosData), 10)
+			for i, todoItem := range todosData[:limit] {
 				if todoMap, ok := todoItem.(map[string]any); ok {
 					output.WriteString(formatSingleTodo(todoMap))
-					if i < len(todosData)-1 {
+					if i < limit-1 {
 						output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
 					}
 				}
+			}
+			if len(todosData) > 10 {
+				fmt.Fprintf(&output, "  \033[90m... 还有 %d 个待办事项\033[0m\n", len(todosData)-10)
 			}
 		}
 
@@ -603,13 +627,17 @@ func formatTodoResult(content string, toolName string) string {
 			if len(todosData) == 0 {
 				output.WriteString("  \033[90m（暂无待办事项）\033[0m\n")
 			} else {
-				for i, todoItem := range todosData {
+				limit := min(len(todosData), 10)
+				for i, todoItem := range todosData[:limit] {
 					if todoMap, ok := todoItem.(map[string]any); ok {
 						output.WriteString(formatSingleTodo(todoMap))
-						if i < len(todosData)-1 {
+						if i < limit-1 {
 							output.WriteString("  \033[90m────────────────────────────────────────\033[0m\n")
 						}
 					}
+				}
+				if len(todosData) > 10 {
+					fmt.Fprintf(&output, "  \033[90m... 还有 %d 个待办事项\033[0m\n", len(todosData)-10)
 				}
 			}
 		}
@@ -703,7 +731,7 @@ func formatSingleTodo(todo map[string]any) string {
 	}
 
 	if description != "" {
-		fmt.Fprintf(&output, "  │ 描述: %s\n", description)
+		fmt.Fprintf(&output, "  │ 描述: %s\n", truncateString(description, 120))
 	}
 
 	if createdAt, ok := todo["created_at"].(string); ok && createdAt != "" {
@@ -757,7 +785,11 @@ func formatFilePatchResult(content string) string {
 		fmt.Fprintf(&output, "  \033[33m⚠ %s\033[0m\n", result.Message)
 	}
 
-	for _, r := range result.Results {
+	for i, r := range result.Results {
+		if i >= 20 {
+			fmt.Fprintf(&output, "  │ ... 还有 %d 个文件\n", len(result.Results)-20)
+			break
+		}
 		if r.Success {
 			fmt.Fprintf(&output, "  │ \033[32m✓\033[0m %s\n", r.Path)
 		} else {
