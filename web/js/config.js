@@ -698,17 +698,19 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
     )
     .join("");
 
+  // 内置工具（排除 mcp- 前缀的，MCP 工具单独渲染）
   const toolChips = this._toolNames
+    .filter(function (t) { return !t.startsWith("mcp-"); })
     .map((t) => {
       const selected = (agent.tools || []).includes(t) ? "selected" : "";
       return `<span class="config-tool-chip ${selected}" data-tool="${this.escapeHtml(t)}">${this.escapeHtml(t)}</span>`;
     })
     .join("");
 
-  // MCP 工具也加入选项
+  // MCP 工具（只显示已启用的服务）
   const mcpServers = this._configData?.custom?.mcp_servers || [];
   const mcpChips = mcpServers
-    .filter((s) => s.enabled)
+    .filter(function (s) { return s.enabled === true; })
     .map((s) => {
       const toolName = "mcp-" + s.name;
       const selected = (agent.tools || []).includes(toolName) ? "selected" : "";
@@ -1036,6 +1038,25 @@ FKTeamsChat.prototype.collectConfigData = function () {
   return cfg;
 };
 
+FKTeamsChat.prototype._saveConfigSilent = async function () {
+  try {
+    var cfg = this.collectConfigData();
+    var resp = await this.fetchWithAuth("/api/fkteams/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg),
+    });
+    var result = await resp.json();
+    if (result.code === 0) {
+      this.loadAgents();
+    } else {
+      console.error("Save config failed:", result.message);
+    }
+  } catch (e) {
+    console.error("Save config error:", e);
+  }
+};
+
 FKTeamsChat.prototype.saveConfig = async function () {
   this.configSaveBtn.disabled = true;
   this.configSaveBtn.textContent = "保存中...";
@@ -1196,10 +1217,11 @@ FKTeamsChat.prototype._showRestartHint = function () {
 // ===== Skills Management =====
 
 FKTeamsChat.prototype._initSkillsTab = function () {
-  if (this._skillsInited) return;
-  this._skillsInited = true;
-  this._bindSkillsTabs();
-  this._bindSkillsSearch();
+  if (!this._skillsInited) {
+    this._skillsInited = true;
+    this._bindSkillsTabs();
+    this._bindSkillsSearch();
+  }
   this._loadInstalledSkills();
 };
 
@@ -1560,7 +1582,13 @@ FKTeamsChat.prototype._installSkill = async function (slug, btn) {
 };
 
 FKTeamsChat.prototype._removeSkill = async function (slug) {
-  if (!confirm("remove " + slug + "?")) return;
+  var self = this;
+  this._fmShowConfirm("确认删除技能 <b>" + this.escapeHtml(slug) + "</b>？", "删除后可从市场中重新安装", function () {
+    self._doRemoveSkill(slug);
+  });
+};
+
+FKTeamsChat.prototype._doRemoveSkill = async function (slug) {
   try {
     var resp = await this.fetchWithAuth("/api/fkteams/skills/" + slug, { method: "DELETE" });
     var r = await resp.json();
@@ -1578,9 +1606,10 @@ FKTeamsChat.prototype._removeSkill = async function (slug) {
 // ===== MCP Server Management =====
 
 FKTeamsChat.prototype._initMcpTab = function () {
-  if (this._mcpInited) return;
-  this._mcpInited = true;
-  this._bindMcpEvents();
+  if (!this._mcpInited) {
+    this._mcpInited = true;
+    this._bindMcpEvents();
+  }
   this._renderMcpList();
 };
 
@@ -1706,6 +1735,10 @@ FKTeamsChat.prototype._onMcpTransportChange = function () {
 };
 
 FKTeamsChat.prototype._saveMcpServer = function () {
+  var saveBtn = document.getElementById("mcp-editor-save");
+  if (saveBtn && saveBtn.disabled) return;
+  if (saveBtn) saveBtn.disabled = true;
+
   var servers = JSON.parse(JSON.stringify(this._getMcpServers()));
   var s = {
     name: document.getElementById("mcp-edit-name").value.trim(),
@@ -1719,9 +1752,22 @@ FKTeamsChat.prototype._saveMcpServer = function () {
     timeout: parseInt(document.getElementById("mcp-edit-timeout").value) || 30,
   };
 
-  if (!s.name) { this.showNotification("名称不能为空", "error"); return; }
+  if (!s.name) {
+    this.showNotification("名称不能为空", "error");
+    if (saveBtn) saveBtn.disabled = false;
+    return;
+  }
 
-  if (this._mcpEditIdx >= 0 && this._mcpEditIdx < servers.length) {
+  var isNew = this._mcpEditIdx < 0 || this._mcpEditIdx >= servers.length;
+  for (var i = 0; i < servers.length; i++) {
+    if (servers[i].name === s.name && (isNew || i !== this._mcpEditIdx)) {
+      this.showNotification("名称 " + s.name + " 已存在", "error");
+      if (saveBtn) saveBtn.disabled = false;
+      return;
+    }
+  }
+
+  if (!isNew) {
     s.enabled = servers[this._mcpEditIdx].enabled;
     servers[this._mcpEditIdx] = s;
   } else {
@@ -1731,7 +1777,9 @@ FKTeamsChat.prototype._saveMcpServer = function () {
   this._setMcpServers(servers);
   this._renderMcpList();
   this._closeMcpEditor();
-  this.showNotification(s.name + " 已保存", "success");
+  this._saveConfigSilent();
+  this.showNotification(s.name + " 已保存，配置已同步", "success");
+  if (saveBtn) saveBtn.disabled = false;
 };
 
 FKTeamsChat.prototype._deleteMcpServer = function () {
@@ -1739,13 +1787,15 @@ FKTeamsChat.prototype._deleteMcpServer = function () {
   var servers = this._getMcpServers();
   if (this._mcpEditIdx >= servers.length) return;
   var name = servers[this._mcpEditIdx].name || "服务";
-  if (!confirm("确认删除 " + name + "？")) return;
-  servers = JSON.parse(JSON.stringify(servers));
-  servers.splice(this._mcpEditIdx, 1);
-  this._setMcpServers(servers);
-  this._renderMcpList();
-  this._closeMcpEditor();
-  this.showNotification(name + " 已删除", "success");
+  var self = this;
+  this._fmShowConfirm("确认删除 MCP 服务 <b>" + this.escapeHtml(name) + "</b>？", "删除后需保存配置才能生效", function () {
+    var s = JSON.parse(JSON.stringify(self._getMcpServers()));
+    s.splice(self._mcpEditIdx, 1);
+    self._setMcpServers(s);
+    self._renderMcpList();
+    self._closeMcpEditor();
+    self.showNotification(name + " 已删除", "success");
+  });
 };
 
 FKTeamsChat.prototype._toggleMcpServer = function (idx) {
@@ -1755,4 +1805,5 @@ FKTeamsChat.prototype._toggleMcpServer = function (idx) {
   servers[idx].enabled = !servers[idx].enabled;
   this._setMcpServers(servers);
   this._renderMcpList();
+  this._saveConfigSilent();
 };
