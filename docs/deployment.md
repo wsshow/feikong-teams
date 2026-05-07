@@ -17,24 +17,17 @@ make build
 
 ### 使用 docker-compose（推荐）
 
-1. 编辑 `docker-compose.yml`，确保数据目录挂载正确。
-
-2. 首次启动前，生成示例配置文件：
-
-```bash
-mkdir -p data
-# 启动一次容器以生成默认配置
-docker run --rm \
-  -e FEIKONG_APP_DIR=/app \
-  -v ./data:/app \
-  fkteams generate config
-```
-
-3. 启动服务：
-
+1. 启动服务：
+   
 ```bash
 docker compose up -d
 ```
+
+容器在首次启动时会**自动生成** `config/config.toml` 配置文件，并自动将监听地址（Host）设置为 `0.0.0.0` 以允许外部访问。
+
+2. 编辑配置（可选）：
+   
+   生成的配置文件位于宿主机的 `./data/config/config.toml`，编辑后执行 `docker compose restart` 即可生效。
 
 访问 http://localhost:23456 即可使用。
 

@@ -22,15 +22,15 @@ WORKDIR /app
 
 # 从构建阶段复制二进制
 COPY --from=builder /build/fkteams .
+# 复制并设置 entrypoint 脚本
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # 创建运行时目录
 RUN mkdir -p config workspace history/input_history history/chat_history \
     scheduler/results sessions log
 
-# 复制默认配置（用户可通过挂载覆盖）
-COPY release/config/config.toml config/config.toml
-
 EXPOSE 23456
 
-ENTRYPOINT ["./fkteams"]
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["web"]
