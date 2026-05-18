@@ -177,6 +177,11 @@ FKTeamsChat.prototype.loadSidebarSession = function (sessionId) {
     return;
   }
 
+  // 移动端切换会话时自动折叠侧边栏，避免 loading 遮挡
+  if (window.innerWidth <= 768 && !this.sidebar.classList.contains("collapsed")) {
+    this.toggleSidebar();
+  }
+
   // 保存当前会话的 DOM 状态
   this._saveSessionDOM();
 
