@@ -4,10 +4,12 @@ package inject
 
 import (
 	"context"
-	"reflect"
-	"time"
-
 	"fkteams/agents/retry/generic"
+	rootcommon "fkteams/common"
+	"fmt"
+	"reflect"
+	"runtime"
+	"time"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -124,5 +126,17 @@ func (m *injectChatModel) injectDynamicContext(input []*schema.Message) []*schem
 
 // buildDynamicContext 构建动态上下文文本，后续可扩展更多信息。
 func buildDynamicContext() string {
-	return "当前时间：" + time.Now().Format("2006-01-02 15:04:05")
+	contextMsg := fmt.Sprintf(`<system-reminder>
+在回答用户问题时，你可以参考以下背景信息：
+- 当前时间：%s
+- 操作系统：%s (%s)
+- 工作目录：{%s}
+重要提示：此背景信息可能与你的任务相关，也可能不相关。除非与任务高度相关，否则你不应针对此背景信息进行回应。
+</system-reminder>`,
+		time.Now().Format("2006-01-02 15:04:05"),
+		runtime.GOOS,
+		runtime.GOARCH,
+		rootcommon.WorkspaceDir(),
+	)
+	return contextMsg
 }
