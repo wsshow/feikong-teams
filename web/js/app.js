@@ -382,6 +382,8 @@ class FKTeamsChat {
       this._startHeartbeat();
       // 如果有正在处理的任务，发送 resume 请求恢复输出流
       if (this.isProcessing && this.sessionId) {
+        // 重置流式渲染标志，避免断连前的过期状态导致回放事件创建重复卡片
+        this.hasToolCallAfterMessage = false;
         ws.send(
           JSON.stringify({
             type: "resume",
@@ -392,6 +394,10 @@ class FKTeamsChat {
       }
       // 加载侧边栏历史会话列表
       this.loadSidebarHistory();
+      // 页面刷新后自动恢复当前会话的聊天记录
+      if (this.sessionId && !this._hasLoadedSession) {
+        this.loadSession(this.sessionId);
+      }
     };
 
     ws.onclose = () => {

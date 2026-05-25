@@ -736,6 +736,8 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
       `/api/fkteams/sessions/${encodeURIComponent(sessionId)}`,
     );
     if (!response.ok) {
+      // 请求期间用户可能已切换到其他会话，放弃过期结果
+      if (this.sessionId !== sessionId) return;
       this.hideChatLoading();
       if (response.status === 404) {
         // 服务端会话已删除，清理本地残留
@@ -749,6 +751,8 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
       return;
     }
     const result = await response.json();
+    // 请求期间用户可能已切换到其他会话，放弃过期结果
+    if (this.sessionId !== sessionId) return;
     if (result.code !== 0 || !result.data) {
       this.hideChatLoading();
       this.showNotification("加载会话失败", "error");
