@@ -734,6 +734,7 @@ FKTeamsChat.prototype.loadSession = async function (sessionId) {
   try {
     const response = await this.fetchWithAuth(
       `/api/fkteams/sessions/${encodeURIComponent(sessionId)}`,
+      { cache: "no-cache" },
     );
     if (!response.ok) {
       // 请求期间用户可能已切换到其他会话，放弃过期结果

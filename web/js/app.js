@@ -103,6 +103,11 @@ class FKTeamsChat {
     this.initConfig();
     this.loadAgents();
     this.loadVersion();
+    // 仅在页面全新加载（DOM 为空）时自动恢复会话历史
+    // 如果 DOM 已有内容，说明浏览器保留了页面状态，不应覆盖
+    if (this.sessionId && this.messagesContainer.querySelector(".welcome-message")) {
+      this.loadSession(this.sessionId);
+    }
     this.connect();
   }
 
@@ -384,6 +389,8 @@ class FKTeamsChat {
       if (this.isProcessing && this.sessionId) {
         // 重置流式渲染标志，避免断连前的过期状态导致回放事件创建重复卡片
         this.hasToolCallAfterMessage = false;
+        this._resumePending = true;
+        this._resumeReplayed = false;
         ws.send(
           JSON.stringify({
             type: "resume",
@@ -394,10 +401,6 @@ class FKTeamsChat {
       }
       // 加载侧边栏历史会话列表
       this.loadSidebarHistory();
-      // 页面刷新后自动恢复当前会话的聊天记录
-      if (this.sessionId && !this._hasLoadedSession) {
-        this.loadSession(this.sessionId);
-      }
     };
 
     ws.onclose = () => {

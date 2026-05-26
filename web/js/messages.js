@@ -243,6 +243,15 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
   if (!["connected", "processing_start", "pong"].includes(event.type)) {
     this.hideThinkingIndicator();
   }
+  // resume 后收到内容事件则标记回放成功
+  if (
+    this._resumePending &&
+    !["connected", "pong", "processing_start", "processing_end"].includes(
+      event.type,
+    )
+  ) {
+    this._resumeReplayed = true;
+  }
 
   switch (event.type) {
     case "connected":
@@ -250,10 +259,23 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     case "pong":
       break;
     case "processing_start":
+      this._resumePending = false;
       this.isProcessing = true;
       this.updateStatus("processing", "处理中...");
       break;
     case "processing_end":
+      // resume 回放未收到任何内容事件，说明流已提前结束，从历史 API 重新加载
+      if (this._resumePending && !this._resumeReplayed) {
+        this._resumePending = false;
+        this.isProcessing = false;
+        this.updateStatus("connected", "已连接");
+        this.updateSendButtonState();
+        this.currentMessageElement = null;
+        this.hasToolCallAfterMessage = false;
+        this.loadSession(this.sessionId);
+        break;
+      }
+      this._resumePending = false;
       this.isProcessing = false;
       this.updateStatus("connected", "已连接");
       this.updateSendButtonState();
@@ -1273,6 +1295,7 @@ FKTeamsChat.prototype.handleAction = function (event) {
 };
 
 FKTeamsChat.prototype.handleError = function (event) {
+  this._resumePending = false;
   const errorMsg = event.error || "";
   if (errorMsg.includes("登录已过期")) {
     this.showAuthExpiredOverlay();
@@ -1439,6 +1462,7 @@ FKTeamsChat.prototype.cancelTask = function () {
 };
 
 FKTeamsChat.prototype.handleCancelled = function (event) {
+  this._resumePending = false;
   this.isProcessing = false;
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
