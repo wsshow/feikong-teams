@@ -47,7 +47,6 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 	}
 	summaryMiddleware, err := summary.New(ctx, &summary.Config{
 		Model:                  retryModel,
-		SystemPrompt:           summary.PromptOfSummary,
 		MaxTokensBeforeSummary: maxTokens,
 	})
 	if err != nil {

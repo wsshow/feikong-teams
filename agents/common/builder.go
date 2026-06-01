@@ -211,7 +211,6 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		}
 		summaryMiddleware, err := summary.New(ctx, &summary.Config{
 			Model:                  chatModel,
-			SystemPrompt:           summary.PromptOfSummary,
 			MaxTokensBeforeSummary: maxTokens,
 		})
 		if err != nil {
