@@ -5,15 +5,17 @@ import (
 	"fkteams/agents/common"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
 )
 
-func NewAgent(ctx context.Context) (adk.Agent, error) {
+func NewAgent(ctx context.Context, agentTools ...tool.BaseTool) (adk.Agent, error) {
 	safeDir := common.WorkspaceDir()
 
 	return common.NewAgentBuilder("统御", "团队管理者，善于规划和分配任务。").
 		WithTemplate(leaderPromptTemplate).
 		WithTemplateVar("workspace_dir", safeDir).
 		WithToolNames("todo", "file", "scheduler", "ask").
+		WithTools(agentTools...).
 		WithSummary().
 		WithSkills().
 		Build(ctx)

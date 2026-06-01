@@ -61,7 +61,7 @@ func StreamStartHandler() gin.HandlerFunc {
 
 		mode := req.Mode
 		if mode == "" {
-			mode = "supervisor"
+			mode = "team"
 		}
 
 		ctx := context.Background()

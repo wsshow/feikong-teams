@@ -7,7 +7,7 @@ class FKTeamsChat {
     this.ws = null;
     this.sessionId = localStorage.getItem("fk_session_id") || "";
     this._hasLoadedSession = false;
-    this.mode = "supervisor";
+    this.mode = "team";
     this.isProcessing = false;
     this.currentMessageElement = null;
     this.hasToolCallAfterMessage = false;
@@ -579,7 +579,7 @@ class FKTeamsChat {
     // 更新状态显示
     let modeText = "未知模式";
     switch (mode) {
-      case "supervisor":
+      case "team":
         modeText = "团队模式";
         break;
       case "roundtable":

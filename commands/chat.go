@@ -130,7 +130,7 @@ func createModeRunner(ctx context.Context, mode cli.WorkMode) (*adk.Runner, erro
 	switch mode {
 	case cli.ModeTeam:
 		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
-		return runner.CreateSupervisorRunner(ctx)
+		return runner.CreateTeamRunner(ctx)
 	case cli.ModeDeep:
 		fmt.Printf("欢迎来到非空小队 - 深度模式: %s\n", version.Get())
 		return runner.CreateDeepAgentsRunner(ctx)
@@ -145,7 +145,7 @@ func createModeRunner(ctx context.Context, mode cli.WorkMode) (*adk.Runner, erro
 		if err := runner.PrintCustomAgentsInfo(ctx); err != nil {
 			return nil, err
 		}
-		return runner.CreateCustomSupervisorRunner(ctx)
+		return runner.CreateCustomRunner(ctx)
 	default:
 		return nil, nil
 	}

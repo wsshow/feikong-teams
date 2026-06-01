@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/prompt"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -24,6 +25,7 @@ type Config struct {
 	SystemPrompt string
 	Model        Model
 	ToolNames    []string
+	Tools        []tool.BaseTool
 }
 
 func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
@@ -33,6 +35,7 @@ func NewAgent(ctx context.Context, cfg Config) (adk.Agent, error) {
 
 	builder := common.NewAgentBuilder(cfg.Name, cfg.Description).
 		WithTemplate(customPromptTemplate).
+		WithTools(cfg.Tools...).
 		WithToolNames(cfg.ToolNames...).
 		WithSummary().
 		WithSkills()

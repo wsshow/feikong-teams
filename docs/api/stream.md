@@ -28,7 +28,7 @@ POST /api/fkteams/stream/start
 {
   "session_id": "可选，不提供则自动生成 UUID",
   "message": "用户消息",
-  "mode": "supervisor",
+  "mode": "team",
   "agent_name": "可选，指定单个智能体",
   "contents": []
 }
@@ -38,7 +38,7 @@ POST /api/fkteams/stream/start
 | ------------ | ------ | ---- | --------------------------------------------------- |
 | `session_id` | string | 否   | 会话 ID，不提供则自动生成                           |
 | `message`    | string | 条件 | 文本消息（与 `contents` 二选一）                    |
-| `mode`       | string | 否   | 工作模式：`supervisor`/`roundtable`/`custom`/`deep` |
+| `mode`       | string | 否   | 工作模式：`team`/`roundtable`/`custom`/`deep`，兼容旧值 `supervisor` |
 | `agent_name` | string | 否   | 指定单个智能体名称                                  |
 | `contents`   | array  | 条件 | 多模态内容（与 `message` 二选一），格式同聊天 API   |
 
@@ -168,7 +168,7 @@ GET /api/fkteams/stream/status/:sessionID
     "session_id": "abc-123",
     "status": "processing",
     "has_task": true,
-    "mode": "supervisor",
+    "mode": "team",
     "agent_name": "",
     "event_count": 42,
     "created_at": "2026-04-05T10:00:00Z"

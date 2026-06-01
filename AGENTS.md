@@ -45,8 +45,8 @@ agents/                     # 智能体系统
   middlewares/tools/        #   工具中间件（warperror / trimresult / patch / destructiveguard）
   retry/                    #   模型调用自动重试
 runner/                     # Runner 工厂 — 根据 mode 创建不同 Runner
-  runner.go                 #   CreateSupervisorRunner / CreateDeepAgentsRunner /
-                            #   CreateLoopAgentRunner / CreateCustomSupervisorRunner
+  runner.go                 #   CreateTeamRunner / CreateDeepAgentsRunner /
+                            #   CreateLoopAgentRunner / CreateCustomRunner
 tools/                      # 工具系统
   tools.go                  #   GetToolsByName() — 按名称返回工具列表
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具

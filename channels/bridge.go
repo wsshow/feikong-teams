@@ -96,11 +96,11 @@ func (b *Bridge) getRunner(ctx context.Context) (*adk.Runner, error) {
 
 	switch b.mode {
 	case "team":
-		b.runner, b.runnerErr = runner.CreateSupervisorRunner(ctx)
+		b.runner, b.runnerErr = runner.CreateTeamRunner(ctx)
 	case "roundtable":
 		b.runner, b.runnerErr = runner.CreateLoopAgentRunner(ctx)
 	case "custom":
-		b.runner, b.runnerErr = runner.CreateCustomSupervisorRunner(ctx)
+		b.runner, b.runnerErr = runner.CreateCustomRunner(ctx)
 	case "deep":
 		b.runner, b.runnerErr = runner.CreateDeepAgentsRunner(ctx)
 	default:

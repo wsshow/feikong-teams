@@ -45,7 +45,7 @@ func ChatHandler() gin.HandlerFunc {
 		}
 		mode := req.Mode
 		if mode == "" {
-			mode = "supervisor"
+			mode = "team"
 		}
 
 		ctx := c.Request.Context()

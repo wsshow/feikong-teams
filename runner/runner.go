@@ -14,19 +14,74 @@ import (
 	"fkteams/common"
 	"fkteams/config"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
+	"github.com/cloudwego/eino/components/tool"
 )
 
-// wrapErrorSafe 将子智能体列表中的每个智能体包装为错误安全版本，
+var validToolNameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+// wrapErrorSafe 将子智能体列表中的每个智能体包装为错误安全版本。
 func wrapErrorSafe(subAgents []adk.Agent) []adk.Agent {
 	wrapped := make([]adk.Agent, len(subAgents))
 	for i, agent := range subAgents {
 		wrapped[i] = agentcommon.WrapErrorSafe(agent)
 	}
 	return wrapped
+}
+
+type agentToolNameAgent struct {
+	inner       adk.Agent
+	toolName    string
+	displayName string
+}
+
+func (a *agentToolNameAgent) Name(context.Context) string {
+	return a.toolName
+}
+
+func (a *agentToolNameAgent) Description(ctx context.Context) string {
+	desc := a.inner.Description(ctx)
+	if desc == "" {
+		return fmt.Sprintf("调用子智能体 %s 完成任务。", a.displayName)
+	}
+	return fmt.Sprintf("调用子智能体 %s 完成任务。能力描述：%s", a.displayName, desc)
+}
+
+func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	return a.inner.Run(ctx, input, opts...)
+}
+
+func agentToolName(name string, index int, used map[string]bool) string {
+	normalized := strings.ToLower(validToolNameChars.ReplaceAllString(name, "_"))
+	normalized = strings.Trim(normalized, "_-")
+	if normalized == "" || (normalized[0] >= '0' && normalized[0] <= '9') {
+		normalized = fmt.Sprintf("agent_%d", index+1)
+	}
+
+	base := normalized
+	for suffix := 2; used[normalized]; suffix++ {
+		normalized = fmt.Sprintf("%s_%d", base, suffix)
+	}
+	used[normalized] = true
+	return normalized
+}
+
+func buildAgentTools(ctx context.Context, subAgents []adk.Agent) []tool.BaseTool {
+	agentTools := make([]tool.BaseTool, 0, len(subAgents))
+	usedNames := make(map[string]bool, len(subAgents))
+	for i, subAgent := range subAgents {
+		displayName := subAgent.Name(ctx)
+		wrapped := &agentToolNameAgent{
+			inner:       subAgent,
+			toolName:    agentToolName(displayName, i, usedNames),
+			displayName: displayName,
+		}
+		agentTools = append(agentTools, adk.NewAgentTool(ctx, wrapped))
+	}
+	return agentTools
 }
 
 // resolveCustomModel 从配置文件解析自定义智能体的模型配置
@@ -66,35 +121,28 @@ func CreateAgentRunner(ctx context.Context, agent adk.Agent) *adk.Runner {
 	return newRunner(ctx, agent)
 }
 
-// CreateSupervisorRunner 创建 Supervisor 模式的 Runner
-func CreateSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
-	subAgents := wrapErrorSafe(agents.GetTeamAgents(ctx))
+// CreateTeamRunner 创建团队模式 Runner，使用 ChatModelAgent + AgentTool 协作。
+func CreateTeamRunner(ctx context.Context) (*adk.Runner, error) {
+	agentTools := buildAgentTools(ctx, wrapErrorSafe(agents.GetTeamAgents(ctx)))
 
-	leaderAgent, err := leader.NewAgent(ctx)
+	leaderAgent, err := leader.NewAgent(ctx, agentTools...)
 	if err != nil {
 		return nil, fmt.Errorf("创建统御智能体失败: %w", err)
 	}
-	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
-		Supervisor: leaderAgent,
-		SubAgents:  subAgents,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 Supervisor 失败: %w", err)
-	}
 
-	return newRunner(ctx, supervisorAgent), nil
+	return newRunner(ctx, leaderAgent), nil
 }
 
 // CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner
 func CreateDeepAgentsRunner(ctx context.Context) (*adk.Runner, error) {
 	subAgents := wrapErrorSafe(agents.GetTeamAgents(ctx))
 
-	supervisorAgent, err := deep.NewAgent(ctx, subAgents)
+	deepAgent, err := deep.NewAgent(ctx, subAgents)
 	if err != nil {
 		return nil, fmt.Errorf("创建 DeepAgents 失败: %w", err)
 	}
 
-	return newRunner(ctx, supervisorAgent), nil
+	return newRunner(ctx, deepAgent), nil
 }
 
 // CreateLoopAgentRunner 创建 LoopAgent 模式的 Runner
@@ -123,31 +171,13 @@ func CreateLoopAgentRunner(ctx context.Context) (*adk.Runner, error) {
 	return newRunner(ctx, loopAgent), nil
 }
 
-// CreateCustomSupervisorRunner 创建自定义 Supervisor 模式的 Runner
-func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
+// CreateCustomRunner 创建自定义会议模式 Runner，使用主持人 ChatModelAgent + AgentTool 协作。
+func CreateCustomRunner(ctx context.Context) (*adk.Runner, error) {
 	cfg := config.Get()
 
 	var moderatorAgent adk.Agent
 	var subAgents []adk.Agent
 	var err error
-
-	if cfg.Custom.Moderator.Name != "" {
-		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
-			Name:         cfg.Custom.Moderator.Name,
-			Description:  cfg.Custom.Moderator.Desc,
-			SystemPrompt: cfg.Custom.Moderator.SystemPrompt,
-			Model:        resolveCustomModel(cfg, cfg.Custom.Moderator),
-			ToolNames:    cfg.Custom.Moderator.Tools,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("创建自定义主持人失败: %w", err)
-		}
-	} else {
-		moderatorAgent, err = moderator.NewAgent(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("创建主持人失败: %w", err)
-		}
-	}
 
 	for _, customAgent := range cfg.Custom.Agents {
 		agent, err := custom.NewAgent(ctx, custom.Config{
@@ -163,15 +193,40 @@ func CreateCustomSupervisorRunner(ctx context.Context) (*adk.Runner, error) {
 		subAgents = append(subAgents, agent)
 	}
 
-	supervisorAgent, err := supervisor.New(ctx, &supervisor.Config{
-		Supervisor: moderatorAgent,
-		SubAgents:  wrapErrorSafe(subAgents),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建自定义 Supervisor 失败: %w", err)
+	agentTools := buildAgentTools(ctx, wrapErrorSafe(subAgents))
+	if cfg.Custom.Moderator.Name != "" {
+		moderatorAgent, err = custom.NewAgent(ctx, custom.Config{
+			Name:         cfg.Custom.Moderator.Name,
+			Description:  cfg.Custom.Moderator.Desc,
+			SystemPrompt: customModeratorPrompt(cfg.Custom.Moderator.SystemPrompt),
+			Model:        resolveCustomModel(cfg, cfg.Custom.Moderator),
+			ToolNames:    cfg.Custom.Moderator.Tools,
+			Tools:        agentTools,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("创建自定义主持人失败: %w", err)
+		}
+	} else {
+		moderatorAgent, err = moderator.NewAgent(ctx, agentTools...)
+		if err != nil {
+			return nil, fmt.Errorf("创建主持人失败: %w", err)
+		}
 	}
 
-	return newRunner(ctx, supervisorAgent), nil
+	return newRunner(ctx, moderatorAgent), nil
+}
+
+func customModeratorPrompt(systemPrompt string) string {
+	if systemPrompt == "" {
+		systemPrompt = "你是一个公正的主持人，负责根据任务需求协调成员协作。"
+	}
+	return systemPrompt + `
+
+---
+
+## 子智能体工具
+可用的成员已经作为工具提供。需要成员执行任务、补充观点或发言时，调用对应工具，并在 request 中写明目标、上下文和期望输出。
+不要使用 transfer_to_agent；成员协作通过这些 AgentTool 完成。`
 }
 
 // PrintCustomAgentsInfo 打印自定义模式的智能体信息

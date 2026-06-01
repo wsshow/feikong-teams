@@ -188,7 +188,7 @@ FKTeamsChat.prototype.resetToTeamMode = function () {
             <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
             <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
-        <span>已切换回 <strong>${this.mode === "supervisor" ? "团队模式" : this.mode === "roundtable" ? "圆桌讨论模式" : "自定义会议模式"}</strong></span>
+        <span>已切换回 <strong>${this.mode === "team" || this.mode === "supervisor" ? "团队模式" : this.mode === "roundtable" ? "圆桌讨论模式" : "自定义会议模式"}</strong></span>
     `;
   this.messagesContainer.appendChild(resetNotificationEl);
   this.scrollToBottom();

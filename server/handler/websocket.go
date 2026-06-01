@@ -272,7 +272,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	sessionID := wsMsg.SessionID
 	mode := wsMsg.Mode
 	if mode == "" {
-		mode = "supervisor"
+		mode = "team"
 	}
 
 	// 任务 context 独立于连接——断连不会自动取消任务
@@ -319,7 +319,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	engine.New(r, sessionID).Run(taskCtx, engine.RunConfig{
 		Messages:      inputMessages,
 		EventCallback: wsEventCallbackBuffered(recorder, sessionID, stream),
-		Recorder: recorder,
+		Recorder:      recorder,
 		OnStart: func(ctx context.Context) {
 			updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 			stream.Publish(map[string]any{
@@ -328,7 +328,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 				"message":    "开始处理您的请求...",
 			})
 		},
-		OnInterrupt: interruptHandler,
+		OnInterrupt:    interruptHandler,
 		NonInteractive: true,
 		ApprovalReg: approval.NewRegistry(
 			approval.StoreConfig{Name: approval.StoreCommand},

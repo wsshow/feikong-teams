@@ -77,11 +77,13 @@ func getOrCreateRunner(ctx context.Context, mode string) (*adk.Runner, error) {
 		case "roundtable":
 			return runner.CreateLoopAgentRunner(ctx)
 		case "custom":
-			return runner.CreateCustomSupervisorRunner(ctx)
+			return runner.CreateCustomRunner(ctx)
 		case "deep":
 			return runner.CreateDeepAgentsRunner(ctx)
+		case "team", "supervisor":
+			return runner.CreateTeamRunner(ctx)
 		default:
-			return runner.CreateSupervisorRunner(ctx)
+			return runner.CreateTeamRunner(ctx)
 		}
 	})
 }

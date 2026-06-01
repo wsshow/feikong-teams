@@ -23,7 +23,7 @@
 | ------------ | ------ | ---- | ------------------------------------------------------------------------------------------------------------------- |
 | `message`    | string | 条件 | 用户输入的文本（`message` 和 `contents` 至少提供一个）                                                              |
 | `session_id` | string | 否   | 会话标识，默认 `"default"`                                                                                          |
-| `mode`       | string | 否   | 运行模式：`supervisor`（默认）、`roundtable`、`custom`、`deep`                                                      |
+| `mode`       | string | 否   | 运行模式：`team`（默认）、`roundtable`、`custom`、`deep`；兼容旧值 `supervisor`                                   |
 | `agent_name` | string | 否   | 指定单个智能体直接对话（优先级高于 mode）                                                                           |
 | `stream`     | bool   | 否   | 是否使用 SSE 流式响应，默认 `false`                                                                                 |
 | `contents`   | array  | 否   | 多模态内容部分（存在时优先于 `message`），每项包含 `type`、`text`、`url`、`base64_data`、`mime_type`、`detail` 字段 |
@@ -110,7 +110,7 @@ data: {"type":"processing_end","message":"处理完成"}
 | ------------ | ------ | -------------------------------------------------------------- |
 | `session_id` | string | 会话标识，默认 `"default"`                                     |
 | `message`    | string | 用户输入的文本                                                 |
-| `mode`       | string | 运行模式：`supervisor`（默认）、`roundtable`、`custom`、`deep` |
+| `mode`       | string | 运行模式：`team`（默认）、`roundtable`、`custom`、`deep`；兼容旧值 `supervisor` |
 | `agent_name` | string | 指定单个智能体直接对话（优先级高于 mode）                      |
 | `contents`   | array  | 多模态内容部分（可选，存在时优先于 `message` 字段）            |
 
@@ -130,9 +130,9 @@ data: {"type":"processing_end","message":"处理完成"}
 | ----------------- | ------------------- |
 | `agent_name` 非空 | 单智能体 Runner     |
 | `mode=roundtable` | 圆桌会议 Runner     |
-| `mode=custom`     | 自定义监督者 Runner |
+| `mode=custom`     | 自定义会议 Runner   |
 | `mode=deep`       | 深度分析 Runner     |
-| 其他              | 默认监督者 Runner   |
+| 其他              | 默认团队 Runner     |
 
 #### cancel — 取消当前任务
 
