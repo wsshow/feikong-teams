@@ -39,6 +39,10 @@ FKTeamsChat.prototype.resetParallelState = function () {
   this.pendingToolCalls = {};
   this.toolCallsByID = {};
   this.toolCallsByIndex = {};
+  this.parallelPanel = null;
+  this.parallelMemberCards = {};
+  this.parallelMemberByAgent = {};
+  this.parallelToolMemberByID = {};
   this.lastToolName = "";
 };
 
@@ -67,6 +71,113 @@ FKTeamsChat.prototype.getMessageElementForEvent = function (event) {
   }
   this.currentMessageElement = this.currentMessageElements[key];
   return this.currentMessageElement;
+};
+
+FKTeamsChat.prototype.normalizedAgentName = function (name) {
+  return (name || "").toLowerCase().replace(/^ask_/, "").replace(/[^a-z0-9_-]+/g, "_");
+};
+
+FKTeamsChat.prototype.agentNameFromTool = function (name) {
+  return this.normalizedAgentName((name || "").startsWith("ask_") ? name.slice(4) : name);
+};
+
+FKTeamsChat.prototype.isMemberRunEvent = function (event) {
+  return !!(event && event.run_path && /ask[_-]/i.test(event.run_path));
+};
+
+FKTeamsChat.prototype.memberKeyFromEvent = function (event) {
+  const agent = this.normalizedAgentName(event.agent_name);
+  if (this.parallelMemberByAgent[agent]) return this.parallelMemberByAgent[agent];
+  return "agent:" + agent;
+};
+
+FKTeamsChat.prototype.ensureParallelPanel = function () {
+  if (this.parallelPanel && this.parallelPanel.isConnected) return this.parallelPanel;
+  const panel = document.createElement("div");
+  panel.className = "parallel-members-panel";
+  panel.innerHTML = `
+    <div class="parallel-members-header">
+      <span class="parallel-members-title">成员并行处理中</span>
+      <span class="parallel-members-count">0</span>
+    </div>
+    <div class="parallel-members-grid"></div>
+  `;
+  this.parallelPanel = panel;
+  this.messagesContainer.appendChild(panel);
+  return panel;
+};
+
+FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName) {
+  const existing = this.parallelMemberCards[key];
+  if (existing && existing.el && existing.el.isConnected) return existing;
+
+  const panel = this.ensureParallelPanel();
+  const grid = panel.querySelector(".parallel-members-grid");
+  const card = document.createElement("div");
+  card.className = "parallel-member-card parallel-member-running";
+  card.setAttribute("data-member-key", key);
+  card.innerHTML = `
+    <div class="parallel-member-head">
+      <span class="parallel-member-dot"></span>
+      <span class="parallel-member-name">${this.escapeHtml(label || agentName || "Member")}</span>
+      <span class="parallel-member-status">运行中</span>
+    </div>
+    <div class="parallel-member-ops"></div>
+    <div class="parallel-member-output" data-raw=""></div>
+  `;
+  grid.appendChild(card);
+  const entry = { el: card, output: card.querySelector(".parallel-member-output"), ops: card.querySelector(".parallel-member-ops") };
+  this.parallelMemberCards[key] = entry;
+  if (agentName) this.parallelMemberByAgent[this.normalizedAgentName(agentName)] = key;
+  const count = panel.querySelector(".parallel-members-count");
+  if (count) count.textContent = String(Object.keys(this.parallelMemberCards).length);
+  return entry;
+};
+
+FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
+  if (!entry || !entry.el) return;
+  entry.el.classList.remove("parallel-member-running", "parallel-member-done", "parallel-member-error");
+  entry.el.classList.add("parallel-member-" + status);
+  const statusEl = entry.el.querySelector(".parallel-member-status");
+  if (statusEl) statusEl.textContent = text;
+};
+
+FKTeamsChat.prototype.appendMemberOutput = function (entry, content) {
+  if (!entry || !entry.output || !content) return;
+  let raw = entry.output.getAttribute("data-raw") || "";
+  if (!raw) content = this.trimLeadingWhitespace(content);
+  raw += content;
+  entry.output.setAttribute("data-raw", raw);
+  entry.output.innerHTML = this.renderMarkdown(raw, true);
+};
+
+FKTeamsChat.prototype.appendMemberOp = function (entry, text) {
+  if (!entry || !entry.ops || !text) return;
+  const item = document.createElement("div");
+  item.className = "parallel-member-op";
+  item.textContent = text;
+  entry.ops.appendChild(item);
+};
+
+FKTeamsChat.prototype.handleMemberStreamChunk = function (event) {
+  const key = this.memberKeyFromEvent(event);
+  const entry = this.ensureMemberCard(key, event.agent_name, event.agent_name);
+  this.appendMemberOutput(entry, event.content || "");
+  this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.handleMemberReasoningChunk = function (event) {
+  const key = this.memberKeyFromEvent(event);
+  const entry = this.ensureMemberCard(key, event.agent_name, event.agent_name);
+  this.appendMemberOutput(entry, event.content ? `\n\n> 思考：${event.content}\n` : "");
+  this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.handleMemberMessage = function (event) {
+  const key = this.memberKeyFromEvent(event);
+  const entry = this.ensureMemberCard(key, event.agent_name, event.agent_name);
+  this.appendMemberOutput(entry, event.content || event.reasoning_content || "");
+  this.scrollToBottom();
 };
 
 FKTeamsChat.prototype.sendMessage = async function () {
@@ -651,6 +762,10 @@ FKTeamsChat.prototype._finalizeFootnotes = function () {
 };
 
 FKTeamsChat.prototype.handleStreamChunk = function (event) {
+  if (this.isMemberRunEvent(event)) {
+    this.handleMemberStreamChunk(event);
+    return;
+  }
   this.getMessageElementForEvent(event);
 
   const bodyEl = this.currentMessageElement.querySelector(".message-body");
@@ -707,6 +822,10 @@ FKTeamsChat.prototype.handleStreamChunk = function (event) {
 
 // 处理推理/思考内容的流式事件
 FKTeamsChat.prototype.handleReasoningChunk = function (event) {
+  if (this.isMemberRunEvent(event)) {
+    this.handleMemberReasoningChunk(event);
+    return;
+  }
   this.getMessageElementForEvent(event);
 
   const bodyEl = this.currentMessageElement.querySelector(".message-body");
@@ -744,6 +863,10 @@ FKTeamsChat.prototype.handleReasoningChunk = function (event) {
 
 FKTeamsChat.prototype.handleMessage = function (event) {
   if (!event.content && !event.reasoning_content) return;
+  if (this.isMemberRunEvent(event)) {
+    this.handleMemberMessage(event);
+    return;
+  }
 
   this.getMessageElementForEvent(event);
 
@@ -820,6 +943,14 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
     this.pendingToolCalls[key] = { el: toolCallEl, toolCall };
     if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
     if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
+    if (toolDisplay.kind === "agent") {
+      const agentName = this.agentNameFromTool(toolCall.name);
+      const memberKey = "agent:" + agentName;
+      const entry = this.ensureMemberCard(memberKey, toolDisplay.target || agentName, agentName);
+      this.parallelMemberByAgent[agentName] = memberKey;
+      if (toolCall.id) this.parallelToolMemberByID[toolCall.id] = memberKey;
+      this.appendMemberOp(entry, "任务准备中");
+    }
     this.messagesContainer.appendChild(toolCallEl);
   });
   this.scrollToBottom();
@@ -875,6 +1006,15 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     const key = this.toolCallKey(toolCall, i);
     if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
     if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
+    const display = this.getToolDisplay(toolCall);
+    if (display.kind === "agent") {
+      const agentName = this.agentNameFromTool(toolCall.name);
+      const memberKey = this.parallelToolMemberByID[toolCall.id] || "agent:" + agentName;
+      const entry = this.ensureMemberCard(memberKey, display.target || agentName, agentName);
+      this.parallelMemberByAgent[agentName] = memberKey;
+      if (toolCall.id) this.parallelToolMemberByID[toolCall.id] = memberKey;
+      if (toolCall.arguments) this.appendMemberOp(entry, "任务: " + toolCall.arguments);
+    }
 
     let pending = this.pendingToolCalls[key];
     if (!pending) {
@@ -904,6 +1044,21 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
   let content = event.content || "";
   const toolCall = event.tool_call_id ? this.toolCallsByID[event.tool_call_id] : null;
   const toolName = toolCall?.name || this.lastToolName || "";
+  const toolDisplay = this.getToolDisplay(toolCall || { name: toolName });
+
+  if (toolDisplay.kind === "agent") {
+    const agentName = this.agentNameFromTool(toolName);
+    const memberKey = this.parallelToolMemberByID[event.tool_call_id] || this.parallelMemberByAgent[agentName] || "agent:" + agentName;
+    const entry = this.ensureMemberCard(memberKey, toolDisplay.target || agentName, agentName);
+    if (/执行出错|error|failed|失败/i.test(content)) {
+      this.updateMemberStatus(entry, "error", "失败");
+    } else {
+      this.updateMemberStatus(entry, "done", "完成");
+    }
+    if (content) this.appendMemberOutput(entry, "\n\n" + content);
+    this.scrollToBottom();
+    return;
+  }
 
   // dispatch_tasks 专用渲染
   if (toolName === "dispatch_tasks") {
@@ -935,7 +1090,7 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
   const toolResultEl = document.createElement("div");
   toolResultEl.className = "tool-result";
   if (event.tool_call_id) toolResultEl.setAttribute("data-tool-call-id", event.tool_call_id);
-  const resultTitle = this.getToolDisplay(toolCall || { name: toolName }).kind === "agent" ? "成员结果" : "执行结果";
+  const resultTitle = toolDisplay.kind === "agent" ? "成员结果" : "执行结果";
   toolResultEl.innerHTML = `
         <div class="tool-result-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

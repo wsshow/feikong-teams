@@ -234,6 +234,10 @@ FKTeamsChat.prototype._saveSessionDOM = function () {
     pendingToolCalls: this.pendingToolCalls,
     toolCallsByID: this.toolCallsByID,
     toolCallsByIndex: this.toolCallsByIndex,
+    parallelPanel: this.parallelPanel,
+    parallelMemberCards: this.parallelMemberCards,
+    parallelMemberByAgent: this.parallelMemberByAgent,
+    parallelToolMemberByID: this.parallelToolMemberByID,
     hasToolCallAfterMessage: this.hasToolCallAfterMessage,
     userQuestions: [...this.userQuestions],
     currentAgent: this.currentAgent,
@@ -253,6 +257,10 @@ FKTeamsChat.prototype._restoreSessionDOM = function (sessionId) {
   this.pendingToolCalls = cached.pendingToolCalls || {};
   this.toolCallsByID = cached.toolCallsByID || {};
   this.toolCallsByIndex = cached.toolCallsByIndex || {};
+  this.parallelPanel = cached.parallelPanel || null;
+  this.parallelMemberCards = cached.parallelMemberCards || {};
+  this.parallelMemberByAgent = cached.parallelMemberByAgent || {};
+  this.parallelToolMemberByID = cached.parallelToolMemberByID || {};
   this.hasToolCallAfterMessage = cached.hasToolCallAfterMessage;
   this.userQuestions = cached.userQuestions || [];
   this.setCurrentAgent(cached.currentAgent || null, false); // 从缓存还原，仅更新 UI

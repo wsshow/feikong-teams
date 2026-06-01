@@ -14,6 +14,10 @@ class FKTeamsChat {
     this.pendingToolCalls = {};
     this.toolCallsByID = {};
     this.toolCallsByIndex = {};
+    this.parallelPanel = null;
+    this.parallelMemberCards = {};
+    this.parallelMemberByAgent = {};
+    this.parallelToolMemberByID = {};
     this.hasToolCallAfterMessage = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;

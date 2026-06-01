@@ -106,6 +106,10 @@ func commonPrefixLen(a, b string) int {
 	return n
 }
 
+func isMemberRunPath(runPath string) bool {
+	return strings.Contains(runPath, "ask_") || strings.Contains(runPath, "ask-")
+}
+
 // reasoningWriter 按终端宽度换行，每行补 │ 前缀
 type reasoningWriter struct {
 	col      int
@@ -143,6 +147,8 @@ func newPrintEvent() (func(Event), func()) {
 	agentName := ""
 	lastToolName := ""
 	toolNamesByID := map[string]string{}
+	memberPanelStarted := false
+	memberNamesByToolID := map[string]string{}
 	inReasoning := false
 	var sb streamBuf
 	var rw *reasoningWriter
@@ -178,8 +184,13 @@ func newPrintEvent() (func(Event), func()) {
 			if agentName != event.AgentName {
 				tryFlush()
 				agentName = event.AgentName
-				fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
-				fmt.Printf("\033[1;36m╰─▶\033[0m\n")
+				if isMemberRunPath(event.RunPath) {
+					fmt.Printf("\n\033[1;36m├─ ◐ 成员 [%s]\033[0m \033[90m%s\033[0m\n", agentName, event.RunPath)
+					fmt.Printf("\033[1;36m│  \033[0m\n")
+				} else {
+					fmt.Printf("\n\033[1;36m╭─ [%s] %s\033[0m\n", agentName, event.RunPath)
+					fmt.Printf("\033[1;36m╰─▶\033[0m\n")
+				}
 				sb.agent = agentName
 				sb.path = event.RunPath
 			} else if wasReasoning {
@@ -210,8 +221,18 @@ func newPrintEvent() (func(Event), func()) {
 				}
 			}
 			resultTitle := "工具结果"
-			if FormatToolDisplay(toolName).Kind == "agent" {
+			display := FormatToolDisplay(toolName)
+			if display.Kind == "agent" {
 				resultTitle = "成员结果"
+				memberName := display.Target
+				if event.ToolCallID != "" && memberNamesByToolID[event.ToolCallID] != "" {
+					memberName = memberNamesByToolID[event.ToolCallID]
+				}
+				if strings.Contains(event.Content, "执行出错") {
+					fmt.Printf("\n\033[1;31m├─ ✗ %s 失败\033[0m\n", memberName)
+				} else {
+					fmt.Printf("\n\033[1;32m├─ ✓ %s 完成\033[0m\n", memberName)
+				}
 			}
 			fmt.Printf("\n\033[1;33m⚙ [%s] %s:\033[0m\n", event.AgentName, resultTitle)
 			if event.Content != "" {
@@ -258,7 +279,14 @@ func newPrintEvent() (func(Event), func()) {
 					}
 					display := FormatToolDisplay(tool.Function.Name)
 					if display.Kind == "agent" {
-						fmt.Printf("\n\033[1;35m[%s] 准备指派: \033[1m%s\033[0m \033[90m(任务准备中...)\033[0m\n", event.AgentName, display.Target)
+						if !memberPanelStarted {
+							memberPanelStarted = true
+							fmt.Printf("\n\033[1;35m╭─ 成员并行任务\033[0m\n")
+						}
+						if tool.ID != "" {
+							memberNamesByToolID[tool.ID] = display.Target
+						}
+						fmt.Printf("\033[1;35m├─ ◐ %s\033[0m \033[90m任务准备中\033[0m\n", display.Target)
 					} else {
 						fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, display.DisplayName)
 					}
@@ -274,7 +302,18 @@ func newPrintEvent() (func(Event), func()) {
 					toolNamesByID[tool.ID] = tool.Function.Name
 				}
 				display := FormatToolDisplay(tool.Function.Name)
-				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
+				if display.Kind == "agent" {
+					if !memberPanelStarted {
+						memberPanelStarted = true
+						fmt.Printf("\n\033[1;35m╭─ 成员并行任务\033[0m\n")
+					}
+					if tool.ID != "" {
+						memberNamesByToolID[tool.ID] = display.Target
+					}
+					fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
+				} else {
+					fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
+				}
 				if i == len(event.ToolCalls)-1 {
 					lastToolName = tool.Function.Name
 				}
