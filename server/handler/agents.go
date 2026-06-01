@@ -8,8 +8,9 @@ import (
 
 // AgentInfoResponse 智能体信息响应
 type AgentInfoResponse struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Aliases     []string `json:"aliases,omitempty"`
 }
 
 // GetAgentsHandler 获取所有可用智能体
@@ -22,6 +23,7 @@ func GetAgentsHandler() gin.HandlerFunc {
 			agentList = append(agentList, AgentInfoResponse{
 				Name:        agent.Name,
 				Description: agent.Description,
+				Aliases:     agent.Aliases,
 			})
 		}
 

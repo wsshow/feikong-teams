@@ -57,7 +57,8 @@ FKTeamsChat.prototype.showAgentSuggestions = function (searchText, cursorPos) {
     const filteredAgents = this.agents.filter(agent => {
         const name = agent.name.toLowerCase();
         const search = searchText.toLowerCase();
-        return name.includes(search);
+        const aliases = (agent.aliases || []).map(alias => alias.toLowerCase());
+        return name.includes(search) || aliases.some(alias => alias.includes(search));
     });
 
     if (filteredAgents.length === 0) {
@@ -76,7 +77,7 @@ FKTeamsChat.prototype.showAgentSuggestions = function (searchText, cursorPos) {
     this.agentSuggestions.innerHTML = filteredAgents.map((agent, index) => `
         <div class="agent-suggestion-item ${index === 0 ? 'selected' : ''}" data-index="${index}" data-name="${this.escapeHtml(agent.name)}">
             <div class="agent-suggestion-name">@${this.escapeHtml(agent.name)}</div>
-            <div class="agent-suggestion-desc">${this.escapeHtml(agent.description)}</div>
+            <div class="agent-suggestion-desc">${this.escapeHtml(agent.description)}${agent.aliases && agent.aliases.length ? ` · aliases: ${this.escapeHtml(agent.aliases.join(", "))}` : ""}</div>
         </div>
     `).join('');
 

@@ -6,7 +6,7 @@ import (
 )
 
 var cmderPrompt = `
-# Role: 小令 - 非空小队命令行专家
+# Role: Shell - 非空小队命令行专家
 
 ## Profile
 - 定位: 终端命令行专家，擅长通过命令行操作完成任务，能够根据操作系统环境执行合适的命令

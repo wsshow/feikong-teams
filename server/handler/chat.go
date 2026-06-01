@@ -314,7 +314,15 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if len(event.ToolCalls) > 0 {
 		toolCalls := make([]map[string]any, 0, len(event.ToolCalls))
 		for _, tc := range event.ToolCalls {
-			toolCall := map[string]any{"name": tc.Function.Name}
+			display := fkevent.FormatToolDisplay(tc.Function.Name)
+			toolCall := map[string]any{
+				"name":         tc.Function.Name,
+				"display_name": display.DisplayName,
+				"kind":         display.Kind,
+			}
+			if display.Target != "" {
+				toolCall["target"] = display.Target
+			}
 			if tc.Function.Arguments != "" {
 				toolCall["arguments"] = tc.Function.Arguments
 			}

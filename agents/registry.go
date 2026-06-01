@@ -22,6 +22,7 @@ import (
 type AgentInfo struct {
 	Name        string
 	Description string
+	Aliases     []string
 	Creator     func(ctx context.Context) adk.Agent
 }
 
@@ -46,32 +47,33 @@ func buildRegistry() {
 
 	type agentCreator struct {
 		name    string
+		aliases []string
 		creator func(ctx context.Context) (adk.Agent, error)
 	}
 
 	// 基础智能体（始终可用）
 	creators := []agentCreator{
-		{"cmder", cmder.NewAgent},
-		{"coder", coder.NewAgent},
-		{"storyteller", storyteller.NewAgent},
-		{"summarizer", summarizer.NewAgent},
+		{name: "shell", aliases: []string{"小令", "cmder"}, creator: cmder.NewAgent},
+		{name: "coder", aliases: []string{"小码"}, creator: coder.NewAgent},
+		{name: "writer", aliases: []string{"小说", "storyteller"}, creator: storyteller.NewAgent},
+		{name: "summarizer", aliases: []string{"小简"}, creator: summarizer.NewAgent},
 	}
 
 	// 可选智能体（根据配置文件启用）
 	if cfg.Agents.Searcher {
-		creators = append(creators, agentCreator{"searcher", searcher.NewAgent})
+		creators = append(creators, agentCreator{name: "researcher", aliases: []string{"小搜", "searcher"}, creator: searcher.NewAgent})
 	}
 
 	if cfg.Agents.Analyst {
-		creators = append(creators, agentCreator{"analyst", analyst.NewAgent})
+		creators = append(creators, agentCreator{name: "analyst", aliases: []string{"小析"}, creator: analyst.NewAgent})
 	}
 
 	if cfg.Agents.SSHVisitor.Enabled {
-		creators = append(creators, agentCreator{"visitor", visitor.NewAgent})
+		creators = append(creators, agentCreator{name: "remote", aliases: []string{"小访", "visitor"}, creator: visitor.NewAgent})
 	}
 
 	if cfg.Agents.Assistant {
-		creators = append(creators, agentCreator{"assistant", assistantagent.NewAgent})
+		creators = append(creators, agentCreator{name: "generalist", aliases: []string{"小助", "assistant"}, creator: assistantagent.NewAgent})
 	}
 
 	// 动态构建注册表
@@ -85,6 +87,7 @@ func buildRegistry() {
 		Registry = append(Registry, AgentInfo{
 			Name:        agent.Name(ctx),
 			Description: agent.Description(ctx),
+			Aliases:     c.aliases,
 			Creator: func(cachedAgent adk.Agent) func(ctx context.Context) adk.Agent {
 				return func(ctx context.Context) adk.Agent {
 					return cachedAgent
@@ -170,6 +173,11 @@ func GetAgentByName(name string) *AgentInfo {
 	for i := range Registry {
 		if Registry[i].Name == name {
 			return &Registry[i]
+		}
+		for _, alias := range Registry[i].Aliases {
+			if alias == name {
+				return &Registry[i]
+			}
 		}
 	}
 	return nil

@@ -202,7 +202,11 @@ func newPrintEvent() (func(Event), func()) {
 
 		case EventToolResult:
 			tryFlush()
-			fmt.Printf("\n\033[1;33m⚙ [%s] 工具结果:\033[0m\n", event.AgentName)
+			resultTitle := "工具结果"
+			if FormatToolDisplay(lastToolName).Kind == "agent" {
+				resultTitle = "成员结果"
+			}
+			fmt.Printf("\n\033[1;33m⚙ [%s] %s:\033[0m\n", event.AgentName, resultTitle)
 			if event.Content != "" {
 				var formatted string
 				switch lastToolName {
@@ -242,16 +246,22 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			for _, tool := range event.ToolCalls {
 				if tool.Function.Name != "" {
-					fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, tool.Function.Name)
+					display := FormatToolDisplay(tool.Function.Name)
+					if display.Kind == "agent" {
+						fmt.Printf("\n\033[1;35m[%s] 准备指派: \033[1m%s\033[0m \033[90m(任务准备中...)\033[0m\n", event.AgentName, display.Target)
+					} else {
+						fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, display.DisplayName)
+					}
 					lastToolName = tool.Function.Name
 				}
 			}
 
 		case EventToolCalls:
 			tryFlush()
-			fmt.Printf("\n\033[1;35m[%s] 调用工具:\033[0m\n", event.AgentName)
+			fmt.Printf("\n\033[1;35m[%s] 调用:\033[0m\n", event.AgentName)
 			for i, tool := range event.ToolCalls {
-				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, tool.Function.Name)
+				display := FormatToolDisplay(tool.Function.Name)
+				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
 				if i == len(event.ToolCalls)-1 {
 					lastToolName = tool.Function.Name
 				}
@@ -849,10 +859,11 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 					lastToolName = tc.Function.Name
 				}
 				args := truncateString(tc.Function.Arguments, 100)
+				display := FormatToolDisplay(tc.Function.Name)
 				if args != "" {
-					fmt.Fprintf(&buf, "\n\n> **[%s]** 调用工具: `%s`\n> 参数: `%s`", event.AgentName, tc.Function.Name, args)
+					fmt.Fprintf(&buf, "\n\n> **[%s]** 调用: `%s`\n> 参数: `%s`", event.AgentName, display.DisplayName, args)
 				} else {
-					fmt.Fprintf(&buf, "\n\n> **[%s]** 调用工具: `%s`", event.AgentName, tc.Function.Name)
+					fmt.Fprintf(&buf, "\n\n> **[%s]** 调用: `%s`", event.AgentName, display.DisplayName)
 				}
 			}
 			lastAgent = ""

@@ -17,7 +17,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 		return nil, fmt.Errorf("init command tools: %w", err)
 	}
 
-	return common.NewAgentBuilder("任务官", "后台定时任务专属执行官，独立完成信息检索、数据分析、命令执行等各类定时任务，输出严谨可靠的结果。").
+	return common.NewAgentBuilder("tasker", "后台任务执行器，独立完成定时任务中的检索、分析、命令和文件操作。").
 		WithTemplate(taskerPromptTemplate).
 		WithTemplateVar("workspace_dir", workspaceDir).
 		WithTools(cmdTools...).

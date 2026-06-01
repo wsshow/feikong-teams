@@ -158,31 +158,31 @@ make build
 # 列出所有可用的智能体
 list_agents
 
-# 切换到小析（数据分析专家）
-@小析
+# 切换到 analyst（数据分析师）
+@analyst
 
 # 切换并直接提问
-@小码 帮我创建一个 Python 脚本
+@coder 帮我创建一个 Python 脚本
 
-# 切换到小搜并搜索信息
-@小搜 查找最新的 Go 语言教程
+# 切换到 researcher 并搜索信息
+@researcher 查找最新的 Go 语言教程
 ```
 
 **可用智能体列表**：
 
 始终可用的内置智能体：
 
-- `@小码` - 资深软件工程师，擅长代码实现、调试和重构，遵循项目约定并验证变更正确性
-- `@小令` - 命令行专家，擅长通过命令行操作完成任务，能够根据操作系统环境执行合适的命令
-- `@小说` - 故事创作专家，擅长构思和撰写引人入胜的故事、小说和创意文本
-- `@小简` - 总结专家，擅长提炼和总结复杂信息，将冗长内容提炼为精炼的要点摘要
+- `@coder` - 软件工程师，代码实现、调试、重构和验证
+- `@shell` - 命令行专家，擅长通过命令行操作完成任务
+- `@writer` - 创意写作专家，故事、文案、叙事和润色
+- `@summarizer` - 总结专家，将冗长内容提炼为精简要点
 
 需在配置文件 `[agents]` 中启用的智能体：
 
-- `@小搜` - 搜索专家，擅长通过 DuckDuckGo 搜索引擎检索信息（`searcher = true`）
-- `@小析` - 数据分析专家，擅长使用 Excel、Python 脚本和文档处理工具（`analyst = true`）
-- `@小访` - 远程访问专家，擅长通过 SSH 连接远程服务器（`[agents.ssh_visitor] enabled = true`）
-- `@小助` - 个人全能助手，通过命令执行、文件操作和网络搜索完成各种任务，支持将多个独立子任务并行分发执行（`assistant = true`）
+- `@researcher` - 网络研究员，擅长检索、抓取和交叉验证时效信息（`searcher = true`）
+- `@analyst` - 数据分析师，擅长使用 Excel、Python 脚本和文档处理工具（`analyst = true`）
+- `@remote` - 远程运维专家，擅长通过 SSH 连接远程服务器（`[agents.ssh_visitor] enabled = true`）
+- `@generalist` - 通用执行助手，综合命令、文件、搜索等工具完成任务（`assistant = true`）
 
 此外，通过 `[[custom.agents]]` 定义的自定义智能体也会自动注册，可通过 `@智能体名` 使用。
 
@@ -190,9 +190,9 @@ list_agents
 
 ## 定时任务功能
 
-统御支持通过自然语言设置定时任务，任务会在后台静默执行，不影响前台交互。
+coordinator 支持通过自然语言设置定时任务，任务会在后台静默执行，不影响前台交互。
 
-如果时间、频率或执行内容不够明确，统御会先追问必要信息，确认后才会创建可执行的定时任务，不会直接生成含糊的计划。
+如果时间、频率或执行内容不够明确，coordinator 会先追问必要信息，确认后才会创建可执行的定时任务，不会直接生成含糊的计划。
 
 **使用示例**：
 
@@ -200,17 +200,17 @@ list_agents
 # 一次性任务
 请输入您的问题: 5分钟后帮我搜索一下最新的AI新闻
 
-# 重复任务（统御会自动转换为 cron 表达式）
+# 重复任务（coordinator 会自动转换为 cron 表达式）
 请输入您的问题: 每30分钟搜索一次比特币实时价格
 请输入您的问题: 每天早上9点搜索最新的AI新闻
 请输入您的问题: 工作日每天下午5点生成日报
 
-# 信息不明确时，统御会先澄清
+# 信息不明确时，coordinator 会先澄清
 请输入您的问题: 下周提醒我看一下项目进度
-# 统御会追问：下周哪一天、几点提醒？
+# coordinator 会追问：下周哪一天、几点提醒？
 
 请输入您的问题: 定期帮我搜一下 AI 新闻
-# 统御会追问：需要多久执行一次？从什么时候开始？
+# coordinator 会追问：需要多久执行一次？从什么时候开始？
 
 # 通过 AI 对话查看/取消/删除定时任务
 请输入您的问题: 列出当前所有定时任务
@@ -245,7 +245,7 @@ echo "解释一下 Go 的 context 包" | ./fkteams
 cat main.go | ./fkteams -q "审查这段代码"
 
 # 管道与 agent 子命令配合
-cat error.log | ./fkteams agent -n 小码 -q "分析这个错误日志"
+cat error.log | ./fkteams agent -n coder -q "分析这个错误日志"
 
 # 指定工作模式
 ./fkteams -m deep
@@ -304,7 +304,7 @@ echo "帮我解释这段代码的作用" | ./fkteams
 cat src/main.go | ./fkteams -q "审查以下代码并指出问题:"
 
 # 与 agent 子命令配合
-git diff HEAD~1 | ./fkteams agent -n 小码 -q "审查这次提交的改动"
+git diff HEAD~1 | ./fkteams agent -n coder -q "审查这次提交的改动"
 
 # 与其他工具链组合
 curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
@@ -334,14 +334,14 @@ curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
 ./fkteams agent list
 
 # 直接查询（默认不保存历史）
-./fkteams agent --name 小搜 --query "搜索最新的 Go 语言新闻"
+./fkteams agent --name researcher --query "搜索最新的 Go 语言新闻"
 
 # JSON 格式输出原始事件
-./fkteams agent -n 小搜 -q "搜索最新的 Go 语言新闻" --format json
+./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --format json
 
 # 直接查询并保存历史
-./fkteams agent -n 小搜 -q "搜索最新的 Go 语言新闻" --save
+./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --save
 
 # 交互模式（进入指定 Agent 的对话）
-./fkteams agent -n 小码
+./fkteams agent -n coder
 ```

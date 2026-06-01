@@ -678,6 +678,11 @@ a.source-item:hover {
   box-shadow: var(--shadow-sketch);
 }
 
+.agent-tool-call {
+  background: rgba(123, 180, 140, 0.12);
+  border-color: var(--success);
+}
+
 .tool-result {
   background: var(--bg-tertiary);
   border: 2px dashed var(--border-color);
@@ -696,6 +701,10 @@ a.source-item:hover {
   color: var(--info);
   font-family: var(--font-hand);
   font-size: 15px;
+}
+
+.agent-tool-call .tool-call-header {
+  color: var(--success);
 }
 
 .tool-call-header svg,

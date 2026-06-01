@@ -83,7 +83,7 @@ SSE 长连接，持续推送事件直到任务完成或客户端断开。
 
 ```
 id: 42
-data: {"type":"stream_chunk","agent_name":"小码","content":"...","session_id":"abc-123"}
+data: {"type":"stream_chunk","agent_name":"coder","content":"...","session_id":"abc-123"}
 ```
 
 **事件类型**：

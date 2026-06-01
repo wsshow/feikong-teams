@@ -49,7 +49,7 @@
 返回 `text/event-stream`（`Cache-Control: no-cache`，`Connection: keep-alive`），每个事件的格式为：
 
 ```
-data: {"type":"stream_chunk","agent_name":"小码","content":"..."}
+data: {"type":"stream_chunk","agent_name":"coder","content":"..."}
 
 data: {"type":"processing_end","message":"处理完成"}
 

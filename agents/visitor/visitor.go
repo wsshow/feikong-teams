@@ -18,7 +18,7 @@ func NewAgent(ctx context.Context) (adk.Agent, error) {
 
 	fmt.Printf("[tips] SSH 访问者智能体已初始化，连接到: %s (用户: %s)\n", sshCfg.Host, sshCfg.Username)
 
-	return common.NewAgentBuilder("小访", "远程访问专家，擅长通过 SSH 连接远程服务器，执行命令、传输文件和管理远程系统。").
+	return common.NewAgentBuilder("remote", "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。").
 		WithTemplate(visitorPromptTemplate).
 		WithTemplateVar("ssh_host", sshCfg.Host).
 		WithTemplateVar("ssh_username", sshCfg.Username).

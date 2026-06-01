@@ -45,9 +45,9 @@ func (a *agentToolNameAgent) Name(context.Context) string {
 func (a *agentToolNameAgent) Description(ctx context.Context) string {
 	desc := a.inner.Description(ctx)
 	if desc == "" {
-		return fmt.Sprintf("调用子智能体 %s 完成任务。", a.displayName)
+		return fmt.Sprintf("指派给 %s 处理任务。", a.displayName)
 	}
-	return fmt.Sprintf("调用子智能体 %s 完成任务。能力描述：%s", a.displayName, desc)
+	return fmt.Sprintf("指派给 %s 处理任务。能力描述：%s", a.displayName, desc)
 }
 
 func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
@@ -58,8 +58,9 @@ func agentToolName(name string, index int, used map[string]bool) string {
 	normalized := strings.ToLower(validToolNameChars.ReplaceAllString(name, "_"))
 	normalized = strings.Trim(normalized, "_-")
 	if normalized == "" || (normalized[0] >= '0' && normalized[0] <= '9') {
-		normalized = fmt.Sprintf("agent_%d", index+1)
+		normalized = fmt.Sprintf("member_%d", index+1)
 	}
+	normalized = "ask_" + normalized
 
 	base := normalized
 	for suffix := 2; used[normalized]; suffix++ {
@@ -127,7 +128,7 @@ func CreateTeamRunner(ctx context.Context) (*adk.Runner, error) {
 
 	leaderAgent, err := leader.NewAgent(ctx, agentTools...)
 	if err != nil {
-		return nil, fmt.Errorf("创建统御智能体失败: %w", err)
+		return nil, fmt.Errorf("创建 coordinator 智能体失败: %w", err)
 	}
 
 	return newRunner(ctx, leaderAgent), nil
@@ -226,7 +227,7 @@ func customModeratorPrompt(systemPrompt string) string {
 
 ## 子智能体工具
 可用的成员已经作为工具提供。需要成员执行任务、补充观点或发言时，调用对应工具，并在 request 中写明目标、上下文和期望输出。
-不要使用 transfer_to_agent；成员协作通过这些 AgentTool 完成。`
+成员返回后，由你负责整理、追问下一位成员或形成最终结论。`
 }
 
 // PrintCustomAgentsInfo 打印自定义模式的智能体信息

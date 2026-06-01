@@ -11,7 +11,7 @@ import (
 func NewAgent(ctx context.Context, agentTools ...tool.BaseTool) (adk.Agent, error) {
 	safeDir := common.WorkspaceDir()
 
-	return common.NewAgentBuilder("统御", "团队管理者，善于规划和分配任务。").
+	return common.NewAgentBuilder("coordinator", "核心协调智能体，直接处理常规任务，并按需指派专业成员。").
 		WithTemplate(leaderPromptTemplate).
 		WithTemplateVar("workspace_dir", safeDir).
 		WithToolNames("todo", "file", "scheduler", "ask").

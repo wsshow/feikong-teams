@@ -2,6 +2,33 @@
  * messages.js - 消息处理与渲染
  */
 
+FKTeamsChat.prototype.getToolDisplay = function (toolCall) {
+  const name = toolCall?.name || "";
+  if (toolCall?.display_name) {
+    return {
+      name,
+      displayName: toolCall.display_name,
+      kind: toolCall.kind || "tool",
+      target: toolCall.target || "",
+    };
+  }
+  if (name.startsWith("ask_")) {
+    const target = name
+      .slice(4)
+      .split(/[_-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+    return {
+      name,
+      displayName: target ? `指派给 ${target}` : name,
+      kind: "agent",
+      target,
+    };
+  }
+  return { name, displayName: name, kind: "tool", target: "" };
+};
+
 FKTeamsChat.prototype.sendMessage = async function () {
   const message = this.messageInput.value.trim();
   const hasAttachments = this.attachments && this.attachments.length > 0;
@@ -64,7 +91,7 @@ FKTeamsChat.prototype.sendMessage = async function () {
 
   if (mention) {
     // 查找智能体
-    const agent = this.agents.find((a) => a.name === mention.agentName);
+    const agent = this.agents.find((a) => a.name === mention.agentName || (a.aliases || []).includes(mention.agentName));
     if (agent) {
       this.setCurrentAgent(agent, true); // 用户主动 @智能体，持久化
 
@@ -768,19 +795,19 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
   // 记录最近调用的工具名，供 handleToolResult 识别
   this.lastToolName = event.tool_calls[0].name;
 
-  const toolName = event.tool_calls[0].name;
+  const toolDisplay = this.getToolDisplay(event.tool_calls[0]);
   const toolCallEl = document.createElement("div");
-  toolCallEl.className = "tool-call";
+  toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
   toolCallEl.innerHTML = `
         <div class="tool-call-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"/>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
-            <span>准备调用工具:</span>
-            <code class="tool-call-name">${this.escapeHtml(toolName)}</code>
+            <span>${toolDisplay.kind === "agent" ? "准备指派:" : "准备调用工具:"}</span>
+            <code class="tool-call-name">${this.escapeHtml(toolDisplay.displayName)}</code>
         </div>
-        <pre class="tool-call-args">参数准备中...</pre>
+        <pre class="tool-call-args">${toolDisplay.kind === "agent" ? "任务准备中..." : "参数准备中..."}</pre>
     `;
   this.messagesContainer.appendChild(toolCallEl);
   this.scrollToBottom();
@@ -799,7 +826,7 @@ FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
   if (!argsEl) return;
 
   // 首次增量到达时清除占位文本
-  if (argsEl.textContent === "参数准备中...") {
+  if (argsEl.textContent === "参数准备中..." || argsEl.textContent === "任务准备中...") {
     argsEl.textContent = "";
     argsEl.classList.add("streaming");
   }
@@ -836,7 +863,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
   const pendingCards = [];
   allCards.forEach(function (card) {
     var argsEl = card.querySelector(".tool-call-args");
-    if (argsEl && (argsEl.textContent === "参数准备中..." || argsEl.classList.contains("streaming"))) {
+    if (argsEl && (argsEl.textContent === "参数准备中..." || argsEl.textContent === "任务准备中..." || argsEl.classList.contains("streaming"))) {
       pendingCards.push(card);
     }
   });
@@ -890,12 +917,13 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
 
   const toolResultEl = document.createElement("div");
   toolResultEl.className = "tool-result";
+  const resultTitle = this.getToolDisplay({ name: this.lastToolName }).kind === "agent" ? "成员结果" : "执行结果";
   toolResultEl.innerHTML = `
         <div class="tool-result-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="20 6 9 17 4 12"/>
             </svg>
-            <span>执行结果</span>
+            <span>${resultTitle}</span>
         </div>
         <pre class="tool-result-content">${this.escapeHtml(formattedContent)}</pre>
     `;

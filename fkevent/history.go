@@ -72,13 +72,11 @@ func (m *AgentMessage) GetTextContent() string {
 // 这类工具（如网页抓取、文档读取）会产生大量输出，在历史上下文中属于冗余内容。
 var NoisyToolPrefixes = []string{"fetch", "doc"}
 
-
 // maxToolArgLen 工具参数摘要最大长度（rune）
 const maxToolArgLen = 200
 
 // maxToolResultLen 工具结果摘要最大长度（rune）
 const maxToolResultLen = 2000
-
 
 // truncateRunes 按 rune 截断字符串
 func truncateRunes(s string, maxLen int) string {
@@ -639,7 +637,8 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 
 			case MsgTypeToolCall:
 				if event.ToolCall != nil {
-					fmt.Fprintf(&md, "> **工具调用**: %s\n", event.ToolCall.Name)
+					display := FormatToolDisplay(event.ToolCall.Name)
+					fmt.Fprintf(&md, "> **工具调用**: %s\n", display.DisplayName)
 					if event.ToolCall.Arguments != "" {
 						fmt.Fprintf(&md, "> - **参数**: `%s`\n", event.ToolCall.Arguments)
 					}

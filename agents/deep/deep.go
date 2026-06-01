@@ -55,8 +55,8 @@ func NewAgent(ctx context.Context, subAgents []adk.Agent) (adk.Agent, error) {
 	}
 
 	return deep.New(ctx, &deep.Config{
-		Name:         "深度探索者",
-		Description:  "一个能够深入分析问题并协调多个智能体协作解决复杂任务的智能体。",
+		Name:         "deep_researcher",
+		Description:  "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
 		ChatModel:    retryModel,
 		SubAgents:    subAgents,
 		MaxIteration: common.MaxIterations(),
