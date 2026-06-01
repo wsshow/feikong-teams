@@ -35,12 +35,12 @@ type Config struct {
 	Placeholder string
 }
 
-// New 创建一个 AgentMiddleware，在每次 LLM 调用前修剪已消化的噪声工具结果。
+// New 创建一个 Handler，在每次 LLM 调用前修剪已消化的噪声工具结果。
 //
 // 判断标准：某个工具结果之后存在 Assistant 文字响应（Content != ""），
 // 说明 LLM 已将该结果处理到其文字输出中，不再需要在上下文中保留完整内容。
 // 活跃工具调用链（尚无文字响应跟随）的结果始终保留。
-func New(cfg *Config) adk.AgentMiddleware {
+func New(cfg *Config) adk.ChatModelAgentMiddleware {
 	prefixes := fkevent.NoisyToolPrefixes
 	placeholder := defaultPlaceholder
 
@@ -53,15 +53,26 @@ func New(cfg *Config) adk.AgentMiddleware {
 		}
 	}
 
-	return adk.AgentMiddleware{
-		BeforeChatModel: func(ctx context.Context, state *adk.ChatModelAgentState) error {
-			if state == nil || len(state.Messages) < 2 {
-				return nil
-			}
-			state.Messages = trimNoisyResults(state.Messages, prefixes, placeholder)
-			return nil
-		},
+	return &handler{
+		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
+		prefixes:                     prefixes,
+		placeholder:                  placeholder,
 	}
+}
+
+type handler struct {
+	*adk.BaseChatModelAgentMiddleware
+
+	prefixes    []string
+	placeholder string
+}
+
+func (h *handler) BeforeModelRewriteState(ctx context.Context, state *adk.ChatModelAgentState, _ *adk.ModelContext) (context.Context, *adk.ChatModelAgentState, error) {
+	if state == nil || len(state.Messages) < 2 {
+		return ctx, state, nil
+	}
+	state.Messages = trimNoisyResults(state.Messages, h.prefixes, h.placeholder)
+	return ctx, state, nil
 }
 
 // isNoisy 判断工具名是否匹配任意噪声前缀。

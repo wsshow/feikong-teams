@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -23,11 +24,94 @@ type Config struct {
 	Handler ErrorHandler
 }
 
-// NewAgentMiddleware 创建 ADK AgentMiddleware，通过 WrapToolCall 拦截工具调用错误
-// 将错误转换为成功的工具输出返回给 LLM，避免中断 Agent 流程
-func NewAgentMiddleware(cfg *Config) adk.AgentMiddleware {
-	return adk.AgentMiddleware{
-		WrapToolCall: New(cfg),
+// NewHandler 创建 ADK Handler，通过 WrapToolCall 拦截工具调用错误。
+// 将错误转换为成功的工具输出返回给 LLM，避免中断 Agent 流程。
+func NewHandler(cfg *Config) adk.ChatModelAgentMiddleware {
+	handler := defaultErrorHandler
+	if cfg != nil && cfg.Handler != nil {
+		handler = cfg.Handler
+	}
+	return &agentHandler{
+		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
+		handler:                      handler,
+	}
+}
+
+type agentHandler struct {
+	*adk.BaseChatModelAgentMiddleware
+
+	handler ErrorHandler
+}
+
+func (h *agentHandler) WrapInvokableToolCall(_ context.Context, endpoint adk.InvokableToolCallEndpoint, tCtx *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
+	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+		result, err := endpoint(ctx, argumentsInJSON, opts...)
+		if err != nil {
+			if _, ok := compose.IsInterruptRerunError(err); ok {
+				return "", err
+			}
+			return h.handler(ctx, &compose.ToolInput{Name: tCtx.Name, Arguments: argumentsInJSON, CallID: tCtx.CallID, CallOptions: opts}, err), nil
+		}
+		return result, nil
+	}, nil
+}
+
+func (h *agentHandler) WrapStreamableToolCall(_ context.Context, endpoint adk.StreamableToolCallEndpoint, tCtx *adk.ToolContext) (adk.StreamableToolCallEndpoint, error) {
+	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (*schema.StreamReader[string], error) {
+		result, err := endpoint(ctx, argumentsInJSON, opts...)
+		if err != nil {
+			if _, ok := compose.IsInterruptRerunError(err); ok {
+				return nil, err
+			}
+			return schema.StreamReaderFromArray([]string{
+				h.handler(ctx, &compose.ToolInput{Name: tCtx.Name, Arguments: argumentsInJSON, CallID: tCtx.CallID, CallOptions: opts}, err),
+			}), nil
+		}
+		return result, nil
+	}, nil
+}
+
+func (h *agentHandler) WrapEnhancedInvokableToolCall(_ context.Context, endpoint adk.EnhancedInvokableToolCallEndpoint, tCtx *adk.ToolContext) (adk.EnhancedInvokableToolCallEndpoint, error) {
+	return func(ctx context.Context, toolArgument *schema.ToolArgument, opts ...tool.Option) (*schema.ToolResult, error) {
+		result, err := endpoint(ctx, toolArgument, opts...)
+		if err != nil {
+			if _, ok := compose.IsInterruptRerunError(err); ok {
+				return nil, err
+			}
+			arguments := ""
+			if toolArgument != nil {
+				arguments = toolArgument.Text
+			}
+			return textToolResult(h.handler(ctx, &compose.ToolInput{Name: tCtx.Name, Arguments: arguments, CallID: tCtx.CallID, CallOptions: opts}, err)), nil
+		}
+		return result, nil
+	}, nil
+}
+
+func (h *agentHandler) WrapEnhancedStreamableToolCall(_ context.Context, endpoint adk.EnhancedStreamableToolCallEndpoint, tCtx *adk.ToolContext) (adk.EnhancedStreamableToolCallEndpoint, error) {
+	return func(ctx context.Context, toolArgument *schema.ToolArgument, opts ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
+		result, err := endpoint(ctx, toolArgument, opts...)
+		if err != nil {
+			if _, ok := compose.IsInterruptRerunError(err); ok {
+				return nil, err
+			}
+			arguments := ""
+			if toolArgument != nil {
+				arguments = toolArgument.Text
+			}
+			return schema.StreamReaderFromArray([]*schema.ToolResult{
+				textToolResult(h.handler(ctx, &compose.ToolInput{Name: tCtx.Name, Arguments: arguments, CallID: tCtx.CallID, CallOptions: opts}, err)),
+			}), nil
+		}
+		return result, nil
+	}, nil
+}
+
+func textToolResult(text string) *schema.ToolResult {
+	return &schema.ToolResult{
+		Parts: []schema.ToolOutputPart{
+			{Type: schema.ToolPartTypeText, Text: text},
+		},
 	}
 }
 

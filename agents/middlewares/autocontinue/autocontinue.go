@@ -60,16 +60,31 @@ func ContinueTool() (tool.BaseTool, error) {
 	return utils.InferTool(toolName, toolDesc, continueTool)
 }
 
-// NewAgentMiddleware 创建自动续接中间件，包含工具注册和 AfterChatModel 钩子
-func NewAgentMiddleware() (adk.AgentMiddleware, error) {
+// NewHandler 创建自动续接中间件，包含工具注册和 AfterModel 钩子。
+func NewHandler() (adk.ChatModelAgentMiddleware, error) {
 	t, err := ContinueTool()
 	if err != nil {
-		return adk.AgentMiddleware{}, err
+		return nil, err
 	}
-	return adk.AgentMiddleware{
-		AdditionalTools: []tool.BaseTool{t},
-		AfterChatModel:  afterChatModel,
+	return &handler{
+		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
+		continueTool:                 t,
 	}, nil
+}
+
+type handler struct {
+	*adk.BaseChatModelAgentMiddleware
+
+	continueTool tool.BaseTool
+}
+
+func (h *handler) BeforeAgent(ctx context.Context, runCtx *adk.ChatModelAgentContext) (context.Context, *adk.ChatModelAgentContext, error) {
+	runCtx.Tools = append(runCtx.Tools, h.continueTool)
+	return ctx, runCtx, nil
+}
+
+func (h *handler) AfterModelRewriteState(ctx context.Context, state *adk.ChatModelAgentState, _ *adk.ModelContext) (context.Context, *adk.ChatModelAgentState, error) {
+	return ctx, state, afterChatModel(ctx, state)
 }
 
 // afterChatModel 检查模型输出是否被截断，注入续接工具调用

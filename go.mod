@@ -17,15 +17,15 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/cloudwego/eino v0.8.13
-	github.com/cloudwego/eino-ext/components/model/ark v0.1.65
-	github.com/cloudwego/eino-ext/components/model/gemini v0.1.29
-	github.com/cloudwego/eino-ext/components/model/ollama v0.1.8
-	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
-	github.com/cloudwego/eino-ext/components/model/openrouter v0.1.4
-	github.com/cloudwego/eino-ext/components/model/qwen v0.1.6
+	github.com/cloudwego/eino v0.9.2
+	github.com/cloudwego/eino-ext/components/model/ark v0.1.68
+	github.com/cloudwego/eino-ext/components/model/gemini v0.1.32
+	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
+	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
+	github.com/cloudwego/eino-ext/components/model/openrouter v0.1.10
+	github.com/cloudwego/eino-ext/components/model/qwen v0.1.9
 	github.com/cloudwego/eino-ext/components/tool/mcp v0.0.8
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.14
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17
 	github.com/cohesion-org/deepseek-go v1.3.2
 	github.com/corpix/uarand v0.2.0
 	github.com/eino-contrib/jsonschema v1.0.3
@@ -38,7 +38,7 @@ require (
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-runewidth v0.0.20
-	github.com/meguminnnnnnnnn/go-openai v0.1.1
+	github.com/meguminnnnnnnnn/go-openai v0.1.2
 	github.com/natefinch/lumberjack v2.0.0+incompatible
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pkg/sftp v1.13.10
@@ -174,7 +174,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	github.com/volcengine/volc-sdk-golang v1.0.23 // indirect
-	github.com/volcengine/volcengine-go-sdk v1.2.9 // indirect
+	github.com/volcengine/volcengine-go-sdk v1.2.27 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xuri/efp v0.0.1 // indirect

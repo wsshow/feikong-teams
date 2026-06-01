@@ -148,9 +148,9 @@ type Config struct {
 	SystemPrompt               string
 }
 
-func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
+func New(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
 	if cfg == nil {
-		return adk.AgentMiddleware{}, fmt.Errorf("config is nil")
+		return nil, fmt.Errorf("config is nil")
 	}
 
 	systemPrompt := cfg.SystemPrompt
@@ -180,25 +180,28 @@ func New(ctx context.Context, cfg *Config) (adk.AgentMiddleware, error) {
 		AppendChatModel(cfg.Model).
 		Compile(ctx, compose.WithGraphName("Summarizer"))
 	if err != nil {
-		return adk.AgentMiddleware{}, fmt.Errorf("compile summarizer failed, err=%w", err)
+		return nil, fmt.Errorf("compile summarizer failed, err=%w", err)
 	}
 
 	sm := &summaryMiddleware{
-		counter:            defaultCounterToken,
-		maxBefore:          maxBefore,
-		maxRecent:          maxRecent,
-		maxSummarizerInput: maxSummarizerInput,
-		summarizer:         summarizer,
+		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
+		counter:                      defaultCounterToken,
+		maxBefore:                    maxBefore,
+		maxRecent:                    maxRecent,
+		maxSummarizerInput:           maxSummarizerInput,
+		summarizer:                   summarizer,
 	}
 	if cfg.Counter != nil {
 		sm.counter = cfg.Counter
 	}
-	return adk.AgentMiddleware{BeforeChatModel: sm.BeforeModel}, nil
+	return sm, nil
 }
 
 const summaryMessageFlag = "_fkteams_agent_middleware_summary_message"
 
 type summaryMiddleware struct {
+	*adk.BaseChatModelAgentMiddleware
+
 	counter            TokenCounter
 	maxBefore          int
 	maxRecent          int
@@ -207,18 +210,18 @@ type summaryMiddleware struct {
 	summarizer compose.Runnable[map[string]any, *schema.Message]
 }
 
-func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatModelAgentState) (err error) {
+func (s *summaryMiddleware) BeforeModelRewriteState(ctx context.Context, state *adk.ChatModelAgentState, _ *adk.ModelContext) (context.Context, *adk.ChatModelAgentState, error) {
 	if state == nil || len(state.Messages) == 0 {
-		return nil
+		return ctx, state, nil
 	}
 
 	messages := state.Messages
 	msgsToken, err := s.counter(ctx, messages)
 	if err != nil {
-		return fmt.Errorf("count token failed, err=%w", err)
+		return ctx, state, fmt.Errorf("count token failed, err=%w", err)
 	}
 	if len(messages) != len(msgsToken) {
-		return fmt.Errorf("token count mismatch, msgNum=%d, tokenCountNum=%d", len(messages), len(msgsToken))
+		return ctx, state, fmt.Errorf("token count mismatch, msgNum=%d, tokenCountNum=%d", len(messages), len(msgsToken))
 	}
 
 	var total int64
@@ -227,7 +230,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	}
 	// Trigger summarization only when exceeding threshold
 	if total <= int64(s.maxBefore) {
-		return nil
+		return ctx, state, nil
 	}
 
 	// Build blocks with user-messages, summary-message, tool-call pairings
@@ -398,7 +401,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 		"recent_messages":  recentText,
 	})
 	if err != nil {
-		return fmt.Errorf("summarize failed, err=%w", err)
+		return ctx, state, fmt.Errorf("summarize failed, err=%w", err)
 	}
 
 	summaryMsg := schema.AssistantMessage(msg.Content, nil)
@@ -431,7 +434,7 @@ func (s *summaryMiddleware) BeforeModel(ctx context.Context, state *adk.ChatMode
 	}
 
 	state.Messages = newMessages
-	return nil
+	return ctx, state, nil
 }
 
 // renderMsg renders a message to string. If maxContent > 0, truncates content exceeding that token count.

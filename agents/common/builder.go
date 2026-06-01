@@ -39,8 +39,7 @@ type AgentBuilder struct {
 	chatModel model.ToolCallingChatModel
 
 	// 中间件
-	middlewares []adk.AgentMiddleware
-	handlers    []adk.ChatModelAgentMiddleware
+	handlers []adk.ChatModelAgentMiddleware
 
 	// 便捷中间件标记
 	enableSummary  bool
@@ -89,12 +88,6 @@ func (b *AgentBuilder) WithTemplateVar(key string, value any) *AgentBuilder {
 // WithModel 使用自定义模型（不设置则使用默认环境变量配置）
 func (b *AgentBuilder) WithModel(m model.ToolCallingChatModel) *AgentBuilder {
 	b.chatModel = m
-	return b
-}
-
-// WithMiddleware 添加 AgentMiddleware
-func (b *AgentBuilder) WithMiddleware(m ...adk.AgentMiddleware) *AgentBuilder {
-	b.middlewares = append(b.middlewares, m...)
 	return b
 }
 
@@ -191,16 +184,23 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		}
 	}
 
-	// 中间件（warperror + autocontinue + trimresult 默认启用）
-	cfg.Middlewares = append(cfg.Middlewares, warperror.NewAgentMiddleware(nil))
+	// patch 中间件默认启用，放在 Handlers 最前面确保其他中间件处理的是完整消息历史
+	patchMiddleware, err := patch.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("init patch middleware: %w", err)
+	}
+	cfg.Handlers = append(cfg.Handlers, patchMiddleware)
 
-	acMiddleware, err := autocontinue.NewAgentMiddleware()
+	// 中间件（warperror + autocontinue + trimresult 默认启用）
+	cfg.Handlers = append(cfg.Handlers, warperror.NewHandler(nil))
+
+	acMiddleware, err := autocontinue.NewHandler()
 	if err != nil {
 		return nil, fmt.Errorf("init autocontinue middleware: %w", err)
 	}
-	cfg.Middlewares = append(cfg.Middlewares, acMiddleware)
+	cfg.Handlers = append(cfg.Handlers, acMiddleware)
 
-	cfg.Middlewares = append(cfg.Middlewares, trimresult.New(nil))
+	cfg.Handlers = append(cfg.Handlers, trimresult.New(nil))
 
 	if b.enableSummary {
 		maxTokens := summary.DefaultMaxTokensBeforeSummary
@@ -217,17 +217,8 @@ func (b *AgentBuilder) Build(ctx context.Context) (adk.Agent, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init summary middleware: %w", err)
 		}
-		cfg.Middlewares = append(cfg.Middlewares, summaryMiddleware)
+		cfg.Handlers = append(cfg.Handlers, summaryMiddleware)
 	}
-
-	cfg.Middlewares = append(cfg.Middlewares, b.middlewares...)
-
-	// patch 中间件默认启用，放在 Handlers 最前面确保其他中间件处理的是完整消息历史
-	patchMiddleware, err := patch.New(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("init patch middleware: %w", err)
-	}
-	cfg.Handlers = append(cfg.Handlers, patchMiddleware)
 
 	if b.enableSkills {
 		skillsMiddleware, err := skills.New(ctx)
