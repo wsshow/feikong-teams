@@ -7,6 +7,7 @@ import (
 	"time"
 
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/cloudwego/eino/schema"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -106,16 +107,13 @@ func commonPrefixLen(a, b string) int {
 	return n
 }
 
-func isMemberRunPath(runPath string) bool {
-	return strings.Contains(runPath, "ask_") || strings.Contains(runPath, "ask-")
+func isMemberEvent(event Event) bool {
+	return event.MemberCallID != ""
 }
 
 func agentDisplayName(name string) string {
 	normalized := strings.TrimPrefix(strings.TrimSpace(name), agentToolPrefix)
 	normalized = strings.ReplaceAll(normalized, "-", "_")
-	if label := agentToolLabels[normalized]; label != "" {
-		return label
-	}
 	return titleIdentifier(normalized)
 }
 
@@ -129,11 +127,18 @@ func agentKey(name string) string {
 }
 
 func agentToolKey(name string) (string, string, bool) {
-	target, ok := strings.CutPrefix(name, agentToolPrefix)
-	if !ok {
+	display := FormatToolDisplay(name)
+	if display.Kind != "agent" {
 		return "", "", false
 	}
-	return agentKey(target), agentDisplayName(target), true
+	target := display.Target
+	if target == "" {
+		target = strings.TrimPrefix(display.DisplayName, "指派给 ")
+	}
+	if target == "" {
+		target = name
+	}
+	return agentKey(target), target, true
 }
 
 func isErrorContent(content string) bool {
@@ -184,7 +189,12 @@ func newPrintEvent() (func(Event), func()) {
 	memberPanel := newMemberPanel()
 	memberNamesByToolID := map[string]string{}
 	memberKeysByToolID := map[string]string{}
+	memberKeysByIndex := map[int]string{}
 	memberPending := map[string]bool{}
+	memberStarted := map[string]bool{}
+	memberResultChunks := map[string]string{}
+	var deferredEvents []Event
+	replayingDeferred := false
 	inReasoning := false
 	var sb streamBuf
 	var rw *reasoningWriter
@@ -202,52 +212,183 @@ func newPrintEvent() (func(Event), func()) {
 		if name == "" {
 			name = agentDisplayName(key)
 		}
-		memberPending[key] = true
-		memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "start"})
+		if !memberStarted[key] {
+			memberStarted[key] = true
+			memberPending[key] = true
+			memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "start"})
+			return
+		}
+		memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "meta"})
 	}
 
 	memberFromEvent := func(event Event) (string, string) {
-		key := agentKey(event.AgentName)
-		name := agentDisplayName(event.AgentName)
+		key := event.MemberCallID
+		if key == "" {
+			key = agentKey(event.AgentName)
+		}
+		name := event.MemberName
+		if name == "" {
+			name = agentDisplayName(event.AgentName)
+		}
 		ensureMember(key, name)
 		return key, name
 	}
 
-	finishMembersIfIdle := func() {
+	hasPendingMembers := func() bool {
 		if len(memberPending) == 0 {
-			return
+			return false
 		}
 		for _, pending := range memberPending {
 			if pending {
-				return
+				return true
 			}
 		}
-		memberPanel.finish()
-		memberPending = map[string]bool{}
+		return false
 	}
 
-	finishMembersBeforeParentOutput := func(event Event) {
-		if len(memberPending) == 0 || isMemberRunPath(event.RunPath) {
+	var printFn func(Event)
+
+	resetMemberState := func() {
+		memberPending = map[string]bool{}
+		memberStarted = map[string]bool{}
+		memberNamesByToolID = map[string]string{}
+		memberKeysByToolID = map[string]string{}
+		memberKeysByIndex = map[int]string{}
+		memberResultChunks = map[string]string{}
+	}
+
+	finalizeChunkedMemberResults := func() {
+		for callID, content := range memberResultChunks {
+			key := memberKeysByToolID[callID]
+			if key == "" || !memberPending[key] {
+				delete(memberResultChunks, callID)
+				continue
+			}
+			memberName := memberNamesByToolID[callID]
+			if isErrorContent(content) {
+				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "error", Content: content})
+			} else {
+				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "done"})
+			}
+			memberPending[key] = false
+			delete(memberResultChunks, callID)
+		}
+	}
+
+	finishMembersIfIdle := func() {
+		finalizeChunkedMemberResults()
+		if hasPendingMembers() {
 			return
 		}
-		for _, pending := range memberPending {
-			if pending {
-				return
-			}
-		}
 		memberPanel.finish()
-		memberPending = map[string]bool{}
+		resetMemberState()
+		if len(deferredEvents) > 0 && !replayingDeferred {
+			events := deferredEvents
+			deferredEvents = nil
+			replayingDeferred = true
+			for _, deferred := range events {
+				printFn(deferred)
+			}
+			replayingDeferred = false
+		}
 	}
 
-	printFn := func(event Event) {
+	flushDeferred := func() {
+		finalizeChunkedMemberResults()
+		memberPanel.finish()
+		resetMemberState()
+		if len(deferredEvents) > 0 && !replayingDeferred {
+			events := deferredEvents
+			deferredEvents = nil
+			replayingDeferred = true
+			for _, deferred := range events {
+				printFn(deferred)
+			}
+			replayingDeferred = false
+		}
+	}
+
+	finishMembersBeforeParentOutput := func(event Event) bool {
+		if len(memberPending) == 0 || isMemberEvent(event) {
+			return false
+		}
+		finalizeChunkedMemberResults()
+		if hasPendingMembers() && !replayingDeferred {
+			deferredEvents = append(deferredEvents, event)
+			return true
+		}
+		memberPanel.finish()
+		resetMemberState()
+		return false
+	}
+
+	migrateMemberKey := func(oldKey, newKey, name string) {
+		if oldKey == "" || newKey == "" || oldKey == newKey {
+			return
+		}
+		memberPanel.send(memberViewEvent{Key: oldKey, NewKey: newKey, Name: name, Type: "rename"})
+		if pending, ok := memberPending[oldKey]; ok {
+			delete(memberPending, oldKey)
+			memberPending[newKey] = pending
+		}
+		if memberStarted[oldKey] {
+			delete(memberStarted, oldKey)
+			memberStarted[newKey] = true
+		}
+	}
+
+	registerAgentToolCall := func(tool schema.ToolCall, fallbackIndex int) (string, string) {
+		key, memberName, _ := agentToolKey(tool.Function.Name)
+		if tool.ID != "" {
+			key = tool.ID
+			if tool.Index != nil && memberKeysByIndex[*tool.Index] != "" {
+				migrateMemberKey(memberKeysByIndex[*tool.Index], key, memberName)
+			}
+		} else if tool.Index != nil {
+			key = fmt.Sprintf("pending:%d", *tool.Index)
+		} else if key == "" {
+			key = fmt.Sprintf("pending:%d", fallbackIndex)
+		}
+		if tool.ID != "" {
+			memberNamesByToolID[tool.ID] = memberName
+			memberKeysByToolID[tool.ID] = key
+		}
+		if tool.Index != nil {
+			memberKeysByIndex[*tool.Index] = key
+		}
+		if tool.ID != "" {
+			toolNamesByID[tool.ID] = tool.Function.Name
+		}
+		ensureMember(key, memberName)
+		return key, memberName
+	}
+
+	splitAgentToolCalls := func(toolCalls []schema.ToolCall) (agents, others []schema.ToolCall) {
+		for _, tool := range toolCalls {
+			if isInternalToolName(tool.Function.Name) {
+				continue
+			}
+			display := FormatToolDisplay(tool.Function.Name)
+			if display.Kind == "agent" {
+				agents = append(agents, tool)
+			} else {
+				others = append(others, tool)
+			}
+		}
+		return agents, others
+	}
+
+	printFn = func(event Event) {
 		switch event.Type {
 		case EventReasoningChunk:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
 				return
 			}
-			finishMembersBeforeParentOutput(event)
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			tryFlush()
 			if agentName != event.AgentName {
 				agentName = event.AgentName
@@ -262,12 +403,14 @@ func newPrintEvent() (func(Event), func()) {
 			rw.writeChunk(event.Content)
 
 		case EventStreamChunk:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
 				return
 			}
-			finishMembersBeforeParentOutput(event)
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			wasReasoning := inReasoning
 			if inReasoning {
 				inReasoning = false
@@ -286,7 +429,7 @@ func newPrintEvent() (func(Event), func()) {
 			sb.addChunk(event.Content)
 
 		case EventMessage:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.ReasoningContent != "" {
 					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.ReasoningContent})
@@ -296,7 +439,9 @@ func newPrintEvent() (func(Event), func()) {
 				}
 				return
 			}
-			finishMembersBeforeParentOutput(event)
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			tryFlush()
 			if inReasoning {
 				inReasoning = false
@@ -311,15 +456,17 @@ func newPrintEvent() (func(Event), func()) {
 			}
 
 		case EventToolResult:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.Content != "" {
 					memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: "\n[工具结果]\n" + event.Content})
 				}
 				return
 			}
-			tryFlush()
 			toolName := lastToolName
+			if event.ToolName != "" {
+				toolName = event.ToolName
+			}
 			if event.ToolCallID != "" {
 				if name, ok := toolNamesByID[event.ToolCallID]; ok {
 					toolName = name
@@ -344,12 +491,16 @@ func newPrintEvent() (func(Event), func()) {
 				if isErrorContent(event.Content) {
 					memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "error", Content: event.Content})
 				} else {
-					memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "done", Content: event.Content})
+					memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "done"})
 				}
 				memberPending[key] = false
 				finishMembersIfIdle()
 				return
 			}
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
+			tryFlush()
 			resultTitle := "工具结果"
 			fmt.Printf("\n\033[1;33m⚙ [%s] %s:\033[0m\n", event.AgentName, resultTitle)
 			if event.Content != "" {
@@ -381,15 +532,22 @@ func newPrintEvent() (func(Event), func()) {
 			fmt.Println()
 
 		case EventToolResultChunk:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "content", Content: event.Content})
+				return
+			}
+			if event.ToolCallID != "" && memberKeysByToolID[event.ToolCallID] != "" {
+				memberResultChunks[event.ToolCallID] += event.Content
+				return
+			}
+			if finishMembersBeforeParentOutput(event) {
 				return
 			}
 			fmt.Printf("%s", event.Content)
 
 		case EventToolCallsPreparing:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				for _, tool := range event.ToolCalls {
 					if tool.Function.Name != "" {
@@ -397,6 +555,24 @@ func newPrintEvent() (func(Event), func()) {
 						memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "op", Content: "准备调用工具: " + display.DisplayName})
 					}
 				}
+				return
+			}
+			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
+			for i, tool := range agentTools {
+				key, memberName := registerAgentToolCall(tool, i)
+				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "op", Content: "任务准备中"})
+			}
+			if len(agentTools) > 0 && len(otherTools) == 0 {
+				return
+			}
+			if len(agentTools) > 0 {
+				event.ToolCalls = otherTools
+				if hasPendingMembers() && !replayingDeferred {
+					deferredEvents = append(deferredEvents, event)
+					return
+				}
+			}
+			if finishMembersBeforeParentOutput(event) {
 				return
 			}
 			tryFlush()
@@ -413,23 +589,13 @@ func newPrintEvent() (func(Event), func()) {
 						toolNamesByID[tool.ID] = tool.Function.Name
 					}
 					display := FormatToolDisplay(tool.Function.Name)
-					if display.Kind == "agent" {
-						key, memberName, _ := agentToolKey(tool.Function.Name)
-						if tool.ID != "" {
-							memberNamesByToolID[tool.ID] = memberName
-							memberKeysByToolID[tool.ID] = key
-						}
-						ensureMember(key, memberName)
-						memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "op", Content: "任务准备中"})
-					} else {
-						fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, display.DisplayName)
-					}
+					fmt.Printf("\n\033[1;35m[%s] 准备调用工具: \033[1m%s\033[0m \033[90m(参数准备中...)\033[0m\n", event.AgentName, display.DisplayName)
 					lastToolName = tool.Function.Name
 				}
 			}
 
 		case EventToolCalls:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				for _, tool := range event.ToolCalls {
 					if tool.Function.Name == "" {
@@ -444,6 +610,28 @@ func newPrintEvent() (func(Event), func()) {
 				}
 				return
 			}
+			agentTools, otherTools := splitAgentToolCalls(event.ToolCalls)
+			for i, tool := range agentTools {
+				key, memberName := registerAgentToolCall(tool, i)
+				op := "任务已分配"
+				if tool.Function.Arguments != "" {
+					op = "任务: " + truncateString(tool.Function.Arguments, 200)
+				}
+				memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "op", Content: op})
+			}
+			if len(agentTools) > 0 && len(otherTools) == 0 {
+				return
+			}
+			if len(agentTools) > 0 {
+				event.ToolCalls = otherTools
+				if hasPendingMembers() && !replayingDeferred {
+					deferredEvents = append(deferredEvents, event)
+					return
+				}
+			}
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			tryFlush()
 			printedHeader := false
 			for i, tool := range event.ToolCalls {
@@ -454,28 +642,14 @@ func newPrintEvent() (func(Event), func()) {
 					toolNamesByID[tool.ID] = tool.Function.Name
 				}
 				display := FormatToolDisplay(tool.Function.Name)
-				if display.Kind == "agent" {
-					key, memberName, _ := agentToolKey(tool.Function.Name)
-					if tool.ID != "" {
-						memberNamesByToolID[tool.ID] = memberName
-						memberKeysByToolID[tool.ID] = key
-					}
-					ensureMember(key, memberName)
-					op := "任务已分配"
-					if tool.Function.Arguments != "" {
-						op = "任务: " + truncateString(tool.Function.Arguments, 200)
-					}
-					memberPanel.send(memberViewEvent{Key: key, Name: memberName, Type: "op", Content: op})
-				} else {
-					if !printedHeader {
-						fmt.Printf("\n\033[1;35m[%s] 调用:\033[0m\n", event.AgentName)
-						printedHeader = true
-					}
-					fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
-					if tool.Function.Arguments != "" {
-						args := truncateString(tool.Function.Arguments, 200)
-						fmt.Printf("     参数: %s\n", args)
-					}
+				if !printedHeader {
+					fmt.Printf("\n\033[1;35m[%s] 调用:\033[0m\n", event.AgentName)
+					printedHeader = true
+				}
+				fmt.Printf("  %d. \033[1m%s\033[0m\n", i+1, display.DisplayName)
+				if tool.Function.Arguments != "" {
+					args := truncateString(tool.Function.Arguments, 200)
+					fmt.Printf("     参数: %s\n", args)
 				}
 				if i == len(event.ToolCalls)-1 {
 					lastToolName = tool.Function.Name
@@ -486,7 +660,9 @@ func newPrintEvent() (func(Event), func()) {
 			}
 
 		case EventAction:
-			finishMembersBeforeParentOutput(event)
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			tryFlush()
 			switch event.ActionType {
 			case ActionContextCompressStart:
@@ -501,14 +677,16 @@ func newPrintEvent() (func(Event), func()) {
 			}
 
 		case EventError:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				memberPanel.send(memberViewEvent{Key: key, Name: name, Type: "error", Content: event.Error})
 				memberPending[key] = false
 				finishMembersIfIdle()
 				return
 			}
-			finishMembersBeforeParentOutput(event)
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			tryFlush()
 			fmt.Printf("\n\033[1;31m✗ [%s] 错误:\033[0m\n", event.AgentName)
 			fmt.Printf("  \033[31m%s\033[0m\n", event.Error)
@@ -518,11 +696,13 @@ func newPrintEvent() (func(Event), func()) {
 			fmt.Println()
 
 		case EventToolCallsArgsDelta:
-			if isMemberRunPath(event.RunPath) {
+			if isMemberEvent(event) {
 				return
 			}
 		default:
-			finishMembersBeforeParentOutput(event)
+			if finishMembersBeforeParentOutput(event) {
+				return
+			}
 			fmt.Printf("\n\033[1;90m? 未知事件: %s\033[0m\n", event.Type)
 			if event.AgentName != "" {
 				fmt.Printf("  代理: %s\n", event.AgentName)
@@ -535,7 +715,7 @@ func newPrintEvent() (func(Event), func()) {
 
 	return printFn, func() {
 		tryFlush()
-		memberPanel.finish()
+		flushDeferred()
 	}
 }
 

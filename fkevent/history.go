@@ -12,10 +12,13 @@ import (
 )
 
 type ToolCallRecord struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-	Result    string `json:"result"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	Target      string `json:"target,omitempty"`
+	Arguments   string `json:"arguments"`
+	Result      string `json:"result"`
 }
 
 type ActionRecord struct {
@@ -50,11 +53,15 @@ type MessageEvent struct {
 
 // AgentMessage 代理的一次完整发言
 type AgentMessage struct {
-	AgentName string         `json:"agent_name"`
-	RunPath   string         `json:"run_path"`
-	StartTime time.Time      `json:"start_time"`
-	EndTime   time.Time      `json:"end_time"`
-	Events    []MessageEvent `json:"events"`
+	AgentName      string         `json:"agent_name"`
+	RunPath        string         `json:"run_path"`
+	MemberCallID   string         `json:"member_call_id,omitempty"`
+	MemberToolName string         `json:"member_tool_name,omitempty"`
+	MemberName     string         `json:"member_name,omitempty"`
+	IsMemberEvent  bool           `json:"is_member_event,omitempty"`
+	StartTime      time.Time      `json:"start_time"`
+	EndTime        time.Time      `json:"end_time"`
+	Events         []MessageEvent `json:"events"`
 }
 
 // GetTextContent 获取消息中的所有文本内容
@@ -103,28 +110,79 @@ const maxErrorContentLen = 1200
 
 // pendingToolCall 待匹配的工具调用
 type pendingToolCall struct {
-	ID        string
-	Name      string
-	Arguments string
+	ID          string
+	Index       *int
+	Name        string
+	DisplayName string
+	Kind        string
+	Target      string
+	Arguments   string
 }
 
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
-	mu               sync.RWMutex
-	messages         []AgentMessage
-	currentAgent     string
-	currentRunPath   string
-	currentStartTime time.Time
-	currentEvents    []MessageEvent
-	pendingToolCalls []pendingToolCall // 按 ID 匹配工具调用与结果
-	summary          string            // 上下文压缩摘要
-	summarizedCount  int               // 已被摘要覆盖的消息数量
+	mu                sync.RWMutex
+	messages          []AgentMessage
+	currentAgent      string
+	currentRunPath    string
+	currentMemberID   string
+	currentMemberTool string
+	currentMemberName string
+	currentStartTime  time.Time
+	currentEvents     []MessageEvent
+	pendingToolCalls  []pendingToolCall // 按 ID 匹配工具调用与结果
+	toolResultChunks  map[string]string // 按 ID 累积流式工具结果
+	summary           string            // 上下文压缩摘要
+	summarizedCount   int               // 已被摘要覆盖的消息数量
+}
+
+func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord {
+	record := ToolCallRecord{
+		ID:          tc.ID,
+		Name:        tc.Name,
+		DisplayName: tc.DisplayName,
+		Kind:        tc.Kind,
+		Target:      tc.Target,
+		Arguments:   tc.Arguments,
+		Result:      result,
+	}
+	if record.DisplayName == "" || record.Kind == "" {
+		display := FormatToolDisplay(tc.Name)
+		if record.DisplayName == "" {
+			record.DisplayName = display.DisplayName
+		}
+		if record.Kind == "" {
+			record.Kind = display.Kind
+		}
+		if record.Target == "" {
+			record.Target = display.Target
+		}
+	}
+	return record
+}
+
+func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
+	return &record
+}
+
+func pendingToolCallFromEvent(id string, index *int, name, arguments string) pendingToolCall {
+	display := FormatToolDisplay(name)
+	return pendingToolCall{
+		ID:          id,
+		Index:       index,
+		Name:        name,
+		DisplayName: display.DisplayName,
+		Kind:        display.Kind,
+		Target:      display.Target,
+		Arguments:   arguments,
+	}
 }
 
 func NewHistoryRecorder() *HistoryRecorder {
 	return &HistoryRecorder{
-		messages:      make([]AgentMessage, 0),
-		currentEvents: make([]MessageEvent, 0),
+		messages:         make([]AgentMessage, 0),
+		currentEvents:    make([]MessageEvent, 0),
+		toolResultChunks: make(map[string]string),
 	}
 }
 
@@ -139,8 +197,20 @@ func truncateErrorContent(s string) string {
 	return string(runes[:head]) + "\n...(truncated)...\n" + string(runes[len(runes)-tail:])
 }
 
+func toolResultKey(event Event) string {
+	if event.ToolCallID != "" {
+		return event.ToolCallID
+	}
+	if event.ToolCallIndex != nil {
+		return fmt.Sprintf("idx:%d", *event.ToolCallIndex)
+	}
+	return ""
+}
+
 // RecordEvent 记录事件
 func (h *HistoryRecorder) RecordEvent(event Event) {
+	event = NormalizeEvent(event)
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -176,10 +246,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
-					ID:   tc.ID,
-					Name: tc.Function.Name,
-				})
+				h.pendingToolCalls = append(h.pendingToolCalls,
+					pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, ""))
 			}
 		}
 
@@ -191,29 +259,53 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 			updated := false
 			for i := range h.pendingToolCalls {
-				if h.pendingToolCalls[i].ID == tc.ID && h.pendingToolCalls[i].Arguments == "" {
+				sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == tc.ID
+				sameIndex := h.pendingToolCalls[i].Index != nil && tc.Index != nil && *h.pendingToolCalls[i].Index == *tc.Index
+				if (sameID || sameIndex) && h.pendingToolCalls[i].Arguments == "" {
+					if tc.ID != "" {
+						h.pendingToolCalls[i].ID = tc.ID
+					}
 					h.pendingToolCalls[i].Arguments = tc.Function.Arguments
 					updated = true
 					break
 				}
 			}
 			if !updated {
-				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
-					ID:        tc.ID,
-					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
-				})
+				h.pendingToolCalls = append(h.pendingToolCalls,
+					pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments))
 			}
 		}
 
-	case EventToolResult, EventToolResultChunk:
+	case EventToolResultChunk:
 		if isInternalContinueContent(event.Content) {
 			return
 		}
 		h.ensureAgentContext(event)
+		if key := toolResultKey(event); key != "" {
+			h.toolResultChunks[key] += event.Content
+		}
+
+	case EventToolResult:
+		if isInternalContinueContent(event.Content) {
+			return
+		}
+		h.ensureAgentContext(event)
+		content := event.Content
+		resultKey := toolResultKey(event)
+		if resultKey != "" && h.toolResultChunks[resultKey] != "" {
+			chunked := h.toolResultChunks[resultKey]
+			if content == "" || strings.Contains(chunked, content) {
+				content = chunked
+			} else {
+				content = chunked + content
+			}
+			delete(h.toolResultChunks, resultKey)
+		}
 		idx := -1
 		for i := range h.pendingToolCalls {
-			if h.pendingToolCalls[i].ID == event.ToolCallID && event.ToolCallID != "" {
+			sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == event.ToolCallID
+			sameIndex := h.pendingToolCalls[i].Index != nil && event.ToolCallIndex != nil && *h.pendingToolCalls[i].Index == *event.ToolCallIndex
+			if sameID || sameIndex {
 				idx = i
 				break
 			}
@@ -225,13 +317,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				return
 			}
 			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type: MsgTypeToolCall,
-				ToolCall: &ToolCallRecord{
-					ID:        tc.ID,
-					Name:      tc.Name,
-					Arguments: tc.Arguments,
-					Result:    event.Content,
-				},
+				Type:     MsgTypeToolCall,
+				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 			})
 		}
 
@@ -254,11 +341,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				h.pendingToolCalls = append(h.pendingToolCalls, pendingToolCall{
-					ID:        tc.ID,
-					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
-				})
+				h.pendingToolCalls = append(h.pendingToolCalls,
+					pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments))
 			}
 		}
 
@@ -284,17 +368,56 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	}
 }
 
-// ensureAgentContext 确保当前 agent 上下文已初始化，处理 agent 切换
+// ensureAgentContext 确保当前 agent 上下文已初始化，处理 agent/member 切换
 func (h *HistoryRecorder) ensureAgentContext(event Event) {
-	if event.AgentName != h.currentAgent && h.currentAgent != "" {
+	sameAgent := event.AgentName == h.currentAgent
+	sameMember := event.MemberCallID == h.currentMemberID
+	if h.currentAgent != "" && (!sameAgent || !sameMember) {
 		h.finalizeCurrentMessage()
 	}
-	if event.AgentName != h.currentAgent {
+	if !sameAgent || !sameMember {
 		h.currentAgent = event.AgentName
 		h.currentRunPath = event.RunPath
+		h.currentMemberID = event.MemberCallID
+		h.currentMemberTool = event.MemberToolName
+		h.currentMemberName = event.MemberName
 		h.currentStartTime = time.Now()
 		h.currentEvents = make([]MessageEvent, 0)
 		h.pendingToolCalls = nil
+	}
+}
+
+func (h *HistoryRecorder) flushChunkedToolResults() {
+	if len(h.toolResultChunks) == 0 {
+		return
+	}
+	for resultKey, content := range h.toolResultChunks {
+		if content == "" {
+			delete(h.toolResultChunks, resultKey)
+			continue
+		}
+		idx := -1
+		for i := range h.pendingToolCalls {
+			sameID := h.pendingToolCalls[i].ID != "" && h.pendingToolCalls[i].ID == resultKey
+			sameIndex := h.pendingToolCalls[i].Index != nil && resultKey == fmt.Sprintf("idx:%d", *h.pendingToolCalls[i].Index)
+			if sameID || sameIndex {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			delete(h.toolResultChunks, resultKey)
+			continue
+		}
+		tc := h.pendingToolCalls[idx]
+		h.pendingToolCalls = append(h.pendingToolCalls[:idx], h.pendingToolCalls[idx+1:]...)
+		if !isInternalToolName(tc.Name) {
+			h.currentEvents = append(h.currentEvents, MessageEvent{
+				Type:     MsgTypeToolCall,
+				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
+			})
+		}
+		delete(h.toolResultChunks, resultKey)
 	}
 }
 
@@ -316,19 +439,31 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 	})
 
 	h.currentAgent = ""
+	h.currentRunPath = ""
+	h.currentMemberID = ""
+	h.currentMemberTool = ""
+	h.currentMemberName = ""
 }
 
 func (h *HistoryRecorder) finalizeCurrentMessage() {
-	if h.currentAgent == "" || len(h.currentEvents) == 0 {
+	if h.currentAgent == "" {
+		return
+	}
+	h.flushChunkedToolResults()
+	if len(h.currentEvents) == 0 {
 		return
 	}
 
 	h.messages = append(h.messages, AgentMessage{
-		AgentName: h.currentAgent,
-		RunPath:   h.currentRunPath,
-		StartTime: h.currentStartTime,
-		EndTime:   time.Now(),
-		Events:    h.currentEvents,
+		AgentName:      h.currentAgent,
+		RunPath:        h.currentRunPath,
+		MemberCallID:   h.currentMemberID,
+		MemberToolName: h.currentMemberTool,
+		MemberName:     h.currentMemberName,
+		IsMemberEvent:  h.currentMemberID != "",
+		StartTime:      h.currentStartTime,
+		EndTime:        time.Now(),
+		Events:         h.currentEvents,
 	})
 }
 
@@ -338,8 +473,13 @@ func (h *HistoryRecorder) FinalizeCurrent() {
 	defer h.mu.Unlock()
 	h.finalizeCurrentMessage()
 	h.currentAgent = ""
+	h.currentRunPath = ""
+	h.currentMemberID = ""
+	h.currentMemberTool = ""
+	h.currentMemberName = ""
 	h.currentEvents = make([]MessageEvent, 0)
 	h.pendingToolCalls = nil
+	h.toolResultChunks = make(map[string]string)
 }
 
 func (h *HistoryRecorder) GetMessages() []AgentMessage {
@@ -441,7 +581,11 @@ func (h *HistoryRecorder) Clear() {
 	h.currentEvents = make([]MessageEvent, 0)
 	h.currentAgent = ""
 	h.currentRunPath = ""
+	h.currentMemberID = ""
+	h.currentMemberTool = ""
+	h.currentMemberName = ""
 	h.pendingToolCalls = nil
+	h.toolResultChunks = make(map[string]string)
 	h.summary = ""
 	h.summarizedCount = 0
 }
@@ -518,11 +662,15 @@ func (h *HistoryRecorder) SaveToFile(filePath string) error {
 		tempMessages := make([]AgentMessage, len(h.messages))
 		copy(tempMessages, h.messages)
 		msg := AgentMessage{
-			AgentName: h.currentAgent,
-			RunPath:   h.currentRunPath,
-			StartTime: h.currentStartTime,
-			EndTime:   time.Now(),
-			Events:    h.currentEvents,
+			AgentName:      h.currentAgent,
+			RunPath:        h.currentRunPath,
+			MemberCallID:   h.currentMemberID,
+			MemberToolName: h.currentMemberTool,
+			MemberName:     h.currentMemberName,
+			IsMemberEvent:  h.currentMemberID != "",
+			StartTime:      h.currentStartTime,
+			EndTime:        time.Now(),
+			Events:         h.currentEvents,
 		}
 		tempMessages = append(tempMessages, msg)
 		return saveMessagesToFile(tempMessages, filePath)
@@ -574,7 +722,11 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	h.currentAgent = ""
 	h.currentEvents = make([]MessageEvent, 0)
 	h.currentRunPath = ""
+	h.currentMemberID = ""
+	h.currentMemberTool = ""
+	h.currentMemberName = ""
 	h.pendingToolCalls = nil
+	h.toolResultChunks = make(map[string]string)
 
 	return nil
 }
@@ -589,11 +741,15 @@ func (h *HistoryRecorder) SaveToMarkdownFile(filePath string) error {
 
 	if h.currentAgent != "" && len(h.currentEvents) > 0 {
 		msg := AgentMessage{
-			AgentName: h.currentAgent,
-			RunPath:   h.currentRunPath,
-			StartTime: h.currentStartTime,
-			EndTime:   time.Now(),
-			Events:    h.currentEvents,
+			AgentName:      h.currentAgent,
+			RunPath:        h.currentRunPath,
+			MemberCallID:   h.currentMemberID,
+			MemberToolName: h.currentMemberTool,
+			MemberName:     h.currentMemberName,
+			IsMemberEvent:  h.currentMemberID != "",
+			StartTime:      h.currentStartTime,
+			EndTime:        time.Now(),
+			Events:         h.currentEvents,
 		}
 		messages = append(messages, msg)
 	}

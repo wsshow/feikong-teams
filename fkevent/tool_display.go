@@ -2,31 +2,35 @@ package fkevent
 
 import (
 	"strings"
+	"sync"
 	"unicode"
 )
 
 const agentToolPrefix = "ask_"
 
-var agentToolLabels = map[string]string{
-	"coder":           "Coder",
-	"shell":           "Shell",
-	"writer":          "Writer",
-	"summarizer":      "Summarizer",
-	"researcher":      "Researcher",
-	"analyst":         "Analyst",
-	"remote":          "Remote",
-	"generalist":      "Generalist",
-	"tasker":          "Tasker",
-	"moderator":       "Moderator",
-	"coordinator":     "Coordinator",
-	"deep_researcher": "Deep Researcher",
-}
+var agentToolDisplays sync.Map
 
 type ToolDisplay struct {
 	Name        string
 	DisplayName string
 	Kind        string
 	Target      string
+}
+
+func RegisterAgentToolDisplay(toolName, displayName string) {
+	if toolName == "" {
+		return
+	}
+	target := displayName
+	if target == "" {
+		target = titleIdentifier(strings.TrimPrefix(toolName, agentToolPrefix))
+	}
+	agentToolDisplays.Store(toolName, ToolDisplay{
+		Name:        toolName,
+		DisplayName: "指派给 " + target,
+		Kind:        "agent",
+		Target:      target,
+	})
 }
 
 func FormatToolDisplay(name string) ToolDisplay {
@@ -36,18 +40,9 @@ func FormatToolDisplay(name string) ToolDisplay {
 		Kind:        "tool",
 	}
 
-	target, ok := strings.CutPrefix(name, agentToolPrefix)
-	if !ok {
-		return display
+	if value, ok := agentToolDisplays.Load(name); ok {
+		return value.(ToolDisplay)
 	}
-
-	label := agentToolLabels[target]
-	if label == "" {
-		label = titleIdentifier(target)
-	}
-	display.Kind = "agent"
-	display.Target = label
-	display.DisplayName = "指派给 " + label
 	return display
 }
 

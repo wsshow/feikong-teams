@@ -13,12 +13,14 @@ import (
 	"fkteams/agents/tasker"
 	"fkteams/common"
 	"fkteams/config"
+	"fkteams/fkevent"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 )
 
 var validToolNameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
@@ -51,7 +53,27 @@ func (a *agentToolNameAgent) Description(ctx context.Context) string {
 }
 
 func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
-	return a.inner.Run(ctx, input, opts...)
+	innerIter := a.inner.Run(ctx, input, opts...)
+	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+	scope := fkevent.MemberScope{
+		CallID:   compose.GetToolCallID(ctx),
+		ToolName: a.toolName,
+		Name:     a.displayName,
+	}
+
+	go func() {
+		defer gen.Close()
+		for {
+			event, ok := innerIter.Next()
+			if !ok {
+				return
+			}
+			fkevent.RegisterAgentEventScope(event, scope)
+			gen.Send(event)
+		}
+	}()
+
+	return iter
 }
 
 func agentToolName(name string, index int, used map[string]bool) string {
@@ -80,6 +102,7 @@ func buildAgentTools(ctx context.Context, subAgents []adk.Agent) []tool.BaseTool
 			toolName:    agentToolName(displayName, i, usedNames),
 			displayName: displayName,
 		}
+		fkevent.RegisterAgentToolDisplay(wrapped.toolName, displayName)
 		agentTools = append(agentTools, adk.NewAgentTool(ctx, wrapped))
 	}
 	return agentTools

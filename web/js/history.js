@@ -833,6 +833,139 @@ FKTeamsChat.prototype.checkAndLoadSessionHistory = async function (sessionId) {
   }
 };
 
+FKTeamsChat.prototype.isLegacyHistoryMemberMessage = function (msg) {
+  const name = msg?.agent_name || "";
+  return /^ask_[A-Za-z0-9_-]+$/.test(name) && name !== "ask_questions";
+};
+
+FKTeamsChat.prototype.isHistoryMemberMessage = function (msg) {
+  return !!(
+    msg &&
+    (msg.is_member_event ||
+      msg.member_call_id ||
+      msg.member_tool_name ||
+      this.isLegacyHistoryMemberMessage(msg))
+  );
+};
+
+FKTeamsChat.prototype.historyMemberLabel = function (msg) {
+  if (msg.member_name) return msg.member_name;
+  const raw = this.isLegacyHistoryMemberMessage(msg)
+    ? (msg.agent_name || "").slice(4)
+    : msg.agent_name || "Member";
+  return raw
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "Member";
+};
+
+FKTeamsChat.prototype.historyToolDisplay = function (tc) {
+  const display = this.getToolDisplay(tc);
+  if (display.kind === "agent" || !tc?.name || !/^ask_[A-Za-z0-9_-]+$/.test(tc.name) || tc.name === "ask_questions") {
+    return display;
+  }
+  const target = this.historyMemberLabel({ agent_name: tc.name });
+  return {
+    name: tc.name,
+    displayName: target ? `指派给 ${target}` : tc.name,
+    kind: "agent",
+    target,
+  };
+};
+
+FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
+  if (!messages || messages.length === 0) return;
+
+  const saved = {
+    currentMessageElement: this.currentMessageElement,
+    currentMessageElements: this.currentMessageElements,
+    pendingToolCalls: this.pendingToolCalls,
+    toolCallsByID: this.toolCallsByID,
+    toolCallsByIndex: this.toolCallsByIndex,
+    parallelPanel: this.parallelPanel,
+    parallelMemberCards: this.parallelMemberCards,
+    parallelMemberByAgent: this.parallelMemberByAgent,
+    parallelToolMemberByID: this.parallelToolMemberByID,
+    parallelMemberResultChunks: this.parallelMemberResultChunks,
+    parallelMemberInnerResultChunks: this.parallelMemberInnerResultChunks,
+    lastToolName: this.lastToolName,
+  };
+
+  this.currentMessageElement = null;
+  this.currentMessageElements = {};
+  this.pendingToolCalls = {};
+  this.toolCallsByID = {};
+  this.toolCallsByIndex = {};
+  this.parallelPanel = null;
+  this.parallelMemberCards = {};
+  this.parallelMemberByAgent = {};
+  this.parallelToolMemberByID = {};
+  this.parallelMemberResultChunks = {};
+  this.parallelMemberInnerResultChunks = {};
+  this.lastToolName = "";
+
+  messages.forEach((msg, index) => {
+    const key = "history:" + (msg.member_call_id || msg.start_time || index);
+    const label = this.historyMemberLabel(msg);
+    const entry = this.ensureMemberCard(key, label, label);
+    let hasError = false;
+
+    (msg.events || []).forEach((evt) => {
+      if (evt.type === "reasoning" && evt.content) {
+        this.appendMemberReasoning(entry, evt.content);
+        return;
+      }
+      if (evt.type === "text" && evt.content) {
+        this.appendMemberOutput(entry, evt.content);
+        return;
+      }
+      if (evt.type === "error" && evt.content) {
+        hasError = true;
+        this.appendMemberOutput(entry, "\n\n" + evt.content);
+        return;
+      }
+      if (evt.type === "tool_call" && evt.tool_call) {
+        const display = this.historyToolDisplay(evt.tool_call);
+        let op = "调用工具: " + display.displayName;
+        if (evt.tool_call.arguments) op += " 参数: " + evt.tool_call.arguments;
+        this.appendMemberOp(entry, op);
+        if (evt.tool_call.result) {
+          this.appendMemberOp(entry, "工具结果: " + this.summarizeMemberToolResult(evt.tool_call.result));
+        }
+        return;
+      }
+      if (evt.type === "action" && evt.action?.content) {
+        this.appendMemberOp(entry, evt.action.content);
+      }
+    });
+
+    this.updateMemberStatus(entry, hasError ? "error" : "done", hasError ? "失败" : "完成");
+    this.updateMemberDetailVisibility(entry);
+  });
+
+  this.updateParallelMembersHeader();
+  const panel = this.parallelPanel;
+  if (panel) {
+    panel.classList.add("parallel-members-history");
+    const title = panel.querySelector(".parallel-members-title");
+    if (title) title.textContent = messages.length > 1 ? "成员并行任务" : "成员任务";
+  }
+
+  this.currentMessageElement = saved.currentMessageElement;
+  this.currentMessageElements = saved.currentMessageElements;
+  this.pendingToolCalls = saved.pendingToolCalls;
+  this.toolCallsByID = saved.toolCallsByID;
+  this.toolCallsByIndex = saved.toolCallsByIndex;
+  this.parallelPanel = saved.parallelPanel;
+  this.parallelMemberCards = saved.parallelMemberCards;
+  this.parallelMemberByAgent = saved.parallelMemberByAgent;
+  this.parallelToolMemberByID = saved.parallelToolMemberByID;
+  this.parallelMemberResultChunks = saved.parallelMemberResultChunks;
+  this.parallelMemberInnerResultChunks = saved.parallelMemberInnerResultChunks;
+  this.lastToolName = saved.lastToolName;
+};
+
 FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
   // 隐藏loading
   this.hideChatLoading();
@@ -854,133 +987,27 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
 
   // 渲染历史消息
   if (event.messages && event.messages.length > 0) {
-    event.messages.forEach((msg, index) => {
+    for (let index = 0; index < event.messages.length; index++) {
+      const msg = event.messages[index];
       // 检查是否是用户消息
       if (msg.agent_name === "用户") {
         // 渲染用户消息
         this.renderHistoryUserMessage(msg);
-        return;
+        continue;
       }
 
-      const timeInfo = {
-        startTime: msg.start_time,
-        endTime: msg.end_time,
-      };
-
-      // 如果有 events 数组，按时间顺序渲染每个事件
-      if (msg.events && msg.events.length > 0) {
-        let currentMessageEl = null;
-        let currentContent = "";
-
-        msg.events.forEach((evt) => {
-          switch (evt.type) {
-            case "reasoning":
-              // 渲染推理/思考内容
-              if (!currentMessageEl) {
-                currentMessageEl = this.createAssistantMessage(
-                  msg.agent_name,
-                  timeInfo,
-                );
-              }
-              const reasoningBodyEl =
-                currentMessageEl.querySelector(".message-body");
-              if (reasoningBodyEl && evt.content) {
-                const indicator = reasoningBodyEl.querySelector(
-                  ".streaming-indicator",
-                );
-                if (indicator) indicator.remove();
-                let reasoningBlock =
-                  reasoningBodyEl.querySelector(".reasoning-block");
-                if (!reasoningBlock) {
-                  reasoningBlock = document.createElement("div");
-                  reasoningBlock.className = "reasoning-block";
-                  reasoningBlock.innerHTML = `
-                                        <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
-                                            <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
-                                            <span class="reasoning-title">思考过程</span>
-                                            <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                                        </div>
-                                        <div class="reasoning-content">${this.renderMarkdown(evt.content)}</div>
-                                    `;
-                  reasoningBodyEl.prepend(reasoningBlock);
-                }
-              }
-              break;
-
-            case "text":
-              // 累积文本内容
-              currentContent += evt.content;
-              // 如果还没有创建消息元素，创建一个
-              if (!currentMessageEl) {
-                currentMessageEl = this.createAssistantMessage(
-                  msg.agent_name,
-                  timeInfo,
-                );
-              }
-              // 更新消息体
-              const bodyEl = currentMessageEl.querySelector(".message-body");
-              if (bodyEl) {
-                const indicator = bodyEl.querySelector(".streaming-indicator");
-                if (indicator) indicator.remove();
-                bodyEl.setAttribute("data-raw", currentContent);
-                bodyEl.setAttribute("data-fn-done", "1");
-                const existingReasoning =
-                  bodyEl.querySelector(".reasoning-block");
-                if (existingReasoning) {
-                  let textContainer = bodyEl.querySelector(
-                    ".message-text-content",
-                  );
-                  if (!textContainer) {
-                    textContainer = document.createElement("div");
-                    textContainer.className = "message-text-content";
-                    bodyEl.appendChild(textContainer);
-                  }
-                  textContainer.innerHTML = this.renderMarkdown(currentContent);
-                } else {
-                  bodyEl.innerHTML = this.renderMarkdown(currentContent);
-                }
-              }
-              break;
-
-            case "tool_call":
-              // 渲染单个工具调用
-              if (evt.tool_call) {
-                this.renderSingleToolCall(evt.tool_call);
-              }
-              // 重置当前消息元素和内容，后续文本会创建新卡片
-              currentMessageEl = null;
-              currentContent = "";
-              break;
-
-            case "action":
-              // 渲染单个 action 事件
-              if (evt.action) {
-                this.renderSingleAction(evt.action, msg.agent_name);
-              }
-              break;
-          }
-        });
+      if (this.isHistoryMemberMessage(msg)) {
+        const group = [];
+        while (index < event.messages.length && this.isHistoryMemberMessage(event.messages[index])) {
+          group.push(event.messages[index]);
+          index++;
+        }
+        index--;
+        this.renderHistoryMemberGroup(group);
       } else {
-        // 兼容旧格式（没有 events 字段的历史记录）
-        const messageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
-        const bodyEl = messageEl.querySelector(".message-body");
-        if (bodyEl && msg.content) {
-          bodyEl.setAttribute("data-raw", msg.content);
-          bodyEl.setAttribute("data-fn-done", "1");
-          bodyEl.innerHTML = this.renderMarkdown(msg.content);
-        }
-
-        // 渲染工具调用（如果有）
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
-          this.renderHistoryToolCalls(msg.tool_calls);
-        }
-
-        // 渲染 action 事件（如果有）
-        if (msg.actions && msg.actions.length > 0) {
-          this.renderHistoryActions(msg.actions, msg.agent_name);
-        }
+        this.renderHistoryAgentMessage(msg);
       }
-    });
+    }
   }
 
   this.scrollToBottom();
@@ -991,6 +1018,128 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
     this.setCurrentAgent(agent || null, false);
   } else {
     this.setCurrentAgent(null, false);
+  }
+};
+
+FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
+  const timeInfo = {
+    startTime: msg.start_time,
+    endTime: msg.end_time,
+  };
+
+  // 如果有 events 数组，按时间顺序渲染每个事件
+  if (msg.events && msg.events.length > 0) {
+    let currentMessageEl = null;
+    let currentContent = "";
+
+    msg.events.forEach((evt) => {
+      switch (evt.type) {
+        case "reasoning":
+          // 渲染推理/思考内容
+          if (!currentMessageEl) {
+            currentMessageEl = this.createAssistantMessage(
+              msg.agent_name,
+              timeInfo,
+            );
+          }
+          const reasoningBodyEl =
+            currentMessageEl.querySelector(".message-body");
+          if (reasoningBodyEl && evt.content) {
+            const indicator = reasoningBodyEl.querySelector(
+              ".streaming-indicator",
+            );
+            if (indicator) indicator.remove();
+            let reasoningBlock =
+              reasoningBodyEl.querySelector(".reasoning-block");
+            if (!reasoningBlock) {
+              reasoningBlock = document.createElement("div");
+              reasoningBlock.className = "reasoning-block";
+              reasoningBlock.innerHTML = `
+                                <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+                                    <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
+                                    <span class="reasoning-title">思考过程</span>
+                                    <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                </div>
+                                <div class="reasoning-content">${this.renderMarkdown(evt.content)}</div>
+                            `;
+              reasoningBodyEl.prepend(reasoningBlock);
+            }
+          }
+          break;
+
+        case "text":
+          // 累积文本内容
+          currentContent += evt.content;
+          // 如果还没有创建消息元素，创建一个
+          if (!currentMessageEl) {
+            currentMessageEl = this.createAssistantMessage(
+              msg.agent_name,
+              timeInfo,
+            );
+          }
+          // 更新消息体
+          const bodyEl = currentMessageEl.querySelector(".message-body");
+          if (bodyEl) {
+            const indicator = bodyEl.querySelector(".streaming-indicator");
+            if (indicator) indicator.remove();
+            bodyEl.setAttribute("data-raw", currentContent);
+            bodyEl.setAttribute("data-fn-done", "1");
+            const existingReasoning =
+              bodyEl.querySelector(".reasoning-block");
+            if (existingReasoning) {
+              let textContainer = bodyEl.querySelector(
+                ".message-text-content",
+              );
+              if (!textContainer) {
+                textContainer = document.createElement("div");
+                textContainer.className = "message-text-content";
+                bodyEl.appendChild(textContainer);
+              }
+              textContainer.innerHTML = this.renderMarkdown(currentContent);
+            } else {
+              bodyEl.innerHTML = this.renderMarkdown(currentContent);
+            }
+          }
+          break;
+
+        case "tool_call":
+          // 渲染单个工具调用
+          if (evt.tool_call) {
+            this.renderSingleToolCall(evt.tool_call);
+          }
+          // 重置当前消息元素和内容，后续文本会创建新卡片
+          currentMessageEl = null;
+          currentContent = "";
+          break;
+
+        case "action":
+          // 渲染单个 action 事件
+          if (evt.action) {
+            this.renderSingleAction(evt.action, msg.agent_name);
+          }
+          break;
+      }
+    });
+    return;
+  }
+
+  // 兼容旧格式（没有 events 字段的历史记录）
+  const messageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
+  const bodyEl = messageEl.querySelector(".message-body");
+  if (bodyEl && msg.content) {
+    bodyEl.setAttribute("data-raw", msg.content);
+    bodyEl.setAttribute("data-fn-done", "1");
+    bodyEl.innerHTML = this.renderMarkdown(msg.content);
+  }
+
+  // 渲染工具调用（如果有）
+  if (msg.tool_calls && msg.tool_calls.length > 0) {
+    this.renderHistoryToolCalls(msg.tool_calls);
+  }
+
+  // 渲染 action 事件（如果有）
+  if (msg.actions && msg.actions.length > 0) {
+    this.renderHistoryActions(msg.actions, msg.agent_name);
   }
 };
 
@@ -1058,7 +1207,7 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
 
   // 渲染工具调用
   const toolCallEl = document.createElement("div");
-  const toolDisplay = this.getToolDisplay(tc);
+  const toolDisplay = this.historyToolDisplay(tc);
   toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
 
   let argsDisplay = tc.arguments || "无参数";

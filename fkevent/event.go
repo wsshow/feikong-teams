@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -27,6 +28,8 @@ type callbackKey struct{}
 type nonInteractiveKey struct{}
 
 const internalContinueToolName = "continue_output"
+
+var globalEventSequence int64
 
 func isInternalToolName(name string) bool {
 	return name == internalContinueToolName
@@ -52,6 +55,73 @@ func filterVisibleToolCalls(toolCalls []schema.ToolCall) []schema.ToolCall {
 		return nil
 	}
 	return visible
+}
+
+func intPtr(v int) *int {
+	return &v
+}
+
+func normalizeEvent(event Event) Event {
+	if event.Sequence == 0 {
+		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
+	}
+	if event.EventID == "" {
+		event.EventID = fmt.Sprintf("evt_%d", event.Sequence)
+	}
+	if event.CreatedAt == "" {
+		event.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if event.MemberCallID != "" {
+		event.IsMemberEvent = true
+	}
+	if event.Phase == "" {
+		event.Phase = defaultEventPhase(event.Type)
+	}
+	if !event.IsPartial && isPartialEventType(event.Type) {
+		event.IsPartial = true
+	}
+	if !event.IsFinal && isFinalEventType(event.Type) {
+		event.IsFinal = true
+	}
+	return event
+}
+
+// NormalizeEvent 补齐事件协议字段，供直接记录事件的调用方复用。
+func NormalizeEvent(event Event) Event {
+	return normalizeEvent(event)
+}
+
+func defaultEventPhase(eventType EventType) EventPhase {
+	switch eventType {
+	case EventToolCallsPreparing:
+		return EventPhaseStart
+	case EventReasoningChunk, EventStreamChunk, EventToolResultChunk, EventToolCallsArgsDelta:
+		return EventPhaseDelta
+	case EventMessage, EventToolResult, EventToolCalls:
+		return EventPhaseComplete
+	case EventError:
+		return EventPhaseError
+	default:
+		return EventPhaseInfo
+	}
+}
+
+func isPartialEventType(eventType EventType) bool {
+	switch eventType {
+	case EventReasoningChunk, EventStreamChunk, EventToolResultChunk, EventToolCallsArgsDelta, EventToolCallsPreparing:
+		return true
+	default:
+		return false
+	}
+}
+
+func isFinalEventType(eventType EventType) bool {
+	switch eventType {
+	case EventMessage, EventToolResult, EventToolCalls, EventError:
+		return true
+	default:
+		return false
+	}
 }
 
 // WithCallback 将事件回调绑定到 context
@@ -80,27 +150,34 @@ func getCallback(ctx context.Context) func(Event) error {
 
 // ProcessAgentEvent 处理智能体事件，按顺序分发动作和消息输出
 func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
+	scope, cleanupScope := consumeAgentEventScope(event)
+	defer cleanupScope()
+
 	if event.Err != nil {
 		if isContextCanceled(ctx, event.Err) {
 			return nil
 		}
-		return handleEvent(ctx, Event{
+		nEvent := Event{
 			Type:      EventError,
+			Phase:     EventPhaseError,
+			IsFinal:   true,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			Error:     event.Err.Error(),
-		})
+		}
+		scope.apply(&nEvent)
+		return handleEvent(ctx, nEvent)
 	}
 
 	// 先处理动作（如 transfer），再处理输出（如工具结果），保证显示顺序正确
 	if event.Action != nil {
-		if err := handleAction(ctx, event); err != nil {
+		if err := handleAction(ctx, event, scope); err != nil {
 			return err
 		}
 	}
 
 	if event.Output != nil && event.Output.MessageOutput != nil {
-		if err := handleMessageOutput(ctx, event); err != nil {
+		if err := handleMessageOutput(ctx, event, scope); err != nil {
 			return err
 		}
 	}
@@ -109,22 +186,22 @@ func ProcessAgentEvent(ctx context.Context, event *adk.AgentEvent) error {
 }
 
 // handleMessageOutput 处理消息输出，区分完整消息和流式消息
-func handleMessageOutput(ctx context.Context, event *adk.AgentEvent) error {
+func handleMessageOutput(ctx context.Context, event *adk.AgentEvent, scope MemberScope) error {
 	msgOutput := event.Output.MessageOutput
 
 	if msg := msgOutput.Message; msg != nil {
-		return handleRegularMessage(ctx, event, msg)
+		return handleRegularMessage(ctx, event, msg, scope)
 	}
 
 	if stream := msgOutput.MessageStream; stream != nil {
-		return handleStreamingMessage(ctx, event, stream)
+		return handleStreamingMessage(ctx, event, stream, scope)
 	}
 
 	return nil
 }
 
 // handleRegularMessage 处理非流式的完整消息
-func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schema.Message) error {
+func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schema.Message, scope MemberScope) error {
 	eventType := EventMessage
 	if msg.Role == schema.Tool {
 		if isInternalToolName(msg.ToolName) || isInternalContinueContent(msg.Content) {
@@ -139,6 +216,7 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 		RunPath:          formatRunPath(event.RunPath),
 		Content:          msg.Content,
 		ReasoningContent: msg.ReasoningContent,
+		ToolName:         msg.ToolName,
 		ToolCallID:       msg.ToolCallID,
 	}
 
@@ -149,6 +227,7 @@ func handleRegularMessage(ctx context.Context, event *adk.AgentEvent, msg *schem
 		}
 	}
 
+	scope.apply(&nEvent)
 	return handleEvent(ctx, nEvent)
 }
 
@@ -175,7 +254,7 @@ func newStreamState() *streamState {
 }
 
 // handleStreamingMessage 处理流式消息，通过 goroutine 异步接收以支持 context 取消
-func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message]) error {
+func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *schema.StreamReader[*schema.Message], scope MemberScope) error {
 	ss := newStreamState()
 
 	type recvResult struct {
@@ -210,37 +289,45 @@ func handleStreamingMessage(ctx context.Context, event *adk.AgentEvent, stream *
 					cancelled = true
 					break
 				}
-				return handleEvent(ctx, Event{
+				nEvent := Event{
 					Type:      EventError,
+					Phase:     EventPhaseError,
+					IsFinal:   true,
 					AgentName: event.AgentName,
 					RunPath:   formatRunPath(event.RunPath),
 					Error:     fmt.Sprintf("stream error: %v", r.err),
-				})
+				}
+				scope.apply(&nEvent)
+				return handleEvent(ctx, nEvent)
 			}
-			if err := processStreamChunk(ctx, event, r.chunk, ss); err != nil {
+			if err := processStreamChunk(ctx, event, r.chunk, ss, scope); err != nil {
 				return err
 			}
 		}
 	}
 
-	flushToolArgsBuffer(ctx, event, ss)
+	flushToolArgsBuffer(ctx, event, ss, scope)
 
 	if ctx.Err() != nil {
 		return nil
 	}
 
-	return emitMergedToolCalls(ctx, event, ss)
+	return emitMergedToolCalls(ctx, event, ss, scope)
 }
 
 // processStreamChunk 处理单个流式消息分片（推理内容、文本内容、工具调用）
-func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState) error {
+func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState, scope MemberScope) error {
 	if chunk.ReasoningContent != "" {
-		if err := handleEvent(ctx, Event{
+		nEvent := Event{
 			Type:      EventReasoningChunk,
+			Phase:     EventPhaseDelta,
+			IsPartial: true,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			Content:   chunk.ReasoningContent,
-		}); err != nil {
+		}
+		scope.apply(&nEvent)
+		if err := handleEvent(ctx, nEvent); err != nil {
 			return err
 		}
 	}
@@ -253,19 +340,24 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 		if chunk.Role == schema.Tool {
 			eventType = EventToolResultChunk
 		}
-		if err := handleEvent(ctx, Event{
+		nEvent := Event{
 			Type:       eventType,
+			Phase:      EventPhaseDelta,
+			IsPartial:  true,
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
 			Content:    chunk.Content,
+			ToolName:   chunk.ToolName,
 			ToolCallID: chunk.ToolCallID,
-		}); err != nil {
+		}
+		scope.apply(&nEvent)
+		if err := handleEvent(ctx, nEvent); err != nil {
 			return err
 		}
 	}
 
 	if len(chunk.ToolCalls) > 0 {
-		if err := collectToolCallChunks(ctx, event, chunk, ss); err != nil {
+		if err := collectToolCallChunks(ctx, event, chunk, ss, scope); err != nil {
 			return err
 		}
 	}
@@ -274,7 +366,7 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 }
 
 // collectToolCallChunks 收集工具调用分片，节流发送参数增量
-func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState) error {
+func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *schema.Message, ss *streamState, scope MemberScope) error {
 	for _, tc := range chunk.ToolCalls {
 		if tc.Index == nil {
 			continue
@@ -292,8 +384,10 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 
 		if !ss.toolCallStarted[idx] && tc.Function.Name != "" {
 			ss.toolCallStarted[idx] = true
-			if err := handleEvent(ctx, Event{
+			nEvent := Event{
 				Type:      EventToolCallsPreparing,
+				Phase:     EventPhaseStart,
+				IsPartial: true,
 				AgentName: event.AgentName,
 				RunPath:   formatRunPath(event.RunPath),
 				ToolCalls: []schema.ToolCall{{
@@ -301,7 +395,12 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 					Index:    tc.Index,
 					Function: schema.FunctionCall{Name: tc.Function.Name},
 				}},
-			}); err != nil {
+				ToolName:      tc.Function.Name,
+				ToolCallID:    tc.ID,
+				ToolCallIndex: tc.Index,
+			}
+			scope.apply(&nEvent)
+			if err := handleEvent(ctx, nEvent); err != nil {
 				return err
 			}
 		}
@@ -334,14 +433,19 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 			if ss.internalToolCall[idx] {
 				continue
 			}
-			if err := handleEvent(ctx, Event{
-				Type:       EventToolCallsArgsDelta,
-				AgentName:  event.AgentName,
-				RunPath:    formatRunPath(event.RunPath),
-				Content:    delta,
-				Detail:     fmt.Sprintf("%d", idx),
-				ToolCallID: ss.toolCallIDs[idx],
-			}); err != nil {
+			nEvent := Event{
+				Type:          EventToolCallsArgsDelta,
+				Phase:         EventPhaseDelta,
+				IsPartial:     true,
+				AgentName:     event.AgentName,
+				RunPath:       formatRunPath(event.RunPath),
+				Content:       delta,
+				Detail:        fmt.Sprintf("%d", idx),
+				ToolCallID:    ss.toolCallIDs[idx],
+				ToolCallIndex: intPtr(idx),
+			}
+			scope.apply(&nEvent)
+			if err := handleEvent(ctx, nEvent); err != nil {
 				return err
 			}
 		}
@@ -353,7 +457,7 @@ func collectToolCallChunks(ctx context.Context, event *adk.AgentEvent, chunk *sc
 }
 
 // flushToolArgsBuffer 发送最后一批缓冲的参数增量
-func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamState) {
+func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamState, scope MemberScope) {
 	for idx, delta := range ss.toolArgsBuffer {
 		if delta == "" {
 			continue
@@ -361,19 +465,24 @@ func flushToolArgsBuffer(ctx context.Context, event *adk.AgentEvent, ss *streamS
 		if ss.internalToolCall[idx] {
 			continue
 		}
-		_ = handleEvent(ctx, Event{
-			Type:       EventToolCallsArgsDelta,
-			AgentName:  event.AgentName,
-			RunPath:    formatRunPath(event.RunPath),
-			Content:    delta,
-			Detail:     fmt.Sprintf("%d", idx),
-			ToolCallID: ss.toolCallIDs[idx],
-		})
+		nEvent := Event{
+			Type:          EventToolCallsArgsDelta,
+			Phase:         EventPhaseDelta,
+			IsPartial:     true,
+			AgentName:     event.AgentName,
+			RunPath:       formatRunPath(event.RunPath),
+			Content:       delta,
+			Detail:        fmt.Sprintf("%d", idx),
+			ToolCallID:    ss.toolCallIDs[idx],
+			ToolCallIndex: intPtr(idx),
+		}
+		scope.apply(&nEvent)
+		_ = handleEvent(ctx, nEvent)
 	}
 }
 
 // emitMergedToolCalls 合并所有工具调用分片，按 index 排序后统一发送
-func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamState) error {
+func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamState, scope MemberScope) error {
 	indices := make([]int, 0, len(ss.toolCallsMap))
 	for idx := range ss.toolCallsMap {
 		indices = append(indices, idx)
@@ -390,29 +499,36 @@ func emitMergedToolCalls(ctx context.Context, event *adk.AgentEvent, ss *streamS
 	}
 
 	if len(allToolCalls) > 0 {
-		return handleEvent(ctx, Event{
+		nEvent := Event{
 			Type:      EventToolCalls,
+			Phase:     EventPhaseComplete,
+			IsFinal:   true,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),
 			ToolCalls: allToolCalls,
-		})
+		}
+		scope.apply(&nEvent)
+		return handleEvent(ctx, nEvent)
 	}
 
 	return nil
 }
 
 // handleAction 处理智能体动作事件（转发、中断、退出）
-func handleAction(ctx context.Context, event *adk.AgentEvent) error {
+func handleAction(ctx context.Context, event *adk.AgentEvent, scope MemberScope) error {
 	action := event.Action
 
 	if action.TransferToAgent != nil {
-		return handleEvent(ctx, Event{
+		nEvent := Event{
 			Type:       EventAction,
+			Phase:      EventPhaseInfo,
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
 			ActionType: ActionTransfer,
 			Content:    fmt.Sprintf("Transfer to agent: %s", action.TransferToAgent.DestAgentName),
-		})
+		}
+		scope.apply(&nEvent)
+		return handleEvent(ctx, nEvent)
 	}
 
 	if action.Interrupted != nil {
@@ -422,26 +538,33 @@ func handleAction(ctx context.Context, event *adk.AgentEvent) error {
 				content = stringer.String()
 			}
 
-			if err := handleEvent(ctx, Event{
+			nEvent := Event{
 				Type:       EventAction,
+				Phase:      EventPhaseInfo,
 				AgentName:  event.AgentName,
 				RunPath:    formatRunPath(event.RunPath),
 				ActionType: ActionInterrupted,
 				Content:    content,
-			}); err != nil {
+			}
+			scope.apply(&nEvent)
+			if err := handleEvent(ctx, nEvent); err != nil {
 				return err
 			}
 		}
 	}
 
 	if action.Exit {
-		return handleEvent(ctx, Event{
+		nEvent := Event{
 			Type:       EventAction,
+			Phase:      EventPhaseComplete,
+			IsFinal:    true,
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
 			ActionType: ActionExit,
 			Content:    "Agent execution completed",
-		})
+		}
+		scope.apply(&nEvent)
+		return handleEvent(ctx, nEvent)
 	}
 
 	return nil
@@ -461,6 +584,7 @@ func isContextCanceled(ctx context.Context, err error) bool {
 
 // handleEvent 分发事件到 context 中的回调，无回调时仅打印
 func handleEvent(ctx context.Context, event Event) error {
+	event = normalizeEvent(event)
 	if cb := getCallback(ctx); cb != nil {
 		return cb(event)
 	}

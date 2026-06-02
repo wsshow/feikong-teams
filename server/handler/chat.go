@@ -302,6 +302,24 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 		"type":       event.Type,
 		"agent_name": event.AgentName,
 	}
+	if event.EventID != "" {
+		result["event_id"] = event.EventID
+	}
+	if event.Sequence != 0 {
+		result["sequence"] = event.Sequence
+	}
+	if event.CreatedAt != "" {
+		result["created_at"] = event.CreatedAt
+	}
+	if event.Phase != "" {
+		result["phase"] = event.Phase
+	}
+	if event.IsPartial {
+		result["is_partial"] = true
+	}
+	if event.IsFinal {
+		result["is_final"] = true
+	}
 	if event.RunPath != "" {
 		result["run_path"] = event.RunPath
 	}
@@ -341,6 +359,24 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	}
 	if event.ToolCallID != "" {
 		result["tool_call_id"] = event.ToolCallID
+	}
+	if event.ToolName != "" {
+		result["tool_name"] = event.ToolName
+	}
+	if event.ToolCallIndex != nil {
+		result["tool_call_index"] = *event.ToolCallIndex
+	}
+	if event.IsMemberEvent {
+		result["is_member_event"] = true
+	}
+	if event.MemberCallID != "" {
+		result["member_call_id"] = event.MemberCallID
+	}
+	if event.MemberToolName != "" {
+		result["member_tool_name"] = event.MemberToolName
+	}
+	if event.MemberName != "" {
+		result["member_name"] = event.MemberName
 	}
 	if event.Detail != "" {
 		result["detail"] = event.Detail

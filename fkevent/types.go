@@ -19,6 +19,17 @@ const (
 	EventDispatchProgress   EventType = "dispatch_progress"
 )
 
+// EventPhase 描述事件在生命周期中的阶段。
+type EventPhase string
+
+const (
+	EventPhaseStart    EventPhase = "start"
+	EventPhaseDelta    EventPhase = "delta"
+	EventPhaseComplete EventPhase = "complete"
+	EventPhaseError    EventPhase = "error"
+	EventPhaseInfo     EventPhase = "info"
+)
+
 // ActionType 动作类型（EventAction 事件下的子类型）
 type ActionType string
 
@@ -51,7 +62,13 @@ const (
 
 // Event 统一的事件结构，承载各类智能体输出
 type Event struct {
+	EventID          string            `json:"event_id,omitempty"`
+	Sequence         int64             `json:"sequence,omitempty"`
+	CreatedAt        string            `json:"created_at,omitempty"`
 	Type             EventType         `json:"type"`
+	Phase            EventPhase        `json:"phase,omitempty"`
+	IsPartial        bool              `json:"is_partial,omitempty"`
+	IsFinal          bool              `json:"is_final,omitempty"`
 	AgentName        string            `json:"agent_name,omitempty"`
 	RunPath          string            `json:"run_path,omitempty"`
 	Content          string            `json:"content,omitempty"`
@@ -59,6 +76,12 @@ type Event struct {
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 推理模型思考内容
 	ToolCalls        []schema.ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string            `json:"tool_call_id,omitempty"` // 工具结果对应的调用 ID
+	ToolName         string            `json:"tool_name,omitempty"`
+	ToolCallIndex    *int              `json:"tool_call_index,omitempty"`
+	IsMemberEvent    bool              `json:"is_member_event,omitempty"`
+	MemberCallID     string            `json:"member_call_id,omitempty"`
+	MemberToolName   string            `json:"member_tool_name,omitempty"`
+	MemberName       string            `json:"member_name,omitempty"`
 	ActionType       ActionType        `json:"action_type,omitempty"`
 	Error            string            `json:"error,omitempty"`
 }

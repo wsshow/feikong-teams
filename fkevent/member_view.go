@@ -15,6 +15,7 @@ import (
 
 type memberViewEvent struct {
 	Key     string
+	NewKey  string
 	Name    string
 	Type    string
 	Content string
@@ -39,7 +40,7 @@ type memberCard struct {
 	name       string
 	status     string
 	operations []string
-	content    strings.Builder
+	content    string
 }
 
 type memberModel struct {
@@ -128,6 +129,51 @@ func (m *memberModel) applyEvent(e memberViewEvent) {
 	if e.Key == "" {
 		return
 	}
+	if e.Type == "rename" && e.NewKey != "" {
+		if i, ok := m.indexes[e.Key]; ok {
+			if existing, exists := m.indexes[e.NewKey]; exists && existing != i {
+				dst := &m.members[existing]
+				src := m.members[i]
+				newExisting := existing
+				if existing > i {
+					newExisting = existing - 1
+				}
+				if e.Name != "" {
+					dst.name = e.Name
+				}
+				if dst.status == "waiting" || src.status == "error" || (src.status == "done" && dst.status != "error") {
+					dst.status = src.status
+				}
+				dst.operations = append(dst.operations, src.operations...)
+				if src.content != "" {
+					dst.content += src.content
+				}
+				m.members = append(m.members[:i], m.members[i+1:]...)
+				delete(m.indexes, e.Key)
+				for key, idx := range m.indexes {
+					if idx > i {
+						m.indexes[key] = idx - 1
+					}
+				}
+				if m.cursor >= len(m.members) {
+					m.cursor = len(m.members) - 1
+				}
+				if m.expanded == i {
+					m.expanded = newExisting
+				} else if m.expanded > i {
+					m.expanded--
+				}
+				return
+			}
+			delete(m.indexes, e.Key)
+			m.indexes[e.NewKey] = i
+			m.members[i].key = e.NewKey
+			if e.Name != "" {
+				m.members[i].name = e.Name
+			}
+		}
+		return
+	}
 	i, ok := m.indexes[e.Key]
 	if !ok {
 		i = len(m.members)
@@ -151,19 +197,19 @@ func (m *memberModel) applyEvent(e memberViewEvent) {
 			card.operations = append(card.operations, e.Content)
 		}
 	case "content":
-		card.content.WriteString(e.Content)
+		card.content += e.Content
 	case "done":
 		card.status = "done"
 		if e.Content != "" {
-			card.content.WriteString(e.Content)
+			card.content += e.Content
 		}
 	case "error":
 		card.status = "error"
 		if e.Content != "" {
-			if card.content.Len() > 0 {
-				card.content.WriteString("\n")
+			if card.content != "" {
+				card.content += "\n"
 			}
-			card.content.WriteString("错误: " + e.Content)
+			card.content += "错误: " + e.Content
 		}
 	}
 }
@@ -252,7 +298,7 @@ func (m memberModel) View() tea.View {
 
 func (m memberModel) renderCollapsed(i, w int) string {
 	card := m.members[i]
-	selected := i == m.cursor
+	selected := !m.done && i == m.cursor
 
 	prefix := "  "
 	if selected {
@@ -262,8 +308,8 @@ func (m memberModel) renderCollapsed(i, w int) string {
 	icon := memberStatusIcon(card.status)
 	title := fmt.Sprintf("%s%s %s", prefix, memberStatusColor(card.status).Render(icon), card.name)
 
-	if card.content.Len() > 0 {
-		preview := strings.TrimSpace(card.content.String())
+	if card.content != "" {
+		preview := strings.TrimSpace(card.content)
 		lines := strings.Split(preview, "\n")
 		if len(lines) > 0 && lines[0] != "" {
 			title += "\n" + memberDimStyle.Render("  "+truncateString(lines[0], 120))
@@ -296,7 +342,7 @@ func (m memberModel) renderExpanded(i, w int) string {
 	var detail strings.Builder
 	detail.WriteString(fmt.Sprintf("▼ %s %s\n", memberStatusColor(card.status).Render(memberStatusIcon(card.status)), card.name))
 
-	output := strings.TrimSpace(card.content.String())
+	output := strings.TrimSpace(card.content)
 	if output != "" {
 		lines := strings.Split(output, "\n")
 		maxVisible := 15

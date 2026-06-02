@@ -349,6 +349,7 @@ type replyCollector struct {
 	mu           sync.Mutex
 	pendingParts []string                   // 当前智能体的累积流式文本
 	pendingCalls map[string]pendingToolCall // 待匹配结果的工具调用（按 ID 索引）
+	resultChunks map[string]string          // 待合并的流式工具结果
 	currentAgent string                     // 当前流式响应的智能体
 	replied      bool                       // 是否已发送过任何回复
 }
@@ -365,6 +366,7 @@ func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector
 		channelName:  channelName,
 		chatID:       chatID,
 		pendingCalls: make(map[string]pendingToolCall),
+		resultChunks: make(map[string]string),
 	}
 }
 
@@ -373,10 +375,12 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 	switch event.Type {
 	case fkevent.EventMessage:
 		// 非流式完整消息：先 flush 累积文本，再直接发送
+		rc.flushToolResultChunks()
 		rc.flush()
 		rc.send(event.Content)
 	case fkevent.EventStreamChunk:
 		// 流式文本块：累积，检测到 agent 切换时 flush
+		rc.flushToolResultChunks()
 		rc.mu.Lock()
 		if event.AgentName != rc.currentAgent && rc.currentAgent != "" {
 			rc.mu.Unlock()
@@ -413,14 +417,54 @@ func (rc *replyCollector) handleEvent(event fkevent.Event) error {
 		if found {
 			delete(rc.pendingCalls, event.ToolCallID)
 		}
+		content := event.Content
+		if chunked := rc.resultChunks[event.ToolCallID]; chunked != "" {
+			if content == "" || strings.Contains(chunked, content) {
+				content = chunked
+			} else {
+				content = chunked + content
+			}
+			delete(rc.resultChunks, event.ToolCallID)
+		}
 		rc.mu.Unlock()
 		if found {
-			result := truncateText(event.Content, 200)
+			result := truncateText(content, 200)
 			summary := "[" + call.name + "] " + call.args + "\n-> " + result
 			rc.send(summary)
 		}
+	case fkevent.EventToolResultChunk:
+		rc.mu.Lock()
+		if event.ToolCallID != "" {
+			rc.resultChunks[event.ToolCallID] += event.Content
+		}
+		rc.mu.Unlock()
 	}
 	return nil
+}
+
+func (rc *replyCollector) flushToolResultChunks() {
+	rc.mu.Lock()
+	items := make([]struct {
+		call   pendingToolCall
+		result string
+	}, 0)
+	for callID, content := range rc.resultChunks {
+		call, found := rc.pendingCalls[callID]
+		delete(rc.resultChunks, callID)
+		if found {
+			delete(rc.pendingCalls, callID)
+			items = append(items, struct {
+				call   pendingToolCall
+				result string
+			}{call: call, result: content})
+		}
+	}
+	rc.mu.Unlock()
+	for _, item := range items {
+		result := truncateText(item.result, 200)
+		summary := "[" + item.call.name + "] " + item.call.args + "\n-> " + result
+		rc.send(summary)
+	}
 }
 
 // flush 发送累积的流式文本
