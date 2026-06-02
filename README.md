@@ -192,6 +192,7 @@ docker compose up -d
 | [长期记忆](./docs/memory.md)            | 记忆提取、存储、检索机制                 |
 | [多模态支持](./docs/multimodal.md)      | 图片、音频、视频等多模态输入             |
 | [推理模型支持](./docs/reasoning.md)     | 推理/思考模型的流式输出                  |
+| [事件协议](./docs/events.md)            | CLI、Web、Stream、通道共用事件约定       |
 | [部署指南](./docs/deployment.md)        | 构建、Docker 部署                        |
 | [安全说明](./docs/security.md)          | 安全机制和注意事项                       |
 | [API 文档](./docs/api/)                 | HTTP/WebSocket API 接口                  |
