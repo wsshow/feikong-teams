@@ -111,7 +111,7 @@ func (h *CommandHandler) Handle(input string) CommandResult {
 
 	case "save_chat_history":
 		recorder := getCliRecorder()
-		historyFile := filepath.Join(CLIHistoryDir, activeSessionID, "history.json")
+		historyFile := filepath.Join(CLIHistoryDir, activeSessionID, fkevent.HistoryFileName)
 		err := recorder.SaveToFile(historyFile)
 		if err != nil {
 			pterm.Error.Printfln("保存聊天历史失败: %v", err)
@@ -232,7 +232,7 @@ func ListSessions(interactive ...bool) {
 			title = meta.Title
 		}
 
-		histFile := filepath.Join(sessionDir, "history.json")
+		histFile := filepath.Join(sessionDir, fkevent.HistoryFileName)
 		if info, err := os.Stat(histFile); err == nil {
 			fmt.Fprintf(&sb, "| `%s` | %s | %s | %d B |\n",
 				sessionID, title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
@@ -258,7 +258,7 @@ func ListSessions(interactive ...bool) {
 
 // loadSession 加载指定 session ID 的聊天历史
 func loadSession(sessionID string) {
-	historyFile := filepath.Join(CLIHistoryDir, sessionID, "history.json")
+	historyFile := filepath.Join(CLIHistoryDir, sessionID, fkevent.HistoryFileName)
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		pterm.Error.Printfln("历史文件不存在: %s", historyFile)
 		pterm.Info.Println("使用 list_chat_history 查看可用的会话")
@@ -483,7 +483,7 @@ func handleLoadSession() {
 		}
 
 		label := title
-		histFile := filepath.Join(sessionDir, "history.json")
+		histFile := filepath.Join(sessionDir, fkevent.HistoryFileName)
 		if info, err := os.Stat(histFile); err == nil {
 			label = fmt.Sprintf("%s (%s, %d bytes)", title, info.ModTime().Format("2006-01-02 15:04:05"), info.Size())
 		}

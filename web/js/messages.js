@@ -253,7 +253,11 @@ FKTeamsChat.prototype.finalizeMemberMarkdown = function (entry) {
   if (!entry) return;
   entry.el?.querySelectorAll(".parallel-member-markdown[data-raw]").forEach((body) => {
     const raw = body.getAttribute("data-raw") || "";
-    if (raw) body.innerHTML = this.renderMarkdown(raw, false);
+    if (raw) {
+      body._memberRenderVersion = (body._memberRenderVersion || 0) + 1;
+      body._memberRenderPending = false;
+      body.innerHTML = this.renderMarkdown(raw, false);
+    }
   });
 };
 
@@ -323,13 +327,29 @@ FKTeamsChat.prototype.appendMemberMarkdownEvent = function (entry, type, title, 
   if (raw && content && (raw.includes(content) || content.includes(raw))) {
     raw = content.length > raw.length ? content : raw;
     body.setAttribute("data-raw", raw);
-    body.innerHTML = this.renderMarkdown(raw, true);
+    this.scheduleMemberMarkdownRender(body, !!streaming);
     return;
   }
   raw += content;
   body.setAttribute("data-raw", raw);
-  body.innerHTML = this.renderMarkdown(raw, true);
+  this.scheduleMemberMarkdownRender(body, !!streaming);
   this.updateMemberDetailVisibility(entry);
+};
+
+FKTeamsChat.prototype.scheduleMemberMarkdownRender = function (body, streaming) {
+  if (!body) return;
+  body._memberRenderStreaming = !!streaming;
+  if (body._memberRenderPending) return;
+  body._memberRenderPending = true;
+  const version = (body._memberRenderVersion || 0) + 1;
+  body._memberRenderVersion = version;
+  const schedule = window.requestAnimationFrame || ((fn) => window.setTimeout(fn, 16));
+  schedule(() => {
+    if (!body.isConnected || body._memberRenderVersion !== version) return;
+    body._memberRenderPending = false;
+    const raw = body.getAttribute("data-raw") || "";
+    body.innerHTML = raw ? this.renderMarkdown(raw, body._memberRenderStreaming) : "";
+  });
 };
 
 FKTeamsChat.prototype.appendMemberOutput = function (entry, content) {
@@ -427,6 +447,35 @@ FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName) 
   entry.toolFlows[key] = flow;
   this.updateMemberDetailVisibility(entry);
   return flow;
+};
+
+FKTeamsChat.prototype.migrateMemberToolFlow = function (entry, fromKey, toKey) {
+  if (!entry || !fromKey || !toKey || fromKey === toKey) return;
+  if (!entry.toolFlows) return;
+  const from = entry.toolFlows[fromKey];
+  if (!from) return;
+  const to = entry.toolFlows[toKey];
+  if (!to) {
+    entry.toolFlows[toKey] = from;
+    delete entry.toolFlows[fromKey];
+    return;
+  }
+  if ((from.argsRaw || "") && !(to.argsRaw || "")) {
+    to.argsRaw = from.argsRaw;
+    if (to.argsWrap) to.argsWrap.style.display = "";
+    if (to.args) to.args.textContent = this.truncateRunes(to.argsRaw, 600);
+  }
+  if ((from.resultRaw || "") && !(to.resultRaw || "")) {
+    to.resultRaw = from.resultRaw;
+    if (to.resultWrap) to.resultWrap.style.display = "";
+    if (to.result) to.result.textContent = to.resultRaw;
+  }
+  if (to.status && from.status && from.status.textContent === "已完成") {
+    to.status.textContent = "已完成";
+  }
+  if (from.el && from.el !== to.el) from.el.remove();
+  delete entry.toolFlows[fromKey];
+  this.updateMemberDetailVisibility(entry);
 };
 
 FKTeamsChat.prototype.updateMemberToolFlowArgs = function (entry, key, displayName, args, append) {
@@ -1341,6 +1390,9 @@ FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
 
   if (this.isMemberRunEvent(event)) {
     const entry = this.memberEntryFromEvent(event);
+    if (event.tool_call_id && event.tool_call_index !== undefined && event.tool_call_index !== null) {
+      this.migrateMemberToolFlow(entry, "idx:" + event.tool_call_index, "id:" + event.tool_call_id);
+    }
     const flowKey = event.tool_call_id ? "id:" + event.tool_call_id : "idx:" + (event.tool_call_index ?? event.detail ?? "0");
     this.updateMemberToolFlowArgs(entry, flowKey, event.tool_name || "工具调用", event.content, true);
     this.scrollToBottom();
@@ -1385,9 +1437,8 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       if (toolCall.index !== undefined && toolCall.index !== null) this.toolCallsByIndex[String(toolCall.index)] = toolCall;
       const flowKey = this.memberToolFlowKey(event, toolCall, i);
-      if (toolCall.id && toolCall.index !== undefined && toolCall.index !== null && entry.toolFlows?.["idx:" + toolCall.index] && !entry.toolFlows["id:" + toolCall.id]) {
-        entry.toolFlows["id:" + toolCall.id] = entry.toolFlows["idx:" + toolCall.index];
-        delete entry.toolFlows["idx:" + toolCall.index];
+      if (toolCall.id && toolCall.index !== undefined && toolCall.index !== null) {
+        this.migrateMemberToolFlow(entry, "idx:" + toolCall.index, "id:" + toolCall.id);
       }
       this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, toolCall.arguments || "", false);
     });
@@ -1471,6 +1522,9 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
   let content = event.content || "";
   if (this.isMemberRunEvent(event)) {
     const entry = this.memberEntryFromEvent(event);
+    if (event.tool_call_id && event.tool_call_index !== undefined && event.tool_call_index !== null) {
+      this.migrateMemberToolFlow(entry, "idx:" + event.tool_call_index, "id:" + event.tool_call_id);
+    }
     const flowKey = event.tool_call_id ? "id:" + event.tool_call_id : "idx:" + (event.tool_call_index ?? "0");
     if (event.type === "tool_result_chunk") {
       const key = this.memberInnerResultKey(event);

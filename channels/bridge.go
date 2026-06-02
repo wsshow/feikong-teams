@@ -279,7 +279,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			}
 			recorder.FinalizeCurrent()
 			rc.flush()
-			historyFile := filepath.Join(channelHistoryDir, sessionID, "history.json")
+			historyFile := filepath.Join(channelHistoryDir, sessionID, fkevent.HistoryFileName)
 			if err := recorder.SaveToFile(historyFile); err != nil {
 				log.Printf("[bridge] save history failed: session=%s, err=%v", sessionID, err)
 			}

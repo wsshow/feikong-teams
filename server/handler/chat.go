@@ -127,7 +127,7 @@ func buildChatInput(recorder *fkevent.HistoryRecorder, message string, contents 
 
 // chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）
 func chatHistoryPath(sessionID string) string {
-	return filepath.Join(historyDir, filepath.Base(sessionID), "history.json")
+	return filepath.Join(historyDir, filepath.Base(sessionID), fkevent.HistoryFileName)
 }
 
 // --- 执行后处理 ---

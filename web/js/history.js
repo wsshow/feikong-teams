@@ -927,11 +927,16 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
       }
       if (evt.type === "tool_call" && evt.tool_call) {
         const display = this.historyToolDisplay(evt.tool_call);
-        let op = "调用工具: " + display.displayName;
-        if (evt.tool_call.arguments) op += " 参数: " + evt.tool_call.arguments;
-        this.appendMemberOp(entry, op);
+        const flowKey = evt.tool_call.id
+          ? "id:" + evt.tool_call.id
+          : evt.tool_call.index !== undefined && evt.tool_call.index !== null
+            ? "idx:" + evt.tool_call.index
+            : "";
+        if (!flowKey) return;
+        this.ensureMemberToolFlow(entry, flowKey, display.displayName);
+        this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, evt.tool_call.arguments || "", false);
         if (evt.tool_call.result) {
-          this.appendMemberToolResult(entry, evt.tool_call.result);
+          this.updateMemberToolFlowResult(entry, flowKey, display.displayName, evt.tool_call.result, false);
         }
         return;
       }
@@ -1027,120 +1032,92 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
     endTime: msg.end_time,
   };
 
-  // 如果有 events 数组，按时间顺序渲染每个事件
-  if (msg.events && msg.events.length > 0) {
-    let currentMessageEl = null;
-    let currentContent = "";
+  if (!msg.events || msg.events.length === 0) return;
 
-    msg.events.forEach((evt) => {
-      switch (evt.type) {
-        case "reasoning":
-          // 渲染推理/思考内容
-          if (!currentMessageEl) {
-            currentMessageEl = this.createAssistantMessage(
-              msg.agent_name,
-              timeInfo,
-            );
+  let currentMessageEl = null;
+  let currentContent = "";
+
+  msg.events.forEach((evt) => {
+    switch (evt.type) {
+      case "reasoning":
+        if (!currentMessageEl) {
+          currentMessageEl = this.createAssistantMessage(
+            msg.agent_name,
+            timeInfo,
+          );
+        }
+        const reasoningBodyEl =
+          currentMessageEl.querySelector(".message-body");
+        if (reasoningBodyEl && evt.content) {
+          const indicator = reasoningBodyEl.querySelector(
+            ".streaming-indicator",
+          );
+          if (indicator) indicator.remove();
+          let reasoningBlock =
+            reasoningBodyEl.querySelector(".reasoning-block");
+          if (!reasoningBlock) {
+            reasoningBlock = document.createElement("div");
+            reasoningBlock.className = "reasoning-block";
+            reasoningBlock.innerHTML = `
+                              <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
+                                  <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
+                                  <span class="reasoning-title">思考过程</span>
+                                  <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                              </div>
+                              <div class="reasoning-content">${this.renderMarkdown(evt.content)}</div>
+                          `;
+            reasoningBodyEl.prepend(reasoningBlock);
           }
-          const reasoningBodyEl =
-            currentMessageEl.querySelector(".message-body");
-          if (reasoningBodyEl && evt.content) {
-            const indicator = reasoningBodyEl.querySelector(
-              ".streaming-indicator",
+        }
+        break;
+
+      case "text":
+        currentContent += evt.content;
+        if (!currentMessageEl) {
+          currentMessageEl = this.createAssistantMessage(
+            msg.agent_name,
+            timeInfo,
+          );
+        }
+        const bodyEl = currentMessageEl.querySelector(".message-body");
+        if (bodyEl) {
+          const indicator = bodyEl.querySelector(".streaming-indicator");
+          if (indicator) indicator.remove();
+          bodyEl.setAttribute("data-raw", currentContent);
+          bodyEl.setAttribute("data-fn-done", "1");
+          const existingReasoning =
+            bodyEl.querySelector(".reasoning-block");
+          if (existingReasoning) {
+            let textContainer = bodyEl.querySelector(
+              ".message-text-content",
             );
-            if (indicator) indicator.remove();
-            let reasoningBlock =
-              reasoningBodyEl.querySelector(".reasoning-block");
-            if (!reasoningBlock) {
-              reasoningBlock = document.createElement("div");
-              reasoningBlock.className = "reasoning-block";
-              reasoningBlock.innerHTML = `
-                                <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
-                                    <svg class="reasoning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.663 17h4.673M12 3v1M6.5 5.5l.7.7M3 12h1M20 12h1M16.8 6.2l.7-.7M17.5 12A5.5 5.5 0 1 0 7 14.5V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.5A5.5 5.5 0 0 0 17.5 12z"/></svg>
-                                    <span class="reasoning-title">思考过程</span>
-                                    <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                                </div>
-                                <div class="reasoning-content">${this.renderMarkdown(evt.content)}</div>
-                            `;
-              reasoningBodyEl.prepend(reasoningBlock);
+            if (!textContainer) {
+              textContainer = document.createElement("div");
+              textContainer.className = "message-text-content";
+              bodyEl.appendChild(textContainer);
             }
+            textContainer.innerHTML = this.renderMarkdown(currentContent);
+          } else {
+            bodyEl.innerHTML = this.renderMarkdown(currentContent);
           }
-          break;
+        }
+        break;
 
-        case "text":
-          // 累积文本内容
-          currentContent += evt.content;
-          // 如果还没有创建消息元素，创建一个
-          if (!currentMessageEl) {
-            currentMessageEl = this.createAssistantMessage(
-              msg.agent_name,
-              timeInfo,
-            );
-          }
-          // 更新消息体
-          const bodyEl = currentMessageEl.querySelector(".message-body");
-          if (bodyEl) {
-            const indicator = bodyEl.querySelector(".streaming-indicator");
-            if (indicator) indicator.remove();
-            bodyEl.setAttribute("data-raw", currentContent);
-            bodyEl.setAttribute("data-fn-done", "1");
-            const existingReasoning =
-              bodyEl.querySelector(".reasoning-block");
-            if (existingReasoning) {
-              let textContainer = bodyEl.querySelector(
-                ".message-text-content",
-              );
-              if (!textContainer) {
-                textContainer = document.createElement("div");
-                textContainer.className = "message-text-content";
-                bodyEl.appendChild(textContainer);
-              }
-              textContainer.innerHTML = this.renderMarkdown(currentContent);
-            } else {
-              bodyEl.innerHTML = this.renderMarkdown(currentContent);
-            }
-          }
-          break;
+      case "tool_call":
+        if (evt.tool_call) {
+          this.renderSingleToolCall(evt.tool_call);
+        }
+        currentMessageEl = null;
+        currentContent = "";
+        break;
 
-        case "tool_call":
-          // 渲染单个工具调用
-          if (evt.tool_call) {
-            this.renderSingleToolCall(evt.tool_call);
-          }
-          // 重置当前消息元素和内容，后续文本会创建新卡片
-          currentMessageEl = null;
-          currentContent = "";
-          break;
-
-        case "action":
-          // 渲染单个 action 事件
-          if (evt.action) {
-            this.renderSingleAction(evt.action, msg.agent_name);
-          }
-          break;
-      }
-    });
-    return;
-  }
-
-  // 兼容旧格式（没有 events 字段的历史记录）
-  const messageEl = this.createAssistantMessage(msg.agent_name, timeInfo);
-  const bodyEl = messageEl.querySelector(".message-body");
-  if (bodyEl && msg.content) {
-    bodyEl.setAttribute("data-raw", msg.content);
-    bodyEl.setAttribute("data-fn-done", "1");
-    bodyEl.innerHTML = this.renderMarkdown(msg.content);
-  }
-
-  // 渲染工具调用（如果有）
-  if (msg.tool_calls && msg.tool_calls.length > 0) {
-    this.renderHistoryToolCalls(msg.tool_calls);
-  }
-
-  // 渲染 action 事件（如果有）
-  if (msg.actions && msg.actions.length > 0) {
-    this.renderHistoryActions(msg.actions, msg.agent_name);
-  }
+      case "action":
+        if (evt.action) {
+          this.renderSingleAction(evt.action, msg.agent_name);
+        }
+        break;
+    }
+  });
 };
 
 FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {
@@ -1189,12 +1166,6 @@ FKTeamsChat.prototype.renderHistoryUserMessage = function (msg) {
   this.updateQuickNav();
 };
 
-FKTeamsChat.prototype.renderHistoryToolCalls = function (toolCalls) {
-  toolCalls.forEach((tc) => {
-    this.renderSingleToolCall(tc);
-  });
-};
-
 FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
   // dispatch_tasks 专用卡片渲染
   if (tc.name === "dispatch_tasks" && tc.result) {
@@ -1241,19 +1212,13 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
   }
 };
 
-FKTeamsChat.prototype.renderHistoryActions = function (actions, agentName) {
-  actions.forEach((action) => {
-    this.renderSingleAction(action, agentName);
-  });
-};
-
 FKTeamsChat.prototype.renderSingleAction = function (action, agentName) {
   const compressIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;">
         <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
         <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>`;
 
-  // 上下文压缩开始（历史记录中一般不会出现，但做兼容）
+  // 上下文压缩开始
   if (action.action_type === "context_compress_start") {
     const el = document.createElement("div");
     el.className = "action-event context-compress";

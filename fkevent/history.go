@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fkteams/common"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,11 @@ import (
 	"time"
 )
 
+const HistoryFileName = "history.jsonl"
+
 type ToolCallRecord struct {
 	ID          string `json:"id"`
+	Index       *int   `json:"index,omitempty"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name,omitempty"`
 	Kind        string `json:"kind,omitempty"`
@@ -27,9 +31,21 @@ type ActionRecord struct {
 	Detail     string     `json:"detail,omitempty"`
 }
 
-// HistoryData 持久化数据结构
-type HistoryData struct {
-	Messages []AgentMessage `json:"messages"`
+const historyLineTypeMessageEvent = "message_event"
+
+type HistoryLine struct {
+	Type           string       `json:"type"`
+	MessageID      string       `json:"message_id"`
+	EventIndex     int          `json:"event_index"`
+	AgentName      string       `json:"agent_name"`
+	RunPath        string       `json:"run_path,omitempty"`
+	MemberCallID   string       `json:"member_call_id,omitempty"`
+	MemberToolName string       `json:"member_tool_name,omitempty"`
+	MemberName     string       `json:"member_name,omitempty"`
+	IsMemberEvent  bool         `json:"is_member_event,omitempty"`
+	StartTime      time.Time    `json:"start_time"`
+	EndTime        time.Time    `json:"end_time"`
+	Event          MessageEvent `json:"event"`
 }
 
 // MsgEventType 历史消息事件类型
@@ -112,6 +128,7 @@ const maxErrorContentLen = 1200
 type pendingToolCall struct {
 	ID          string
 	Index       *int
+	EventIndex  int
 	Name        string
 	DisplayName string
 	Kind        string
@@ -139,6 +156,7 @@ type HistoryRecorder struct {
 func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord {
 	record := ToolCallRecord{
 		ID:          tc.ID,
+		Index:       tc.Index,
 		Name:        tc.Name,
 		DisplayName: tc.DisplayName,
 		Kind:        tc.Kind,
@@ -170,12 +188,34 @@ func pendingToolCallFromEvent(id string, index *int, name, arguments string) pen
 	return pendingToolCall{
 		ID:          id,
 		Index:       index,
+		EventIndex:  -1,
 		Name:        name,
 		DisplayName: display.DisplayName,
 		Kind:        display.Kind,
 		Target:      display.Target,
 		Arguments:   arguments,
 	}
+}
+
+func (h *HistoryRecorder) appendToolCallEvent(tc pendingToolCall) int {
+	record := toolCallRecordFromPending(tc, "")
+	h.currentEvents = append(h.currentEvents, MessageEvent{
+		Type:     MsgTypeToolCall,
+		ToolCall: ptrToolCallRecord(record),
+	})
+	return len(h.currentEvents) - 1
+}
+
+func (h *HistoryRecorder) updateToolCallEvent(tc pendingToolCall, result string) bool {
+	if tc.EventIndex < 0 || tc.EventIndex >= len(h.currentEvents) {
+		return false
+	}
+	if h.currentEvents[tc.EventIndex].Type != MsgTypeToolCall || h.currentEvents[tc.EventIndex].ToolCall == nil {
+		return false
+	}
+	record := toolCallRecordFromPending(tc, result)
+	h.currentEvents[tc.EventIndex].ToolCall = ptrToolCallRecord(record)
+	return true
 }
 
 func NewHistoryRecorder() *HistoryRecorder {
@@ -246,8 +286,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				h.pendingToolCalls = append(h.pendingToolCalls,
-					pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, ""))
+				pending := pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, "")
+				pending.EventIndex = h.appendToolCallEvent(pending)
+				h.pendingToolCalls = append(h.pendingToolCalls, pending)
 			}
 		}
 
@@ -266,13 +307,15 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 						h.pendingToolCalls[i].ID = tc.ID
 					}
 					h.pendingToolCalls[i].Arguments = tc.Function.Arguments
+					h.updateToolCallEvent(h.pendingToolCalls[i], "")
 					updated = true
 					break
 				}
 			}
 			if !updated {
-				h.pendingToolCalls = append(h.pendingToolCalls,
-					pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments))
+				pending := pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending.EventIndex = h.appendToolCallEvent(pending)
+				h.pendingToolCalls = append(h.pendingToolCalls, pending)
 			}
 		}
 
@@ -316,10 +359,12 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			if isInternalToolName(tc.Name) {
 				return
 			}
-			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type:     MsgTypeToolCall,
-				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
-			})
+			if !h.updateToolCallEvent(tc, content) {
+				h.currentEvents = append(h.currentEvents, MessageEvent{
+					Type:     MsgTypeToolCall,
+					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
+				})
+			}
 		}
 
 	case EventMessage:
@@ -341,8 +386,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				h.pendingToolCalls = append(h.pendingToolCalls,
-					pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments))
+				pending := pendingToolCallFromEvent(tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending.EventIndex = h.appendToolCallEvent(pending)
+				h.pendingToolCalls = append(h.pendingToolCalls, pending)
 			}
 		}
 
@@ -412,10 +458,12 @@ func (h *HistoryRecorder) flushChunkedToolResults() {
 		tc := h.pendingToolCalls[idx]
 		h.pendingToolCalls = append(h.pendingToolCalls[:idx], h.pendingToolCalls[idx+1:]...)
 		if !isInternalToolName(tc.Name) {
-			h.currentEvents = append(h.currentEvents, MessageEvent{
-				Type:     MsgTypeToolCall,
-				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
-			})
+			if !h.updateToolCallEvent(tc, content) {
+				h.currentEvents = append(h.currentEvents, MessageEvent{
+					Type:     MsgTypeToolCall,
+					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
+				})
+			}
 		}
 		delete(h.toolResultChunks, resultKey)
 	}
@@ -685,14 +733,10 @@ func saveMessagesToFile(messages []AgentMessage, filePath string) error {
 		return fmt.Errorf("create dir %s: %w", dir, err)
 	}
 
-	histData := HistoryData{
-		Messages: messages,
-	}
-	data, err := json.MarshalIndent(histData, "", "  ")
+	data, err := marshalMessagesJSONL(messages)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return err
 	}
-
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
@@ -700,20 +744,53 @@ func saveMessagesToFile(messages []AgentMessage, filePath string) error {
 	return nil
 }
 
+func marshalMessagesJSONL(messages []AgentMessage) ([]byte, error) {
+	var builder strings.Builder
+	encoder := json.NewEncoder(&builder)
+	for msgIndex, msg := range messages {
+		messageID := historyMessageID(msg, msgIndex)
+		for eventIndex, event := range msg.Events {
+			line := HistoryLine{
+				Type:           historyLineTypeMessageEvent,
+				MessageID:      messageID,
+				EventIndex:     eventIndex,
+				AgentName:      msg.AgentName,
+				RunPath:        msg.RunPath,
+				MemberCallID:   msg.MemberCallID,
+				MemberToolName: msg.MemberToolName,
+				MemberName:     msg.MemberName,
+				IsMemberEvent:  msg.IsMemberEvent,
+				StartTime:      msg.StartTime,
+				EndTime:        msg.EndTime,
+				Event:          event,
+			}
+			if err := encoder.Encode(line); err != nil {
+				return nil, fmt.Errorf("marshal jsonl: %w", err)
+			}
+		}
+	}
+	return []byte(builder.String()), nil
+}
+
+func historyMessageID(msg AgentMessage, index int) string {
+	return fmt.Sprintf("%06d:%s:%s", index, msg.AgentName, msg.StartTime.UTC().Format(time.RFC3339Nano))
+}
+
 func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	data, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("read file: %w", err)
 	}
+	defer file.Close()
 
-	var histData HistoryData
-	if err := json.Unmarshal(data, &histData); err != nil {
-		return fmt.Errorf("unmarshal: %w", err)
+	messages, err := loadMessagesJSONL(file)
+	if err != nil {
+		return err
 	}
-	h.messages = histData.Messages
+	h.messages = messages
 
 	// 从事件流中重建上下文压缩摘要状态
 	h.reconstructSummaryFromEvents()
@@ -729,6 +806,48 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	h.toolResultChunks = make(map[string]string)
 
 	return nil
+}
+
+func loadMessagesJSONL(file *os.File) ([]AgentMessage, error) {
+	messages := make([]AgentMessage, 0)
+	messageIndex := make(map[string]int)
+	decoder := json.NewDecoder(file)
+	lineNo := 1
+	for {
+		var line HistoryLine
+		if err := decoder.Decode(&line); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("decode jsonl record %d: %w", lineNo, err)
+		}
+		if line.Type != historyLineTypeMessageEvent {
+			return nil, fmt.Errorf("unsupported history line type at record %d: %s", lineNo, line.Type)
+		}
+		if line.MessageID == "" {
+			return nil, fmt.Errorf("missing message_id at record %d", lineNo)
+		}
+		idx, exists := messageIndex[line.MessageID]
+		if !exists {
+			messageIndex[line.MessageID] = len(messages)
+			messages = append(messages, AgentMessage{
+				AgentName:      line.AgentName,
+				RunPath:        line.RunPath,
+				MemberCallID:   line.MemberCallID,
+				MemberToolName: line.MemberToolName,
+				MemberName:     line.MemberName,
+				IsMemberEvent:  line.IsMemberEvent,
+				StartTime:      line.StartTime,
+				EndTime:        line.EndTime,
+				Events:         make([]MessageEvent, 0),
+			})
+			idx = len(messages) - 1
+		}
+		messages[idx].Events = append(messages[idx].Events, line.Event)
+		messages[idx].EndTime = line.EndTime
+		lineNo++
+	}
+	return messages, nil
 }
 
 func (h *HistoryRecorder) SaveToMarkdownFile(filePath string) error {

@@ -166,7 +166,7 @@ data: {"type":"processing_end","message":"处理完成"}
 
 #### clear_history — 清除会话历史
 
-> 此操作会**删除整个会话目录**（包括 history.json 和 metadata.json），并从内存中移除会话记录。
+> 此操作会**删除整个会话目录**（包括 history.jsonl 和 metadata.json），并从内存中移除会话记录。
 
 | 字段         | 类型   | 说明                              |
 | ------------ | ------ | --------------------------------- |

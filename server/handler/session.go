@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"fkteams/common"
 	"fkteams/fkevent"
 	"log"
@@ -73,15 +72,15 @@ func ListSessionsHandler() gin.HandlerFunc {
 				status = meta.Status
 			}
 
-			// 获取 history.json 大小和时间
-			histFile := filepath.Join(sessionDir, "history.json")
+			// 获取历史事件日志大小和时间
+			histFile := filepath.Join(sessionDir, fkevent.HistoryFileName)
 			var size int64
 			var modTime time.Time
 			if info, err := os.Stat(histFile); err == nil {
 				size = info.Size()
 				modTime = info.ModTime()
 			}
-			// history.json 不存在时使用 metadata 时间
+			// 历史事件日志不存在时使用 metadata 时间
 			if modTime.IsZero() && metaErr == nil && !meta.UpdatedAt.IsZero() {
 				modTime = meta.UpdatedAt
 			}
@@ -179,21 +178,15 @@ func GetSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		histFile := filepath.Join(sessionDirPath(sessionID), "history.json")
-		data, err := os.ReadFile(histFile)
-		if err != nil {
+		histFile := filepath.Join(sessionDirPath(sessionID), fkevent.HistoryFileName)
+		recorder := fkevent.NewHistoryRecorder()
+		if err := recorder.LoadFromFile(histFile); err != nil {
 			if os.IsNotExist(err) {
 				Fail(c, http.StatusNotFound, "session not found")
 			} else {
-				log.Printf("failed to read history: session=%s, err=%v", sessionID, err)
+				log.Printf("failed to load history: session=%s, err=%v", sessionID, err)
 				Fail(c, http.StatusInternalServerError, "failed to read history")
 			}
-			return
-		}
-
-		var histData fkevent.HistoryData
-		if err := json.Unmarshal(data, &histData); err != nil {
-			Fail(c, http.StatusInternalServerError, "failed to parse history")
 			return
 		}
 
@@ -206,7 +199,7 @@ func GetSessionHandler() gin.HandlerFunc {
 		OK(c, gin.H{
 			"session_id":    sessionID,
 			"current_agent": currentAgent,
-			"messages":      histData.Messages,
+			"messages":      recorder.GetMessages(),
 		})
 	}
 }

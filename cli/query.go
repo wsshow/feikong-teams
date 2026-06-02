@@ -213,9 +213,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			stopSpinner()
 			return innerCallback(event)
 		},
-		Recorder: recorder,
+		Recorder:    recorder,
 		OnInterrupt: handler,
-		ApprovalReg:   approvalReg,
+		ApprovalReg: approvalReg,
 		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, _ error) {
 			stopSpinner()
 			e.state.EndQuery()
@@ -339,7 +339,7 @@ func FlushSessionMemory() {
 // AutoSaveCLIHistory 自动保存 CLI 模式的聊天历史（由 --save 参数控制）
 func AutoSaveCLIHistory() {
 	recorder := getCliRecorder()
-	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, "history.json")
+	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, fkevent.HistoryFileName)
 
 	pterm.Info.Println("正在自动保存聊天历史...")
 	if err := recorder.SaveToFile(historyFile); err != nil {

@@ -74,7 +74,7 @@ func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *Histo
 	}
 
 	recorder := NewHistoryRecorder()
-	filePath := filepath.Join(historyDir, sessionID, "history.json")
+	filePath := filepath.Join(historyDir, sessionID, HistoryFileName)
 	if err := recorder.LoadFromFile(filePath); err == nil {
 		log.Printf("[SessionManager] loaded session=%s from %s", sessionID, filePath)
 	}
