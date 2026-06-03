@@ -147,7 +147,7 @@ func (m toolModel) renderItem(i int) string {
 		status = "失败"
 	}
 	nameWidth := max(12, lineWidth-runewidthStringWidth(status)-6)
-	name := truncateRunes(item.name, nameWidth)
+	name := toolLabel(item.name, item.args, nameWidth)
 	return fmt.Sprintf("%s %s  %s",
 		toolStatusStyle(status).Render(toolIcon(status)),
 		name,

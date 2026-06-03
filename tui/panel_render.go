@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -73,4 +75,51 @@ func truncateRunes(s string, maxWidth int) string {
 		width += rw
 	}
 	return b.String() + ellipsis
+}
+
+func toolLabel(name, args string, maxWidth int) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "tool"
+	}
+	summary := toolArgsSummary(args)
+	if summary == "" {
+		return truncateRunes(name, maxWidth)
+	}
+	label := fmt.Sprintf("%s(%s)", name, summary)
+	return truncateRunes(label, maxWidth)
+}
+
+func toolArgsSummary(args string) string {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(args), &payload); err == nil {
+		for _, key := range []string{"query", "url", "path", "file_path", "request", "task", "command"} {
+			if v, ok := payload[key]; ok {
+				if s := stringifyArgValue(v); s != "" {
+					return s
+				}
+			}
+		}
+		for _, v := range payload {
+			if s := stringifyArgValue(v); s != "" {
+				return s
+			}
+		}
+	}
+	return strings.Join(strings.Fields(args), " ")
+}
+
+func stringifyArgValue(v any) string {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case float64, bool:
+		return fmt.Sprint(t)
+	default:
+		return ""
+	}
 }

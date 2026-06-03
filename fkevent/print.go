@@ -441,7 +441,7 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			memberName := memberNamesByToolID[callID]
 			if isErrorContent(content) {
-				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: content})
+				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: content, ToolKey: "id:" + callID, ToolName: memberName})
 			} else {
 				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "done"})
 			}
@@ -667,7 +667,7 @@ func newPrintEvent() (func(Event), func()) {
 					key = memberKeysByToolID[event.ToolCallID]
 				}
 				if isErrorContent(event.Content) {
-					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content, ToolKey: memberToolKey(event, schema.ToolCall{}, 0), ToolName: toolName})
 				} else {
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "done"})
 				}
