@@ -4,8 +4,8 @@ package inject
 
 import (
 	"context"
-	"fkteams/agents/retry/generic"
 	rootcommon "fkteams/common"
+	"fkteams/common/typeutil"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -105,7 +105,7 @@ func (m *injectChatModel) GetType() string {
 	if gt, ok := m.inner.(components.Typer); ok {
 		return gt.GetType()
 	}
-	return generic.ParseTypeName(reflect.ValueOf(m.inner))
+	return typeutil.ParseTypeName(reflect.ValueOf(m.inner))
 }
 
 func (m *injectChatModel) IsCallbacksEnabled() bool { return true }
