@@ -35,7 +35,6 @@ type toolModel struct {
 }
 
 var (
-	toolTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5"))
 	toolDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	toolDoneStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	toolErrorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
@@ -143,27 +142,17 @@ func (m toolModel) renderItem(i int) string {
 	item := m.items[i]
 	w := max(40, m.width)
 	lineWidth := max(20, w-4)
-	var b strings.Builder
-	name := truncateRunes(item.name, max(12, lineWidth-12))
-	fmt.Fprintf(&b, "%s %s", toolStatusStyle(item.status).Render(toolIcon(item.status)), name)
-	b.WriteString(toolDimStyle.Render("  " + item.status))
-	if item.args != "" {
-		b.WriteString("\n")
-		b.WriteString(toolDimStyle.Render("  参数: " + truncateRunes(compactLine(item.args), max(20, lineWidth-8))))
-	}
-	if item.result != "" {
-		b.WriteString("\n")
-		b.WriteString(toolDimStyle.Render("  结果: " + truncateRunes(compactLine(item.result), max(20, lineWidth-8))))
-	}
+	status := item.status
 	if item.error != "" {
-		b.WriteString("\n")
-		b.WriteString(toolErrorStyle.Render("  " + truncateRunes(compactLine(item.error), lineWidth-2)))
+		status = "失败"
 	}
-	return b.String()
-}
-
-func compactLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	nameWidth := max(12, lineWidth-runewidthStringWidth(status)-6)
+	name := truncateRunes(item.name, nameWidth)
+	return fmt.Sprintf("%s %s  %s",
+		toolStatusStyle(status).Render(toolIcon(status)),
+		name,
+		toolDimStyle.Render(status),
+	)
 }
 
 type ToolPanel struct {
@@ -172,6 +161,7 @@ type ToolPanel struct {
 	active    bool
 	enabled   bool
 	lastLines int
+	lastView  string
 }
 
 func NewToolPanel() *ToolPanel {
@@ -203,14 +193,19 @@ func (p *ToolPanel) Finish() {
 	p.renderLocked()
 	p.active = false
 	p.lastLines = 0
+	p.lastView = ""
 }
 
 func (p *ToolPanel) renderLocked() {
 	p.model.width = terminalWidth()
+	view := p.model.View()
+	if view == p.lastView {
+		return
+	}
 	if p.lastLines > 0 {
 		fmt.Printf("\033[%dF\033[J", p.lastLines)
 	}
-	view := p.model.View()
 	fmt.Print(view)
 	p.lastLines = renderedLineCount(view, p.model.width)
+	p.lastView = view
 }

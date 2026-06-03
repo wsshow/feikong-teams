@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -35,6 +36,7 @@ type memberCard struct {
 	status     string
 	operations []string
 	content    string
+	task       string
 	tools      []memberToolFlow
 	toolIndex  map[string]int
 }
@@ -133,6 +135,9 @@ func (m *memberModel) applyEvent(e MemberEvent) {
 	case "op":
 		if e.Content != "" {
 			card.operations = append(card.operations, e.Content)
+			if task := memberTaskFromOperation(e.Content); task != "" {
+				card.task = task
+			}
 		}
 	case "tool_prepare":
 		tool := card.ensureTool(e.ToolKey, e.ToolName)
@@ -253,37 +258,29 @@ func (m memberModel) renderCard(i, w int) string {
 	lineWidth := max(20, w-4)
 
 	icon := memberStatusIcon(card.status)
-	var body strings.Builder
-	body.WriteString(fmt.Sprintf("%s %s", memberStatusColor(card.status).Render(icon), truncateRunes(card.name, max(12, lineWidth-4))))
-
-	if card.content != "" {
-		preview := memberCompactLine(card.content)
-		if preview != "" {
-			body.WriteString("\n")
-			body.WriteString(memberDimStyle.Render("输出: " + truncateRunes(preview, max(20, lineWidth-8))))
-		}
+	name := truncateRunes(card.name, 16)
+	status := memberStatusText(card)
+	task := card.task
+	if task == "" {
+		task = latestMemberOperation(card.operations)
 	}
-
-	if len(card.tools) > 0 || len(card.operations) > 0 {
-		if chain := memberToolChain(card.tools, w); chain != "" {
-			body.WriteString("\n")
-			body.WriteString(memberDimStyle.Render("工具链: " + chain))
-		}
-		if current := currentMemberTool(card.tools); current != "" {
-			body.WriteString("\n")
-			body.WriteString(memberDimStyle.Render("正在: " + current))
-		}
-		if op := latestMemberOperation(card.operations); op != "" {
-			body.WriteString("\n")
-			body.WriteString(memberDimStyle.Render(truncateRunes(op, lineWidth)))
-		}
-		for _, line := range memberToolPreview(card.tools, w) {
-			body.WriteString("\n")
-			body.WriteString(line)
-		}
+	if task == "" {
+		task = "任务准备中"
 	}
+	task = truncateRunes(memberCompactLine(task), max(12, lineWidth-8))
+	chain := truncateRunes(memberToolChain(card.tools), max(12, lineWidth-10))
 
-	return body.String()
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s  %s",
+		memberStatusColor(card.status).Render(icon),
+		name,
+		memberDimStyle.Render(status),
+	)
+	fmt.Fprintf(&b, "\n%s", memberDimStyle.Render("  目标: "+task))
+	if chain != "" {
+		fmt.Fprintf(&b, "\n%s", memberDimStyle.Render("  工具链: "+chain))
+	}
+	return b.String()
 }
 
 func memberCompactLine(s string) string {
@@ -297,28 +294,28 @@ func memberCompactLine(s string) string {
 func latestMemberOperation(ops []string) string {
 	for i := len(ops) - 1; i >= 0; i-- {
 		if op := memberCompactLine(ops[i]); op != "" {
-			return op
+			return strings.TrimPrefix(op, "任务: ")
 		}
 	}
 	return ""
 }
 
-func memberToolChain(tools []memberToolFlow, w int) string {
-	if len(tools) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(tools))
-	for _, tool := range tools {
-		name := tool.name
-		if name == "" {
-			name = tool.key
+func memberStatusText(card memberCard) string {
+	switch card.status {
+	case "done":
+		if len(card.tools) > 0 {
+			return fmt.Sprintf("完成 · 工具 %d", len(card.tools))
 		}
-		if tool.status != "" {
-			name = fmt.Sprintf("%s(%s)", name, tool.status)
-		}
-		names = append(names, name)
+		return "完成"
+	case "error":
+		return "失败"
+	case "waiting":
+		return "等待中"
 	}
-	return truncateRunes(strings.Join(names, " → "), max(20, w-12))
+	if current := currentMemberTool(card.tools); current != "" {
+		return "运行中 · " + current
+	}
+	return "运行中"
 }
 
 func currentMemberTool(tools []memberToolFlow) string {
@@ -334,38 +331,43 @@ func currentMemberTool(tools []memberToolFlow) string {
 		if tool.status == "" {
 			return name
 		}
-		return fmt.Sprintf("%s [%s]", name, tool.status)
+		return fmt.Sprintf("%s %s", name, tool.status)
 	}
 	return ""
 }
 
-func memberToolPreview(tools []memberToolFlow, w int) []string {
+func memberToolChain(tools []memberToolFlow) string {
 	if len(tools) == 0 {
-		return nil
+		return "等待工具"
 	}
-	start := max(0, len(tools)-3)
-	lines := make([]string, 0, (len(tools)-start)*3+1)
-	if start > 0 {
-		lines = append(lines, memberDimStyle.Render(fmt.Sprintf("... 已省略 %d 个较早工具", start)))
-	}
-	for _, tool := range tools[start:] {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
 		name := tool.name
 		if name == "" {
 			name = tool.key
 		}
-		status := tool.status
-		if status == "" {
-			status = "进行中"
-		}
-		lines = append(lines, memberDimStyle.Render(fmt.Sprintf("▸ %s [%s]", name, status)))
-		if arg := memberCompactLine(tool.args); arg != "" && tool.result == "" {
-			lines = append(lines, memberDimStyle.Render("  参数: "+truncateRunes(arg, max(20, w-12))))
-		}
-		if result := memberCompactLine(tool.result); result != "" {
-			lines = append(lines, memberDimStyle.Render("  结果: "+truncateRunes(result, max(20, w-12))))
+		names = append(names, name)
+	}
+	return strings.Join(names, " -> ")
+}
+
+func memberTaskFromOperation(op string) string {
+	op = strings.TrimSpace(strings.TrimPrefix(op, "任务:"))
+	if op == "" || op == "任务准备中" || op == "任务已分配" || op == "任务参数接收中" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(op), &payload); err == nil {
+		for _, key := range []string{"request", "task", "prompt", "query", "goal"} {
+			if v, ok := payload[key].(string); ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
 		}
 	}
-	return lines
+	if strings.HasPrefix(op, "{") || strings.HasPrefix(op, "[") {
+		return ""
+	}
+	return op
 }
 
 type MemberPanel struct {
@@ -375,6 +377,7 @@ type MemberPanel struct {
 	enabled   bool
 	emptyText string
 	lastLines int
+	lastView  string
 }
 
 func NewMemberPanel() *MemberPanel {
@@ -407,14 +410,19 @@ func (p *MemberPanel) Finish() {
 	p.renderLocked()
 	p.active = false
 	p.lastLines = 0
+	p.lastView = ""
 }
 
 func (p *MemberPanel) renderLocked() {
 	p.model.width = terminalWidth()
+	view := p.model.View()
+	if view == p.lastView {
+		return
+	}
 	if p.lastLines > 0 {
 		fmt.Printf("\033[%dF\033[J", p.lastLines)
 	}
-	view := p.model.View()
 	fmt.Print(view)
 	p.lastLines = renderedLineCount(view, p.model.width)
+	p.lastView = view
 }

@@ -795,7 +795,7 @@ func newPrintEvent() (func(Event), func()) {
 				key, memberName := registerAgentToolCall(tool, i)
 				op := "任务已分配"
 				if tool.Function.Arguments != "" {
-					op = "任务: " + truncateString(tool.Function.Arguments, 200)
+					op = "任务: " + tool.Function.Arguments
 				}
 				sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "op", Content: op})
 			}

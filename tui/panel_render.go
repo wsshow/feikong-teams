@@ -46,6 +46,10 @@ func stripANSI(s string) string {
 	return ansiSeqRe.ReplaceAllString(s, "")
 }
 
+func runewidthStringWidth(s string) int {
+	return runewidth.StringWidth(stripANSI(s))
+}
+
 func truncateRunes(s string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
