@@ -1066,7 +1066,7 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
                                   <span class="reasoning-title">思考过程</span>
                                   <svg class="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                               </div>
-                              <div class="reasoning-content">${this.renderMarkdown(evt.content)}</div>
+                              <div class="reasoning-content markdown-body markdown-body-compact">${this.renderMarkdown(evt.content)}</div>
                           `;
             reasoningBodyEl.prepend(reasoningBlock);
           }
@@ -1181,6 +1181,7 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
   // 渲染工具调用
   const toolCallEl = document.createElement("div");
   const toolDisplay = this.historyToolDisplay(tc);
+  if (toolDisplay.kind === "agent") return;
   toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
 
   let argsDisplay = tc.arguments || "无参数";

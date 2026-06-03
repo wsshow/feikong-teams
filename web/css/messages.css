@@ -265,42 +265,46 @@
 }
 
 /* Markdown */
-.message-body p {
+.markdown-body {
+  word-break: break-word;
+}
+
+.markdown-body p {
   margin: 0 0 12px 0;
 }
 
-.message-body p:last-child {
+.markdown-body p:last-child {
   margin-bottom: 0;
 }
 
-.message-body h1,
-.message-body h2,
-.message-body h3,
-.message-body h4,
-.message-body h5,
-.message-body h6 {
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   margin: 16px 0 8px 0;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.message-body h1:first-child,
-.message-body h2:first-child,
-.message-body h3:first-child {
+.markdown-body h1:first-child,
+.markdown-body h2:first-child,
+.markdown-body h3:first-child {
   margin-top: 0;
 }
 
-.message-body ul,
-.message-body ol {
+.markdown-body ul,
+.markdown-body ol {
   margin: 8px 0;
   padding-left: 20px;
 }
 
-.message-body li {
+.markdown-body li {
   margin: 4px 0;
 }
 
-.message-body code {
+.markdown-body code {
   font-family: "SF Mono", Monaco, Consolas, monospace;
   font-size: 13px;
   background: rgba(107, 127, 198, 0.08);
@@ -309,7 +313,7 @@
   border: 1px solid rgba(107, 127, 198, 0.15);
 }
 
-.message-body pre {
+.markdown-body pre {
   margin: 12px 0;
   padding: 14px 16px;
   background: #f8f6f2;
@@ -319,7 +323,7 @@
   box-shadow: inset 1px 1px 4px rgba(0, 0, 0, 0.04);
 }
 
-.message-body pre code {
+.markdown-body pre code {
   background: none;
   padding: 0;
   font-size: 13px;
@@ -327,7 +331,7 @@
   border: none;
 }
 
-.message-body blockquote {
+.markdown-body blockquote {
   margin: 12px 0;
   padding: 10px 18px;
   border-left: 4px solid var(--accent-primary);
@@ -337,21 +341,21 @@
   font-style: italic;
 }
 
-.message-body strong {
+.markdown-body strong {
   font-weight: 600;
 }
 
-.message-body a {
+.markdown-body a {
   color: var(--accent-primary);
   text-decoration: none;
   border-bottom: 1px dashed var(--accent-primary);
 }
 
-.message-body a:hover {
+.markdown-body a:hover {
   border-bottom-style: solid;
 }
 
-.message-body table {
+.markdown-body table {
   width: 100%;
   border-collapse: collapse;
   margin: 12px 0;
@@ -360,22 +364,70 @@
   overflow: hidden;
 }
 
-.message-body th,
-.message-body td {
+.markdown-body th,
+.markdown-body td {
   padding: 8px 12px;
   text-align: left;
   border: 1px solid var(--border-color);
+  vertical-align: top;
 }
 
-.message-body th {
+.markdown-body th {
   background: var(--bg-tertiary);
   font-weight: 600;
+}
+
+.markdown-body-compact {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown-body-compact p {
+  margin-bottom: 8px;
+}
+
+.markdown-body-compact h1,
+.markdown-body-compact h2,
+.markdown-body-compact h3,
+.markdown-body-compact h4,
+.markdown-body-compact h5,
+.markdown-body-compact h6 {
+  margin: 12px 0 6px;
+}
+
+.markdown-body-compact ul,
+.markdown-body-compact ol {
+  margin: 6px 0;
+}
+
+.markdown-body-compact pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-width: 1px;
+  border-radius: 8px;
+}
+
+.markdown-body-compact code {
+  font-size: 12px;
+  padding: 1px 5px;
+}
+
+.markdown-body-compact table {
+  margin: 8px 0;
+  font-size: 12px;
+  border-width: 1px;
+  border-radius: 6px;
+}
+
+.markdown-body-compact th,
+.markdown-body-compact td {
+  padding: 6px 8px;
 }
 
 /* Footnotes */
 
 /* 行内脚注引用 - 小圆标 */
-.message-body .footnote-cite {
+.markdown-body .footnote-cite {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -884,50 +936,6 @@ a.source-item:hover {
   word-break: break-word;
 }
 
-.parallel-member-markdown p {
-  margin: 0 0 8px;
-}
-
-.parallel-member-markdown p:last-child {
-  margin-bottom: 0;
-}
-
-.parallel-member-markdown h1,
-.parallel-member-markdown h2,
-.parallel-member-markdown h3,
-.parallel-member-markdown h4 {
-  margin: 12px 0 6px;
-  line-height: 1.35;
-}
-
-.parallel-member-markdown ul,
-.parallel-member-markdown ol {
-  margin: 6px 0;
-  padding-left: 20px;
-}
-
-.parallel-member-markdown pre {
-  overflow-x: auto;
-  margin: 8px 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #f8f6f2;
-  border: 1px solid var(--border-color);
-}
-
-.parallel-member-markdown code {
-  font-family: "SF Mono", Monaco, Consolas, monospace;
-  font-size: 12px;
-  background: rgba(107, 127, 198, 0.08);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.parallel-member-markdown pre code {
-  background: transparent;
-  padding: 0;
-}
-
 .tool-call-name {
   font-family: "SF Mono", Monaco, monospace;
   background: rgba(107, 165, 198, 0.15);
@@ -980,22 +988,6 @@ a.source-item:hover {
   font-size: 14px;
   font-weight: 700;
   margin-bottom: 6px;
-}
-
-.agent-tool-result .tool-result-content {
-  font-family: var(--font-body);
-  font-size: 13px;
-  line-height: 1.6;
-  word-break: break-word;
-  max-height: 320px;
-}
-
-.agent-tool-result .tool-result-content p {
-  margin: 0 0 8px;
-}
-
-.agent-tool-result .tool-result-content p:last-child {
-  margin-bottom: 0;
 }
 
 /* Action Events */
@@ -1242,29 +1234,6 @@ a.source-item:hover {
   word-break: break-word;
 }
 
-.dispatch-card-result p {
-  margin: 0 0 8px;
-}
-
-.dispatch-card-result p:last-child {
-  margin-bottom: 0;
-}
-
-.dispatch-card-result ol,
-.dispatch-card-result ul {
-  padding-left: 1.5em;
-  margin: 4px 0;
-}
-
-.dispatch-card-result pre {
-  overflow-x: auto;
-  margin: 4px 0;
-}
-
-.dispatch-card-result code {
-  font-size: 12px;
-}
-
 .action-event svg {
   width: 14px;
   height: 14px;
@@ -1484,10 +1453,6 @@ a.source-item:hover {
   border-top: 1px solid var(--border);
 }
 
-.reasoning-content p {
-  margin: 4px 0;
-}
-
 /* Message Attachments (user message image previews) */
 .message-attachments {
   display: flex;
@@ -1606,13 +1571,13 @@ a.source-item:hover {
   }
 
   /* 代码块 */
-  .message-body pre {
+  .markdown-body pre {
     margin: 8px 0;
     padding: 10px 12px;
     border-radius: 8px;
   }
 
-  .message-body pre code {
+  .markdown-body pre code {
     font-size: 12px;
   }
 
