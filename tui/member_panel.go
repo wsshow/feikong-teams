@@ -364,52 +364,20 @@ func currentMemberTool(tools []memberToolFlow) string {
 }
 
 func memberToolChainLines(tools []memberToolFlow, lineWidth int) []string {
-	if len(tools) == 0 {
-		return []string{"  工具链: 等待工具"}
-	}
-	const maxTools = 6
-	start := 0
-	if len(tools) > maxTools {
-		start = len(tools) - maxTools
-	}
-	lines := make([]string, 0, len(tools)-start+2)
-	lines = append(lines, "  工具链:")
-	if start > 0 {
-		lines = append(lines, fmt.Sprintf("  │  ... 省略 %d 个较早工具", start))
-	}
-	for i, tool := range tools[start:] {
+	items := make([]ToolChainItem, 0, len(tools))
+	for _, tool := range tools {
 		name := tool.name
 		if name == "" {
 			name = tool.key
 		}
-		branch := "├─"
-		if i == len(tools[start:])-1 {
-			branch = "└─"
-		}
-		label := toolTreeLabel(name, tool.args, max(16, lineWidth-8))
-		if tool.status == "失败" {
-			reason := tool.error
-			if reason == "" {
-				reason = "未返回错误原因"
-			}
-			label = "✗ " + label + " · " + truncateRunes(memberCompactLine(reason), max(8, lineWidth-runewidthStringWidth(label)-14))
-		}
-		lines = append(lines, fmt.Sprintf("  %s %s", branch, label))
+		items = append(items, ToolChainItem{
+			Name:   name,
+			Args:   tool.args,
+			Status: tool.status,
+			Error:  tool.error,
+		})
 	}
-	return lines
-}
-
-func toolTreeLabel(name, args string, maxWidth int) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "tool"
-	}
-	summary := toolArgsSummary(args)
-	if summary == "" {
-		return truncateRunes(name, maxWidth)
-	}
-	prefix := name + ": "
-	return prefix + truncateRunes(summary, max(8, maxWidth-runewidthStringWidth(prefix)))
+	return RenderToolChainLines(items, lineWidth)
 }
 
 func memberTaskFromOperation(op string) string {
@@ -493,6 +461,7 @@ func (p *MemberPanel) Finish() {
 	}
 	p.model.done = true
 	p.renderLocked()
+	fmt.Println()
 	p.active = false
 	p.lastLines = 0
 	p.lastView = ""

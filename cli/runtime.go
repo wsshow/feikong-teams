@@ -1665,6 +1665,13 @@ func (m runtimeModel) renderMemberSummary(block runtimeBlock) string {
 		status,
 		block.MemberTools,
 	)
+	if block.MemberStatus == "running" || block.MemberStatus == "error" {
+		if member := m.members[block.MemberKey]; member != nil {
+			for _, toolLine := range tui.RenderToolChainLines(runtimeMemberToolChainItems(member), max(20, m.contentWidth()-4)) {
+				line += "\n" + tui.Dim(toolLine)
+			}
+		}
+	}
 	switch block.MemberStatus {
 	case "done":
 		return tui.System(line)
@@ -2106,6 +2113,28 @@ func (m *runtimeModel) syncMemberSummary(member *runtimeMemberState) {
 		MemberTask:   member.Task,
 		MemberTools:  member.ToolCount,
 	})
+}
+
+func runtimeMemberToolChainItems(member *runtimeMemberState) []tui.ToolChainItem {
+	if member == nil {
+		return nil
+	}
+	items := make([]tui.ToolChainItem, 0)
+	for _, block := range member.Blocks {
+		if block.Kind != runtimeBlockTool {
+			continue
+		}
+		item := tui.ToolChainItem{
+			Name:   block.ToolName,
+			Args:   block.ToolArgs,
+			Status: string(block.ToolStatus),
+		}
+		if block.ToolStatus == tui.ToolStatusError {
+			item.Error = block.ToolResult
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolStatus) {

@@ -19,6 +19,13 @@ const (
 	ToolStatusError   ToolStatus = "error"
 )
 
+type ToolChainItem struct {
+	Name   string
+	Args   string
+	Status string
+	Error  string
+}
+
 type WelcomeInfo struct {
 	Version   string
 	Mode      string
@@ -262,6 +269,61 @@ func ToolResult(name string, args string, content string, status ToolStatus) str
 		rendered = append(rendered, dimStyle().Render("  └ "+line))
 	}
 	return strings.Join(rendered, "\n")
+}
+
+func RenderToolChainLines(items []ToolChainItem, lineWidth int) []string {
+	if len(items) == 0 {
+		return []string{"  工具链: 等待工具"}
+	}
+	const maxTools = 6
+	start := 0
+	if len(items) > maxTools {
+		start = len(items) - maxTools
+	}
+	lines := make([]string, 0, len(items)-start+2)
+	lines = append(lines, "  工具链:")
+	if start > 0 {
+		lines = append(lines, "  │  ... 省略 "+formatInt(start)+" 个较早工具")
+	}
+	visible := items[start:]
+	for i, item := range visible {
+		name := item.Name
+		if name == "" {
+			name = defaultToolDisplayName
+		}
+		branch := "├─"
+		if i == len(visible)-1 {
+			branch = "└─"
+		}
+		label := toolTreeLabel(name, item.Args, max(16, lineWidth-8))
+		if isToolChainErrorStatus(item.Status) {
+			reason := item.Error
+			if strings.TrimSpace(reason) == "" {
+				reason = "未返回错误原因"
+			}
+			label = "✗ " + label + " · " + truncateRunes(strings.Join(strings.Fields(reason), " "), max(8, lineWidth-CellWidth(StripANSI(label))-14))
+		}
+		lines = append(lines, "  "+branch+" "+label)
+	}
+	return lines
+}
+
+func isToolChainErrorStatus(status string) bool {
+	status = strings.ToLower(strings.TrimSpace(status))
+	return status == "error" || status == "failed" || status == "失败"
+}
+
+func toolTreeLabel(name, args string, maxWidth int) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = defaultToolDisplayName
+	}
+	summary := toolArgsSummary(args)
+	if summary == "" {
+		return truncateRunes(name, maxWidth)
+	}
+	prefix := name + ": "
+	return prefix + truncateRunes(summary, max(8, maxWidth-CellWidth(StripANSI(prefix))))
 }
 
 func toolStatusColor(status ToolStatus) string {

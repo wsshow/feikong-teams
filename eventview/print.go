@@ -17,6 +17,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
+	"golang.org/x/term"
 )
 
 const agentToolPrefix = agenttool.AgentToolPrefix
@@ -33,6 +34,7 @@ const (
 	EventToolCalls          = fkevent.EventToolCalls
 	EventToolCallsArgsDelta = fkevent.EventToolCallsArgsDelta
 	EventAction             = fkevent.EventAction
+	EventUsage              = fkevent.EventUsage
 	EventError              = fkevent.EventError
 
 	ActionTransfer             = fkevent.ActionTransfer
@@ -150,9 +152,25 @@ func (s *streamBuf) flush() {
 		s.reset()
 		return
 	}
-	lipgloss.Print(rendered)
+	lipgloss.Print(formatAssistantOutput(rendered))
 	fmt.Print("\n")
 	s.reset()
+}
+
+func formatAssistantOutput(rendered string) string {
+	rendered = strings.TrimRight(rendered, "\n")
+	if rendered == "" {
+		return ""
+	}
+	lines := strings.Split(rendered, "\n")
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = "\033[1;36m╰─▶\033[0m " + strings.TrimLeft(line, " \t")
+		} else {
+			lines[i] = line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (s *liveResponseStatus) ensure() {
@@ -169,6 +187,11 @@ func (s *liveResponseStatus) update(content string) {
 		return
 	}
 	view := fktui.RenderMarkdown(content)
+	if view == "" {
+		s.finish()
+		return
+	}
+	view = normalizeLivePreview(view)
 	if view == s.lastView {
 		return
 	}
@@ -176,13 +199,9 @@ func (s *liveResponseStatus) update(content string) {
 		fmt.Printf("\033[%dF\033[J", s.lastLines)
 	}
 	fmt.Print(view)
-	if !strings.HasSuffix(view, "\n") {
-		fmt.Print("\n")
-		view += "\n"
-	}
 	s.active = true
+	s.lastLines = strings.Count(view, "\n")
 	s.lastView = view
-	s.lastLines = renderedScreenLines(view, fktui.TermWidth())
 }
 
 func (s *liveResponseStatus) finish() {
@@ -195,6 +214,42 @@ func (s *liveResponseStatus) finish() {
 	s.active = false
 	s.lastLines = 0
 	s.lastView = ""
+}
+
+func normalizeLivePreview(view string) string {
+	width, height := terminalSize()
+	if width < 20 {
+		width = 80
+	}
+	if height < 8 {
+		height = 24
+	}
+	// 预览不能触发终端自动换行，否则无法精确擦除。
+	wrapWidth := max(20, width-1)
+	maxLines := max(4, min(18, height-6))
+
+	var physical []string
+	for _, line := range strings.Split(strings.TrimRight(view, "\n"), "\n") {
+		wrapped := fktui.WrapStyledLine(line, wrapWidth)
+		if len(wrapped) == 0 {
+			physical = append(physical, "")
+			continue
+		}
+		physical = append(physical, wrapped...)
+	}
+	if len(physical) > maxLines {
+		hidden := len(physical) - maxLines + 1
+		physical = append([]string{fmt.Sprintf("\033[90m... 省略预览 %d 行\033[0m", hidden)}, physical[len(physical)-maxLines+1:]...)
+	}
+	return strings.Join(physical, "\n") + "\n"
+}
+
+func terminalSize() (int, int) {
+	w, h, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || w <= 0 || h <= 0 {
+		return fktui.TermWidth(), 24
+	}
+	return w, h
 }
 
 func responseStatusView(content string, width int) string {
@@ -517,6 +572,8 @@ func newPrintEvent() (func(Event), func()) {
 			toolPending = map[string]bool{}
 			toolFlows = map[string]*terminalToolFlow{}
 			toolKeysByIndex = map[int]string{}
+		} else if activePanel == "" {
+			fmt.Println()
 		}
 		activePanel = "member"
 	}
@@ -529,6 +586,8 @@ func newPrintEvent() (func(Event), func()) {
 	activateToolPanel := func() {
 		if activePanel == "member" {
 			finishMemberPanel()
+		} else if activePanel == "" {
+			fmt.Println()
 		}
 		activePanel = "tool"
 	}
@@ -899,8 +958,10 @@ func newPrintEvent() (func(Event), func()) {
 			if finishMembersBeforeParentOutput(event) {
 				return
 			}
+			printContent := event.Content
 			if event.Content != "" && sameStreamMessage(sb.content(), event.Content) {
 				sb.discard()
+				printContent = ""
 			} else {
 				tryFlush()
 			}
@@ -911,9 +972,9 @@ func newPrintEvent() (func(Event), func()) {
 			if event.ReasoningContent != "" {
 				fmt.Printf("\n\033[90m[%s] 思考:\033[0m \033[3;90m%s\033[0m\n", event.AgentName, event.ReasoningContent)
 			}
-			if event.Content != "" {
+			if printContent != "" {
 				fmt.Printf("\n\033[1;32m✓ [%s]\033[0m\n", event.AgentName)
-				lipgloss.Println(fktui.RenderMarkdown(event.Content))
+				lipgloss.Println(formatAssistantOutput(fktui.RenderMarkdown(printContent)))
 			}
 
 		case EventToolResult:
@@ -1154,6 +1215,9 @@ func newPrintEvent() (func(Event), func()) {
 					fmt.Printf("  详情: %s\n", event.Content)
 				}
 			}
+
+		case EventUsage:
+			return
 
 		case EventError:
 			if isMemberEvent(event) {

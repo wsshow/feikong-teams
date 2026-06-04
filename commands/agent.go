@@ -177,7 +177,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	app.OnPreStop(func(ctx context.Context) error {
 		if !temporarySession {
 			if cli.SaveCLISessionHistory() {
-				cli.PrintResumeHint()
+				if query == "" {
+					cli.PrintResumeHint()
+				}
 			}
 		}
 		return nil
@@ -191,9 +193,6 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		}
 		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, history); err != nil {
 			log.Printf("保存输入历史失败: %v", err)
-		}
-		if query != "" {
-			pterm.Success.Println("成功退出")
 		}
 		return nil
 	})

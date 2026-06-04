@@ -191,6 +191,7 @@ func (p *ToolPanel) Finish() {
 	}
 	p.model.done = true
 	p.renderLocked()
+	fmt.Println()
 	p.active = false
 	p.lastLines = 0
 	p.lastView = ""
