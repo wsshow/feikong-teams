@@ -73,7 +73,11 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 		pterm.Info.Printf("[非交互模式] 恢复会话: %s\n", activeSessionID)
 	} else {
 		activeSessionID = NewDirectSessionID()
-		pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
+		if IsTemporarySession() {
+			pterm.Info.Printf("[非交互模式] 临时会话 ID: %s\n", activeSessionID)
+		} else {
+			pterm.Info.Printf("[非交互模式] 会话 ID: %s\n", activeSessionID)
+		}
 	}
 
 	// 回显用户输入
@@ -122,7 +126,6 @@ func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSign
 		default:
 		}
 	}
-	printResumeHint(activeSessionID)
 }
 
 // SetCurrentAgent 设置当前智能体名称（用于 agent 命令初始化）
@@ -133,6 +136,11 @@ func (s *Session) SetCurrentAgent(name string) {
 // SetCallbackBuilder 设置事件回调构造器（用于自定义输出格式）
 func (s *Session) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
 	s.callbackBuilder = cb
+}
+
+// PrintResumeHint 打印当前会话的恢复命令。
+func PrintResumeHint() {
+	printResumeHint(activeSessionID)
 }
 
 func printResumeHint(sessionID string) {

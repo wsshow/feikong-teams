@@ -39,7 +39,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		}
 	}
 	resumeSession := cmd.String("resume")
-	saveHistory := cmd.Bool("save")
+	temporarySession := cmd.Bool("temporary")
 	approve := cmd.String("approve")
 
 	// 创建应用实例（CLI 模式排除 SIGINT，由 Session 处理）
@@ -85,6 +85,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	app.OnReady(func(ctx context.Context) error {
 		session = cli.NewSession(currentMode, inputHistory, createModeRunner)
 		session.ApproveStores = approve
+		cli.SetTemporarySession(temporarySession)
 		if resumeSession != "" {
 			cli.SetResumeSessionID(resumeSession)
 		}
@@ -99,8 +100,10 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	app.OnPreStop(func(ctx context.Context) error {
-		if saveHistory {
-			cli.AutoSaveCLIHistory()
+		if !temporarySession {
+			if cli.SaveCLISessionHistory() {
+				cli.PrintResumeHint()
+			}
 		}
 		if cfg.MemoryEnabled && query != "" {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")

@@ -284,8 +284,8 @@ cat error.log | ./fkteams agent -n coder -q "分析这个错误日志"
 | ----------- | ---- | ------------------------------------------------------------------------------ |
 | `--mode`    | `-m` | 工作模式: `team`（团队）、`deep`（深度）、`group`（讨论）或 `custom`（自定义） |
 | `--query`   | `-q` | 直接查询模式，执行完查询后退出                                                 |
-| `--save`    |      | 保存聊天历史（默认不保存，需显式开启，交互模式和直接查询模式均生效）           |
 | `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
+| `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                             |
 | `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`dispatch`，逗号分隔）            |
 | `--version` | `-v` | 显示版本信息                                                                   |
 
@@ -320,24 +320,24 @@ curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
 | `list`      |      | 列出所有可用的 Agent                                                |
 | `--name`    | `-n` | Agent 名称（必填，与 list 互斥）                                    |
 | `--query`   | `-q` | 直接查询模式，执行完查询后退出                                      |
-| `--save`    |      | 保存聊天历史（默认不保存，需显式开启）                              |
+| `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                  |
 | `--format`  |      | 输出格式: `default`（格式化）或 `json`（原始JSON）                  |
 | `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`dispatch`，逗号分隔） |
 
-全局 `--save` 同样对 `agent` 子命令生效。
+会话默认保存，可通过全局 `--resume` 恢复；如需额外导出 HTML，请在交互模式内执行 `save_chat_history_to_html`。
 
 ```bash
 # 列出所有可用的 Agent
 ./fkteams agent list
 
-# 直接查询（默认不保存历史）
+# 直接查询（默认保存历史）
 ./fkteams agent --name researcher --query "搜索最新的 Go 语言新闻"
 
 # JSON 格式输出原始事件
 ./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --format json
 
-# 直接查询并保存历史
-./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --save
+# 临时查询，不保存历史
+./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --temporary
 
 # 交互模式（进入指定 Agent 的对话）
 ./fkteams agent -n coder

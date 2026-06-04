@@ -46,8 +46,9 @@ func Root() *ucli.Command {
 				Usage:   "工作模式: team|deep|group|custom",
 			},
 			&ucli.BoolFlag{
-				Name:  "save",
-				Usage: "保存聊天历史",
+				Name:    "temporary",
+				Aliases: []string{"temp"},
+				Usage:   "开启临时会话，不保存聊天历史且不显示恢复命令",
 			},
 			&ucli.StringFlag{
 				Name:  "approve",

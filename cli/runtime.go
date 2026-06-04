@@ -454,6 +454,7 @@ func newRuntimeModel(r *Runtime) runtimeModel {
 		memberTools:  make(map[string]string),
 	}
 	model.appendBlock(runtimeBlockWelcome, "欢迎", "")
+	model.appendLoadedHistory()
 	return model
 }
 
@@ -1198,6 +1199,9 @@ func (m runtimeModel) loadRuntimeSession(sessionID string) runtimeModel {
 		return m
 	}
 	m.welcome.SessionID = sessionID
+	m.blocks = nil
+	m.appendBlock(runtimeBlockWelcome, "欢迎", "")
+	m.appendLoadedHistory()
 	m.appendBlock(runtimeBlockSystem, "聊天历史", "已加载会话: "+sessionID)
 	return m
 }
@@ -1701,9 +1705,91 @@ func runtimeRenderToolBlock(block runtimeBlock) string {
 
 func (m *runtimeModel) appendBlock(kind runtimeBlockKind, title, content string) {
 	m.blocks = append(m.blocks, runtimeBlock{Kind: kind, Title: title, Content: content})
+	m.trimBlocks()
+}
+
+func (m *runtimeModel) appendHistoryBlock(block runtimeBlock) {
+	m.blocks = append(m.blocks, block)
+	m.trimBlocks()
+}
+
+func (m *runtimeModel) trimBlocks() {
 	if len(m.blocks) > 200 {
 		m.blocks = m.blocks[len(m.blocks)-200:]
 	}
+}
+
+func (m *runtimeModel) appendLoadedHistory() {
+	recorder := getCliRecorder()
+	messages := recorder.GetMessages()
+	if len(messages) == 0 {
+		return
+	}
+	for _, msg := range messages {
+		m.appendHistoryMessage(msg)
+	}
+	m.activeOutput = -1
+	m.activeReason = -1
+}
+
+func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
+	agent := msg.AgentName
+	if agent == "" {
+		agent = runtimeDefaultAgentName
+	}
+	if msg.MemberName != "" {
+		agent = msg.MemberName
+	}
+	if agent == "用户" {
+		content := strings.TrimSpace(msg.GetTextContent())
+		if content != "" {
+			m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockUser, Title: "用户", Content: content})
+		}
+		return
+	}
+	for _, event := range msg.Events {
+		switch event.Type {
+		case eventlog.MsgTypeReasoning:
+			if event.Content != "" {
+				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: event.Content})
+			}
+		case eventlog.MsgTypeText:
+			if event.Content != "" {
+				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockAssistant, Title: agent, Content: event.Content})
+			}
+		case eventlog.MsgTypeToolCall:
+			if event.ToolCall != nil {
+				m.appendHistoryToolCall(event.ToolCall)
+			}
+		case eventlog.MsgTypeAction:
+			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
+				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockSystem, Title: string(event.Action.ActionType), Content: event.Action.Content})
+			}
+		case eventlog.MsgTypeError:
+			if event.Content != "" {
+				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockError, Title: agent, Content: event.Content})
+			}
+		}
+	}
+}
+
+func (m *runtimeModel) appendHistoryToolCall(tool *eventlog.ToolCallRecord) {
+	name := tool.DisplayName
+	if name == "" {
+		name = tool.Name
+	}
+	block := runtimeBlock{
+		Kind:       runtimeBlockTool,
+		ToolKey:    tool.Ref,
+		ToolName:   emptyRuntimeToolName(name),
+		ToolArgs:   tool.Arguments,
+		ToolStatus: tui.ToolStatusDone,
+	}
+	if tool.Result != "" {
+		block.ToolResult = tool.Result
+		block.ToolHasResult = true
+	}
+	m.appendHistoryBlock(block)
 }
 
 func (m *runtimeModel) ensureMember(event fkevent.Event) *runtimeMemberState {

@@ -57,6 +57,7 @@ fkteams              # 默认：团队模式（coordinator 协调多智能体）
 fkteams -m deep      # 深度分析模式
 fkteams -m group     # 多智能体讨论模式（圆桌）
 fkteams -m custom    # 自定义会议模式
+fkteams --temporary  # 临时会话，不保存历史
 ```
 
 ### 直接查询模式（非交互，执行后退出）
@@ -64,7 +65,8 @@ fkteams -m custom    # 自定义会议模式
 ```bash
 fkteams -q "帮我审查 main.go"
 fkteams -m deep -q "深度分析这个架构"
-fkteams -q "生成一份报告" --save    # 同时保存历史
+fkteams -q "生成一份报告"             # 默认保存历史
+fkteams -q "临时问答" --temporary     # 不保存历史
 ```
 
 ### 管道输入模式
@@ -102,8 +104,8 @@ fkteams -r "20260302_091249" -q "继续上次的分析"  # 恢复后直接查询
 |------|------|------|
 | `--mode` | `-m` | 工作模式：`team`（默认）/ `deep` / `group` / `custom` |
 | `--query` | `-q` | 直接查询模式，执行后退出 |
-| `--save` | | 保存聊天历史（默认不保存） |
 | `--resume` | `-r` | 恢复指定会话 ID |
+| `--temporary` | `--temp` | 临时会话，不保存历史 |
 | `--approve` | | 自动批准工具调用：`all` / `command` / `file` / `dispatch`（逗号分隔） |
 
 ---
@@ -174,8 +176,8 @@ fkteams agent -n researcher -q "搜索 AI 新闻" --format json
 fkteams agent -n shell -q "清理临时文件" --approve all
 fkteams agent -n coder -q "重构 main.go" --approve file,command
 
-# 保存历史
-fkteams agent -n researcher -q "搜索 AI 新闻" --save
+# 临时运行，不保存历史
+fkteams agent -n researcher -q "搜索 AI 新闻" --temporary
 ```
 
 ### `agent` 子命令参数
@@ -185,7 +187,7 @@ fkteams agent -n researcher -q "搜索 AI 新闻" --save
 | `list` | | 列出所有可用智能体 |
 | `--name` | `-n` | 智能体名称（必填，与 list 互斥） |
 | `--query` | `-q` | 直接查询模式 |
-| `--save` | | 保存历史（默认不保存） |
+| `--temporary` | `--temp` | 临时会话，不保存历史 |
 | `--format` | | 输出格式：`default`（格式化）或 `json`（原始事件） |
 | `--approve` | | 自动批准：`all` / `command` / `file` / `dispatch` |
 
@@ -201,9 +203,9 @@ fkteams agent -n researcher -q "搜索 AI 新闻" --save
 # 列出所有历史会话
 fkteams session list
 
-# 启动时自动保存（退出时写入文件）
-fkteams --save
-fkteams -q "你的问题" --save
+# 会话默认保存（退出时写入文件）
+fkteams
+fkteams -q "你的问题"
 
 # 恢复历史会话
 fkteams -r "20260302_091249"
@@ -366,7 +368,7 @@ fkteams --version
 
 ## 十、常见问题（Gotchas）
 
-- **`--save` 必须显式设置**：历史默认不保存，需在启动时加 `--save`，或在交互中执行 `save_chat_history`。
+- **会话默认保存**：退出时会自动写入历史；临时任务可加 `--temporary`，额外导出可在交互中执行 `save_chat_history_to_html` 或 `save_chat_history_to_markdown`。
 - **管道触发非交互模式**：哪怕管道为空也会触发，空管道 + 无 `-q` 会报错。
 - **`fkteams web` vs `fkteams serve`**：`web` 包含前端页面；`serve` 仅提供 API，无界面。
 - **首次使用需先生成配置**：运行 `fkteams generate config` 后再启动，否则报错。

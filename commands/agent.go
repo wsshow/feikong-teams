@@ -62,8 +62,9 @@ func agentCommand() *ucli.Command {
 				Usage:   "直接查询模式，执行完查询后退出",
 			},
 			&ucli.BoolFlag{
-				Name:  "save",
-				Usage: "保存聊天历史",
+				Name:    "temporary",
+				Aliases: []string{"temp"},
+				Usage:   "开启临时会话，不保存聊天历史且不显示恢复命令",
 			},
 			&ucli.StringFlag{
 				Name:  "format",
@@ -104,6 +105,8 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 			return fmt.Errorf("检测到管道输入但内容为空，请提供查询内容或使用 -q 参数")
 		}
 	}
+	resumeSession := cmd.Root().String("resume")
+	temporarySession := cmd.Bool("temporary") || cmd.Root().Bool("temporary")
 
 	agentInfo := agents.GetAgentByName(agentName)
 	if agentInfo == nil {
@@ -146,6 +149,10 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	app.OnReady(func(ctx context.Context) error {
 		session = cli.NewSession(cli.ModeTeam, inputHistory, nil)
 		session.SetCurrentAgent(agentName)
+		cli.SetTemporarySession(temporarySession)
+		if resumeSession != "" {
+			cli.SetResumeSessionID(resumeSession)
+		}
 
 		approve := cmd.String("approve")
 		if approve == "" {
@@ -168,8 +175,10 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	app.OnPreStop(func(ctx context.Context) error {
-		if cmd.Bool("save") || cmd.Root().Bool("save") {
-			cli.AutoSaveCLIHistory()
+		if !temporarySession {
+			if cli.SaveCLISessionHistory() {
+				cli.PrintResumeHint()
+			}
 		}
 		return nil
 	})

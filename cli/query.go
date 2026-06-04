@@ -153,6 +153,9 @@ var cliSessionTitle string
 // resumeSessionID 恢复会话的 ID，由 -r 参数设置
 var resumeSessionID string
 
+// temporarySession 标记当前 CLI 会话不持久化。
+var temporarySession bool
+
 // NewDirectSessionID 生成基于 UUID 的唯一会话 ID
 func NewDirectSessionID() string {
 	return common.GenerateSessionID()
@@ -161,6 +164,16 @@ func NewDirectSessionID() string {
 // SetResumeSessionID 设置要恢复的会话 ID
 func SetResumeSessionID(sessionID string) {
 	resumeSessionID = sessionID
+}
+
+// SetTemporarySession 设置当前 CLI 是否为临时会话。
+func SetTemporarySession(v bool) {
+	temporarySession = v
+}
+
+// IsTemporarySession 返回当前 CLI 是否为临时会话。
+func IsTemporarySession() bool {
+	return temporarySession
 }
 
 // getCliRecorder 获取 CLI 模式的历史记录器
@@ -336,25 +349,20 @@ func FlushSessionMemory() {
 	g.MemoryManager.FlushFromRecorder(recorder, activeSessionID)
 }
 
-// AutoSaveCLIHistory 自动保存 CLI 模式的聊天历史（由 --save 参数控制）
-func AutoSaveCLIHistory() {
+// SaveCLISessionHistory 保存 CLI 模式的可恢复会话历史。
+func SaveCLISessionHistory() bool {
 	recorder := getCliRecorder()
+	if recorder.GetMessageCount() == 0 {
+		return false
+	}
 	historyFile := filepath.Join(CLIHistoryDir, activeSessionID, eventlog.HistoryFileName)
 
-	pterm.Info.Println("正在自动保存聊天历史...")
 	if err := recorder.SaveToFile(historyFile); err != nil {
 		pterm.Error.Printfln("保存聊天历史失败: %v", err)
-	} else {
-		pterm.Success.Printfln("成功保存聊天历史: %s", historyFile)
-		saveCliSessionMetadata(activeSessionID, cliSessionTitle)
+		return false
 	}
-
-	htmlFilePath, err := SaveChatHistoryToHTML()
-	if err != nil {
-		pterm.Error.Printfln("%v", err)
-	} else {
-		pterm.Success.Printfln("成功保存聊天历史到网页文件: %s", htmlFilePath)
-	}
+	saveCliSessionMetadata(activeSessionID, cliSessionTitle)
+	return true
 }
 
 // saveCliSessionMetadata 保存 CLI 会话元数据
