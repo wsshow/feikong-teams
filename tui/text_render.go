@@ -2,11 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 )
+
+var ansiTokenRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func LineCount(s string) int {
 	if s == "" {
@@ -50,6 +54,62 @@ func WrapLines(content string, width int) string {
 		lines[i] = lipgloss.Wrap(line, width, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func WrapStyledLine(content string, width int) []string {
+	if content == "" {
+		return []string{""}
+	}
+	if width <= 0 {
+		return []string{content}
+	}
+	var lines []string
+	var current strings.Builder
+	var pendingStyle strings.Builder
+	col := 0
+	for len(content) > 0 {
+		if loc := ansiTokenRe.FindStringIndex(content); loc != nil && loc[0] == 0 {
+			token := content[:loc[1]]
+			if isANSIResetToken(token) {
+				current.WriteString(token)
+			} else {
+				pendingStyle.WriteString(token)
+			}
+			content = content[loc[1]:]
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(content)
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		content = content[size:]
+		if r == '\n' {
+			lines = append(lines, current.String())
+			current.Reset()
+			pendingStyle.Reset()
+			col = 0
+			continue
+		}
+		w := runewidth.RuneWidth(r)
+		if w < 1 {
+			w = 1
+		}
+		if col > 0 && col+w > width {
+			lines = append(lines, current.String())
+			current.Reset()
+			col = 0
+		}
+		current.WriteString(pendingStyle.String())
+		pendingStyle.Reset()
+		current.WriteRune(r)
+		col += w
+	}
+	lines = append(lines, current.String())
+	return lines
+}
+
+func isANSIResetToken(token string) bool {
+	return token == "\x1b[0m" || token == "\x1b[m"
 }
 
 func TrimRenderedIndent(content string) string {

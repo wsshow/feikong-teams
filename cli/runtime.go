@@ -33,6 +33,7 @@ const (
 	runtimeExitConfirmWindow = 2 * time.Second
 	runtimeExitConfirmTick   = time.Second
 	runtimeSelectionNotice   = 2 * time.Second
+	runtimeHorizontalGutter  = 1
 )
 
 type Runtime struct {
@@ -149,6 +150,7 @@ const (
 	runtimeBlockMeta      runtimeBlockKind = "meta"
 	runtimeBlockBanner    runtimeBlockKind = "banner"
 	runtimeBlockWelcome   runtimeBlockKind = "welcome"
+	runtimeBlockInterrupt runtimeBlockKind = "interrupt"
 )
 
 type runtimeBlock struct {
@@ -424,7 +426,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.input.SetWidth(max(20, msg.Width-8))
+		m.input.SetWidth(max(20, m.contentWidth()-2))
 		return m, nil
 	case runtimeExitTickMsg:
 		if !m.isExitConfirming() {
@@ -455,7 +457,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = false
 		m.cancelling = false
 		m.status = "任务已取消"
-		m.appendBlock(runtimeBlockSystem, "任务", "已取消当前任务")
+		m.appendBlock(runtimeBlockInterrupt, "打断", "Interrupted · 输入新的指令继续")
 		return m, nil
 	case runtimeQueryDoneMsg:
 		m.running = false
@@ -491,20 +493,19 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft && mouse.Y >= 0 && mouse.Y < m.viewHeight() {
-			point := tui.TextPoint{X: mouse.X, Y: mouse.Y}
-			m.selection = tui.NewTextSelection(point)
+			m.selection = tui.NewTextSelection(m.mouseTextPoint(mouse))
 		}
 		return m, nil
 	case tea.MouseMotionMsg:
 		if m.selection.Active {
 			mouse := msg.Mouse()
-			m.selection.Cursor = tui.TextPoint{X: mouse.X, Y: min(mouse.Y, max(0, m.viewHeight()-1))}
+			m.selection.Cursor = m.mouseTextPoint(mouse)
 		}
 		return m, nil
 	case tea.MouseReleaseMsg:
 		if m.selection.Active {
 			mouse := msg.Mouse()
-			m.selection.Cursor = tui.TextPoint{X: mouse.X, Y: min(mouse.Y, max(0, m.viewHeight()-1))}
+			m.selection.Cursor = m.mouseTextPoint(mouse)
 			selected := strings.TrimRight(m.selectedVisibleText(), "\n")
 			m.selection.Active = false
 			if strings.TrimSpace(selected) != "" {
@@ -533,12 +534,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			if m.running {
-				if m.cancelling {
-					return m, nil
-				}
-				m.cancelling = true
-				m.status = "正在取消当前任务..."
-				return m, m.runtime.requestCancel()
+				return m.startRuntimeCancel()
 			}
 			if m.isExitConfirming() {
 				m.runtime.requestExit()
@@ -547,6 +543,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.exitUntil = time.Now().Add(runtimeExitConfirmWindow)
 			return m, runtimeExitTickCmd()
 		case "esc":
+			if m.running {
+				return m.startRuntimeCancel()
+			}
 			m.input.SetValue("")
 			m.savedInput = ""
 			m.pastes = nil
@@ -628,6 +627,16 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+func (m runtimeModel) startRuntimeCancel() (tea.Model, tea.Cmd) {
+	if m.cancelling {
+		return m, nil
+	}
+	m.cancelling = true
+	m.status = "正在取消当前任务..."
+	m.exitUntil = time.Time{}
+	return m, m.runtime.requestCancel()
 }
 
 func (m *runtimeModel) scrollTranscript(delta int) {
@@ -843,66 +852,70 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 	}
 	m.runtime.session.InputHistory = append(m.runtime.session.InputHistory, input)
 
-	command := strings.TrimPrefix(input, "/")
+	isCommandInput := strings.HasPrefix(input, "/")
+	command := ""
+	if isCommandInput {
+		command = strings.TrimPrefix(input, "/")
+	}
 	if runtimeShouldRecordCommandInput(input, command) {
 		m.appendBlock(runtimeBlockUser, "用户", input)
 	}
-	switch command {
-	case "q", "quit":
-		m.runtime.requestExit()
-		return m, tea.Quit
-	case "help":
-		m.appendBlock(runtimeBlockSystem, "帮助", runtimeHelpMarkdown())
-		return m, nil
-	case "list_agents":
-		m.appendBlock(runtimeBlockSystem, "可用智能体", runtimeAgentsMarkdown())
-		return m, nil
-	case "list_chat_history":
-		m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true))
-		return m, nil
-	case "load_chat_history":
-		picker, err := newSessionPicker()
-		return m.openRuntimePicker(picker, err, "加载聊天历史")
-	case "save_chat_history":
-		return m.saveRuntimeChatHistory(), nil
-	case "clear_chat_history":
-		m.picker = newConfirmPicker("清空当前聊天历史", "clear_chat_history")
-		return m, nil
-	case "save_chat_history_to_markdown":
-		return m.saveRuntimeChatHistoryMarkdown(), nil
-	case "save_chat_history_to_html":
-		return m.saveRuntimeChatHistoryHTML(), nil
-	case "switch_work_mode":
-		modeSwitcher := &sessionModeSwitcher{session: m.runtime.session, ctx: m.runtime.ctx, executor: m.runtime.executor}
-		newMode, err := modeSwitcher.SwitchMode()
-		if err != nil {
-			m.appendBlock(runtimeBlockError, "模式切换失败", err.Error())
+	if isCommandInput {
+		switch command {
+		case "quit":
+			m.runtime.requestExit()
+			return m, tea.Quit
+		case "help":
+			m.appendBlock(runtimeBlockSystem, "帮助", runtimeHelpMarkdown())
+			return m, nil
+		case "list_agents":
+			m.appendBlock(runtimeBlockSystem, "可用智能体", runtimeAgentsMarkdown())
+			return m, nil
+		case "list_chat_history":
+			m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true))
+			return m, nil
+		case "load_chat_history":
+			picker, err := newSessionPicker()
+			return m.openRuntimePicker(picker, err, "加载聊天历史")
+		case "save_chat_history":
+			return m.saveRuntimeChatHistory(), nil
+		case "clear_chat_history":
+			m.picker = newConfirmPicker("清空当前聊天历史", "clear_chat_history")
+			return m, nil
+		case "save_chat_history_to_markdown":
+			return m.saveRuntimeChatHistoryMarkdown(), nil
+		case "save_chat_history_to_html":
+			return m.saveRuntimeChatHistoryHTML(), nil
+		case "switch_work_mode":
+			modeSwitcher := &sessionModeSwitcher{session: m.runtime.session, ctx: m.runtime.ctx, executor: m.runtime.executor}
+			newMode, err := modeSwitcher.SwitchMode()
+			if err != nil {
+				m.appendBlock(runtimeBlockError, "模式切换失败", err.Error())
+				return m, nil
+			}
+			m.welcome.Mode = runtimeModeName(m.runtime.session.CurrentMode)
+			m.appendBlock(runtimeBlockSystem, "模式", "已切换到工作模式: "+newMode)
+			return m, nil
+		case "list_schedule":
+			m.appendBlock(runtimeBlockSystem, "定时任务", runtimeScheduleMarkdown())
+			return m, nil
+		case "cancel_schedule":
+			picker, err := newScheduleCancelPicker()
+			return m.openRuntimePicker(picker, err, "取消定时任务")
+		case "delete_schedule":
+			picker, err := newScheduleDeletePicker()
+			return m.openRuntimePicker(picker, err, "删除定时任务")
+		case "list_memory":
+			m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown())
+			return m, nil
+		case "delete_memory":
+			picker, err := newMemoryDeletePicker()
+			return m.openRuntimePicker(picker, err, "删除长期记忆")
+		case "clear_memory":
+			m.picker = newConfirmPicker("清空所有长期记忆", "clear_memory")
 			return m, nil
 		}
-		m.welcome.Mode = runtimeModeName(m.runtime.session.CurrentMode)
-		m.appendBlock(runtimeBlockSystem, "模式", "已切换到工作模式: "+newMode)
-		return m, nil
-	case "list_schedule":
-		m.appendBlock(runtimeBlockSystem, "定时任务", runtimeScheduleMarkdown())
-		return m, nil
-	case "cancel_schedule":
-		picker, err := newScheduleCancelPicker()
-		return m.openRuntimePicker(picker, err, "取消定时任务")
-	case "delete_schedule":
-		picker, err := newScheduleDeletePicker()
-		return m.openRuntimePicker(picker, err, "删除定时任务")
-	case "list_memory":
-		m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown())
-		return m, nil
-	case "delete_memory":
-		picker, err := newMemoryDeletePicker()
-		return m.openRuntimePicker(picker, err, "删除长期记忆")
-	case "clear_memory":
-		m.picker = newConfirmPicker("清空所有长期记忆", "clear_memory")
-		return m, nil
-	}
 
-	if strings.HasPrefix(input, "/") && command != "" {
 		m.appendBlock(runtimeBlockError, "未知命令", command)
 		return m, nil
 	}
@@ -928,22 +941,7 @@ func runtimeShouldRecordCommandInput(input string, command string) bool {
 	if command == "" {
 		return false
 	}
-	if strings.HasPrefix(input, "/") {
-		return true
-	}
-	return runtimeKnownCommand(command)
-}
-
-func runtimeKnownCommand(command string) bool {
-	if command == "q" {
-		return true
-	}
-	for _, item := range allCommands {
-		if item.Name == command {
-			return true
-		}
-	}
-	return false
+	return strings.HasPrefix(input, "/")
 }
 
 func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title string) (tea.Model, tea.Cmd) {
@@ -1092,6 +1090,7 @@ func (m runtimeModel) View() tea.View {
 	if m.selection.Active {
 		content = m.renderSelection(content)
 	}
+	content = tui.RenderRuntimeScreen(content, m.screenWidth(), m.viewHeight(), runtimeHorizontalGutter)
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
@@ -1124,6 +1123,13 @@ func (m runtimeModel) renderSelection(content string) string {
 		lines[i] = m.selection.RenderLine(i, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m runtimeModel) mouseTextPoint(mouse tea.Mouse) tui.TextPoint {
+	return tui.TextPoint{
+		X: max(0, mouse.X-runtimeHorizontalGutter),
+		Y: min(mouse.Y, max(0, m.viewHeight()-1)),
+	}
 }
 
 func (m runtimeModel) screenLines() []string {
@@ -1238,15 +1244,11 @@ func (m runtimeModel) renderBottom() string {
 
 func (m runtimeModel) renderInputBox() string {
 	content := m.renderInputValue()
-	width := m.width
-	if width <= 0 {
-		width = 100
-	}
-	return tui.RenderRuntimeInputBox(width, content, m.inputHint())
+	return tui.RenderRuntimeInputBox(max(24, m.contentWidth()), content, m.inputHint())
 }
 
 func (m runtimeModel) renderInputValue() string {
-	return tui.RenderInlineInputValue(m.input.View())
+	return tui.PromptMarker() + tui.RenderInlineInputValueAtCursor(m.input.Value(), m.input.Position())
 }
 
 func (m runtimeModel) inputHint() string {
@@ -1296,15 +1298,15 @@ func (m runtimeModel) renderPicker() string {
 		}
 	}
 	fmt.Fprintf(&sb, "%s", tui.Dim("  ↑↓ 移动 | Enter 选择 | Esc 返回 | 输入过滤"))
-	return tui.PickerBox(max(20, m.width-4), sb.String())
+	return tui.PickerBox(max(20, m.contentWidth()), sb.String())
 }
 
 func (m runtimeModel) renderBlock(block runtimeBlock) string {
 	switch block.Kind {
 	case runtimeBlockUser:
-		return tui.RenderUserMessageBlock(block.Content, m.width)
+		return tui.RenderUserMessageBlock(block.Content, m.contentWidth())
 	case runtimeBlockWelcome:
-		return tui.RenderWelcomePanel(m.welcome, m.width)
+		return tui.RenderWelcomePanel(m.welcome, m.contentWidth())
 	case runtimeBlockReasoning:
 		return tui.Reasoning(block.Content) + "\n"
 	case runtimeBlockError:
@@ -1315,6 +1317,8 @@ func (m runtimeModel) renderBlock(block runtimeBlock) string {
 		return tui.Dim(fmt.Sprintf("%s ID: %s", block.Title, block.Content))
 	case runtimeBlockBanner:
 		return tui.Banner(fmt.Sprintf("%s: %s", block.Title, block.Content))
+	case runtimeBlockInterrupt:
+		return tui.Interrupted(block.Content)
 	case runtimeBlockSystem:
 		return tui.System(block.Title) + "\n" + m.runtimeRenderMarkdown(block.Content)
 	case runtimeBlockTool:
@@ -1463,7 +1467,7 @@ func runtimeHelpMarkdown() string {
 | 命令 | 说明 |
 |------|------|
 | help | 显示帮助 |
-| q / quit | 退出 |
+| /quit | 退出 |
 | list_agents | 列出智能体 |
 | list_chat_history | 列出聊天历史 |
 | load_chat_history | 选择并加载聊天历史 |
@@ -1653,9 +1657,14 @@ func (m runtimeModel) runtimeRenderMarkdown(content string) string {
 }
 
 func (m runtimeModel) contentWidth() int {
+	width := m.screenWidth()
+	return max(20, width-runtimeHorizontalGutter*2)
+}
+
+func (m runtimeModel) screenWidth() int {
 	width := m.width
 	if width <= 0 {
 		width = 100
 	}
-	return max(20, width-2)
+	return max(24, width)
 }

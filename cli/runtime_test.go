@@ -255,15 +255,15 @@ func TestRuntimeMouseSelectionCopiesVisibleText(t *testing.T) {
 	model.height = 10
 	model.blocks = []runtimeBlock{{Kind: runtimeBlockTool, Content: "abcdef"}}
 
-	updated, _ := model.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 0, Button: tea.MouseLeft}))
+	updated, _ := model.Update(tea.MouseClickMsg(tea.Mouse{X: 2, Y: 0, Button: tea.MouseLeft}))
 	model = updated.(runtimeModel)
-	updated, _ = model.Update(tea.MouseMotionMsg(tea.Mouse{X: 4, Y: 0, Button: tea.MouseLeft}))
+	updated, _ = model.Update(tea.MouseMotionMsg(tea.Mouse{X: 5, Y: 0, Button: tea.MouseLeft}))
 	model = updated.(runtimeModel)
 	if !model.selection.Active {
 		t.Fatal("mouse drag should start an active selection")
 	}
 
-	updated, _ = model.Update(tea.MouseReleaseMsg(tea.Mouse{X: 4, Y: 0, Button: tea.MouseLeft}))
+	updated, _ = model.Update(tea.MouseReleaseMsg(tea.Mouse{X: 5, Y: 0, Button: tea.MouseLeft}))
 	model = updated.(runtimeModel)
 	if model.selection.Active {
 		t.Fatal("mouse release should finish the selection")

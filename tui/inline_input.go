@@ -158,8 +158,30 @@ func RenderInlineInputValue(view string) string {
 	})
 }
 
+func RenderInlineInputValueAtCursor(value string, cursor int) string {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+
+	before := RenderInlineInputValue(string(runes[:cursor]))
+	if cursor >= len(runes) {
+		return before + inputCursorStyle().Render(" ")
+	}
+	current := string(runes[cursor])
+	after := RenderInlineInputValue(string(runes[cursor+1:]))
+	return before + inputCursorStyle().Render(current) + after
+}
+
 func inlineTokenStyle(foreground string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(foreground)).Bold(true)
+}
+
+func inputCursorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Reverse(true)
 }
 
 func renderInlinePrefixedToken(match string, prefix string, style lipgloss.Style) string {

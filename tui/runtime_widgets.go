@@ -23,11 +23,43 @@ func DoneMarker() string {
 }
 
 func RenderRuntimeInputBox(width int, content string, hint string) string {
-	innerWidth := max(20, width-2)
-	line := dividerStyle().Render(strings.Repeat("─", innerWidth))
-	inputLine := lipgloss.NewStyle().Width(innerWidth).Render(content)
+	width = max(20, width)
+	line := dividerStyle().Render(strings.Repeat("─", width))
+	inputLine := strings.Join(WrapStyledLine(content, width), "\n")
 	hintLine := dimStyle().Render(hint)
 	return strings.Join([]string{line, inputLine, line, hintLine}, "\n")
+}
+
+func RenderRuntimeScreen(content string, width int, height int, gutter int) string {
+	if width <= 0 {
+		width = 100
+	}
+	if height <= 0 {
+		height = LineCount(content)
+	}
+	if gutter < 0 {
+		gutter = 0
+	}
+	if gutter*2 >= width {
+		gutter = 0
+	}
+	contentWidth := max(1, width-gutter*2)
+	left := strings.Repeat(" ", gutter)
+	right := strings.Repeat(" ", gutter)
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	for i, line := range lines {
+		if CellWidth(StripANSI(line)) > contentWidth {
+			line = SliceCells(StripANSI(line), 0, contentWidth)
+		}
+		lines[i] = left + line + strings.Repeat(" ", max(0, contentWidth-CellWidth(StripANSI(line)))) + right
+	}
+	return strings.Join(lines, "\n")
 }
 
 func RenderUserMessageBlock(content string, width int) string {
@@ -53,7 +85,7 @@ func RenderWelcomePanel(info WelcomeInfo, width int) string {
 	if width <= 0 {
 		width = 100
 	}
-	panelWidth := max(60, width-4)
+	panelWidth := max(60, width)
 	leftWidth := max(24, panelWidth/3)
 	rightWidth := max(32, panelWidth-leftWidth-5)
 
@@ -160,6 +192,10 @@ func Key(text string) string {
 
 func Status(text string) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(text)
+}
+
+func Interrupted(text string) string {
+	return dimStyle().Render("  └─ " + text)
 }
 
 func System(text string) string {
