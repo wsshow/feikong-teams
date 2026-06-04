@@ -749,7 +749,7 @@ func processStreamChunk(ctx context.Context, event *adk.AgentEvent, chunk *schem
 	if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil &&
 		chunk.Content == "" && chunk.ReasoningContent == "" && len(chunk.ToolCalls) == 0 {
 		nEvent := Event{
-			Type:      EventAction,
+			Type:      EventUsage,
 			Phase:     EventPhaseInfo,
 			AgentName: event.AgentName,
 			RunPath:   formatRunPath(event.RunPath),

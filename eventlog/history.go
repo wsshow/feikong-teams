@@ -29,6 +29,7 @@ const (
 	EventToolResult         = fkevent.EventToolResult
 	EventMessage            = fkevent.EventMessage
 	EventAction             = fkevent.EventAction
+	EventUsage              = fkevent.EventUsage
 	EventError              = fkevent.EventError
 	EventDispatchProgress   = fkevent.EventDispatchProgress
 
@@ -54,6 +55,12 @@ type ActionRecord struct {
 	ActionType ActionType `json:"action_type"`
 	Content    string     `json:"content"`
 	Detail     string     `json:"detail,omitempty"`
+}
+
+type UsageRecord struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
 }
 
 const historyLineTypeMessageEvent = "message_event"
@@ -83,6 +90,7 @@ const (
 	MsgTypeReasoning MsgEventType = "reasoning"
 	MsgTypeToolCall  MsgEventType = "tool_call"
 	MsgTypeAction    MsgEventType = "action"
+	MsgTypeUsage     MsgEventType = "usage"
 	MsgTypeError     MsgEventType = "error"
 )
 
@@ -92,6 +100,7 @@ type MessageEvent struct {
 	Content  string          `json:"content,omitempty"`
 	ToolCall *ToolCallRecord `json:"tool_call,omitempty"`
 	Action   *ActionRecord   `json:"action,omitempty"`
+	Usage    *UsageRecord    `json:"usage,omitempty"`
 }
 
 // AgentMessage 代理的一次完整发言
@@ -418,6 +427,20 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	defer h.mu.Unlock()
 
 	switch event.Type {
+	case EventUsage:
+		if event.PromptTokens == 0 && event.CompletionTokens == 0 && event.TotalTokens == 0 {
+			return
+		}
+		ctx := h.ensureMessageContext(event)
+		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+			Type: MsgTypeUsage,
+			Usage: &UsageRecord{
+				PromptTokens:     event.PromptTokens,
+				CompletionTokens: event.CompletionTokens,
+				TotalTokens:      event.TotalTokens,
+			},
+		})
+
 	case EventReasoningChunk:
 		ctx := h.ensureMessageContext(event)
 		// 合并连续推理事件
@@ -1072,7 +1095,7 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 				}
 
 			case MsgTypeAction:
-				if event.Action != nil {
+				if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
 					fmt.Fprintf(&md, "> **[Action]**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content)
 				}
 

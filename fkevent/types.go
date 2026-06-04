@@ -20,6 +20,7 @@ const (
 	EventToolCallsArgsDelta EventType = "tool_calls_args_delta"
 	EventToolCalls          EventType = "tool_calls"
 	EventAction             EventType = "action"
+	EventUsage              EventType = "usage"
 	EventDispatchProgress   EventType = "dispatch_progress"
 )
 

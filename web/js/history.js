@@ -597,6 +597,7 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages) {
           case "action":
             messagesHTML += flushText();
             if (evt.action) {
+              if (!evt.action.content && !evt.action.action_type) break;
               const actionLabel =
                 evt.action.content || evt.action.action_type || "action";
               messagesHTML += `
@@ -1006,8 +1007,8 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   messages.forEach((msg, index) => {
     const key = "history:" + (msg.member_call_id || msg.start_time || index);
     const label = this.historyMemberLabel(msg);
-    const entry = this.ensureMemberCard(key, label, label);
     const task = this.takeHistoryMemberTask(msg, index);
+    const entry = this.ensureMemberCard(key, label, label, task?.index);
     if (task?.arguments) {
       this.updateMemberTaskContent(entry, task.arguments, false);
     }
@@ -1076,6 +1077,63 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
   this.lastToolName = saved.lastToolName;
 };
 
+FKTeamsChat.prototype.historyAgentToolCallIDs = function (msg) {
+  const ids = new Set();
+  (msg?.events || []).forEach((evt) => {
+    if (evt.type !== "tool_call" || !evt.tool_call) return;
+    const display = this.historyToolDisplay(evt.tool_call);
+    if (display.kind !== "agent") return;
+    if (evt.tool_call.id) ids.add(evt.tool_call.id);
+  });
+  return ids;
+};
+
+FKTeamsChat.prototype.historyMemberMatchesCallIDs = function (msg, callIDs) {
+  if (!msg || !callIDs || callIDs.size === 0) return false;
+  if (msg.member_call_id && callIDs.has(msg.member_call_id)) return true;
+  const taskID = msg.__historyMemberTask?.id || "";
+  return !!(taskID && callIDs.has(taskID));
+};
+
+FKTeamsChat.prototype.renderHistoryAgentMessagePart = function (msg, events) {
+  if (!events || events.length === 0) return;
+  this.renderHistoryAgentMessage({
+    ...msg,
+    events,
+  });
+};
+
+FKTeamsChat.prototype.renderHistoryAgentWithMemberInsert = function (msg, messages, renderedMemberIndexes) {
+  const events = msg?.events || [];
+  const callIDs = this.historyAgentToolCallIDs(msg);
+  if (callIDs.size === 0) return false;
+
+  const members = [];
+  (messages || []).forEach((candidate, index) => {
+    if (renderedMemberIndexes.has(index)) return;
+    if (!this.isHistoryMemberMessage(candidate)) return;
+    if (!this.historyMemberMatchesCallIDs(candidate, callIDs)) return;
+    members.push({ msg: candidate, index });
+  });
+  if (members.length === 0) return false;
+
+  let lastAgentToolIndex = -1;
+  events.forEach((evt, index) => {
+    if (evt.type !== "tool_call" || !evt.tool_call) return;
+    const display = this.historyToolDisplay(evt.tool_call);
+    if (display.kind === "agent" && evt.tool_call.id && callIDs.has(evt.tool_call.id)) {
+      lastAgentToolIndex = index;
+    }
+  });
+  if (lastAgentToolIndex < 0) return false;
+
+  this.renderHistoryAgentMessagePart(msg, events.slice(0, lastAgentToolIndex + 1));
+  this.renderHistoryMemberGroup(members.map((item) => item.msg));
+  members.forEach((item) => renderedMemberIndexes.add(item.index));
+  this.renderHistoryAgentMessagePart(msg, events.slice(lastAgentToolIndex + 1));
+  return true;
+};
+
 FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
   // 隐藏loading
   this.hideChatLoading();
@@ -1099,6 +1157,7 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
   // 渲染历史消息
   if (event.messages && event.messages.length > 0) {
     this.prepareHistoryMemberTasks(event.messages);
+    const renderedMemberIndexes = new Set();
     for (let index = 0; index < event.messages.length; index++) {
       const msg = event.messages[index];
       // 检查是否是用户消息
@@ -1109,13 +1168,21 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
       }
 
       if (this.isHistoryMemberMessage(msg)) {
+        if (renderedMemberIndexes.has(index)) continue;
         const group = [];
-        while (index < event.messages.length && this.isHistoryMemberMessage(event.messages[index])) {
+        while (
+          index < event.messages.length &&
+          this.isHistoryMemberMessage(event.messages[index]) &&
+          !renderedMemberIndexes.has(index)
+        ) {
           group.push(event.messages[index]);
+          renderedMemberIndexes.add(index);
           index++;
         }
         index--;
         this.renderHistoryMemberGroup(group);
+      } else if (this.renderHistoryAgentWithMemberInsert(msg, event.messages, renderedMemberIndexes)) {
+        continue;
       } else {
         this.renderHistoryAgentMessage(msg);
       }
@@ -1321,6 +1388,10 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
 };
 
 FKTeamsChat.prototype.renderSingleAction = function (action, agentName) {
+  if (!action.content && !action.action_type) {
+    return;
+  }
+
   const compressIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;">
         <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
         <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>

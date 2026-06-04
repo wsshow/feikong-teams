@@ -1189,6 +1189,8 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleAction(event);
       break;
+    case "usage":
+      break;
     case "dispatch_progress":
       this.handleDispatchProgress(event);
       break;
@@ -2226,6 +2228,10 @@ FKTeamsChat.prototype._updateDispatchTotal = function (container) {
 };
 
 FKTeamsChat.prototype.handleAction = function (event) {
+  if (!event.content && !event.action_type) {
+    return;
+  }
+
   let actionClass = "";
   let actionIcon = "";
 

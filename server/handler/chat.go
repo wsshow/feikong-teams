@@ -420,6 +420,15 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if event.Error != "" {
 		result["error"] = event.Error
 	}
+	if event.PromptTokens > 0 {
+		result["prompt_tokens"] = event.PromptTokens
+	}
+	if event.CompletionTokens > 0 {
+		result["completion_tokens"] = event.CompletionTokens
+	}
+	if event.TotalTokens > 0 {
+		result["total_tokens"] = event.TotalTokens
+	}
 	return result
 }
 

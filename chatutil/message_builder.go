@@ -288,7 +288,7 @@ func agentMessageToSchemaMessages(msg eventlog.AgentMessage) []adk.Message {
 			messages = append(messages, schema.ToolMessage(tc.Result, tc.ID, schema.WithToolName(tc.Name)))
 
 		case eventlog.MsgTypeAction:
-			if event.Action != nil {
+			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
 				fmt.Fprintf(&textBuf, "[%s] %s\n", event.Action.ActionType, event.Action.Content)
 			}
 
