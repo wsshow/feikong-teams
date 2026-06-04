@@ -15,6 +15,37 @@ func TestRenderMarkdownTableUsesClosedBorder(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownWithWidthTableUsesClosedBorder(t *testing.T) {
+	out := RenderMarkdownWithWidth("| 项目 | 状态 |\n| --- | --- |\n| 表格 | 完成 |", 32)
+
+	for _, token := range []string{"┌", "┐", "└", "┘", "│", "├", "┼", "┤"} {
+		if !strings.Contains(out, token) {
+			t.Fatalf("expected closed table border token %q in output:\n%s", token, out)
+		}
+	}
+}
+
+func TestRenderMarkdownTableSeparatesBodyRows(t *testing.T) {
+	out := RenderMarkdownWithWidth("| ID | 姓名 |\n| --- | --- |\n| 001 | 张三 |\n| 002 | 李四 |", 40)
+
+	if strings.Count(out, "├") < 2 || strings.Count(out, "┼") < 2 || strings.Count(out, "┤") < 2 {
+		t.Fatalf("expected table body rows to include horizontal separators:\n%s", out)
+	}
+}
+
+func TestRenderMarkdownNormalizesCompactOneLineTable(t *testing.T) {
+	out := RenderMarkdownWithWidth("| 序号 | 项目 | 状态 | |:---:|:---|:---:| | 1 | 用户中心重构 | 进行中 | | 2 | 支付模块升级 | 待评审 |", 80)
+
+	if strings.Contains(out, "|:---:|") || strings.Contains(out, "| 1 |") {
+		t.Fatalf("expected compact markdown table to be normalized before rendering:\n%s", out)
+	}
+	for _, token := range []string{"┌", "┐", "└", "┘", "├", "┼", "┤"} {
+		if !strings.Contains(out, token) {
+			t.Fatalf("expected normalized compact table to render border token %q:\n%s", token, out)
+		}
+	}
+}
+
 func TestRenderMarkdownMixedContentKeepsClosedTableBorder(t *testing.T) {
 	out := RenderMarkdown("## 测试\n\n| 项目 | 状态 |\n| --- | --- |\n| 表格 | 完成 |")
 

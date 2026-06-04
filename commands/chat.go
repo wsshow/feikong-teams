@@ -9,7 +9,6 @@ import (
 	"fkteams/g"
 	"fkteams/lifecycle"
 	"fkteams/runner"
-	"fkteams/version"
 	"fmt"
 	"log"
 	"syscall"
@@ -74,7 +73,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 
 	if cfg.MemoryEnabled {
 		app.RegisterService(lifecycle.NewMemoryService(cfg.WorkspaceDir))
-		pterm.Info.Println("全局长期记忆已启用")
+		if query != "" {
+			pterm.Info.Println("全局长期记忆已启用")
+		}
 	}
 	if cfg.SchedulerEnabled {
 		app.RegisterService(lifecycle.NewSchedulerService(cfg.SchedulerDir))
@@ -87,9 +88,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		if resumeSession != "" {
 			cli.SetResumeSessionID(resumeSession)
 		}
-		session.StartSignalHandler(app.ExitCh())
 
 		if query != "" {
+			session.StartSignalHandler(app.ExitCh())
 			session.HandleDirect(ctx, r, app.ExitCh(), query)
 		} else {
 			session.HandleInteractive(ctx, r, app.ExitCh())
@@ -101,8 +102,10 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		if saveHistory {
 			cli.AutoSaveCLIHistory()
 		}
-		if cfg.MemoryEnabled {
+		if cfg.MemoryEnabled && query != "" {
 			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
+			cli.FlushSessionMemory()
+		} else if cfg.MemoryEnabled {
 			cli.FlushSessionMemory()
 		}
 		return nil
@@ -117,7 +120,9 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, history); err != nil {
 			log.Printf("保存输入历史失败: %v", err)
 		}
-		pterm.Success.Println("成功退出")
+		if query != "" {
+			pterm.Success.Println("成功退出")
+		}
 		return nil
 	})
 
@@ -129,22 +134,12 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 func createModeRunner(ctx context.Context, mode cli.WorkMode) (*adk.Runner, error) {
 	switch mode {
 	case cli.ModeTeam:
-		fmt.Printf("欢迎来到非空小队: %s\n", version.Get())
 		return runner.CreateTeamRunner(ctx)
 	case cli.ModeDeep:
-		fmt.Printf("欢迎来到非空小队 - 深度模式: %s\n", version.Get())
 		return runner.CreateDeepAgentsRunner(ctx)
 	case cli.ModeGroup:
-		fmt.Printf("欢迎来到非空小队 - 多智能体讨论模式: %s\n", version.Get())
-		if err := runner.PrintLoopAgentsInfo(ctx); err != nil {
-			return nil, err
-		}
 		return runner.CreateLoopAgentRunner(ctx)
 	case cli.ModeCustom:
-		fmt.Printf("欢迎来到非空小队 - 自定义会议模式: %s\n", version.Get())
-		if err := runner.PrintCustomAgentsInfo(ctx); err != nil {
-			return nil, err
-		}
 		return runner.CreateCustomRunner(ctx)
 	default:
 		return nil, nil

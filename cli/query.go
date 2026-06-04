@@ -7,7 +7,6 @@ import (
 	"fkteams/common"
 	"fkteams/engine"
 	"fkteams/eventlog"
-	"fkteams/eventview"
 	"fkteams/fkevent"
 	"fkteams/g"
 	"fkteams/report"
@@ -87,19 +86,19 @@ func (s *QueryState) Cancel() bool {
 
 // QueryExecutor 查询执行器
 type QueryExecutor struct {
-	state           *QueryState
-	runner          *adk.Runner
-	autoReject      bool
-	approveStores   []string // 自动批准的 store 列表
-	callbackBuilder func(*eventlog.HistoryRecorder) func(fkevent.Event) error
+	state         *QueryState
+	runner        *adk.Runner
+	autoReject    bool
+	approveStores []string // 自动批准的 store 列表
+	view          QueryView
 }
 
 // NewQueryExecutor 创建查询执行器
 func NewQueryExecutor(runner *adk.Runner, state *QueryState) *QueryExecutor {
 	return &QueryExecutor{
-		state:           state,
-		runner:          runner,
-		callbackBuilder: eventview.CLIEventCallback,
+		state:  state,
+		runner: runner,
+		view:   NewTerminalQueryView(),
 	}
 }
 
@@ -125,9 +124,16 @@ func (e *QueryExecutor) SetRunner(runner *adk.Runner) {
 	e.runner = runner
 }
 
-// SetCallbackBuilder 设置事件回调构造器
+// SetCallbackBuilder 设置事件回调构造器，用于 JSON 等非默认输出格式。
 func (e *QueryExecutor) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
-	e.callbackBuilder = cb
+	e.view = callbackQueryView{callbackBuilder: cb}
+}
+
+// SetView 设置查询输出视图。
+func (e *QueryExecutor) SetView(view QueryView) {
+	if view != nil {
+		e.view = view
+	}
 }
 
 // CLI 模式会话常量
@@ -181,12 +187,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)
 
-	// 显示加载动画，通过包装回调在首个事件到达时停止
-	fmt.Println()
-	spinner, _ := pterm.DefaultSpinner.Start("思考中...")
-	stopSpinner := sync.OnceFunc(func() { spinner.Stop() })
-
-	innerCallback := e.callbackBuilder(recorder)
+	e.view.Start(input)
+	innerCallback := e.view.EventCallback(recorder)
 
 	storeConfigs := []approval.StoreConfig{
 		{Name: approval.StoreCommand},
@@ -212,14 +214,12 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	_, err := engine.New(e.runner, activeSessionID).Run(queryCtx, engine.RunConfig{
 		Messages: inputMessages,
 		EventCallback: func(event fkevent.Event) error {
-			stopSpinner()
 			return innerCallback(event)
 		},
 		Recorder:    recorder,
 		OnInterrupt: handler,
 		ApprovalReg: approvalReg,
 		OnFinish: func(ctx context.Context, _ *adk.AgentEvent, _ error) {
-			stopSpinner()
 			e.state.EndQuery()
 			recorder.FinalizeCurrent()
 			if g.MemoryManager != nil {
@@ -229,27 +229,27 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	})
 
 	if queryCtx.Err() == nil {
-		eventview.FlushPrintEvent()
+		e.view.Flush()
 	}
 
 	if err != nil {
 		if queryCtx.Err() != nil {
-			pterm.Warning.Println("查询已中断")
+			e.view.Interrupted()
 			return nil
 		}
-		log.Printf("执行出错: %v", err)
+		e.view.Error(err)
 		return nil
 	}
 
 	elapsed := time.Since(startTime).Round(time.Millisecond)
-	fmt.Printf("\n\033[1;32m✓ 完成\033[0m \033[90m(%s)\033[0m\n", elapsed)
+	e.view.Done(elapsed)
 	return nil
 }
 
 // promptApproval 提示用户审批，返回审批决定
 func (e *QueryExecutor) promptApproval() int {
 	if e.autoReject {
-		pterm.Warning.Println("非交互模式，自动拒绝危险命令")
+		e.view.AutoReject()
 		return approval.Reject
 	}
 
@@ -306,8 +306,6 @@ func HandleCtrlC(state *QueryState) {
 		return
 	}
 	state.cancelling.Store(true)
-	fmt.Printf("\n\n")
-	pterm.Info.Println("正在中断查询...")
 	state.cancelMu.Lock()
 	if state.cancelFunc != nil {
 		state.cancelFunc()

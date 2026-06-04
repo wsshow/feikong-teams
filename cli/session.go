@@ -2,17 +2,12 @@ package cli
 
 import (
 	"context"
-	"errors"
-	"fkteams/agents"
 	"fkteams/eventlog"
 	"fkteams/fkevent"
-	"fkteams/runner"
-	"fkteams/tui"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/cloudwego/eino/adk"
@@ -46,14 +41,6 @@ func NewSession(mode WorkMode, inputHistory []string, createModeRunner ModeRunne
 // GetQueryState 获取查询状态
 func (s *Session) GetQueryState() *QueryState {
 	return s.queryState
-}
-
-// currentPrefix 返回当前提示符前缀
-func (s *Session) currentPrefix() string {
-	if s.currentAgent != "" {
-		return fmt.Sprintf("%s> ", s.currentAgent)
-	}
-	return s.CurrentMode.GetPromptPrefix()
 }
 
 // StartSignalHandler 监听系统信号（SIGINT 运行时取消查询；其他信号转发为退出信号）
@@ -113,178 +100,28 @@ func (s *Session) HandleDirect(ctx context.Context, r *adk.Runner, exitSignals c
 func (s *Session) HandleInteractive(ctx context.Context, r *adk.Runner, exitSignals chan os.Signal) {
 	if resumeSessionID != "" {
 		activeSessionID = resumeSessionID
-		pterm.Info.Printf("恢复会话: %s\n", activeSessionID)
 	} else {
 		activeSessionID = NewDirectSessionID()
-		pterm.Info.Printf("会话 ID: %s\n", activeSessionID)
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				pterm.Error.Printfln("交互循环异常: %v", r)
-				select {
-				case exitSignals <- syscall.SIGTERM:
-				default:
-				}
+	defer func() {
+		if r := recover(); r != nil {
+			pterm.Error.Printfln("交互循环异常: %v", r)
+			select {
+			case exitSignals <- syscall.SIGTERM:
+			default:
 			}
-		}()
-
-		executor := NewQueryExecutor(r, s.queryState)
-		executor.SetApproveStores(s.ApproveStores)
-		modeSwitcher := &sessionModeSwitcher{session: s, ctx: ctx, executor: executor}
-		cmdHandler := NewCommandHandler(modeSwitcher)
-
-		for {
-			prefix := s.currentPrefix()
-
-			// readInput 循环读取输入，处理 # 内联文件引用
-			var in string
-			var trigger string
-			inputText := "" // 累积的输入文本（含 #path 引用）
-		readInput:
-			for {
-				opts := &tui.ReadLineOpts{
-					History:      s.InputHistory,
-					InitialValue: inputText,
-				}
-				var err error
-				in, trigger, err = tui.ReadLine(prefix, opts)
-				if err != nil {
-					if errors.Is(err, tui.ErrCtrlC) {
-						fmt.Println()
-						select {
-						case exitSignals <- syscall.SIGTERM:
-						default:
-						}
-						return
-					}
-					if errors.Is(err, tui.ErrInterrupted) {
-						fmt.Println()
-						break readInput
-					}
-					exitSignals <- syscall.SIGTERM
-					return
-				}
-
-				if trigger == "#" {
-					// # 触发文件/目录选择，选中后插入到文本中继续输入
-					filePath, selectErr := SelectFileOrDir(GetWorkspaceDir())
-					if selectErr != nil {
-						if !errors.Is(selectErr, tui.ErrInterrupted) {
-							pterm.Error.Printf("选择文件失败: %v\n", selectErr)
-						}
-						// 选择取消，保留已输入的文本继续
-						inputText = in
-						continue readInput
-					}
-					// 将 #path 插入到文本中
-					if in != "" {
-						inputText = in + " #" + filePath + " "
-					} else {
-						inputText = "#" + filePath + " "
-					}
-					pterm.FgGray.Println("已引用: " + filePath)
-					continue readInput
-				}
-
-				// 非 # 触发，跳出循环
-				break readInput
-			}
-
-			// 如果是中断后 continue 的情况
-			if trigger == "" && in == "" && inputText == "" {
-				continue
-			}
-
-			// 触发字符立即响应（@/）
-			switch trigger {
-			case "@":
-				agentName, selectErr := SelectAgent()
-				if selectErr != nil {
-					if !errors.Is(selectErr, tui.ErrInterrupted) {
-						pterm.Error.Printf("选择智能体失败: %v\n", selectErr)
-					}
-					continue
-				}
-				s.switchAgent(ctx, executor, agentName)
-				fmt.Println()
-				continue
-			case "/":
-				cmd, selectErr := SelectCommand()
-				if selectErr != nil {
-					if !errors.Is(selectErr, tui.ErrInterrupted) {
-						pterm.Error.Printf("选择命令失败: %v\n", selectErr)
-					}
-					continue
-				}
-				// 回显命令
-				fmt.Printf("\n\033[1;90m╭─ [指令]\033[0m\n")
-				fmt.Printf("\033[1;90m╰─▶ /%s\033[0m\n\n", cmd)
-				result := cmdHandler.Handle(cmd)
-				fmt.Println()
-				if result == ResultExit {
-					exitSignals <- syscall.SIGTERM
-					return
-				}
-				continue
-			}
-
-			// 如果输入以 \ 结尾，打开 textarea 多行编辑器
-			input := strings.TrimSpace(in)
-			if before, ok := strings.CutSuffix(input, "\\"); ok {
-				multiText, multiErr := tui.ReadMultiLine(strings.TrimSpace(before))
-				if multiErr != nil {
-					if !errors.Is(multiErr, tui.ErrInterrupted) {
-						pterm.Error.Printf("多行输入失败: %v\n", multiErr)
-					}
-					continue
-				}
-				input = strings.TrimSpace(multiText)
-				if input == "" {
-					continue
-				}
-			}
-
-			// 回显用户输入
-			if input != "" {
-				fmt.Printf("\n\033[1;90m╭─ [用户]\033[0m\n")
-				fmt.Printf("\033[1;90m╰─▶ %s\033[0m\n", input)
-			}
-
-			// 检查是否切换智能体（@智能体名 查询内容）
-			if agentName, query := ExtractAgentMention(input); agentName != "" {
-				s.switchAgent(ctx, executor, agentName)
-				if query != "" {
-					s.InputHistory = append(s.InputHistory, query)
-					if err := executor.Execute(ctx, query); err != nil {
-						log.Printf("执行查询失败: %v", err)
-					}
-				}
-				fmt.Printf("\n\n")
-				continue
-			}
-
-			result := cmdHandler.Handle(input)
-			switch result {
-			case ResultExit:
-				exitSignals <- syscall.SIGTERM
-				fmt.Println()
-				return
-			case ResultHandled:
-				continue
-			case ResultNotFound:
-				// 不是命令，作为查询处理
-			}
-
-			s.InputHistory = append(s.InputHistory, input)
-
-			if err := executor.Execute(ctx, input); err != nil {
-				log.Printf("执行查询失败: %v", err)
-			}
-			fmt.Printf("\n\n")
 		}
 	}()
+
+	rt := NewRuntime(ctx, s, r, exitSignals)
+	if err := rt.Run(); err != nil {
+		log.Printf("TUI runtime failed: %v", err)
+		select {
+		case exitSignals <- syscall.SIGTERM:
+		default:
+		}
+	}
 }
 
 // SetCurrentAgent 设置当前智能体名称（用于 agent 命令初始化）
@@ -295,22 +132,6 @@ func (s *Session) SetCurrentAgent(name string) {
 // SetCallbackBuilder 设置事件回调构造器（用于自定义输出格式）
 func (s *Session) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(fkevent.Event) error) {
 	s.callbackBuilder = cb
-}
-
-// switchAgent 切换到指定智能体
-func (s *Session) switchAgent(ctx context.Context, executor *QueryExecutor, agentName string) {
-	agentInfo := agents.GetAgentByName(agentName)
-	if agentInfo == nil {
-		pterm.Error.Printf("未找到智能体: %s\n", agentName)
-		fmt.Println()
-		return
-	}
-
-	newAgent := agentInfo.Creator(ctx)
-	newRunner := runner.CreateAgentRunner(ctx, newAgent)
-	executor.SetRunner(newRunner)
-	s.currentAgent = agentName
-	pterm.Success.Printf("已切换到智能体: %s (%s)\n", agentName, agentInfo.Description)
 }
 
 // sessionModeSwitcher 模式切换器

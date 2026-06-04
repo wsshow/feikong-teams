@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	mdRenderer     *glamour.TermRenderer
-	mdRendererOnce sync.Once
+	mdRenderers  = map[int]*glamour.TermRenderer{}
+	mdRendererMu sync.Mutex
 )
 
 func TermWidth() int {
@@ -174,41 +174,58 @@ func customDarkStyle() glamour.TermRendererOption {
 	return glamour.WithStyles(s)
 }
 
-func initRenderer() *glamour.TermRenderer {
-	mdRendererOnce.Do(func() {
-		w := TermWidth() - 4
-		if w < 40 {
-			w = 40
-		}
-		r, err := glamour.NewTermRenderer(
+func rendererForWidth(width int) *glamour.TermRenderer {
+	width = normalizeMarkdownWidth(width)
+	mdRendererMu.Lock()
+	defer mdRendererMu.Unlock()
+	if r := mdRenderers[width]; r != nil {
+		return r
+	}
+	r, err := glamour.NewTermRenderer(
+		customDarkStyle(),
+		glamour.WithWordWrap(width),
+		glamour.WithEmoji(),
+		glamour.WithChromaFormatter("terminal16m"),
+	)
+	if err != nil {
+		r, _ = glamour.NewTermRenderer(
 			customDarkStyle(),
-			glamour.WithWordWrap(w),
-			glamour.WithEmoji(),
+			glamour.WithWordWrap(width),
 			glamour.WithChromaFormatter("terminal16m"),
 		)
-		if err != nil {
-			r, _ = glamour.NewTermRenderer(
-				customDarkStyle(),
-				glamour.WithWordWrap(w),
-				glamour.WithChromaFormatter("terminal16m"),
-			)
-		}
-		mdRenderer = r
-	})
-	return mdRenderer
+	}
+	mdRenderers[width] = r
+	return r
+}
+
+func normalizeMarkdownWidth(width int) int {
+	if width <= 0 {
+		width = TermWidth() - 4
+	}
+	if width < 20 {
+		return 20
+	}
+	return width
 }
 
 // RenderMarkdown 渲染 Markdown 为 ANSI 输出，失败时返回原文
 func RenderMarkdown(content string) string {
+	return RenderMarkdownWithWidth(content, TermWidth()-4)
+}
+
+// RenderMarkdownWithWidth 按指定终端宽度渲染 Markdown，失败时返回原文
+func RenderMarkdownWithWidth(content string, width int) string {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return ""
 	}
+	width = normalizeMarkdownWidth(width)
 	content = strings.ReplaceAll(content, "[^", `\[^`)
+	content = normalizeCompactMarkdownTables(content)
 	if segments := splitMarkdownSegments(content); hasSpecialMarkdownSegment(segments) {
-		return renderMarkdownSegments(segments)
+		return renderMarkdownSegments(segments, width)
 	}
-	r := initRenderer()
+	r := rendererForWidth(width)
 	if r == nil {
 		return content
 	}
@@ -234,7 +251,7 @@ func hasSpecialMarkdownSegment(segments []markdownSegment) bool {
 	return false
 }
 
-func renderMarkdownSegments(segments []markdownSegment) string {
+func renderMarkdownSegments(segments []markdownSegment, width int) string {
 	var rendered []string
 	for _, seg := range segments {
 		text := strings.TrimSpace(seg.text)
@@ -242,14 +259,14 @@ func renderMarkdownSegments(segments []markdownSegment) string {
 			continue
 		}
 		if seg.table {
-			rendered = append(rendered, renderMarkdownTable(text))
+			rendered = append(rendered, renderMarkdownTable(text, width))
 			continue
 		}
 		if seg.code {
-			rendered = append(rendered, renderCodeBlock(text))
+			rendered = append(rendered, renderCodeBlock(text, width))
 			continue
 		}
-		r := initRenderer()
+		r := rendererForWidth(width)
 		if r == nil {
 			rendered = append(rendered, text)
 			continue
@@ -330,17 +347,92 @@ func isMarkdownTableSeparator(line string) bool {
 		return false
 	}
 	for _, cell := range cells {
-		cell = strings.TrimSpace(cell)
-		if strings.Count(cell, "-") < 3 {
+		if !isMarkdownTableSeparatorCell(cell) {
 			return false
-		}
-		for _, r := range cell {
-			if r != '-' && r != ':' {
-				return false
-			}
 		}
 	}
 	return true
+}
+
+func isMarkdownTableSeparatorCell(cell string) bool {
+	cell = strings.TrimSpace(cell)
+	if strings.Count(cell, "-") < 3 {
+		return false
+	}
+	for _, r := range cell {
+		if r != '-' && r != ':' {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCompactMarkdownTables(content string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if normalized, ok := normalizeCompactMarkdownTableLine(line); ok {
+			lines[i] = normalized
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeCompactMarkdownTableLine(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "|") || strings.Count(trimmed, "|") < 6 {
+		return line, false
+	}
+	cells := splitMarkdownTableLine(trimmed)
+	cells = compactMarkdownNonEmptyCells(cells)
+	if len(cells) < 4 {
+		return line, false
+	}
+	for start := 1; start < len(cells)-1; start++ {
+		if !isMarkdownTableSeparatorCell(cells[start]) {
+			continue
+		}
+		end := start
+		for end < len(cells) && isMarkdownTableSeparatorCell(cells[end]) {
+			end++
+		}
+		colCount := end - start
+		if colCount < 2 || start != colCount || (len(cells)-end)%colCount != 0 {
+			start = end - 1
+			continue
+		}
+		rows := [][]string{cells[:start], cells[start:end]}
+		for pos := end; pos < len(cells); pos += colCount {
+			rows = append(rows, cells[pos:pos+colCount])
+		}
+		var normalized []string
+		for _, row := range rows {
+			if !compactMarkdownRowHasContent(row) {
+				return line, false
+			}
+			normalized = append(normalized, "| "+strings.Join(row, " | ")+" |")
+		}
+		return strings.Join(normalized, "\n"), true
+	}
+	return line, false
+}
+
+func compactMarkdownRowHasContent(row []string) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func compactMarkdownNonEmptyCells(cells []string) []string {
+	nonEmpty := make([]string, 0, len(cells))
+	for _, cell := range cells {
+		if strings.TrimSpace(cell) != "" {
+			nonEmpty = append(nonEmpty, cell)
+		}
+	}
+	return nonEmpty
 }
 
 func splitMarkdownTableLine(line string) []string {
@@ -372,10 +464,10 @@ func splitMarkdownTableLine(line string) []string {
 	return cells
 }
 
-func renderCodeBlock(codeMarkdown string) string {
+func renderCodeBlock(codeMarkdown string, width int) string {
 	lang, code := parseCodeBlock(codeMarkdown)
 	highlighted := highlightCode(code, lang)
-	return paintCodeBlockBackground(highlighted, TermWidth()-4)
+	return paintCodeBlockBackground(highlighted, width)
 }
 
 func parseCodeBlock(codeMarkdown string) (lang string, code string) {
@@ -447,8 +539,8 @@ func normalizeCodeBlockText(code string) string {
 }
 
 func paintCodeBlockBackground(highlighted string, width int) string {
-	if width < 40 {
-		width = 80
+	if width < 20 {
+		width = 20
 	}
 	contentWidth := width - 4
 	if contentWidth < 20 {
@@ -504,7 +596,7 @@ func parseTableAligns(separator []string, count int) []tableAlign {
 	return aligns
 }
 
-func renderMarkdownTable(tableMarkdown string) string {
+func renderMarkdownTable(tableMarkdown string, width int) string {
 	lines := strings.Split(strings.TrimSpace(tableMarkdown), "\n")
 	if len(lines) < 2 {
 		return tableMarkdown
@@ -535,7 +627,7 @@ func renderMarkdownTable(tableMarkdown string) string {
 		BorderRight(true).
 		BorderHeader(true).
 		BorderColumn(true).
-		BorderRow(false).
+		BorderRow(true).
 		Wrap(true).
 		Headers(header...).
 		Rows(rows...).
@@ -551,10 +643,7 @@ func renderMarkdownTable(tableMarkdown string) string {
 		})
 
 	rendered := t.String()
-	maxWidth := TermWidth() - 4
-	if maxWidth < 40 {
-		maxWidth = 40
-	}
+	maxWidth := normalizeMarkdownWidth(width)
 	if classiclipgloss.Width(rendered) > maxWidth {
 		rendered = t.Width(maxWidth).String()
 	}

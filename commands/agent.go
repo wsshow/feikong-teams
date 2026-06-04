@@ -146,7 +146,6 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	app.OnReady(func(ctx context.Context) error {
 		session = cli.NewSession(cli.ModeTeam, inputHistory, nil)
 		session.SetCurrentAgent(agentName)
-		session.StartSignalHandler(app.ExitCh())
 
 		approve := cmd.String("approve")
 		if approve == "" {
@@ -160,6 +159,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		}
 
 		if query != "" {
+			session.StartSignalHandler(app.ExitCh())
 			session.HandleDirect(ctx, agentRunner, app.ExitCh(), query)
 		} else {
 			session.HandleInteractive(ctx, agentRunner, app.ExitCh())
@@ -183,7 +183,9 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		if err := commonPkg.SaveHistory(cfg.InputHistoryPath, history); err != nil {
 			log.Printf("保存输入历史失败: %v", err)
 		}
-		pterm.Success.Println("成功退出")
+		if query != "" {
+			pterm.Success.Println("成功退出")
+		}
 		return nil
 	})
 

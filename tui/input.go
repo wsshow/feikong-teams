@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"strings"
 	"time"
 
@@ -27,10 +26,6 @@ const (
 	inputExitConfirmWindow = 2 * time.Second
 	inputExitConfirmTick   = time.Second
 )
-
-// pasteTagRe / pasteTagSuffixRe 匹配内联粘贴占位符
-var pasteTagRe = regexp.MustCompile(`\[粘贴\d+行内容\]`)
-var pasteTagSuffixRe = regexp.MustCompile(`\s?\[粘贴\d+行内容\]\s?$`)
 
 type inputExitTickMsg time.Time
 
@@ -103,7 +98,7 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "enter":
-			m.text = expandPastes(strings.TrimSpace(m.textInput.Value()), m.pastes)
+			m.text = ExpandInlineInput(strings.TrimSpace(m.textInput.Value()), m.pastes)
 			return m, tea.Quit
 		case "ctrl+c":
 			if m.isExitConfirming() {
@@ -152,7 +147,7 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Text != "" {
 			m.exitUntil = time.Time{}
 			if msg.Text == "#" {
-				m.text = expandPastes(m.textInput.Value(), m.pastes)
+				m.text = ExpandInlineInput(m.textInput.Value(), m.pastes)
 				m.trigger = "#"
 				return m, tea.Quit
 			}
@@ -179,70 +174,23 @@ func (m inputModel) isExitConfirming() bool {
 
 // insertPaste 在当前光标位置插入多行粘贴内容的占位符，维护 pastes 顺序。
 func (m inputModel) insertPaste(content string) inputModel {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	content = strings.ReplaceAll(content, "\r", "\n")
-	lines := strings.Split(content, "\n")
-	placeholder := fmt.Sprintf("[粘贴%d行内容]", max(len(lines), 2))
-
-	pos := m.textInput.Position()
-	runes := []rune(m.textInput.Value())
-	before := runes[:pos]
-	after := runes[pos:]
-
-	pastesBefore := len(pasteTagRe.FindAllString(string(before), -1))
-	newPastes := make([]string, len(m.pastes)+1)
-	copy(newPastes[:pastesBefore], m.pastes[:pastesBefore])
-	newPastes[pastesBefore] = content
-	copy(newPastes[pastesBefore+1:], m.pastes[pastesBefore:])
-	m.pastes = newPastes
-
-	padded := " " + placeholder + " "
-	if pos == 0 {
-		padded = placeholder + " "
-	}
-	pRunes := []rune(padded)
-	newRunes := make([]rune, 0, len(runes)+len(pRunes))
-	newRunes = append(newRunes, before...)
-	newRunes = append(newRunes, pRunes...)
-	newRunes = append(newRunes, after...)
-	m.textInput.SetValue(string(newRunes))
-	m.textInput.SetCursor(pos + len(pRunes))
+	value, cursor, pastes := InsertInlinePaste(m.textInput.Value(), m.textInput.Position(), m.pastes, content)
+	m.pastes = pastes
+	m.textInput.SetValue(value)
+	m.textInput.SetCursor(cursor)
 	return m
 }
 
 // backspaceTag 若光标紧跟在占位符末尾，整体删除该占位符及对应 pastes 条目。
 func (m inputModel) backspaceTag() (inputModel, bool) {
-	pos := m.textInput.Position()
-	val := m.textInput.Value()
-	before := string([]rune(val)[:pos])
-	loc := pasteTagSuffixRe.FindStringIndex(before)
-	if loc == nil {
+	value, cursor, pastes, ok := DeleteInlinePasteBeforeCursor(m.textInput.Value(), m.textInput.Position(), m.pastes)
+	if !ok {
 		return m, false
 	}
-	pasteIdx := len(pasteTagRe.FindAllString(before[:loc[0]], -1))
-	after := string([]rune(val)[pos:])
-	m.textInput.SetValue(before[:loc[0]] + after)
-	m.textInput.SetCursor(len([]rune(before[:loc[0]])))
-	if pasteIdx < len(m.pastes) {
-		m.pastes = append(m.pastes[:pasteIdx], m.pastes[pasteIdx+1:]...)
-	}
+	m.pastes = pastes
+	m.textInput.SetValue(value)
+	m.textInput.SetCursor(cursor)
 	return m, true
-}
-
-// expandPastes 将文本中的粘贴占位符按序替换为实际内容。
-func expandPastes(text string, pastes []string) string {
-	if len(pastes) == 0 {
-		return text
-	}
-	idx := 0
-	return pasteTagRe.ReplaceAllStringFunc(text, func(match string) string {
-		if idx >= len(pastes) {
-			return match
-		}
-		content := pastes[idx]
-		idx++
-		return content
-	})
 }
 
 func (m inputModel) View() tea.View {
@@ -255,10 +203,7 @@ func (m inputModel) View() tea.View {
 	if len(m.pastes) == 0 {
 		return tea.NewView(m.renderExitConfirm(viewStr))
 	}
-	tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("178")).Bold(true)
-	viewStr = pasteTagRe.ReplaceAllStringFunc(viewStr, func(match string) string {
-		return tagStyle.Render(match)
-	})
+	viewStr = RenderInlineInputValue(viewStr)
 	return tea.NewView(m.renderExitConfirm(viewStr))
 }
 
