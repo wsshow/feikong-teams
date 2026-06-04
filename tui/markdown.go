@@ -70,16 +70,18 @@ func customDarkStyle() glamour.TermRendererOption {
 	// ── 标题 ──
 	s.Heading.Color = sp("#5c9cf5")
 	s.Heading.Bold = bp(true)
-	// H1: 去掉背景色块，统一蓝色粗体
-	s.H1 = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{
-		Prefix: "# ", Color: sp("#5c9cf5"), Bold: bp(true),
+	heading := ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{
+		Color: sp("#5c9cf5"),
+		Bold:  bp(true),
 	}}
-	s.H2.Color = sp("#5c9cf5")
-	s.H3.Color = sp("#5c9cf5")
-	s.H4.Color = sp("#5c9cf5")
-	s.H5.Color = sp("#5c9cf5")
+	s.H1 = heading
+	s.H2 = heading
+	s.H3 = heading
+	s.H4 = heading
+	s.H5 = heading
 	s.H6 = ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{
-		Prefix: "###### ", Color: sp("#5c9cf5"), Bold: bp(false),
+		Color: sp("#5c9cf5"),
+		Bold:  bp(false),
 	}}
 
 	// ── 行内样式 ──

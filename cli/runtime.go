@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fkteams/agents"
 	"fkteams/agenttool"
@@ -17,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +38,8 @@ const (
 	runtimeHorizontalGutter  = 1
 	runtimeDefaultAgentName  = "assistant"
 	runtimeDefaultToolName   = "tool"
+	runtimeWheelLines        = 1
+	runtimeFastWheelLines    = 5
 )
 
 type Runtime struct {
@@ -136,6 +140,9 @@ type runtimeModel struct {
 	exitUntil    time.Time
 	copiedUntil  time.Time
 	welcome      tui.WelcomeInfo
+	members      map[string]*runtimeMemberState
+	memberTools  map[string]string
+	memberView   string
 }
 
 type runtimeSelectionCopiedTickMsg time.Time
@@ -154,12 +161,38 @@ const (
 	runtimeBlockBanner    runtimeBlockKind = "banner"
 	runtimeBlockWelcome   runtimeBlockKind = "welcome"
 	runtimeBlockInterrupt runtimeBlockKind = "interrupt"
+	runtimeBlockMember    runtimeBlockKind = "member"
 )
 
 type runtimeBlock struct {
-	Kind    runtimeBlockKind
-	Title   string
-	Content string
+	Kind          runtimeBlockKind
+	Title         string
+	Content       string
+	ToolKey       string
+	ToolName      string
+	ToolArgs      string
+	ToolResult    string
+	ToolStatus    tui.ToolStatus
+	ToolHasResult bool
+	MemberKey     string
+	MemberName    string
+	MemberStatus  string
+	MemberTask    string
+	MemberTools   int
+}
+
+type runtimeMemberState struct {
+	Key          string
+	Name         string
+	Status       string
+	Task         string
+	Blocks       []runtimeBlock
+	ActiveOutput int
+	ActiveReason int
+	ToolCount    int
+	ScrollOffset int
+	RenderCache  string
+	RenderDirty  bool
 }
 
 type runtimePickerKind string
@@ -209,7 +242,7 @@ func newCommandPicker() *runtimePicker {
 	items := make([]runtimePickerItem, 0, len(allCommands))
 	for _, c := range allCommands {
 		items = append(items, runtimePickerItem{
-			Label: fmt.Sprintf("%s - %s", c.Name, c.Desc),
+			Label: fmt.Sprintf("%s - %s", runtimeCommandSyntax(c), c.Desc),
 			Value: c.Name,
 		})
 	}
@@ -417,6 +450,8 @@ func newRuntimeModel(r *Runtime) runtimeModel {
 		historyIndex: len(r.session.InputHistory),
 		status:       "就绪",
 		welcome:      runtimeWelcomeInfo(r.session),
+		members:      make(map[string]*runtimeMemberState),
+		memberTools:  make(map[string]string),
 	}
 	model.appendBlock(runtimeBlockWelcome, "欢迎", "")
 	return model
@@ -427,9 +462,13 @@ func (m runtimeModel) Init() tea.Cmd { return textinput.Blink }
 func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		oldContentWidth := m.contentWidth()
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.SetWidth(max(20, m.contentWidth()-2))
+		if oldContentWidth != m.contentWidth() {
+			m.markMembersDirty()
+		}
 		return m, nil
 	case runtimeExitTickMsg:
 		if !m.isExitConfirming() {
@@ -486,17 +525,27 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
+		lines := runtimeWheelDeltaLines(mouse)
 		switch mouse.Button {
 		case tea.MouseWheelUp:
-			m.scrollTranscript(3)
+			m.scrollCurrentView(lines)
 		case tea.MouseWheelDown:
-			m.scrollTranscript(-3)
+			m.scrollCurrentView(-lines)
 		}
 		return m, nil
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft && m.memberView == "" {
+			if key := m.hitMemberSummary(mouse); key != "" {
+				m.memberView = key
+				if member := m.currentMember(); member != nil {
+					member.ScrollOffset = 0
+				}
+				return m, nil
+			}
+		}
 		if mouse.Button == tea.MouseLeft && m.hitJumpToBottom(mouse) {
-			m.scrollOffset = 0
+			m.setCurrentScrollOffset(0)
 			m.selection.Active = false
 			return m, nil
 		}
@@ -531,6 +580,28 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.insertPaste(strings.TrimRight(content, "\n\r")), nil
 		}
 	case tea.KeyPressMsg:
+		if m.memberView != "" {
+			switch msg.String() {
+			case "esc", "backspace", "left":
+				m.memberView = ""
+				return m, nil
+			case "pgup":
+				m.scrollCurrentView(max(1, m.bodyHeight()/2))
+				return m, nil
+			case "pgdown":
+				m.scrollCurrentView(-max(1, m.bodyHeight()/2))
+				return m, nil
+			case "home":
+				m.setCurrentScrollOffset(tui.LineCount(m.transcriptText()))
+				return m, nil
+			case "end":
+				m.setCurrentScrollOffset(0)
+				return m, nil
+			}
+			if msg.String() != "ctrl+c" {
+				return m, nil
+			}
+		}
 		if m.picker != nil {
 			return m.updatePicker(msg)
 		}
@@ -574,16 +645,16 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return newM, nil
 			}
 		case "pgup":
-			m.scrollTranscript(max(1, m.bodyHeight()/2))
+			m.scrollCurrentView(max(1, m.bodyHeight()/2))
 			return m, nil
 		case "pgdown":
-			m.scrollTranscript(-max(1, m.bodyHeight()/2))
+			m.scrollCurrentView(-max(1, m.bodyHeight()/2))
 			return m, nil
 		case "home":
-			m.scrollOffset = tui.LineCount(m.transcriptText())
+			m.setCurrentScrollOffset(tui.LineCount(m.transcriptText()))
 			return m, nil
 		case "end":
-			m.scrollOffset = 0
+			m.setCurrentScrollOffset(0)
 			return m, nil
 		case "up":
 			if !m.running {
@@ -653,13 +724,47 @@ func (m *runtimeModel) scrollTranscript(delta int) {
 	}
 	total := tui.LineCount(m.transcriptText())
 	maxOffset := max(0, total-m.bodyHeight())
-	m.scrollOffset += delta
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
+	next := m.currentScrollOffset() + delta
+	if next < 0 {
+		next = 0
 	}
-	if m.scrollOffset > maxOffset {
-		m.scrollOffset = maxOffset
+	if next > maxOffset {
+		next = maxOffset
 	}
+	m.setCurrentScrollOffset(next)
+}
+
+func (m *runtimeModel) scrollCurrentView(delta int) {
+	m.scrollTranscript(delta)
+}
+
+func (m runtimeModel) currentScrollOffset() int {
+	if member := m.currentMember(); member != nil {
+		return member.ScrollOffset
+	}
+	return m.scrollOffset
+}
+
+func (m *runtimeModel) setCurrentScrollOffset(offset int) {
+	if member := m.currentMember(); member != nil {
+		member.ScrollOffset = max(0, offset)
+		return
+	}
+	m.scrollOffset = max(0, offset)
+}
+
+func (m runtimeModel) currentMember() *runtimeMemberState {
+	if m.memberView == "" || m.members == nil {
+		return nil
+	}
+	return m.members[m.memberView]
+}
+
+func runtimeWheelDeltaLines(mouse tea.Mouse) int {
+	if mouse.Mod&(tea.ModAlt|tea.ModCtrl|tea.ModMeta) != 0 {
+		return runtimeFastWheelLines
+	}
+	return runtimeWheelLines
 }
 
 func (m runtimeModel) updatePicker(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -862,8 +967,9 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 
 	isCommandInput := strings.HasPrefix(input, "/")
 	command := ""
+	args := ""
 	if isCommandInput {
-		command = strings.TrimPrefix(input, "/")
+		command, args = parseRuntimeCommand(input)
 	}
 	if runtimeShouldRecordCommandInput(input, command) {
 		m.appendBlock(runtimeBlockUser, "用户", input)
@@ -883,6 +989,9 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 			m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true))
 			return m, nil
 		case "load_chat_history":
+			if args != "" {
+				return m.loadRuntimeSession(args), nil
+			}
 			picker, err := newSessionPicker()
 			return m.openRuntimePicker(picker, err, "加载聊天历史")
 		case "save_chat_history":
@@ -895,8 +1004,7 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 		case "save_chat_history_to_html":
 			return m.saveRuntimeChatHistoryHTML(), nil
 		case "switch_work_mode":
-			modeSwitcher := &sessionModeSwitcher{session: m.runtime.session, ctx: m.runtime.ctx, executor: m.runtime.executor}
-			newMode, err := modeSwitcher.SwitchMode()
+			newMode, err := m.switchRuntimeWorkMode(args)
 			if err != nil {
 				m.appendBlock(runtimeBlockError, "模式切换失败", err.Error())
 				return m, nil
@@ -908,15 +1016,24 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 			m.appendBlock(runtimeBlockSystem, "定时任务", runtimeScheduleMarkdown())
 			return m, nil
 		case "cancel_schedule":
+			if args != "" {
+				return m.cancelRuntimeSchedule(args), nil
+			}
 			picker, err := newScheduleCancelPicker()
 			return m.openRuntimePicker(picker, err, "取消定时任务")
 		case "delete_schedule":
+			if args != "" {
+				return m.deleteRuntimeSchedule(args), nil
+			}
 			picker, err := newScheduleDeletePicker()
 			return m.openRuntimePicker(picker, err, "删除定时任务")
 		case "list_memory":
 			m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown())
 			return m, nil
 		case "delete_memory":
+			if args != "" {
+				return m.deleteRuntimeMemory(args), nil
+			}
 			picker, err := newMemoryDeletePicker()
 			return m.openRuntimePicker(picker, err, "删除长期记忆")
 		case "clear_memory":
@@ -950,6 +1067,69 @@ func runtimeShouldRecordCommandInput(input string, command string) bool {
 		return false
 	}
 	return strings.HasPrefix(input, "/")
+}
+
+func parseRuntimeCommand(input string) (string, string) {
+	line := strings.TrimSpace(strings.TrimPrefix(input, "/"))
+	if line == "" {
+		return "", ""
+	}
+	name, args, found := strings.Cut(line, " ")
+	if !found {
+		return name, ""
+	}
+	return name, strings.TrimSpace(args)
+}
+
+func runtimeCommandUsageHint(value string, cursor int) string {
+	runes := []rune(value)
+	if cursor != len(runes) {
+		return ""
+	}
+	if !strings.HasPrefix(value, "/") {
+		return ""
+	}
+	line := strings.TrimPrefix(value, "/")
+	if line == "" {
+		return ""
+	}
+	name, args, hasSpace := strings.Cut(line, " ")
+	info, ok := commandInfoByName(name)
+	if !ok || info.Usage == "" {
+		return ""
+	}
+	if strings.TrimSpace(args) != "" {
+		return ""
+	}
+	if hasSpace {
+		return info.Usage
+	}
+	return " " + info.Usage
+}
+
+func (m runtimeModel) switchRuntimeWorkMode(arg string) (string, error) {
+	if arg == "" {
+		modeSwitcher := &sessionModeSwitcher{session: m.runtime.session, ctx: m.runtime.ctx, executor: m.runtime.executor}
+		return modeSwitcher.SwitchMode()
+	}
+	newMode := ParseWorkMode(strings.ToLower(strings.TrimSpace(arg)))
+	if newMode.String() != strings.ToLower(strings.TrimSpace(arg)) {
+		return "", fmt.Errorf("unknown work mode: %s", arg)
+	}
+	if m.runtime.session.createModeRunner == nil {
+		return "", fmt.Errorf("mode runner factory is not configured")
+	}
+	newRunner, err := m.runtime.session.createModeRunner(m.runtime.ctx, newMode)
+	if err != nil {
+		return "", fmt.Errorf("failed to create runner for mode %s: %w", newMode, err)
+	}
+	if newRunner == nil {
+		return "", fmt.Errorf("failed to create runner for mode: %s", newMode)
+	}
+	m.runtime.session.CurrentMode = newMode
+	m.runtime.session.currentAgent = ""
+	m.runtime.executor.SetRunner(newRunner)
+	return newMode.String(), nil
 }
 
 func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title string) (tea.Model, tea.Cmd) {
@@ -1098,6 +1278,7 @@ func (m runtimeModel) View() tea.View {
 	if m.selection.Active {
 		content = m.renderSelection(content)
 	}
+	content = m.renderFloatingCopiedNotice(content)
 	content = tui.RenderRuntimeScreen(content, m.screenWidth(), m.viewHeight(), runtimeHorizontalGutter)
 	view := tea.NewView(content)
 	view.AltScreen = true
@@ -1133,6 +1314,21 @@ func (m runtimeModel) renderSelection(content string) string {
 	return strings.Join(lines, "\n")
 }
 
+func (m runtimeModel) renderFloatingCopiedNotice(content string) string {
+	if !m.isCopiedNoticeVisible() {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 {
+		return content
+	}
+	notice := tui.CopiedNotice(m.selection.Copied)
+	rendered := tui.CenterLine(tui.Dim(notice), m.contentWidth())
+	target := max(0, len(lines)-tui.LineCount(m.renderInputBox())-1)
+	lines[target] = rendered
+	return strings.Join(lines, "\n")
+}
+
 func (m runtimeModel) mouseTextPoint(mouse tea.Mouse) tui.TextPoint {
 	return tui.TextPoint{
 		X: max(0, mouse.X-runtimeHorizontalGutter),
@@ -1140,8 +1336,29 @@ func (m runtimeModel) mouseTextPoint(mouse tea.Mouse) tui.TextPoint {
 	}
 }
 
+func (m runtimeModel) hitMemberSummary(mouse tea.Mouse) string {
+	if mouse.Y < 0 || mouse.Y >= m.viewHeight() {
+		return ""
+	}
+	lines := m.screenLines()
+	if mouse.Y >= len(lines) {
+		return ""
+	}
+	line := tui.StripANSI(lines[mouse.Y])
+	start := strings.Index(line, "[")
+	end := strings.Index(line, "]")
+	if start < 0 || end <= start+1 || !strings.Contains(line[:start], "›") {
+		return ""
+	}
+	ordinal, err := strconv.Atoi(strings.TrimSpace(line[start+1 : end]))
+	if err != nil || ordinal <= 0 {
+		return ""
+	}
+	return m.memberKeyByOrdinal(ordinal)
+}
+
 func (m runtimeModel) hitJumpToBottom(mouse tea.Mouse) bool {
-	if m.scrollOffset <= 0 {
+	if m.currentScrollOffset() <= 0 {
 		return false
 	}
 	y, startX, endX := m.jumpToBottomBounds()
@@ -1149,15 +1366,16 @@ func (m runtimeModel) hitJumpToBottom(mouse tea.Mouse) bool {
 }
 
 func (m runtimeModel) jumpToBottomBounds() (int, int, int) {
-	bottomStart := m.bodyHeightForBottom(tui.LineCount(m.renderBottom()))
-	lineOffset := 0
-	if m.picker != nil {
-		lineOffset += tui.LineCount(m.renderPicker())
+	label := tui.StripANSI(tui.JumpToBottomButton())
+	labelWidth := tui.CellWidth(label)
+	for y, line := range strings.Split(m.screenContent(), "\n") {
+		x := strings.Index(tui.StripANSI(line), label)
+		if x >= 0 {
+			startX := runtimeHorizontalGutter + x
+			return y, startX, startX + labelWidth
+		}
 	}
-	labelWidth := tui.CellWidth(tui.StripANSI(tui.JumpToBottomButton()))
-	contentWidth := m.contentWidth()
-	startX := runtimeHorizontalGutter + max(0, (contentWidth-labelWidth)/2)
-	return bottomStart + lineOffset, startX, startX + labelWidth
+	return -1, -1, -1
 }
 
 func (m runtimeModel) screenLines() []string {
@@ -1192,7 +1410,7 @@ func (m runtimeModel) visibleTranscriptLines(maxLines int) []string {
 	if transcript == "" {
 		return nil
 	}
-	return strings.Split(tui.VisibleLines(transcript, maxLines, m.scrollOffset), "\n")
+	return strings.Split(tui.VisibleLines(transcript, maxLines, m.currentScrollOffset()), "\n")
 }
 
 func (m runtimeModel) renderVisibleTranscript(maxLines int) string {
@@ -1209,9 +1427,36 @@ func (m runtimeModel) selectedVisibleText() string {
 }
 
 func (m runtimeModel) transcriptText() string {
+	if member := m.currentMember(); member != nil {
+		header := tui.Banner("成员详情: "+member.Name) + "\n" + tui.Dim("Esc / Backspace 返回主界面")
+		if member.Task != "" {
+			header += "\n" + tui.Dim("目标: "+truncateRuntimeText(member.Task, max(20, m.contentWidth()-6)))
+		}
+		body := m.memberBlocksText(member)
+		if strings.TrimSpace(body) == "" {
+			return header
+		}
+		return header + "\n\n" + body
+	}
+	return m.blocksText(m.blocks)
+}
+
+func (m runtimeModel) memberBlocksText(member *runtimeMemberState) string {
+	if member == nil {
+		return ""
+	}
+	if !member.RenderDirty && member.RenderCache != "" {
+		return member.RenderCache
+	}
+	member.RenderCache = m.blocksText(member.Blocks)
+	member.RenderDirty = false
+	return member.RenderCache
+}
+
+func (m runtimeModel) blocksText(blocks []runtimeBlock) string {
 	var transcript strings.Builder
-	for i, block := range m.blocks {
-		if i > 0 && shouldSpaceBeforeBlock(m.blocks[i-1].Kind, block.Kind) {
+	for i, block := range blocks {
+		if i > 0 && shouldSpaceBeforeBlock(blocks[i-1].Kind, block.Kind) {
 			transcript.WriteString("\n")
 		}
 		fmt.Fprintf(&transcript, "%s\n", m.renderBlock(block))
@@ -1244,27 +1489,35 @@ func (m runtimeModel) bodyHeight() int {
 
 func (m runtimeModel) renderBottom() string {
 	var sb strings.Builder
+	statusStarted := false
+	writeStatusLine := func(line string) {
+		if !statusStarted {
+			if sb.Len() > 0 && !strings.HasSuffix(sb.String(), "\n") {
+				sb.WriteString("\n")
+			}
+			sb.WriteString("\n")
+			statusStarted = true
+		}
+		fmt.Fprintf(&sb, "%s\n", line)
+	}
 	if m.picker != nil {
 		sb.WriteString(m.renderPicker())
 		if !strings.HasSuffix(sb.String(), "\n") {
 			sb.WriteString("\n")
 		}
 	}
-	if m.scrollOffset > 0 {
-		fmt.Fprintf(&sb, "%s\n", tui.CenterLine(tui.JumpToBottomButton(), m.contentWidth()))
-	}
-	if m.isCopiedNoticeVisible() {
-		fmt.Fprintf(&sb, "%s\n", tui.Dim(tui.CopiedNotice(m.selection.Copied)))
+	if m.currentScrollOffset() > 0 {
+		writeStatusLine(tui.CenterLine(tui.JumpToBottomButton(), m.contentWidth()))
 	}
 	if m.running {
-		fmt.Fprintf(&sb, "%s\n", tui.Status(m.status))
+		writeStatusLine(tui.Status(m.status))
 	}
 	if m.isExitConfirming() {
 		seconds := int(time.Until(m.exitUntil).Seconds())
 		if seconds < 1 {
 			seconds = 1
 		}
-		fmt.Fprintf(&sb, "%s\n", tui.Dim("再按 ")+tui.Key("Ctrl+C")+tui.Dim(" 退出 · ")+tui.Dim(fmt.Sprintf("%ds", seconds)))
+		writeStatusLine(tui.Dim("再按 ") + tui.Key("Ctrl+C") + tui.Dim(" 退出 · ") + tui.Dim(fmt.Sprintf("%ds", seconds)))
 	}
 	if tokenStatus := m.tokenStatus(); tokenStatus != "" {
 		fmt.Fprintf(&sb, "%s\n", tui.RightLine(tui.Dim(tokenStatus), m.contentWidth()))
@@ -1279,7 +1532,12 @@ func (m runtimeModel) renderInputBox() string {
 }
 
 func (m runtimeModel) renderInputValue() string {
-	return tui.PromptMarker() + tui.RenderInlineInputValueAtCursor(m.input.Value(), m.input.Position())
+	value := m.input.Value()
+	rendered := tui.PromptMarker() + tui.RenderInlineInputValueAtCursor(value, m.input.Position())
+	if hint := runtimeCommandUsageHint(value, m.input.Position()); hint != "" {
+		rendered += tui.Dim(hint)
+	}
+	return rendered
 }
 
 func (m runtimeModel) inputHint() string {
@@ -1357,13 +1615,88 @@ func (m runtimeModel) renderBlock(block runtimeBlock) string {
 		return tui.Banner(fmt.Sprintf("%s: %s", block.Title, block.Content))
 	case runtimeBlockInterrupt:
 		return tui.Interrupted(block.Content)
+	case runtimeBlockMember:
+		return m.renderMemberSummary(block)
 	case runtimeBlockSystem:
 		return tui.System(block.Title) + "\n" + m.runtimeRenderMarkdown(block.Content)
 	case runtimeBlockTool:
-		return block.Content
+		return runtimeRenderToolBlock(block)
 	default:
 		return m.runtimeRenderMarkdown(block.Content)
 	}
+}
+
+func (m runtimeModel) renderMemberSummary(block runtimeBlock) string {
+	ordinal := m.memberOrdinal(block.MemberKey)
+	status := runtimeMemberStatusText(block.MemberStatus)
+	line := fmt.Sprintf("› [%d] %s  %s · 工具 %d · Enter/点击查看",
+		ordinal,
+		emptyRuntimeMemberName(block.MemberName),
+		status,
+		block.MemberTools,
+	)
+	switch block.MemberStatus {
+	case "done":
+		return tui.System(line)
+	case "error":
+		return tui.Error(line)
+	default:
+		return tui.Status(line)
+	}
+}
+
+func runtimeMemberStatusText(status string) string {
+	switch status {
+	case "done":
+		return "已完成"
+	case "error":
+		return "失败"
+	case "running":
+		return "运行中"
+	default:
+		return "等待中"
+	}
+}
+
+func (m runtimeModel) memberOrdinal(key string) int {
+	ordinal := 0
+	for _, block := range m.blocks {
+		if block.Kind != runtimeBlockMember {
+			continue
+		}
+		ordinal++
+		if block.MemberKey == key {
+			return ordinal
+		}
+	}
+	return ordinal + 1
+}
+
+func (m runtimeModel) memberKeyByOrdinal(ordinal int) string {
+	current := 0
+	for _, block := range m.blocks {
+		if block.Kind != runtimeBlockMember {
+			continue
+		}
+		current++
+		if current == ordinal {
+			return block.MemberKey
+		}
+	}
+	return ""
+}
+
+func runtimeRenderToolBlock(block runtimeBlock) string {
+	if block.ToolName == "" {
+		if block.Content != "" {
+			return block.Content
+		}
+		block.ToolName = runtimeDefaultToolName
+	}
+	if block.ToolHasResult {
+		return tui.ToolResult(block.ToolName, block.ToolResult, block.ToolStatus)
+	}
+	return tui.ToolCall(block.ToolName, block.ToolArgs, block.ToolStatus)
 }
 
 func (m *runtimeModel) appendBlock(kind runtimeBlockKind, title, content string) {
@@ -1371,6 +1704,321 @@ func (m *runtimeModel) appendBlock(kind runtimeBlockKind, title, content string)
 	if len(m.blocks) > 200 {
 		m.blocks = m.blocks[len(m.blocks)-200:]
 	}
+}
+
+func (m *runtimeModel) ensureMember(event fkevent.Event) *runtimeMemberState {
+	key := runtimeMemberKey(event)
+	if mapped := m.memberKeyForAliases(runtimeMemberEventAliases(event)...); mapped != "" {
+		key = mapped
+	}
+	if key == "" {
+		return nil
+	}
+	if m.members == nil {
+		m.members = make(map[string]*runtimeMemberState)
+	}
+	member := m.members[key]
+	if member == nil {
+		member = &runtimeMemberState{
+			Key:          key,
+			Name:         runtimeMemberName(event),
+			Status:       "running",
+			ActiveOutput: -1,
+			ActiveReason: -1,
+			RenderDirty:  true,
+		}
+		m.members[key] = member
+		m.blocks = append(m.blocks, runtimeBlock{
+			Kind:         runtimeBlockMember,
+			MemberKey:    key,
+			MemberName:   member.Name,
+			MemberStatus: member.Status,
+		})
+	} else if name := runtimeMemberName(event); name != "" {
+		if member.Name != name {
+			member.markDirty()
+		}
+		member.Name = name
+	}
+	m.registerMemberTool(member.Key, runtimeMemberEventAliases(event)...)
+	m.syncMemberSummary(member)
+	return member
+}
+
+func (m *runtimeModel) ensureAgentToolMember(key, name, task string) *runtimeMemberState {
+	if key == "" {
+		return nil
+	}
+	if m.members == nil {
+		m.members = make(map[string]*runtimeMemberState)
+	}
+	if mapped := m.memberKeyForAliases(key); mapped != "" {
+		key = mapped
+	}
+	member := m.members[key]
+	if member == nil {
+		member = &runtimeMemberState{
+			Key:          key,
+			Name:         emptyRuntimeMemberName(name),
+			Status:       "running",
+			Task:         runtimeAgentTaskFromArgs(task),
+			ActiveOutput: -1,
+			ActiveReason: -1,
+			RenderDirty:  true,
+		}
+		m.members[key] = member
+	} else {
+		if name != "" {
+			if member.Name != name {
+				member.markDirty()
+			}
+			member.Name = name
+		}
+		if member.Task == "" {
+			if parsed := runtimeAgentTaskFromArgs(task); parsed != "" {
+				member.Task = parsed
+				member.markDirty()
+			}
+		}
+	}
+	m.registerMemberTool(key, key)
+	m.syncMemberSummary(member)
+	return member
+}
+
+func (m *runtimeModel) registerMemberTool(memberKey string, aliases ...string) {
+	if memberKey == "" {
+		return
+	}
+	if m.memberTools == nil {
+		m.memberTools = make(map[string]string)
+	}
+	for _, alias := range aliases {
+		if alias == "" {
+			continue
+		}
+		m.memberTools[alias] = memberKey
+	}
+}
+
+func (m runtimeModel) memberKeyForAliases(aliases ...string) string {
+	if m.memberTools == nil {
+		return ""
+	}
+	for _, alias := range aliases {
+		if alias == "" {
+			continue
+		}
+		if key := m.memberTools[alias]; key != "" {
+			return key
+		}
+	}
+	return ""
+}
+
+func (m runtimeModel) memberForToolEvent(event fkevent.Event) (*runtimeMemberState, string) {
+	if m.members == nil || m.memberTools == nil {
+		return nil, ""
+	}
+	for _, alias := range runtimeDirectToolEventAliases(event) {
+		if alias == "" {
+			continue
+		}
+		if key := m.memberTools[alias]; key != "" {
+			return m.members[key], key
+		}
+	}
+	return nil, ""
+}
+
+func (m *runtimeModel) syncMemberSummary(member *runtimeMemberState) {
+	if member == nil {
+		return
+	}
+	for i := range m.blocks {
+		if m.blocks[i].Kind == runtimeBlockMember && m.blocks[i].MemberKey == member.Key {
+			m.blocks[i].MemberName = member.Name
+			m.blocks[i].MemberStatus = member.Status
+			m.blocks[i].MemberTask = member.Task
+			m.blocks[i].MemberTools = member.ToolCount
+			return
+		}
+	}
+	m.blocks = append(m.blocks, runtimeBlock{
+		Kind:         runtimeBlockMember,
+		MemberKey:    member.Key,
+		MemberName:   member.Name,
+		MemberStatus: member.Status,
+		MemberTask:   member.Task,
+		MemberTools:  member.ToolCount,
+	})
+}
+
+func (m *runtimeModel) upsertToolCall(key, name, args string, status tui.ToolStatus) {
+	idx := m.findToolBlock(key)
+	if idx < 0 {
+		m.blocks = append(m.blocks, runtimeBlock{
+			Kind:       runtimeBlockTool,
+			ToolKey:    key,
+			ToolName:   emptyRuntimeToolName(name),
+			ToolArgs:   args,
+			ToolStatus: status,
+		})
+		return
+	}
+	block := &m.blocks[idx]
+	if name != "" {
+		block.ToolName = name
+	}
+	if args != "" {
+		block.ToolArgs = args
+	}
+	block.ToolStatus = status
+}
+
+func (m *runtimeModel) upsertToolResult(key, name, result string, status tui.ToolStatus, appendResult bool) {
+	idx := m.findToolBlock(key)
+	if idx < 0 {
+		m.blocks = append(m.blocks, runtimeBlock{
+			Kind:          runtimeBlockTool,
+			ToolKey:       key,
+			ToolName:      emptyRuntimeToolName(name),
+			ToolResult:    result,
+			ToolStatus:    status,
+			ToolHasResult: true,
+		})
+		return
+	}
+	block := &m.blocks[idx]
+	if name != "" {
+		block.ToolName = name
+	}
+	if appendResult {
+		block.ToolResult += result
+	} else {
+		block.ToolResult = result
+	}
+	block.ToolStatus = status
+	block.ToolHasResult = true
+}
+
+func (m runtimeModel) findToolBlock(key string) int {
+	if key == "" {
+		return -1
+	}
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		block := m.blocks[i]
+		if block.Kind == runtimeBlockTool && block.ToolKey == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func (s *runtimeMemberState) markDirty() {
+	if s == nil {
+		return
+	}
+	s.RenderDirty = true
+}
+
+func (m *runtimeModel) markMembersDirty() {
+	for _, member := range m.members {
+		member.markDirty()
+	}
+}
+
+func (s *runtimeMemberState) appendOutput(agent, content string) {
+	if content == "" {
+		return
+	}
+	s.markDirty()
+	s.ActiveReason = -1
+	if s.ActiveOutput >= 0 && s.ActiveOutput < len(s.Blocks) && s.Blocks[s.ActiveOutput].Kind == runtimeBlockAssistant {
+		s.Blocks[s.ActiveOutput].Content += content
+		return
+	}
+	s.Blocks = append(s.Blocks, runtimeBlock{Kind: runtimeBlockAssistant, Title: agent, Content: content})
+	s.ActiveOutput = len(s.Blocks) - 1
+}
+
+func (s *runtimeMemberState) appendReasoning(agent, content string) {
+	if content == "" {
+		return
+	}
+	s.markDirty()
+	s.ActiveOutput = -1
+	if s.ActiveReason >= 0 && s.ActiveReason < len(s.Blocks) && s.Blocks[s.ActiveReason].Kind == runtimeBlockReasoning {
+		s.Blocks[s.ActiveReason].Content += content
+		return
+	}
+	s.Blocks = append(s.Blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: content})
+	s.ActiveReason = len(s.Blocks) - 1
+}
+
+func (s *runtimeMemberState) upsertToolCall(key, name, args string, status tui.ToolStatus) {
+	s.markDirty()
+	idx := s.findToolBlock(key)
+	if idx < 0 {
+		s.Blocks = append(s.Blocks, runtimeBlock{
+			Kind:       runtimeBlockTool,
+			ToolKey:    key,
+			ToolName:   emptyRuntimeToolName(name),
+			ToolArgs:   args,
+			ToolStatus: status,
+		})
+		s.ToolCount++
+		return
+	}
+	block := &s.Blocks[idx]
+	if name != "" {
+		block.ToolName = name
+	}
+	if args != "" {
+		block.ToolArgs = args
+	}
+	block.ToolStatus = status
+}
+
+func (s *runtimeMemberState) upsertToolResult(key, name, result string, status tui.ToolStatus, appendResult bool) {
+	s.markDirty()
+	idx := s.findToolBlock(key)
+	if idx < 0 {
+		s.Blocks = append(s.Blocks, runtimeBlock{
+			Kind:          runtimeBlockTool,
+			ToolKey:       key,
+			ToolName:      emptyRuntimeToolName(name),
+			ToolResult:    result,
+			ToolStatus:    status,
+			ToolHasResult: true,
+		})
+		s.ToolCount++
+		return
+	}
+	block := &s.Blocks[idx]
+	if name != "" {
+		block.ToolName = name
+	}
+	if appendResult {
+		block.ToolResult += result
+	} else {
+		block.ToolResult = result
+	}
+	block.ToolStatus = status
+	block.ToolHasResult = true
+}
+
+func (s runtimeMemberState) findToolBlock(key string) int {
+	if key == "" {
+		return -1
+	}
+	for i := len(s.Blocks) - 1; i >= 0; i-- {
+		block := s.Blocks[i]
+		if block.Kind == runtimeBlockTool && block.ToolKey == key {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m *runtimeModel) appendOutput(agent, content string) {
@@ -1406,6 +2054,10 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 	if event.TotalTokens > 0 {
 		m.totalTokens = event.TotalTokens
 	}
+	if event.IsMemberEvent || event.MemberCallID != "" || event.MemberName != "" {
+		m.applyMemberEvent(event)
+		return
+	}
 	agent := event.AgentName
 	if agent == "" {
 		agent = runtimeDefaultAgentName
@@ -1426,17 +2078,67 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 	case fkevent.EventToolCallsPreparing:
 		m.activeOutput = -1
 		m.activeReason = -1
-		m.appendBlock(runtimeBlockTool, "", runtimeToolPreparingLine(event.ToolName, event.Content))
+		if display, ok := runtimeAgentToolDisplay(event.ToolName); ok {
+			aliases := runtimeAgentToolEventAliases(event)
+			key := runtimeAgentToolEventKey(event)
+			if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
+				key = mapped
+			}
+			if member := m.ensureAgentToolMember(key, display.Target, event.Content); member != nil {
+				m.registerMemberTool(member.Key, aliases...)
+			}
+			return
+		}
+		m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
 	case fkevent.EventToolCalls, fkevent.EventToolCallsArgsDelta:
 		m.activeOutput = -1
 		m.activeReason = -1
+		if event.Type == fkevent.EventToolCallsArgsDelta {
+			if member, _ := m.memberForToolEvent(event); member != nil {
+				member.Status = "running"
+				if member.Task == "" {
+					member.Task = runtimeAgentTaskFromArgs(event.Content)
+				}
+				m.syncMemberSummary(member)
+				return
+			}
+			if display, ok := runtimeAgentToolDisplay(event.ToolName); ok {
+				aliases := runtimeAgentToolEventAliases(event)
+				key := runtimeAgentToolEventKey(event)
+				if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
+					key = mapped
+				}
+				if member := m.ensureAgentToolMember(key, display.Target, event.Content); member != nil {
+					m.registerMemberTool(member.Key, aliases...)
+				}
+				return
+			}
+			m.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
+			return
+		}
 		for _, tool := range event.ToolCalls {
-			m.appendBlock(runtimeBlockTool, "", runtimeToolCallSummary(tool))
+			display := agenttool.FormatToolDisplay(tool.Function.Name)
+			if display.Kind == agenttool.ToolKindAgent {
+				aliases := runtimeAgentToolCallAliases(event, tool)
+				key := runtimeAgentToolCallKey(event, tool)
+				if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
+					key = mapped
+				}
+				if member := m.ensureAgentToolMember(key, display.Target, tool.Function.Arguments); member != nil {
+					m.registerMemberTool(member.Key, aliases...)
+				}
+				continue
+			}
+			key := runtimeToolCallKey(event, tool)
+			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
 	case fkevent.EventToolResult, fkevent.EventToolResultChunk:
 		m.activeOutput = -1
 		m.activeReason = -1
-		m.appendBlock(runtimeBlockTool, "", runtimeToolResultLine(event.ToolName, event.Content))
+		if m.applyAgentToolResult(event) {
+			return
+		}
+		m.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == fkevent.EventToolResultChunk)
 	case fkevent.EventAction:
 		m.activeOutput = -1
 		m.activeReason = -1
@@ -1448,8 +2150,124 @@ func (m *runtimeModel) applyEvent(event fkevent.Event) {
 		if msg == "" {
 			msg = event.Content
 		}
+		if member, _ := m.memberForToolEvent(event); member != nil {
+			member.Status = "error"
+			if msg != "" {
+				member.markDirty()
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockError, Title: member.Name, Content: msg})
+			}
+			m.syncMemberSummary(member)
+			return
+		}
+		if event.ToolName != "" {
+			m.upsertToolResult(runtimeToolEventKey(event), event.ToolName, msg, tui.ToolStatusError, false)
+			return
+		}
 		m.appendBlock(runtimeBlockError, agent, msg)
 	}
+}
+
+func (m *runtimeModel) applyMemberEvent(event fkevent.Event) {
+	member := m.ensureMember(event)
+	if member == nil {
+		return
+	}
+	member.Status = "running"
+	agent := event.AgentName
+	if agent == "" {
+		agent = member.Name
+	}
+	switch event.Type {
+	case fkevent.EventReasoningChunk:
+		content := event.ReasoningContent
+		if content == "" {
+			content = event.Content
+		}
+		member.appendReasoning(agent, content)
+	case fkevent.EventStreamChunk:
+		member.appendOutput(agent, event.Content)
+	case fkevent.EventMessage:
+		if event.Content != "" {
+			member.appendOutput(agent, event.Content)
+			member.Status = "done"
+		}
+	case fkevent.EventToolCallsPreparing:
+		member.ActiveOutput = -1
+		member.ActiveReason = -1
+		member.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
+	case fkevent.EventToolCalls, fkevent.EventToolCallsArgsDelta:
+		member.ActiveOutput = -1
+		member.ActiveReason = -1
+		if event.Type == fkevent.EventToolCallsArgsDelta {
+			member.upsertToolCall(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusRunning)
+			break
+		}
+		for _, tool := range event.ToolCalls {
+			key := runtimeToolCallKey(event, tool)
+			display := agenttool.FormatToolDisplay(tool.Function.Name)
+			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
+		}
+	case fkevent.EventToolResult, fkevent.EventToolResultChunk:
+		member.ActiveOutput = -1
+		member.ActiveReason = -1
+		member.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == fkevent.EventToolResultChunk)
+	case fkevent.EventError:
+		msg := event.Error
+		if msg == "" {
+			msg = event.Content
+		}
+		member.Status = "error"
+		if event.ToolName != "" {
+			member.upsertToolResult(runtimeToolEventKey(event), event.ToolName, msg, tui.ToolStatusError, false)
+		} else {
+			member.markDirty()
+			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockError, Title: agent, Content: msg})
+		}
+	case fkevent.EventAction:
+		if event.ActionType == fkevent.ActionExit {
+			member.Status = "done"
+		}
+		if event.Content != "" {
+			member.markDirty()
+			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockSystem, Title: string(event.ActionType), Content: event.Content})
+		}
+	}
+	m.syncMemberSummary(member)
+}
+
+func (m *runtimeModel) applyAgentToolResult(event fkevent.Event) bool {
+	member, _ := m.memberForToolEvent(event)
+	if member == nil {
+		display, ok := runtimeAgentToolDisplay(event.ToolName)
+		if !ok {
+			return false
+		}
+		aliases := runtimeAgentToolEventAliases(event)
+		key := runtimeAgentToolEventKey(event)
+		if mapped := m.memberKeyForAliases(aliases...); mapped != "" {
+			key = mapped
+		}
+		if key == "" {
+			key = "name:" + event.ToolName
+		}
+		member = m.ensureAgentToolMember(key, display.Target, "")
+		if member == nil {
+			return true
+		}
+		m.registerMemberTool(member.Key, aliases...)
+	}
+	member.ActiveOutput = -1
+	member.ActiveReason = -1
+	if event.Type == fkevent.EventToolResultChunk {
+		member.Status = "running"
+	} else {
+		member.Status = "done"
+	}
+	if event.Content != "" && len(member.Blocks) == 0 {
+		member.appendOutput(member.Name, event.Content)
+	}
+	m.syncMemberSummary(member)
+	return true
 }
 
 func (m runtimeModel) isExitConfirming() bool {
@@ -1477,27 +2295,226 @@ func runtimeSelectionCopiedTickCmd() tea.Cmd {
 	})
 }
 
-func runtimeToolCallSummary(tool schema.ToolCall) string {
-	display := agenttool.FormatToolDisplay(tool.Function.Name)
-	return tui.ToolCall(display.DisplayName, tool.Function.Arguments)
-}
-
-func runtimeToolPreparingLine(name, detail string) string {
-	return runtimeToolCallLine(name, detail)
-}
-
-func runtimeToolCallLine(name, detail string) string {
+func emptyRuntimeToolName(name string) string {
 	if name == "" {
-		name = runtimeDefaultToolName
+		return runtimeDefaultToolName
 	}
-	if detail == "" {
-		return tui.ToolCall(name, "")
-	}
-	return tui.ToolCall(name, detail)
+	return name
 }
 
-func runtimeToolResultLine(name, detail string) string {
-	return tui.ToolResult(detail)
+func emptyRuntimeMemberName(name string) string {
+	if name == "" {
+		return "member"
+	}
+	return name
+}
+
+func runtimeAgentToolDisplay(name string) (agenttool.ToolDisplay, bool) {
+	if name == "" {
+		return agenttool.ToolDisplay{}, false
+	}
+	display := agenttool.FormatToolDisplay(name)
+	if display.Kind == agenttool.ToolKindAgent {
+		return display, true
+	}
+	if strings.HasPrefix(name, agenttool.AgentToolPrefix) {
+		target := strings.TrimPrefix(name, agenttool.AgentToolPrefix)
+		return agenttool.ToolDisplay{
+			Name:        name,
+			DisplayName: "指派给 " + target,
+			Kind:        agenttool.ToolKindAgent,
+			Target:      target,
+		}, true
+	}
+	return display, false
+}
+
+func runtimeAgentTaskFromArgs(args string) string {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(args), &payload); err == nil {
+		for _, key := range []string{"request", "task", "goal", "objective", "description"} {
+			if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	return args
+}
+
+func runtimeAgentToolEventAliases(event fkevent.Event) []string {
+	aliases := []string{
+		event.SpanID,
+		event.ToolCallRef,
+		event.ToolCallID,
+	}
+	if key := runtimeToolEventKey(event); isRuntimeStableToolAlias(key) {
+		aliases = append(aliases, key)
+	}
+	if event.ToolCallIndex != nil {
+		idx := *event.ToolCallIndex
+		aliases = append(aliases, fmt.Sprintf("member:%d", idx))
+	}
+	return compactRuntimeAliases(aliases)
+}
+
+func runtimeAgentToolEventKey(event fkevent.Event) string {
+	if event.SpanID != "" {
+		return event.SpanID
+	}
+	if event.ToolCallID != "" {
+		return event.ToolCallID
+	}
+	return runtimeToolEventKey(event)
+}
+
+func runtimeAgentToolCallAliases(event fkevent.Event, tool schema.ToolCall) []string {
+	aliases := []string{
+		tool.ID,
+	}
+	if tool.Index != nil && event.ToolCallSpanIDs != nil {
+		aliases = append(aliases, event.ToolCallSpanIDs[*tool.Index])
+	}
+	if key := runtimeToolCallKey(event, tool); isRuntimeStableToolAlias(key) {
+		aliases = append(aliases, key)
+	}
+	if tool.Index != nil {
+		idx := *tool.Index
+		aliases = append(aliases, fmt.Sprintf("member:%d", idx))
+		if event.ToolCallRefs != nil {
+			aliases = append(aliases, event.ToolCallRefs[idx])
+		}
+	}
+	return compactRuntimeAliases(aliases)
+}
+
+func runtimeAgentToolCallKey(event fkevent.Event, tool schema.ToolCall) string {
+	if tool.Index != nil && event.ToolCallSpanIDs != nil {
+		if span := event.ToolCallSpanIDs[*tool.Index]; span != "" {
+			return span
+		}
+	}
+	if tool.ID != "" {
+		return tool.ID
+	}
+	return runtimeToolCallKey(event, tool)
+}
+
+func runtimeDirectToolEventAliases(event fkevent.Event) []string {
+	return compactRuntimeAliases([]string{
+		event.SpanID,
+		event.ToolCallRef,
+		event.ToolCallID,
+	})
+}
+
+func isRuntimeStableToolAlias(alias string) bool {
+	return alias != "" && !strings.HasPrefix(alias, "idx:") && !strings.HasPrefix(alias, "name:")
+}
+
+func runtimeMemberEventAliases(event fkevent.Event) []string {
+	aliases := []string{
+		event.ParentSpanID,
+		event.SpanID,
+		event.MemberCallID,
+		event.ParentToolCallID,
+	}
+	if event.MemberOrder != nil {
+		aliases = append(aliases, fmt.Sprintf("member:%d", *event.MemberOrder))
+	}
+	return compactRuntimeAliases(aliases)
+}
+
+func compactRuntimeAliases(aliases []string) []string {
+	seen := make(map[string]bool, len(aliases))
+	result := aliases[:0]
+	for _, alias := range aliases {
+		if alias == "" || seen[alias] {
+			continue
+		}
+		seen[alias] = true
+		result = append(result, alias)
+	}
+	return result
+}
+
+func runtimeToolEventKey(event fkevent.Event) string {
+	if event.SpanID != "" {
+		return event.SpanID
+	}
+	if event.ToolCallRef != "" {
+		return event.ToolCallRef
+	}
+	if event.ToolCallID != "" {
+		return event.ToolCallID
+	}
+	if event.ToolCallIndex != nil {
+		return fmt.Sprintf("idx:%d", *event.ToolCallIndex)
+	}
+	if event.ToolName != "" {
+		return "name:" + event.ToolName
+	}
+	return ""
+}
+
+func runtimeToolCallKey(event fkevent.Event, tool schema.ToolCall) string {
+	if tool.Index != nil && event.ToolCallSpanIDs != nil {
+		if span := event.ToolCallSpanIDs[*tool.Index]; span != "" {
+			return span
+		}
+	}
+	if tool.Index != nil && event.ToolCallRefs != nil {
+		if ref := event.ToolCallRefs[*tool.Index]; ref != "" {
+			return ref
+		}
+	}
+	if tool.ID != "" {
+		return tool.ID
+	}
+	if tool.Index != nil {
+		return fmt.Sprintf("idx:%d", *tool.Index)
+	}
+	return "name:" + tool.Function.Name
+}
+
+func runtimeMemberKey(event fkevent.Event) string {
+	if event.IsMemberEvent {
+		if event.ParentSpanID != "" {
+			return event.ParentSpanID
+		}
+		if event.SpanID != "" {
+			return event.SpanID
+		}
+	}
+	if event.MemberCallID != "" {
+		return event.MemberCallID
+	}
+	if event.ParentToolCallID != "" {
+		return event.ParentToolCallID
+	}
+	if event.MemberOrder != nil {
+		return fmt.Sprintf("member:%d", *event.MemberOrder)
+	}
+	if event.MemberName != "" {
+		return "name:" + event.MemberName
+	}
+	return ""
+}
+
+func runtimeMemberName(event fkevent.Event) string {
+	if event.MemberName != "" {
+		return event.MemberName
+	}
+	if event.AgentName != "" {
+		return event.AgentName
+	}
+	if event.MemberToolName != "" {
+		return event.MemberToolName
+	}
+	return "member"
 }
 
 func truncateRuntimeText(s string, limit int) string {
@@ -1509,29 +2526,45 @@ func truncateRuntimeText(s string, limit int) string {
 }
 
 func runtimeHelpMarkdown() string {
-	return `# fkteams
+	var sb strings.Builder
+	sb.WriteString("常用命令按场景分组如下。\n\n")
+	for _, category := range runtimeCommandCategories() {
+		sb.WriteString("## " + category + "\n\n")
+		for _, command := range allCommands {
+			if command.Category != category {
+				continue
+			}
+			fmt.Fprintf(&sb, "- `%s` %s\n", runtimeCommandSyntax(command), command.Desc)
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("## 输入\n\n")
+	sb.WriteString("- `@agent` 指定智能体\n")
+	sb.WriteString("- `#file` 引用文件\n")
+	sb.WriteString("- `Shift+Enter` 输入换行\n")
+	sb.WriteString("\n直接输入问题即可与智能体团队对话。")
+	return sb.String()
+}
 
-| 命令 | 说明 |
-|------|------|
-| help | 显示帮助 |
-| /quit | 退出 |
-| list_agents | 列出智能体 |
-| list_chat_history | 列出聊天历史 |
-| load_chat_history | 选择并加载聊天历史 |
-| save_chat_history | 保存聊天历史 |
-| clear_chat_history | 清空当前聊天历史 |
-| save_chat_history_to_markdown | 导出聊天历史为 Markdown |
-| save_chat_history_to_html | 导出聊天历史为 HTML |
-| switch_work_mode | 切换工作模式 |
-| list_schedule | 列出定时任务 |
-| cancel_schedule | 选择并取消定时任务 |
-| delete_schedule | 选择并删除定时任务 |
-| list_memory | 列出长期记忆 |
-| delete_memory | 选择并删除长期记忆 |
-| clear_memory | 清空长期记忆 |
-| @智能体名 查询 | 切换智能体并执行 |
+func runtimeCommandCategories() []string {
+	categories := make([]string, 0)
+	seen := map[string]bool{}
+	for _, command := range allCommands {
+		if command.Category == "" || seen[command.Category] {
+			continue
+		}
+		seen[command.Category] = true
+		categories = append(categories, command.Category)
+	}
+	return categories
+}
 
-直接输入问题即可与智能体团队对话。`
+func runtimeCommandSyntax(command CommandInfo) string {
+	syntax := "/" + command.Name
+	if command.Usage != "" {
+		syntax += " " + command.Usage
+	}
+	return syntax
 }
 
 func runtimeAgentsMarkdown() string {

@@ -38,6 +38,7 @@ const (
 const HistoryFileName = "history.jsonl"
 
 type ToolCallRecord struct {
+	SpanID      string `json:"span_id,omitempty"`
 	Ref         string `json:"ref,omitempty"`
 	ID          string `json:"id"`
 	Index       *int   `json:"index,omitempty"`
@@ -61,6 +62,8 @@ type HistoryLine struct {
 	Type           string       `json:"type"`
 	MessageID      string       `json:"message_id"`
 	EventIndex     int          `json:"event_index"`
+	SpanID         string       `json:"span_id,omitempty"`
+	ParentSpanID   string       `json:"parent_span_id,omitempty"`
 	AgentName      string       `json:"agent_name"`
 	RunPath        string       `json:"run_path,omitempty"`
 	MemberCallID   string       `json:"member_call_id,omitempty"`
@@ -93,6 +96,8 @@ type MessageEvent struct {
 
 // AgentMessage 代理的一次完整发言
 type AgentMessage struct {
+	SpanID         string         `json:"span_id,omitempty"`
+	ParentSpanID   string         `json:"parent_span_id,omitempty"`
 	AgentName      string         `json:"agent_name"`
 	RunPath        string         `json:"run_path"`
 	MemberCallID   string         `json:"member_call_id,omitempty"`
@@ -135,6 +140,7 @@ const maxErrorContentLen = 1200
 
 // pendingToolCall 待匹配的工具调用
 type pendingToolCall struct {
+	SpanID      string
 	Ref         string
 	ID          string
 	Index       *int
@@ -174,6 +180,7 @@ type HistoryRecorder struct {
 
 func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord {
 	record := ToolCallRecord{
+		SpanID:      tc.SpanID,
 		Ref:         tc.Ref,
 		ID:          tc.ID,
 		Index:       tc.Index,
@@ -203,9 +210,10 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 	return &record
 }
 
-func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string) pendingToolCall {
+func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, arguments string) pendingToolCall {
 	display := agenttool.FormatToolDisplay(name)
 	return pendingToolCall{
+		SpanID:      spanID,
 		Ref:         ref,
 		ID:          id,
 		Index:       index,
@@ -234,6 +242,15 @@ func toolCallRefFromEvent(event Event, tc schema.ToolCall) string {
 		return fmt.Sprintf("idx:%d", *tc.Index)
 	}
 	return ""
+}
+
+func toolCallSpanFromEvent(event Event, tc schema.ToolCall) string {
+	if tc.Index != nil && event.ToolCallSpanIDs != nil {
+		if span := event.ToolCallSpanIDs[*tc.Index]; span != "" {
+			return span
+		}
+	}
+	return event.SpanID
 }
 
 func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall) int {
@@ -279,6 +296,9 @@ func truncateErrorContent(s string) string {
 }
 
 func toolResultKey(event Event) string {
+	if event.SpanID != "" {
+		return event.SpanID
+	}
 	if event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
@@ -292,6 +312,14 @@ func toolResultKey(event Event) string {
 }
 
 func historyActiveKey(event Event) string {
+	if event.IsMemberEvent {
+		if event.ParentSpanID != "" {
+			return event.ParentSpanID
+		}
+		if event.SpanID != "" {
+			return event.SpanID
+		}
+	}
 	if event.MemberCallID != "" {
 		return "member:" + event.MemberCallID
 	}
@@ -318,6 +346,8 @@ func (h *HistoryRecorder) ensureMessageContext(event Event) *activeMessageContex
 	}
 	ctx := &activeMessageContext{
 		msg: AgentMessage{
+			SpanID:         event.SpanID,
+			ParentSpanID:   event.ParentSpanID,
 			AgentName:      event.AgentName,
 			RunPath:        event.RunPath,
 			MemberCallID:   event.MemberCallID,
@@ -419,7 +449,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, "")
+				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, "")
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
@@ -450,7 +480,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
@@ -483,10 +513,11 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 		idx := -1
 		for i := range ctx.pendingToolCalls {
+			sameSpan := ctx.pendingToolCalls[i].SpanID != "" && ctx.pendingToolCalls[i].SpanID == event.SpanID
 			sameID := ctx.pendingToolCalls[i].ID != "" && ctx.pendingToolCalls[i].ID == event.ToolCallID
 			sameIndex := ctx.pendingToolCalls[i].Index != nil && event.ToolCallIndex != nil && *ctx.pendingToolCalls[i].Index == *event.ToolCallIndex
 			sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == event.ToolCallRef
-			if sameRef || sameID || sameIndex {
+			if sameSpan || sameRef || sameID || sameIndex {
 				idx = i
 				break
 			}
@@ -536,7 +567,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				continue
 			}
 			if tc.Function.Name != "" {
-				pending := pendingToolCallFromEvent(toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := pendingToolCallFromEvent(toolCallSpanFromEvent(event, tc), toolCallRefFromEvent(event, tc), tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
@@ -869,6 +900,8 @@ func marshalMessagesJSONL(messages []AgentMessage) ([]byte, error) {
 				Type:           historyLineTypeMessageEvent,
 				MessageID:      messageID,
 				EventIndex:     eventIndex,
+				SpanID:         msg.SpanID,
+				ParentSpanID:   msg.ParentSpanID,
 				AgentName:      msg.AgentName,
 				RunPath:        msg.RunPath,
 				MemberCallID:   msg.MemberCallID,
@@ -948,6 +981,8 @@ func loadMessagesJSONL(file *os.File) ([]AgentMessage, error) {
 		if !exists {
 			messageIndex[line.MessageID] = len(messages)
 			messages = append(messages, AgentMessage{
+				SpanID:         line.SpanID,
+				ParentSpanID:   line.ParentSpanID,
 				AgentName:      line.AgentName,
 				RunPath:        line.RunPath,
 				MemberCallID:   line.MemberCallID,

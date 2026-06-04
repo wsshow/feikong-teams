@@ -8,6 +8,11 @@ import (
 
 const AgentToolPrefix = "ask_fkagent_"
 
+const (
+	ToolKindAgent = "agent"
+	ToolKindTool  = "tool"
+)
+
 var agentToolDisplays sync.Map
 
 type ToolDisplay struct {
@@ -28,7 +33,7 @@ func RegisterAgentToolDisplay(toolName, displayName string) {
 	agentToolDisplays.Store(toolName, ToolDisplay{
 		Name:        toolName,
 		DisplayName: "指派给 " + target,
-		Kind:        "agent",
+		Kind:        ToolKindAgent,
 		Target:      target,
 	})
 }
@@ -37,7 +42,7 @@ func FormatToolDisplay(name string) ToolDisplay {
 	display := ToolDisplay{
 		Name:        name,
 		DisplayName: name,
-		Kind:        "tool",
+		Kind:        ToolKindTool,
 	}
 
 	if value, ok := agentToolDisplays.Load(name); ok {

@@ -12,6 +12,14 @@ const (
 	defaultToolResultContent = "完成"
 )
 
+type ToolStatus string
+
+const (
+	ToolStatusRunning ToolStatus = "running"
+	ToolStatusDone    ToolStatus = "done"
+	ToolStatusError   ToolStatus = "error"
+)
+
 type WelcomeInfo struct {
 	Version   string
 	Mode      string
@@ -230,20 +238,21 @@ func Status(text string) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(text)
 }
 
-func ToolCall(name string, args string) string {
+func ToolCall(name string, args string, status ToolStatus) string {
 	name = emptyAs(name, defaultToolDisplayName)
 	args = toolArgsSummary(args)
 	label := name
 	if args != "" {
 		label = name + "(" + truncateRunes(args, 88) + ")"
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("● ") +
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(toolStatusColor(status))).Render("● ") +
 		lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true).Render(label)
 }
 
-func ToolResult(content string) string {
+func ToolResult(name string, content string, status ToolStatus) string {
 	lines, hidden := toolResultPreviewLines(content, 5)
-	rendered := make([]string, 0, len(lines)+1)
+	rendered := make([]string, 0, len(lines)+2)
+	rendered = append(rendered, ToolCall(name, "", status))
 	for i, line := range lines {
 		prefix := "  │ "
 		if i == 0 {
@@ -255,6 +264,19 @@ func ToolResult(content string) string {
 		rendered = append(rendered, dimStyle().Render("    ... 隐藏 "+formatInt(hidden)+" 行"))
 	}
 	return strings.Join(rendered, "\n")
+}
+
+func toolStatusColor(status ToolStatus) string {
+	switch status {
+	case ToolStatusRunning:
+		return "3"
+	case ToolStatusError:
+		return "1"
+	case ToolStatusDone:
+		return "10"
+	default:
+		return "8"
+	}
 }
 
 func Interrupted(text string) string {

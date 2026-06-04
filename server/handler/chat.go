@@ -310,8 +310,14 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	if event.Sequence != 0 {
 		result["sequence"] = event.Sequence
 	}
-	if event.CreatedAt != "" {
+	if !event.CreatedAt.IsZero() {
 		result["created_at"] = event.CreatedAt
+	}
+	if event.SpanID != "" {
+		result["span_id"] = event.SpanID
+	}
+	if event.ParentSpanID != "" {
+		result["parent_span_id"] = event.ParentSpanID
 	}
 	if event.Phase != "" {
 		result["phase"] = event.Phase
@@ -355,6 +361,9 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 				if event.ToolCallRefs != nil && event.ToolCallRefs[*tc.Index] != "" {
 					toolCall["ref"] = event.ToolCallRefs[*tc.Index]
 				}
+				if event.ToolCallSpanIDs != nil && event.ToolCallSpanIDs[*tc.Index] != "" {
+					toolCall["span_id"] = event.ToolCallSpanIDs[*tc.Index]
+				}
 			}
 			if display.Target != "" {
 				toolCall["target"] = display.Target
@@ -371,6 +380,9 @@ func convertEventToMap(event fkevent.Event) map[string]any {
 	}
 	if event.ToolCallID != "" {
 		result["tool_call_id"] = event.ToolCallID
+	}
+	if event.ExternalCallID != "" {
+		result["external_call_id"] = event.ExternalCallID
 	}
 	if event.ToolCallRef != "" {
 		result["tool_call_ref"] = event.ToolCallRef

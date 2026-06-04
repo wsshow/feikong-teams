@@ -32,10 +32,19 @@ type nonInteractiveKey struct{}
 
 const internalContinueToolName = "continue_output"
 
+const (
+	spanKindAgent  = "agent"
+	spanKindMember = "member"
+	spanKindTool   = "tool"
+	spanKindAction = "action"
+)
+
 var globalEventSequence int64
 var globalStreamSequence int64
 var toolCallRefsByID sync.Map
 var toolCallOrdersByID sync.Map
+var toolCallSpansByID sync.Map
+var toolCallSpansByRef sync.Map
 var eventDispatchMu sync.Mutex
 
 func isInternalToolName(name string) bool {
@@ -79,10 +88,19 @@ func intPtr(v int) *int {
 }
 
 func normalizeEvent(event Event) Event {
+	if event.Sequence == 0 {
+		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
+	}
+	if event.EventID == "" {
+		event.EventID = fmt.Sprintf("evt_%d", event.Sequence)
+	}
 	if event.ToolCallRef == "" && event.ToolCallID != "" {
 		if ref, ok := toolCallRefsByID.Load(event.ToolCallID); ok {
 			event.ToolCallRef, _ = ref.(string)
 		}
+	}
+	if event.ExternalCallID == "" && event.ToolCallID != "" {
+		event.ExternalCallID = event.ToolCallID
 	}
 	if event.MemberOrder == nil && event.ParentToolCallID != "" {
 		if order, ok := toolCallOrdersByID.Load(event.ParentToolCallID); ok {
@@ -91,14 +109,8 @@ func normalizeEvent(event Event) Event {
 			}
 		}
 	}
-	if event.Sequence == 0 {
-		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
-	}
-	if event.EventID == "" {
-		event.EventID = fmt.Sprintf("evt_%d", event.Sequence)
-	}
-	if event.CreatedAt == "" {
-		event.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
 	}
 	if event.MemberCallID != "" {
 		event.IsMemberEvent = true
@@ -115,6 +127,7 @@ func normalizeEvent(event Event) Event {
 	if !event.IsFinal && isFinalEventType(event.Type) {
 		event.IsFinal = true
 	}
+	attachEventSpans(&event)
 	return event
 }
 
@@ -159,6 +172,223 @@ func registerToolCallOrder(id string, idx int) {
 		return
 	}
 	toolCallOrdersByID.Store(id, idx)
+}
+
+func registerToolCallSpan(id, ref, span string) {
+	if span == "" {
+		return
+	}
+	if id != "" {
+		toolCallSpansByID.Store(id, span)
+	}
+	if ref != "" {
+		toolCallSpansByRef.Store(ref, span)
+	}
+}
+
+func lookupToolCallSpan(id, ref string) string {
+	if id != "" {
+		if span, ok := toolCallSpansByID.Load(id); ok {
+			if v, ok := span.(string); ok {
+				return v
+			}
+		}
+	}
+	if ref != "" {
+		if span, ok := toolCallSpansByRef.Load(ref); ok {
+			if v, ok := span.(string); ok {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+func makeSpanID(kind, key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	return kind + ":" + key
+}
+
+func agentSpanID(event Event) string {
+	return makeSpanID(spanKindAgent, event.AgentName+"|"+event.RunPath)
+}
+
+func memberSpanID(callID string) string {
+	return makeSpanID(spanKindMember, callID)
+}
+
+func resolvedMemberSpanID(callID string) string {
+	if span := lookupToolCallSpan(callID, ""); strings.HasPrefix(span, spanKindMember+":") {
+		return span
+	}
+	return memberSpanID(callID)
+}
+
+func toolSpanID(key string) string {
+	return makeSpanID(spanKindTool, key)
+}
+
+func actionSpanID(event Event) string {
+	key := fmt.Sprintf("%s|%s|%s|%d", event.AgentName, event.RunPath, event.ActionType, event.Sequence)
+	return makeSpanID(spanKindAction, key)
+}
+
+func attachEventSpans(event *Event) {
+	if event == nil {
+		return
+	}
+	memberSpan := ""
+	if event.MemberCallID != "" {
+		memberSpan = resolvedMemberSpanID(event.MemberCallID)
+	} else if event.ParentToolCallID != "" {
+		memberSpan = resolvedMemberSpanID(event.ParentToolCallID)
+	}
+
+	switch event.Type {
+	case EventToolCalls:
+		attachToolCallSpans(event, memberSpan)
+	case EventToolCallsPreparing:
+		attachPreparingSpan(event, memberSpan)
+	case EventToolCallsArgsDelta, EventToolResult, EventToolResultChunk:
+		attachSingleToolSpan(event, memberSpan)
+	case EventAction:
+		if memberSpan != "" {
+			setEventSpan(event, memberSpan, "")
+		} else {
+			setEventSpan(event, actionSpanID(*event), "")
+		}
+	default:
+		if memberSpan != "" {
+			setEventSpan(event, memberSpan, "")
+		} else {
+			setEventSpan(event, agentSpanID(*event), "")
+		}
+	}
+}
+
+func attachToolCallSpans(event *Event, memberSpan string) {
+	if len(event.ToolCalls) == 0 {
+		if memberSpan != "" {
+			setEventSpan(event, memberSpan, "")
+		}
+		return
+	}
+	if event.ToolCallSpanIDs == nil {
+		event.ToolCallSpanIDs = make(map[int]string, len(event.ToolCalls))
+	}
+	for i, tool := range event.ToolCalls {
+		idx := i
+		if tool.Index != nil {
+			idx = *tool.Index
+		}
+		ref := ""
+		if event.ToolCallRefs != nil {
+			ref = event.ToolCallRefs[idx]
+		}
+		span := lookupToolCallSpan(tool.ID, ref)
+		if span == "" {
+			span = spanForToolCall(tool.Function.Name, tool.ID, ref, idx)
+		}
+		event.ToolCallSpanIDs[idx] = span
+		registerToolCallSpan(tool.ID, ref, span)
+	}
+	if memberSpan != "" && event.ParentSpanID == "" {
+		event.ParentSpanID = memberSpan
+	}
+	if len(event.ToolCalls) == 1 {
+		idx := 0
+		if event.ToolCalls[0].Index != nil {
+			idx = *event.ToolCalls[0].Index
+		}
+		setEventSpan(event, event.ToolCallSpanIDs[idx], memberSpan)
+	}
+}
+
+func attachPreparingSpan(event *Event, memberSpan string) {
+	name := event.ToolName
+	id := event.ToolCallID
+	ref := event.ToolCallRef
+	idx := -1
+	if event.ToolCallIndex != nil {
+		idx = *event.ToolCallIndex
+	}
+	if len(event.ToolCalls) > 0 {
+		tool := event.ToolCalls[0]
+		if name == "" {
+			name = tool.Function.Name
+		}
+		if id == "" {
+			id = tool.ID
+		}
+		if tool.Index != nil {
+			idx = *tool.Index
+			if ref == "" && event.ToolCallRefs != nil {
+				ref = event.ToolCallRefs[idx]
+			}
+		}
+	}
+	span := lookupToolCallSpan(id, ref)
+	if span == "" {
+		span = spanForToolCall(name, id, ref, idx)
+	}
+	registerToolCallSpan(id, ref, span)
+	setEventSpan(event, span, memberSpan)
+	if idx >= 0 {
+		if event.ToolCallSpanIDs == nil {
+			event.ToolCallSpanIDs = map[int]string{}
+		}
+		event.ToolCallSpanIDs[idx] = span
+	}
+}
+
+func attachSingleToolSpan(event *Event, memberSpan string) {
+	span := lookupToolCallSpan(event.ToolCallID, event.ToolCallRef)
+	if span == "" {
+		idx := -1
+		if event.ToolCallIndex != nil {
+			idx = *event.ToolCallIndex
+		}
+		span = spanForToolCall(event.ToolName, event.ToolCallID, event.ToolCallRef, idx)
+	}
+	registerToolCallSpan(event.ToolCallID, event.ToolCallRef, span)
+	setEventSpan(event, span, memberSpan)
+}
+
+func spanForToolCall(name, id, ref string, idx int) string {
+	key := id
+	if key == "" {
+		key = ref
+	}
+	if key == "" && idx >= 0 {
+		key = fmt.Sprintf("idx:%d", idx)
+	}
+	if key == "" {
+		key = name
+	}
+	if isAgentToolName(name) {
+		return memberSpanID(key)
+	}
+	return toolSpanID(key)
+}
+
+func isAgentToolName(name string) bool {
+	if name == "" {
+		return false
+	}
+	return agenttool.FormatToolDisplay(name).Kind == agenttool.ToolKindAgent ||
+		strings.HasPrefix(name, agenttool.AgentToolPrefix)
+}
+
+func setEventSpan(event *Event, span, parent string) {
+	if event.SpanID == "" {
+		event.SpanID = span
+	}
+	if event.ParentSpanID == "" {
+		event.ParentSpanID = parent
+	}
 }
 
 // NormalizeEvent 补齐事件协议字段，供直接记录事件的调用方复用。

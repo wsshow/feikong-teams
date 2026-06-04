@@ -1,6 +1,10 @@
 package fkevent
 
-import "github.com/cloudwego/eino/schema"
+import (
+	"time"
+
+	"github.com/cloudwego/eino/schema"
+)
 
 // EventType 事件类型
 type EventType string
@@ -75,7 +79,9 @@ const (
 type Event struct {
 	EventID          string            `json:"event_id,omitempty"`
 	Sequence         int64             `json:"sequence,omitempty"`
-	CreatedAt        string            `json:"created_at,omitempty"`
+	CreatedAt        time.Time         `json:"created_at,omitempty"`
+	SpanID           string            `json:"span_id,omitempty"`
+	ParentSpanID     string            `json:"parent_span_id,omitempty"`
 	Type             EventType         `json:"type"`
 	Phase            EventPhase        `json:"phase,omitempty"`
 	IsPartial        bool              `json:"is_partial,omitempty"`
@@ -89,9 +95,11 @@ type Event struct {
 	Detail           string            `json:"detail,omitempty"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"` // 推理模型思考内容
 	ToolCalls        []schema.ToolCall `json:"tool_calls,omitempty"`
-	ToolCallRefs     map[int]string    `json:"tool_call_refs,omitempty"` // 工具调用 index 到稳定引用的映射
-	ToolCallRef      string            `json:"tool_call_ref,omitempty"`  // 当前工具生命周期的稳定引用
-	ToolCallID       string            `json:"tool_call_id,omitempty"`   // 工具结果对应的调用 ID
+	ToolCallSpanIDs  map[int]string    `json:"tool_call_span_ids,omitempty"` // 工具调用 index 到规范 span 的映射
+	ToolCallRefs     map[int]string    `json:"tool_call_refs,omitempty"`     // 工具调用 index 到稳定引用的映射
+	ToolCallRef      string            `json:"tool_call_ref,omitempty"`      // 当前工具生命周期的稳定引用
+	ToolCallID       string            `json:"tool_call_id,omitempty"`       // 工具结果对应的调用 ID
+	ExternalCallID   string            `json:"external_call_id,omitempty"`   // 模型/Provider 返回的原始调用 ID
 	ToolName         string            `json:"tool_name,omitempty"`
 	ToolCallIndex    *int              `json:"tool_call_index,omitempty"`
 	IsMemberEvent    bool              `json:"is_member_event,omitempty"`
