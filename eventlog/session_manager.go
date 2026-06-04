@@ -3,7 +3,6 @@ package eventlog
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -75,9 +74,7 @@ func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *Histo
 
 	recorder := NewHistoryRecorder()
 	filePath := filepath.Join(historyDir, sessionID, HistoryFileName)
-	if err := recorder.LoadFromFile(filePath); err == nil {
-		log.Printf("[SessionManager] loaded session=%s from %s", sessionID, filePath)
-	}
+	_ = recorder.LoadFromFile(filePath)
 
 	m.sessions[sessionID] = recorder
 	return recorder
