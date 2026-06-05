@@ -1042,6 +1042,7 @@ FKTeamsChat.prototype.prepareHistoryMemberTasks = function (messages) {
           name: evt.tool_call.name || "",
           target: display.target || "",
           arguments: evt.tool_call.arguments || "",
+          ownerMessage: msg,
         });
       });
     });
@@ -1191,6 +1192,17 @@ FKTeamsChat.prototype.historyAgentToolCallIDs = function (msg) {
   return ids;
 };
 
+FKTeamsChat.prototype.historyAgentHasMemberToolCall = function (msg) {
+  return (msg?.events || []).some((evt) => {
+    if (evt.type !== "tool_call" || !evt.tool_call) return false;
+    return this.historyToolDisplay(evt.tool_call).kind === "agent";
+  });
+};
+
+FKTeamsChat.prototype.historyMemberOwnedByAgentMessage = function (msg, agentMsg) {
+  return !!(msg?.__historyMemberTask?.ownerMessage && msg.__historyMemberTask.ownerMessage === agentMsg);
+};
+
 FKTeamsChat.prototype.historyMemberMatchesCallIDs = function (msg, callIDs) {
   if (!msg || !callIDs || callIDs.size === 0) return false;
   if (msg.member_call_id && callIDs.has(msg.member_call_id)) return true;
@@ -1209,13 +1221,16 @@ FKTeamsChat.prototype.renderHistoryAgentMessagePart = function (msg, events) {
 FKTeamsChat.prototype.renderHistoryAgentWithMemberInsert = function (msg, messages, renderedMemberIndexes) {
   const events = msg?.events || [];
   const callIDs = this.historyAgentToolCallIDs(msg);
-  if (callIDs.size === 0) return false;
+  if (callIDs.size === 0 && !this.historyAgentHasMemberToolCall(msg)) return false;
 
   const members = [];
   (messages || []).forEach((candidate, index) => {
     if (renderedMemberIndexes.has(index)) return;
     if (!this.isHistoryMemberMessage(candidate)) return;
-    if (!this.historyMemberMatchesCallIDs(candidate, callIDs)) return;
+    if (
+      !this.historyMemberOwnedByAgentMessage(candidate, msg) &&
+      !this.historyMemberMatchesCallIDs(candidate, callIDs)
+    ) return;
     members.push({ msg: candidate, index });
   });
   if (members.length === 0) return false;
@@ -1224,7 +1239,7 @@ FKTeamsChat.prototype.renderHistoryAgentWithMemberInsert = function (msg, messag
   events.forEach((evt, index) => {
     if (evt.type !== "tool_call" || !evt.tool_call) return;
     const display = this.historyToolDisplay(evt.tool_call);
-    if (display.kind === "agent" && evt.tool_call.id && callIDs.has(evt.tool_call.id)) {
+    if (display.kind === "agent") {
       lastAgentToolIndex = index;
     }
   });
