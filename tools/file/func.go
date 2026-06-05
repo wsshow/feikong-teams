@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"fkteams/common/pathguard"
 	"fkteams/mdiff"
 	"fkteams/tools/approval"
 
@@ -67,25 +68,27 @@ func (ft *FileTools) resolvePath(ctx context.Context, userPath string) (*resolve
 	// 1. 尝试解析为工作目录内的路径
 	if relPath, err := ft.workspacePath(userPath); err == nil {
 		return &resolvedPath{fs: ft.securedFs, path: relPath}, nil
+	} else if isLexicallyWithin(cleanPath(userPath), ft.allowedBaseDir) {
+		return nil, err
 	}
 
 	// 2. 仅支持绝对路径访问外部文件
-	cleanPath := filepath.Clean(userPath)
-	if !filepath.IsAbs(cleanPath) {
+	cleanUserPath := cleanPath(userPath)
+	if !filepath.IsAbs(cleanUserPath) {
 		return nil, fmt.Errorf("路径 %s 不在工作目录 %s 内，如需访问外部文件请使用绝对路径", userPath, ft.allowedBaseDir)
 	}
 
 	// 3. 统一审批流程（文件工具使用父目录作为审批 key）
-	parentDir := filepath.Dir(cleanPath)
-	info := fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanPath, ft.allowedBaseDir)
+	parentDir := filepath.Dir(cleanUserPath)
+	info := fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanUserPath, ft.allowedBaseDir)
 	if err := approval.Require(ctx, approval.StoreFile, parentDir, info); err != nil {
 		if errors.Is(err, approval.ErrRejected) {
-			return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanPath)
+			return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanUserPath)
 		}
 		return nil, err
 	}
 
-	return &resolvedPath{fs: ft.osFs, path: cleanPath}, nil
+	return &resolvedPath{fs: ft.osFs, path: cleanUserPath}, nil
 }
 
 // readFileLines 流式读取文件全部行
@@ -184,39 +187,27 @@ func (ft *FileTools) workspacePath(userPath string) (string, error) {
 		return "", fmt.Errorf("路径不能为空")
 	}
 
-	// 清理路径
-	cleanPath := filepath.Clean(userPath)
-
-	// 转换为绝对路径以检查路径穿越
-	absPath, err := filepath.Abs(cleanPath)
+	resolved, err := pathguard.ResolveWorkspace(ft.allowedBaseDir, userPath)
 	if err != nil {
-		return "", fmt.Errorf("无法解析路径: %w", err)
+		return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", userPath, ft.allowedBaseDir)
 	}
+	return resolved.RelPath, nil
+}
 
-	// 检查路径是否在允许的目录内
-	if strings.HasPrefix(absPath, ft.allowedBaseDir) {
-		relPath, err := filepath.Rel(ft.allowedBaseDir, absPath)
-		if err != nil {
-			return "", fmt.Errorf("无法计算相对路径: %w", err)
-		}
-		if !strings.HasPrefix(relPath, "..") {
-			return relPath, nil
-		}
+func cleanPath(path string) string {
+	if path == "" {
+		return ""
 	}
+	return filepath.Clean(path)
+}
 
-	// 回退策略：将路径视为相对于 allowedBaseDir 解析
-	// 适用于 file_patch 等工具中路径不包含工作目录前缀的场景
-	if !filepath.IsAbs(cleanPath) {
-		altAbsPath := filepath.Clean(filepath.Join(ft.allowedBaseDir, cleanPath))
-		if strings.HasPrefix(altAbsPath, ft.allowedBaseDir) {
-			relPath, err := filepath.Rel(ft.allowedBaseDir, altAbsPath)
-			if err == nil && !strings.HasPrefix(relPath, "..") {
-				return relPath, nil
-			}
-		}
+func isLexicallyWithin(path, base string) bool {
+	if path == "" || !filepath.IsAbs(path) {
+		return false
 	}
-
-	return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", absPath, ft.allowedBaseDir)
+	path = filepath.Clean(path)
+	base = filepath.Clean(base)
+	return path == base || strings.HasPrefix(path, base+string(os.PathSeparator))
 }
 
 // maxDefaultLines 默认最大读取行数限制

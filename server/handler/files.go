@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fkteams/common"
+	"fkteams/common/pathguard"
 	"fmt"
 	"io"
 	"log"
@@ -31,6 +32,9 @@ type FileInfo struct {
 // getWorkspaceDir 获取工作目录并返回绝对路径
 func getWorkspaceDir() (string, string, error) {
 	baseDir := common.WorkspaceDir()
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return "", "", fmt.Errorf("创建工作目录失败")
+	}
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", "", fmt.Errorf("解析工作目录失败")
@@ -41,29 +45,11 @@ func getWorkspaceDir() (string, string, error) {
 // resolveAndValidatePath 解析相对路径并校验是否在 baseDir 内
 // 返回完整路径和清理后的相对路径
 func resolveAndValidatePath(baseDir, absBase, subPath string) (string, string, error) {
-	if subPath == "" {
-		return baseDir, "", nil
-	}
-	cleanPath := filepath.Clean(subPath)
-	if strings.Contains(cleanPath, "..") {
-		return "", "", fmt.Errorf("无效的路径")
-	}
-	fullPath := filepath.Join(baseDir, cleanPath)
-	absFull, _ := filepath.Abs(fullPath)
-	// 解析符号链接后再校验，防止 symlink 逃逸
-	realBase, _ := filepath.EvalSymlinks(absBase)
-	realFull, err := filepath.EvalSymlinks(absFull)
+	resolved, err := pathguard.ResolveWorkspace(baseDir, subPath)
 	if err != nil {
-		// 文件可能不存在，回退到 Abs 校验
-		if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
-			return "", "", fmt.Errorf("无效的路径")
-		}
-		return fullPath, cleanPath, nil
-	}
-	if !strings.HasPrefix(realFull, realBase+string(os.PathSeparator)) {
 		return "", "", fmt.Errorf("无效的路径")
 	}
-	return fullPath, cleanPath, nil
+	return resolved.AbsPath, resolved.RelPath, nil
 }
 
 // GetFilesHandler 获取指定目录下的文件和文件夹列表

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fkteams/common"
+	"fkteams/common/pathguard"
 	"fmt"
 	"io"
 	"mime"
@@ -136,27 +137,19 @@ func CreatePreviewLinkHandler() gin.HandlerFunc {
 			return
 		}
 
-		absBase, _ := filepath.Abs(baseDir)
-
 		// 校验所有路径
 		var cleanPaths []string
 		for _, p := range paths {
-			cleanPath := filepath.Clean(p)
-			if strings.Contains(cleanPath, "..") {
+			resolved, err := pathguard.ResolveWorkspace(baseDir, p)
+			if err != nil {
 				Fail(c, http.StatusBadRequest, "无效的文件路径")
 				return
 			}
-			fullPath := filepath.Join(baseDir, cleanPath)
-			absFull, _ := filepath.Abs(fullPath)
-			if !strings.HasPrefix(absFull, absBase+string(os.PathSeparator)) {
-				Fail(c, http.StatusBadRequest, "无效的文件路径")
+			if _, err := os.Stat(resolved.AbsPath); err != nil {
+				Fail(c, http.StatusNotFound, fmt.Sprintf("文件不存在: %s", resolved.RelPath))
 				return
 			}
-			if _, err := os.Stat(fullPath); err != nil {
-				Fail(c, http.StatusNotFound, fmt.Sprintf("文件不存在: %s", cleanPath))
-				return
-			}
-			cleanPaths = append(cleanPaths, cleanPath)
+			cleanPaths = append(cleanPaths, resolved.RelPath)
 		}
 
 		// 默认过期时间 1 天，最长 30 天；-1 表示永不过期
@@ -593,7 +586,6 @@ func isPreviewable(contentType string) bool {
 func PreviewRenderHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir := common.WorkspaceDir()
-		absBase, _ := filepath.Abs(baseDir)
 
 		linkID := c.Param("linkId")
 		if linkID == "" {
@@ -675,19 +667,12 @@ func PreviewRenderHandler() gin.HandlerFunc {
 		}
 
 		// 解析为工作目录下的完整路径并校验
-		fullPath := filepath.Join(baseDir, cleanTarget)
-		absFull, _ := filepath.Abs(fullPath)
-		realBase, _ := filepath.EvalSymlinks(absBase)
-		realFull, err := filepath.EvalSymlinks(absFull)
+		resolved, err := pathguard.ResolveWorkspace(baseDir, cleanTarget)
 		if err != nil {
-			if !strings.HasPrefix(absFull, absBase+string(filepath.Separator)) {
-				Fail(c, http.StatusForbidden, "禁止访问该路径")
-				return
-			}
-		} else if !strings.HasPrefix(realFull, realBase+string(filepath.Separator)) {
 			Fail(c, http.StatusForbidden, "禁止访问该路径")
 			return
 		}
+		fullPath := resolved.AbsPath
 
 		info, err := os.Stat(fullPath)
 		if err != nil {
