@@ -17,7 +17,7 @@ func New() compose.ToolMiddleware {
 	return compose.ToolMiddleware{
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-				if tools.IsDestructiveTool(input.Name) {
+				if tools.ShouldSerializeTool(input.Name) {
 					mu.Lock()
 					defer mu.Unlock()
 				}

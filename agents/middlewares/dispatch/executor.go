@@ -52,15 +52,20 @@ func (m *middleware) executeTasks(ctx context.Context, input *dispatchInput) (st
 		return `{"results":[]}`, nil
 	}
 
-	// 中断请求用户确认
-	var info strings.Builder
-	fmt.Fprintf(&info, "准备并行分发 %d 个子任务（自主执行模式）:\n", len(input.Tasks))
+	details := make([]approval.OperationDetail, 0, len(input.Tasks))
 	for i, t := range input.Tasks {
-		fmt.Fprintf(&info, "  [%d] %s\n", i, t.Description)
+		details = append(details, approval.OperationDetail{
+			Name:  fmt.Sprintf("Task %d", i+1),
+			Value: t.Description,
+		})
 	}
-	info.WriteString("子任务将自动审批工具操作，确认执行？")
-
-	if err := approval.Require(ctx, approval.StoreDispatch, "dispatch_tasks", info.String()); err != nil {
+	if err := approval.RequireOperation(ctx, approval.Operation{
+		StoreName: approval.StoreDispatch,
+		Key:       "dispatch_tasks",
+		Title:     "Dispatch tasks require approval",
+		Target:    fmt.Sprintf("%d autonomous tasks", len(input.Tasks)),
+		Details:   details,
+	}); err != nil {
 		if errors.Is(err, approval.ErrRejected) {
 			return `{"error":"用户取消分发"}`, nil
 		}

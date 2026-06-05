@@ -223,11 +223,18 @@ func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteReques
 			}, nil
 		}
 
-		info := fmt.Sprintf("危险命令需要审批\n  命令: %s\n  原因: %s\n  风险等级: %s\n  风险描述: %s\n  风险详情: %s",
-			req.Command, req.Reason,
-			securityLevelName(eval.Level), eval.Description,
-			strings.Join(eval.Risks, "; "))
-		if err := approval.Require(ctx, approval.StoreCommand, req.Command, info); err != nil {
+		if err := approval.RequireOperation(ctx, approval.Operation{
+			StoreName: approval.StoreCommand,
+			Key:       req.Command,
+			Title:     "Dangerous command requires approval",
+			Target:    req.Command,
+			Details: []approval.OperationDetail{
+				{Name: "Reason", Value: req.Reason},
+				{Name: "SecurityLevel", Value: securityLevelName(eval.Level)},
+				{Name: "Description", Value: eval.Description},
+				{Name: "Risks", Value: strings.Join(eval.Risks, "; ")},
+			},
+		}); err != nil {
 			if errors.Is(err, approval.ErrRejected) {
 				return &SmartExecuteResponse{
 					Command:       req.Command,

@@ -7,15 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/tools"
-
 	"github.com/cloudwego/eino/compose"
 )
 
 func TestDestructiveToolsSerialized(t *testing.T) {
-	tools.SetTestClassification("file_write", false, true)
-	tools.SetTestClassification("file_edit", false, true)
-
 	guard := New()
 
 	var concurrentCount int32
@@ -53,9 +48,6 @@ func TestDestructiveToolsSerialized(t *testing.T) {
 }
 
 func TestReadOnlyToolsParallel(t *testing.T) {
-	tools.SetTestClassification("file_read", true, false)
-	tools.SetTestClassification("grep", true, false)
-
 	guard := New()
 
 	var concurrentCount int32
@@ -93,11 +85,6 @@ func TestReadOnlyToolsParallel(t *testing.T) {
 }
 
 func TestMixedReadWrite(t *testing.T) {
-	tools.SetTestClassification("file_read", true, false)
-	tools.SetTestClassification("file_write", false, true)
-	tools.SetTestClassification("grep", true, false)
-	tools.SetTestClassification("file_edit", false, true)
-
 	guard := New()
 
 	var concurrentCount int32

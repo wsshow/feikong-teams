@@ -80,8 +80,15 @@ func (ft *FileTools) resolvePath(ctx context.Context, userPath string) (*resolve
 
 	// 3. 统一审批流程（文件工具使用父目录作为审批 key）
 	parentDir := filepath.Dir(cleanUserPath)
-	info := fmt.Sprintf("需要审批: 访问工作目录外的路径\n  路径: %s\n  工作目录: %s", cleanUserPath, ft.allowedBaseDir)
-	if err := approval.Require(ctx, approval.StoreFile, parentDir, info); err != nil {
+	if err := approval.RequireOperation(ctx, approval.Operation{
+		StoreName: approval.StoreFile,
+		Key:       parentDir,
+		Title:     "External path access requires approval",
+		Target:    cleanUserPath,
+		Details: []approval.OperationDetail{
+			{Name: "Workspace", Value: ft.allowedBaseDir},
+		},
+	}); err != nil {
 		if errors.Is(err, approval.ErrRejected) {
 			return nil, fmt.Errorf("用户拒绝了对 %s 的访问", cleanUserPath)
 		}
