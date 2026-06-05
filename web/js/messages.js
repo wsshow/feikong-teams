@@ -267,9 +267,14 @@ FKTeamsChat.prototype.parallelEntriesForPanel = function (panel) {
 FKTeamsChat.prototype.parallelPanelCompleted = function (panel) {
   const entries = this.parallelEntriesForPanel(panel);
   if (entries.length === 0) return false;
-  return entries.every((entry) =>
-    entry.el.classList.contains("parallel-member-done") ||
-    entry.el.classList.contains("parallel-member-error")
+  return entries.every((entry) => this.memberEntryTerminal(entry));
+};
+
+FKTeamsChat.prototype.memberEntryTerminal = function (entry) {
+  return !!(
+    entry?.el?.classList.contains("parallel-member-done") ||
+    entry?.el?.classList.contains("parallel-member-error") ||
+    entry?.el?.classList.contains("parallel-member-cancelled")
   );
 };
 
@@ -439,15 +444,25 @@ FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
     "parallel-member-running",
     "parallel-member-done",
     "parallel-member-error",
+    "parallel-member-cancelled",
     "dispatch-card-running",
     "dispatch-card-done",
     "dispatch-card-fail",
+    "dispatch-card-cancelled",
   );
   entry.el.classList.add("parallel-member-" + status);
-  entry.el.classList.add(status === "error" ? "dispatch-card-fail" : status === "done" ? "dispatch-card-done" : "dispatch-card-running");
+  entry.el.classList.add(
+    status === "error"
+      ? "dispatch-card-fail"
+      : status === "done"
+        ? "dispatch-card-done"
+        : status === "cancelled"
+          ? "dispatch-card-cancelled"
+          : "dispatch-card-running",
+  );
   const statusEl = entry.el.querySelector(".parallel-member-status");
   if (statusEl) statusEl.textContent = text;
-  if (status === "done" || status === "error") {
+  if (status === "done" || status === "error" || status === "cancelled") {
     this.updateMemberActivity(entry, "");
     this.finalizeMemberMarkdown(entry);
   } else if (text) {
@@ -490,10 +505,8 @@ FKTeamsChat.prototype.updateParallelMembersHeader = function (panel) {
   if (!targetPanel) return;
   const entries = this.parallelEntriesForPanel(targetPanel);
   const total = entries.length;
-  const done = entries.filter((entry) =>
-    entry?.el?.classList.contains("parallel-member-done") ||
-    entry?.el?.classList.contains("parallel-member-error")
-  ).length;
+  const done = entries.filter((entry) => this.memberEntryTerminal(entry)).length;
+  const cancelled = entries.filter((entry) => entry?.el?.classList.contains("parallel-member-cancelled")).length;
   const counter = targetPanel.querySelector(".parallel-members-count");
   if (counter) {
     counter.dataset.total = String(total);
@@ -503,10 +516,11 @@ FKTeamsChat.prototype.updateParallelMembersHeader = function (panel) {
   const title = targetPanel.querySelector(".parallel-members-title");
   if (title) {
     const completed = total > 0 && done === total;
+    const allCancelled = completed && cancelled === total;
     if (total > 1) {
-      title.textContent = completed ? "成员并行完成" : "成员并行处理中";
+      title.textContent = allCancelled ? "成员并行已取消" : completed ? "成员并行完成" : "成员并行处理中";
     } else {
-      title.textContent = completed ? "成员任务完成" : "成员任务处理中";
+      title.textContent = allCancelled ? "成员任务已取消" : completed ? "成员任务完成" : "成员任务处理中";
     }
   }
   const header = targetPanel.querySelector(".parallel-members-header");
@@ -514,6 +528,16 @@ FKTeamsChat.prototype.updateParallelMembersHeader = function (panel) {
     header.classList.toggle("dispatch-status-ok", total > 0 && done === total);
     header.classList.toggle("dispatch-status-partial", !(total > 0 && done === total));
   }
+};
+
+FKTeamsChat.prototype.cancelActiveMemberCards = function () {
+  const panels = new Set();
+  Object.values(this.parallelMemberCards || {}).forEach((entry) => {
+    if (!entry || !entry.el || !entry.el.isConnected || this.memberEntryTerminal(entry)) return;
+    this.updateMemberStatus(entry, "cancelled", "已取消");
+    panels.add(entry.panel || entry.el.closest(".parallel-members-panel"));
+  });
+  panels.forEach((panel) => this.updateParallelMembersHeader(panel));
 };
 
 FKTeamsChat.prototype.memberTimelineOrder = function (order) {
@@ -2617,6 +2641,7 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   this.isProcessing = false;
   this.updateStatus("connected", "已连接");
   this.updateSendButtonState();
+  this.cancelActiveMemberCards();
   this.resetParallelState();
 
   // 关闭审批弹窗
@@ -2626,7 +2651,12 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
   // 禁用所有未提交的 ask 表单
   this._dismissPendingAskForms();
 
-  // 添加取消提示
+  this.renderCancelledNotice(event.message || "任务已取消");
+
+  this.showNotification("任务已取消", "success");
+};
+
+FKTeamsChat.prototype.renderCancelledNotice = function (message) {
   const cancelEl = document.createElement("div");
   cancelEl.className = "action-event cancelled";
   cancelEl.innerHTML = `
@@ -2635,11 +2665,10 @@ FKTeamsChat.prototype.handleCancelled = function (event) {
             <line x1="15" y1="9" x2="9" y2="15"/>
             <line x1="9" y1="9" x2="15" y2="15"/>
         </svg>
-        <span>${this.escapeHtml(event.message || "任务已取消")}</span>
+        <span>${this.escapeHtml(message || "任务已取消")}</span>
     `;
   this.messagesContainer.appendChild(cancelEl);
-
-  this.showNotification("任务已取消", "success");
+  this.scrollToBottom();
 };
 
 // 关闭所有未提交的 ask 表单

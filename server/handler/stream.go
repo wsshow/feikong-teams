@@ -145,8 +145,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 						"session_id": sessionID,
 						"message":    "任务已取消",
 					})
-					saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-					ensureSessionMetadata(sessionID, userDisplayText)
+					finishCancelledChat(recorder, sessionID, userDisplayText)
 					return
 				}
 				log.Printf("stream task error: session=%s, err=%v", sessionID, err)

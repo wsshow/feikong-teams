@@ -1121,8 +1121,13 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
       this.updateMemberTaskContent(entry, task.arguments, false);
     }
     let hasError = false;
+    let hasCancelled = false;
 
     (msg.events || []).forEach((evt) => {
+      if (evt.type === "cancelled") {
+        hasCancelled = true;
+        return;
+      }
       if (evt.type === "reasoning" && evt.content) {
         this.appendMemberReasoningFinal(entry, evt.content);
         return;
@@ -1158,7 +1163,11 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
       }
     });
 
-    this.updateMemberStatus(entry, hasError ? "error" : "done", hasError ? "失败" : "完成");
+    this.updateMemberStatus(
+      entry,
+      hasCancelled ? "cancelled" : hasError ? "error" : "done",
+      hasCancelled ? "已取消" : hasError ? "失败" : "完成",
+    );
     this.finalizeMemberMarkdown(entry);
     this.updateMemberDetailVisibility(entry);
   });
@@ -1405,6 +1414,14 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
       case "tool_call":
         if (evt.tool_call) {
           this.renderSingleToolCall(evt.tool_call);
+        }
+        currentMessageEl = null;
+        currentContent = "";
+        break;
+
+      case "cancelled":
+        if (msg.agent_name === "系统") {
+          this.renderCancelledNotice(evt.content || "任务已取消");
         }
         currentMessageEl = null;
         currentContent = "";

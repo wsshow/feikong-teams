@@ -351,8 +351,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 				if ctx.Err() != nil {
 					log.Printf("task cancelled: session=%s", sessionID)
 					stream.SetStatus("cancelled")
-					saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-					ensureSessionMetadata(sessionID, userDisplayText)
+					finishCancelledChat(recorder, sessionID, userDisplayText)
 					return
 				}
 				log.Printf("failed to run task: session=%s, err=%v", sessionID, err)

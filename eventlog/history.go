@@ -93,6 +93,7 @@ const (
 	MsgTypeAction    MsgEventType = "action"
 	MsgTypeUsage     MsgEventType = "usage"
 	MsgTypeError     MsgEventType = "error"
+	MsgTypeCancelled MsgEventType = "cancelled"
 )
 
 // MessageEvent 单个消息事件
@@ -677,6 +678,45 @@ func (h *HistoryRecorder) RecordUserInput(input string) {
 	h.currentMemberID = ""
 	h.currentMemberTool = ""
 	h.currentMemberName = ""
+}
+
+// RecordCancelled 记录用户取消任务事件，并标记当前仍活跃的消息。
+func (h *HistoryRecorder) RecordCancelled(message string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if strings.TrimSpace(message) == "" {
+		message = "任务已取消"
+	}
+	cancelEvent := MessageEvent{Type: MsgTypeCancelled, Content: message}
+	for _, key := range h.sortedActiveKeysLocked() {
+		ctx := h.activeMessages[key]
+		if ctx == nil || messageHasEventType(ctx.msg.Events, MsgTypeCancelled) {
+			continue
+		}
+		ctx.msg.Events = append(ctx.msg.Events, cancelEvent)
+	}
+	h.finalizeAllActiveMessages()
+	if len(h.messages) > 0 && h.messages[len(h.messages)-1].AgentName == "系统" && messageHasEventType(h.messages[len(h.messages)-1].Events, MsgTypeCancelled) {
+		return
+	}
+	h.messages = append(h.messages, AgentMessage{
+		AgentName: "系统",
+		StartTime: time.Now(),
+		EndTime:   time.Now(),
+		Events: []MessageEvent{
+			cancelEvent,
+		},
+	})
+}
+
+func messageHasEventType(events []MessageEvent, typ MsgEventType) bool {
+	for _, event := range events {
+		if event.Type == typ {
+			return true
+		}
+	}
+	return false
 }
 
 // FinalizeCurrent 完成当前消息记录，在对话结束时调用

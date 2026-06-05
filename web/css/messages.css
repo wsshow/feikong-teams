@@ -1257,6 +1257,17 @@ a.source-item:hover {
   border-color: var(--error);
 }
 
+.dispatch-card-cancelled .dispatch-card-status-dot {
+  background: var(--text-tertiary);
+  box-shadow: none;
+  animation: none;
+}
+
+.dispatch-card-cancelled {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+}
+
 .dispatch-card-desc {
   flex: 1;
   color: var(--text-primary);

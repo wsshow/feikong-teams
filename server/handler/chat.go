@@ -85,15 +85,19 @@ func updateSessionTitleAndStatus(sessionID, userInput, status string) {
 func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
 	recorder.FinalizeCurrent()
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
-	ensureSessionMetadata(sessionID, userInput)
+	ensureSessionMetadataWithStatus(sessionID, userInput, "completed")
 	if g.MemoryManager != nil {
 		g.MemoryManager.ExtractFromRecorder(recorder, sessionID)
 	}
 }
 
-// ensureSessionMetadata 确保会话元数据存在，不存在则创建，已存在则更新 UpdatedAt
-// 如果提供了 userInput 且当前标题是默认时间戳格式，则更新为用户输入（截断）
-func ensureSessionMetadata(sessionID, userInput string) {
+func finishCancelledChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
+	recorder.RecordCancelled("任务已取消")
+	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
+	ensureSessionMetadataWithStatus(sessionID, userInput, "cancelled")
+}
+
+func ensureSessionMetadataWithStatus(sessionID, userInput, status string) {
 	sessionDir := sessionDirPath(sessionID)
 	now := time.Now()
 	meta, err := eventlog.LoadMetadata(sessionDir)
@@ -106,13 +110,13 @@ func ensureSessionMetadata(sessionID, userInput string) {
 		meta = &eventlog.SessionMetadata{
 			ID:        sessionID,
 			Title:     title,
-			Status:    "completed",
+			Status:    status,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
 	} else {
 		meta.UpdatedAt = now
-		meta.Status = "completed"
+		meta.Status = status
 		// 如果标题仍是默认时间戳格式且有用户输入，则更新
 		if userInput != "" && isDefaultTitle(meta.Title) {
 			meta.Title = truncateTitle(userInput)

@@ -87,3 +87,57 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 		t.Fatalf("usage event usage = %#v, want total tokens 7", usageEvent.Usage)
 	}
 }
+
+func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
+	recorder := NewHistoryRecorder()
+	toolIndex := 0
+
+	recorder.RecordEvent(Event{
+		Sequence:  1,
+		Type:      EventToolCalls,
+		AgentName: "coordinator",
+		ToolCalls: []schema.ToolCall{{
+			ID:    "call_1",
+			Index: &toolIndex,
+			Function: schema.FunctionCall{
+				Name:      "ask_fkagent_researcher",
+				Arguments: `{"task":"查资料"}`,
+			},
+		}},
+	})
+	recorder.RecordEvent(Event{
+		Sequence:       2,
+		Type:           EventReasoningChunk,
+		AgentName:      "researcher",
+		Content:        "working",
+		MemberCallID:   "call_1",
+		MemberToolName: "ask_fkagent_researcher",
+		MemberName:     "Researcher",
+		MemberOrder:    &toolIndex,
+	})
+
+	recorder.RecordCancelled("任务已取消")
+
+	messages := recorder.GetMessages()
+	if len(messages) != 3 {
+		t.Fatalf("message count = %d, want 3", len(messages))
+	}
+	if !hasEventType(messages[0], MsgTypeCancelled) {
+		t.Fatalf("coordinator events = %#v, want cancelled", messages[0].Events)
+	}
+	if !hasEventType(messages[1], MsgTypeCancelled) {
+		t.Fatalf("member events = %#v, want cancelled", messages[1].Events)
+	}
+	if messages[2].AgentName != "系统" || !hasEventType(messages[2], MsgTypeCancelled) {
+		t.Fatalf("system message = %#v, want cancelled notice", messages[2])
+	}
+}
+
+func hasEventType(msg AgentMessage, typ MsgEventType) bool {
+	for _, event := range msg.Events {
+		if event.Type == typ {
+			return true
+		}
+	}
+	return false
+}
