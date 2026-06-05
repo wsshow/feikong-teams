@@ -38,7 +38,7 @@ var previewLinkStore = struct {
 	m map[string]*previewLinkEntry
 }{m: make(map[string]*previewLinkEntry)}
 
-const shareFilePath = "share/share.json"
+const shareFileName = "share.json"
 
 // shareFileEntry JSON 持久化条目
 type shareFileEntry struct {
@@ -52,17 +52,16 @@ func init() {
 	loadShareLinks()
 }
 
+func shareLinksFilePath() string {
+	return filepath.Join(common.ShareDir(), shareFileName)
+}
+
 func loadShareLinks() {
-	data, err := os.ReadFile(shareFilePath)
+	entries, err := readShareEntries(shareLinksFilePath())
 	if err != nil {
 		return
 	}
-	var entries map[string]*shareFileEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return
-	}
 	previewLinkStore.Lock()
-	defer previewLinkStore.Unlock()
 	now := time.Now()
 	for id, e := range entries {
 		var expiresAt time.Time
@@ -79,9 +78,26 @@ func loadShareLinks() {
 			CreatedAt:    time.Unix(e.CreatedAt, 0),
 		}
 	}
+	previewLinkStore.Unlock()
+}
+
+func readShareEntries(filePath string) (map[string]*shareFileEntry, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	var entries map[string]*shareFileEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 func saveShareLinks() {
+	_ = saveShareLinksTo(shareLinksFilePath())
+}
+
+func saveShareLinksTo(filePath string) error {
 	previewLinkStore.RLock()
 	entries := make(map[string]*shareFileEntry, len(previewLinkStore.m))
 	for id, e := range previewLinkStore.m {
@@ -96,10 +112,20 @@ func saveShareLinks() {
 
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
-	_ = os.MkdirAll(filepath.Dir(shareFilePath), 0755)
-	_ = os.WriteFile(shareFilePath, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return err
+	}
+	tmpFile := filePath + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpFile, filePath); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	return nil
 }
 
 // previewLinkEntry 存储条目

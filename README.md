@@ -140,6 +140,8 @@ model = "gpt-4o"
 
 > 完整配置项请参考 [配置指南](./docs/configuration.md)
 
+运行期数据默认保存在 `~/.fkteams/` 下，文件分享链接元数据位于 `~/.fkteams/share/`。
+
 ### 2. 运行
 
 ```bash

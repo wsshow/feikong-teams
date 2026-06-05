@@ -107,6 +107,8 @@ fkteams generate apikey
 | `FEIKONG_PROXY_URL`      | 代理地址（唯一的代理配置方式）    | -            |
 | `FEIKONG_MAX_ITERATIONS` | 智能体最大迭代次数（0/-1 不限制） | `60`         |
 
+应用数据目录下会保存 `config`、`workspace`、`scheduler`、`sessions`、`history`、`share`、`log` 等运行期数据；其中 `share` 用于保存文件分享链接元数据。
+
 ## 配置圆桌会议成员
 
 在 `~/.fkteams/config/config.toml` 中配置圆桌会议成员、MCP 服务和自定义智能体。

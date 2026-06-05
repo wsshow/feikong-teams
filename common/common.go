@@ -82,6 +82,11 @@ func SchedulerDir() string {
 	return filepath.Join(AppDir(), "scheduler")
 }
 
+// ShareDir 返回文件分享链接持久化目录
+func ShareDir() string {
+	return filepath.Join(AppDir(), "share")
+}
+
 // IsRetryAble 判断错误是否可重试（网络错误、HTTP/2 stream 错误、限流等）
 func IsRetryAble(ctx context.Context, err error) bool {
 	if err == nil {
