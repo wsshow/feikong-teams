@@ -51,6 +51,16 @@
           </svg>
           <span>定时任务</span>
         </button>
+        <button class="sidebar-action-btn session-share-manage-btn" id="session-share-manage-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+          </svg>
+          <span>分享管理</span>
+        </button>
         <button class="sidebar-action-btn fm-open-btn" id="fm-open-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -315,6 +325,81 @@
           <button class="delete-confirm-btn" id="delete-confirm-btn">
             删除
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 会话分享弹窗 -->
+    <div class="session-share-modal" id="session-share-modal" style="display: none">
+      <div class="session-share-content">
+        <div class="session-share-header">
+          <h3>分享会话</h3>
+          <button class="session-share-close" id="session-share-close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="session-share-body">
+          <div class="session-share-title" id="session-share-title"></div>
+          <div class="session-share-field">
+            <label>有效期</label>
+            <select id="session-share-expiry">
+              <option value="3600">1 小时</option>
+              <option value="86400">1 天</option>
+              <option value="604800" selected>7 天</option>
+              <option value="2592000">30 天</option>
+              <option value="7776000">90 天</option>
+              <option value="-1">永不过期</option>
+            </select>
+          </div>
+          <div class="session-share-field">
+            <label>访问密码（可选）</label>
+            <input type="text" id="session-share-password" placeholder="留空则无需密码" autocomplete="off" />
+          </div>
+          <label class="session-share-check">
+            <input type="checkbox" id="session-share-tool-details" />
+            <span>包含工具参数和工具结果</span>
+          </label>
+          <div class="session-share-note">默认只分享对话内容。开启工具详情可能包含文件路径、命令输出或接口返回。</div>
+          <div class="session-share-result" id="session-share-result" style="display: none">
+            <label>分享链接</label>
+            <div class="session-share-link-row">
+              <input type="text" id="session-share-link" readonly />
+              <button class="session-share-copy-btn" id="session-share-copy" title="复制链接">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="session-share-footer">
+          <button class="session-share-links-btn" id="session-share-links-btn">管理分享</button>
+          <button class="session-share-cancel-btn" id="session-share-cancel">取消</button>
+          <button class="session-share-ok-btn" id="session-share-ok">创建分享</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 会话分享管理弹窗 -->
+    <div class="session-share-list-modal" id="session-share-list-modal" style="display: none">
+      <div class="session-share-list-content">
+        <div class="session-share-list-header">
+          <h3>会话分享管理</h3>
+          <button class="session-share-list-close" id="session-share-list-close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="session-share-list-body">
+          <div class="session-share-list" id="session-share-list">
+            <div class="session-share-empty">加载中...</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1039,6 +1124,7 @@
   <script src="/static/js/app.js"></script>
   <script src="/static/js/messages.js"></script>
   <script src="/static/js/history.js"></script>
+  <script src="/static/js/session_share.js"></script>
   <script src="/static/js/navigation.js"></script>
   <script src="/static/js/agents.js"></script>
   <script src="/static/js/files.js"></script>

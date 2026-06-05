@@ -158,6 +158,9 @@ class FKTeamsChat {
     this.initFileUpload();
     this.initFileManager();
     this.initConfig();
+    if (typeof this.initSessionShare === "function") {
+      this.initSessionShare();
+    }
     this.loadAgents();
     this.loadVersion();
     // 仅在页面全新加载（DOM 为空）时自动恢复会话历史

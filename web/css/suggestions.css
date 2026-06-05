@@ -346,6 +346,7 @@
     /* 侧边栏会话操作按钮：移动端始终可见（触屏无 hover） */
     .sidebar-session-actions {
         opacity: 1;
+        pointer-events: auto;
     }
 
     .sidebar-session-action-btn {

@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>会话分享 - 非空小队</title>
+  <link rel="icon" href="/static/assets/fkteams-logo.svg" type="image/svg+xml" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+  <style>
+    :root {
+      --bg: #f8f6f0;
+      --panel: #fffdf8;
+      --panel-soft: #f0ece2;
+      --text: #2f2a22;
+      --muted: #7b7162;
+      --border: #d8cfc0;
+      --accent: #6b7fc6;
+      --danger: #d45d5d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    .share-shell {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 28px 18px 44px;
+    }
+
+    .share-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 0 22px;
+      border-bottom: 2px dashed var(--border);
+    }
+
+    .share-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+    }
+
+    .share-title-wrap {
+      min-width: 0;
+    }
+
+    .share-brand {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .share-title {
+      margin: 2px 0 0;
+      font-size: 24px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .share-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0 18px;
+    }
+
+    .share-meta span {
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .share-card {
+      background: var(--panel);
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 4px 5px 0 rgba(60, 50, 30, 0.08);
+      overflow: hidden;
+    }
+
+    .share-password {
+      max-width: 420px;
+      margin: 48px auto;
+      padding: 24px;
+    }
+
+    .share-password h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .share-password p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .share-password-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .share-password input {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      background: white;
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+
+    .share-password input:focus {
+      border-color: var(--accent);
+    }
+
+    .share-password button {
+      padding: 10px 16px;
+      border: 2px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .share-error {
+      margin-top: 12px;
+      color: var(--danger);
+      font-size: 13px;
+    }
+
+    .share-message {
+      padding: 18px 20px;
+      border-bottom: 1px dashed var(--border);
+    }
+
+    .share-message:last-child {
+      border-bottom: none;
+    }
+
+    .share-message-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .share-agent {
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .share-time {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .share-event {
+      margin: 10px 0;
+    }
+
+    .share-event.reasoning {
+      padding: 10px 12px;
+      border-left: 3px solid #d4a54a;
+      background: rgba(212, 165, 74, 0.08);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .share-event.tool,
+    .share-event.action,
+    .share-event.error {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .share-event.error {
+      color: var(--danger);
+      background: rgba(212, 93, 93, 0.08);
+    }
+
+    .share-event pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 8px 0 0;
+      padding: 8px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.04);
+      overflow-x: auto;
+    }
+
+    .share-empty,
+    .share-loading {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .markdown-body p:first-child {
+      margin-top: 0;
+    }
+
+    .markdown-body p:last-child {
+      margin-bottom: 0;
+    }
+
+    .markdown-body pre {
+      overflow-x: auto;
+      padding: 12px;
+      border-radius: 10px;
+      background: #272822;
+      color: #f8f8f2;
+    }
+
+    @media (max-width: 640px) {
+      .share-shell {
+        padding: 18px 12px 32px;
+      }
+
+      .share-title {
+        font-size: 20px;
+      }
+
+      .share-message {
+        padding: 15px 14px;
+      }
+
+      .share-message-head,
+      .share-password-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="share-shell">
+    <header class="share-header">
+      <img class="share-logo" src="/static/assets/fkteams-logo.svg" alt="" />
+      <div class="share-title-wrap">
+        <div class="share-brand">非空小队会话分享</div>
+        <h1 class="share-title" id="share-title">加载中...</h1>
+      </div>
+    </header>
+    <div class="share-meta" id="share-meta"></div>
+    <section class="share-card" id="share-password-card" style="display: none">
+      <div class="share-password">
+        <h2>需要访问密码</h2>
+        <p>分享者为这个会话设置了密码。</p>
+        <div class="share-password-row">
+          <input type="password" id="share-password-input" placeholder="输入访问密码" autocomplete="current-password" />
+          <button id="share-password-submit">访问</button>
+        </div>
+        <div class="share-error" id="share-password-error"></div>
+      </div>
+    </section>
+    <section class="share-card" id="share-content">
+      <div class="share-loading">正在加载分享内容...</div>
+    </section>
+  </div>
+  <script src="/static/js/session_share_view.js"></script>
+</body>
+
+</html>

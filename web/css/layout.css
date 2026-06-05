@@ -297,16 +297,24 @@
 }
 
 .sidebar-session-actions {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     gap: 2px;
     opacity: 0;
     transition: opacity 0.15s ease;
-    flex-shrink: 0;
+    pointer-events: none;
+    padding: 2px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, transparent 0%, var(--bg-tertiary) 18%, var(--bg-tertiary) 100%);
 }
 
 .sidebar-session-item:hover .sidebar-session-actions,
 .sidebar-session-item.active .sidebar-session-actions {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .sidebar-session-action-btn {
@@ -332,6 +340,11 @@
 .sidebar-session-action-btn.delete-action:hover {
     color: var(--error);
     background: var(--error-light);
+}
+
+.sidebar-session-action-btn.share-action:hover {
+    color: var(--info);
+    background: rgba(107, 165, 198, 0.12);
 }
 
 .sidebar-session-action-btn svg {

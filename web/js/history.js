@@ -138,6 +138,15 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
                 <div class="sidebar-session-time">${this.formatTime(file.mod_time)}${statusHtml ? " · " + statusHtml : ""}</div>
             </div>
             <div class="sidebar-session-actions">
+                <button class="sidebar-session-action-btn share-action" data-tooltip="分享会话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="18" cy="5" r="3"/>
+                        <circle cx="6" cy="12" r="3"/>
+                        <circle cx="18" cy="19" r="3"/>
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                </button>
                 <button class="sidebar-session-action-btn rename-action">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
@@ -157,6 +166,12 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
       // 如果点击的是操作按钮，不加载会话
       if (e.target.closest(".sidebar-session-action-btn")) return;
       this.loadSidebarSession(file.session_id);
+    });
+
+    // 分享按钮
+    item.querySelector(".share-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.showSessionShareModal(file.session_id, file.title);
     });
 
     // 重命名按钮
@@ -388,6 +403,15 @@ FKTeamsChat.prototype.renderSessionList = function (files) {
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </button>
+                <button class="history-action-btn share-btn" data-tooltip="分享该会话">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="18" cy="5" r="3"/>
+                        <circle cx="6" cy="12" r="3"/>
+                        <circle cx="18" cy="19" r="3"/>
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                </button>
                 <button class="history-action-btn rename-btn" data-tooltip="重命名该会话">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
@@ -421,6 +445,16 @@ FKTeamsChat.prototype.renderSessionList = function (files) {
       const item = e.target.closest(".history-item");
       const sessionId = item.dataset.sessionId;
       this.exportSession(sessionId);
+    });
+  });
+
+  this.historyList.querySelectorAll(".share-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const item = e.target.closest(".history-item");
+      const sessionId = item.dataset.sessionId;
+      const title =
+        item.querySelector(".history-item-name")?.textContent || sessionId;
+      this.showSessionShareModal(sessionId, title);
     });
   });
 
