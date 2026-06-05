@@ -103,21 +103,21 @@ func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
 		{
 			schedules.GET("", handler.GetScheduleTasksHandler())
 			schedules.POST("/:id/cancel", handler.CancelScheduleTaskHandler())
-				schedules.GET("/:id/result", handler.GetTaskResultHandler())
-				schedules.GET("/:id/history", handler.GetTaskHistoryHandler())
-				schedules.GET("/:id/history/:filename", handler.GetTaskHistoryFileHandler())
+			schedules.GET("/:id/result", handler.GetTaskResultHandler())
+			schedules.GET("/:id/history", handler.GetTaskHistoryHandler())
+			schedules.GET("/:id/history/:filename", handler.GetTaskHistoryFileHandler())
 		}
 
-			// skills management API
-			skills := apiV1.Group("/skills")
-			{
-				skills.GET("", handler.GetInstalledSkillsHandler())
-				skills.GET("/search", handler.SearchSkillsHandler())
-				skills.POST("/install", handler.InstallSkillHandler())
-				skills.DELETE("/:slug", handler.RemoveSkillHandler())
-				skills.GET("/:slug/files", handler.GetSkillFilesHandler())
-				skills.GET("/:slug/file", handler.GetSkillFileContentHandler())
-			}
+		// skills management API
+		skills := apiV1.Group("/skills")
+		{
+			skills.GET("", handler.GetInstalledSkillsHandler())
+			skills.GET("/search", handler.SearchSkillsHandler())
+			skills.POST("/install", handler.InstallSkillHandler())
+			skills.DELETE("/:slug", handler.RemoveSkillHandler())
+			skills.GET("/:slug/files", handler.GetSkillFilesHandler())
+			skills.GET("/:slug/file", handler.GetSkillFileContentHandler())
+		}
 
 		// 长期记忆管理 API
 		memory := apiV1.Group("/memory")
@@ -157,6 +157,16 @@ func Init() (*gin.Engine, error) {
 
 	webFS := web.GetFS()
 	r.StaticFS("/static", http.FS(webFS))
+	r.GET("/favicon.ico", func(c *gin.Context) {
+		data, err := webFS.Open("assets/favicon.ico")
+		if err != nil {
+			c.String(http.StatusNotFound, "favicon not found")
+			return
+		}
+		defer data.Close()
+		c.Header("Cache-Control", "public, max-age=86400")
+		c.DataFromReader(http.StatusOK, -1, "image/x-icon", data, nil)
+	})
 
 	if authEnabled {
 		serveLogin := func(c *gin.Context) {

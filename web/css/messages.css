@@ -156,10 +156,10 @@
   transform: rotate(-2deg);
 }
 
-.welcome-icon svg {
-  width: 32px;
-  height: 32px;
-  color: var(--accent-primary);
+.welcome-icon img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
 }
 
 .welcome-message h2 {

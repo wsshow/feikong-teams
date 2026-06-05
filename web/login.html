@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>非空小队 - 登录</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/static/assets/fkteams-logo.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/static/css/variables.css">
     <style>
         body {
@@ -43,11 +45,12 @@
             margin-bottom: 32px;
         }
 
-        .login-logo svg {
-            width: 48px;
-            height: 48px;
-            stroke: var(--accent-primary);
+        .login-logo img {
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
             margin-bottom: 12px;
+            filter: drop-shadow(1px 3px 0 rgba(31, 29, 26, 0.14));
         }
 
         .login-logo h1 {
@@ -170,10 +173,7 @@
 <body>
     <div class="login-card">
         <div class="login-logo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 6v6l4 2" />
-            </svg>
+            <img src="/static/assets/fkteams-logo.svg" alt="" />
             <h1>非空小队</h1>
             <p>多智能体协作系统</p>
         </div>

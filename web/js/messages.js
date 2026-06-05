@@ -2953,11 +2953,7 @@ FKTeamsChat.prototype.clearChatUI = function () {
   this.messagesContainer.innerHTML = `
         <div class="welcome-message">
             <div class="welcome-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                    <path d="M2 17l10 5 10-5"/>
-                    <path d="M2 12l10 5 10-5"/>
-                </svg>
+                <img src="/static/assets/fkteams-logo.svg" alt="" />
             </div>
             <h2>非空小队</h2>
             <p>多智能体协作系统，开始您的对话</p>

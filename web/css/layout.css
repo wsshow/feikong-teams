@@ -108,10 +108,11 @@
 }
 
 .logo-icon {
-    width: 28px;
-    height: 28px;
-    color: var(--accent-primary);
-    filter: drop-shadow(1px 1px 0px rgba(107, 127, 198, 0.2));
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    filter: drop-shadow(1px 2px 0px rgba(31, 29, 26, 0.16));
 }
 
 .logo-text {

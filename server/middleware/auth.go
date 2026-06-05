@@ -16,7 +16,7 @@ func Auth() gin.HandlerFunc {
 		path := c.Request.URL.Path
 
 		// 登录页和登录接口不需要验证
-		if path == "/login" || path == "/api/fkteams/login" {
+		if path == "/login" || path == "/favicon.ico" || path == "/api/fkteams/login" {
 			c.Next()
 			return
 		}
