@@ -1190,7 +1190,9 @@ FKTeamsChat.prototype.handleHistoryLoaded = function (event) {
   }
 
   // 渲染历史消息
-  if (event.messages && event.messages.length > 0) {
+  if (!event.messages || event.messages.length === 0) {
+    this.clearChatUI();
+  } else {
     this.prepareHistoryMemberTasks(event.messages);
     const renderedMemberIndexes = new Set();
     for (let index = 0; index < event.messages.length; index++) {
