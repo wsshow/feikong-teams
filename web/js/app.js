@@ -33,6 +33,7 @@ class FKTeamsChat {
     this.files = []; // 存储文件列表
     this._sessionDOMCache = {}; // 会话DOM缓存，用于切换时保存/恢复UI状态
     this._sessionEventBuffer = {}; // 非当前会话的事件缓冲，切回时回放
+    this._sessionLoadPromises = {}; // 会话加载中的请求，避免重复弹错
     this._streamOffsets = this.loadStreamOffsets(); // 每个会话下一次订阅的事件 offset
     this.fileSuggestions = null; // 文件建议弹窗
     this.selectedFileIndex = -1; // 当前选中的文件索引

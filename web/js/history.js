@@ -743,7 +743,23 @@ FKTeamsChat.prototype.generateExportHTML = function (sessionId, agentMessages) {
   this.showNotification(`对话记录已导出为 ${exportFilename}`, "success");
 };
 
-FKTeamsChat.prototype.loadSession = async function (sessionId) {
+FKTeamsChat.prototype.loadSession = function (sessionId) {
+  if (!sessionId) return Promise.resolve();
+  if (!this._sessionLoadPromises) this._sessionLoadPromises = {};
+  if (this._sessionLoadPromises[sessionId]) {
+    return this._sessionLoadPromises[sessionId];
+  }
+
+  const promise = this._loadSession(sessionId).finally(() => {
+    if (this._sessionLoadPromises[sessionId] === promise) {
+      delete this._sessionLoadPromises[sessionId];
+    }
+  });
+  this._sessionLoadPromises[sessionId] = promise;
+  return promise;
+};
+
+FKTeamsChat.prototype._loadSession = async function (sessionId) {
   // 切换会话
   if (this.sessionId !== sessionId) {
     this._saveSessionDOM();
