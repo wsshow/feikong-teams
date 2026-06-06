@@ -4,7 +4,7 @@ package runner
 import (
 	"context"
 	"fkteams/agentcore"
-	einoruntime "fkteams/agentcore/eino"
+	"fkteams/agentruntime"
 	"fkteams/agents"
 	"fkteams/agents/coordinator"
 	"fkteams/agents/custom"
@@ -40,7 +40,7 @@ func agentToolName(name string, index int, used map[string]bool) string {
 
 func buildAgentTools(ctx context.Context, subAgents []agentcore.Agent) ([]agentcore.Tool, error) {
 	usedNames := make(map[string]bool, len(subAgents))
-	return einoruntime.NewAgentTools(ctx, subAgents, einoruntime.AgentToolConfig{
+	return agentruntime.Engine().NewAgentTools(ctx, subAgents, agentcore.AgentToolConfig{
 		ToolName: func(displayName string, index int) string {
 			return agentToolName(displayName, index, usedNames)
 		},
@@ -64,7 +64,7 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 
 // newRunner 用共享配置创建 Runner
 func newRunner(ctx context.Context, agent agentcore.Agent) (agentcore.Runner, error) {
-	return einoruntime.NewRunnerFromConfig(ctx, einoruntime.RunnerConfig{
+	return agentruntime.Engine().NewRunner(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: common.NewInMemoryStore(),
@@ -124,7 +124,7 @@ func CreateLoopAgentRunner(ctx context.Context) (agentcore.Runner, error) {
 		}
 		subAgents = append(subAgents, agent)
 	}
-	loopAgent, err := einoruntime.NewLoopAgent(ctx, &agentcore.LoopAgentConfig{
+	loopAgent, err := agentruntime.Engine().NewLoopAgent(ctx, &agentcore.LoopAgentConfig{
 		Name:          "Roundtable",
 		Description:   "多智能体共同讨论并解决问题",
 		SubAgents:     subAgents,

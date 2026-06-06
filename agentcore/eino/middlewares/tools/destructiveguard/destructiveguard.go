@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/tools"
 
 	"github.com/cloudwego/eino/compose"
@@ -15,7 +16,7 @@ import (
 func New() agentcore.ToolMiddleware {
 	var mu sync.Mutex
 
-	return agentcore.WrapRuntimeToolMiddleware(compose.ToolMiddleware{
+	return einoruntime.WrapToolMiddleware("destructive_guard", compose.ToolMiddleware{
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 				if tools.ShouldSerializeTool(input.Name) {

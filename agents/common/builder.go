@@ -3,16 +3,7 @@ package common
 import (
 	"context"
 	"fkteams/agentcore"
-	einoruntime "fkteams/agentcore/eino"
-	"fkteams/agentcore/eino/middlewares/autocontinue"
-	"fkteams/agentcore/eino/middlewares/dispatch"
-	"fkteams/agentcore/eino/middlewares/inject"
-	"fkteams/agentcore/eino/middlewares/skills"
-	"fkteams/agentcore/eino/middlewares/summary"
-	"fkteams/agentcore/eino/middlewares/tools/destructiveguard"
-	"fkteams/agentcore/eino/middlewares/tools/patch"
-	"fkteams/agentcore/eino/middlewares/tools/trimresult"
-	"fkteams/agentcore/eino/middlewares/tools/warperror"
+	"fkteams/agentruntime"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
 	"fkteams/tools"
@@ -41,7 +32,7 @@ type AgentBuilder struct {
 	enableSummary  bool
 	enableSkills   bool
 	enableDispatch bool
-	dispatchConfig *dispatch.Config
+	dispatchConfig *agentcore.DispatchConfig
 }
 
 // NewAgentBuilder 创建构建器
@@ -105,7 +96,7 @@ func (b *AgentBuilder) WithSkills() *AgentBuilder {
 }
 
 // WithDispatch 启用子任务分发中间件，cfg 为 nil 时使用默认配置
-func (b *AgentBuilder) WithDispatch(cfg *dispatch.Config) *AgentBuilder {
+func (b *AgentBuilder) WithDispatch(cfg *agentcore.DispatchConfig) *AgentBuilder {
 	b.enableDispatch = true
 	b.dispatchConfig = cfg
 	return b
@@ -122,9 +113,10 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
 	}
-	coreModel, err := inject.NewForModel(coreModel)
+	engine := agentruntime.Engine()
+	coreModel, err := engine.DecorateChatModel(ctx, coreModel)
 	if err != nil {
-		return nil, fmt.Errorf("inject chat model: %w", err)
+		return nil, fmt.Errorf("decorate chat model: %w", err)
 	}
 
 	// 提示词
@@ -154,7 +146,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		Instruction:        instruction,
 		Model:              coreModel,
 		Tools:              b.tools,
-		ToolMiddlewares:    []agentcore.ToolMiddleware{destructiveguard.New()},
+		ToolMiddlewares:    []agentcore.ToolMiddleware{engine.NewDestructiveGuardMiddleware()},
 		UnknownToolHandler: unknownToolsHandler,
 		ModelRetryConfig:   rootcommon.NewModelRetryConfig(),
 		MaxIterations:      MaxIterations(),
@@ -162,31 +154,31 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	// patch 中间件默认启用，放在 Handlers 最前面确保其他中间件处理的是完整消息历史
-	patchMiddleware, err := patch.New(ctx)
+	patchMiddleware, err := engine.NewPatchMiddleware(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init patch middleware: %w", err)
 	}
 	cfg.Middlewares = append(cfg.Middlewares, patchMiddleware)
 
 	// 中间件（warperror + autocontinue + trimresult 默认启用）
-	cfg.Middlewares = append(cfg.Middlewares, warperror.NewHandler(nil))
+	cfg.Middlewares = append(cfg.Middlewares, engine.NewToolErrorMiddleware())
 
-	acMiddleware, err := autocontinue.NewHandler()
+	acMiddleware, err := engine.NewAutoContinueMiddleware()
 	if err != nil {
 		return nil, fmt.Errorf("init autocontinue middleware: %w", err)
 	}
 	cfg.Middlewares = append(cfg.Middlewares, acMiddleware)
 
-	cfg.Middlewares = append(cfg.Middlewares, trimresult.New(nil))
+	cfg.Middlewares = append(cfg.Middlewares, engine.NewTrimResultMiddleware())
 
 	if b.enableSummary {
-		maxTokens := summary.DefaultMaxTokensBeforeSummary
+		maxTokens := agentcore.DefaultMaxTokensBeforeSummary
 		if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
 			if n, _ := strconv.Atoi(v); n > 0 {
 				maxTokens = n
 			}
 		}
-		summaryMiddleware, err := summary.New(ctx, &summary.Config{
+		summaryMiddleware, err := engine.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
 			Model:                  coreModel,
 			MaxTokensBeforeSummary: maxTokens,
 		})
@@ -197,7 +189,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	if b.enableSkills {
-		skillsMiddleware, err := skills.New(ctx)
+		skillsMiddleware, err := engine.NewSkillsMiddleware(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("init skills middleware: %w", err)
 		}
@@ -206,12 +198,12 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 
 	if b.enableDispatch {
 		if b.dispatchConfig == nil {
-			b.dispatchConfig = &dispatch.Config{}
+			b.dispatchConfig = &agentcore.DispatchConfig{}
 		}
 		if b.dispatchConfig.Model == nil {
 			b.dispatchConfig.Model = coreModel
 		}
-		dispatchMiddleware, err := dispatch.New(ctx, b.dispatchConfig)
+		dispatchMiddleware, err := engine.NewDispatchMiddleware(ctx, b.dispatchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch middleware: %w", err)
 		}
@@ -219,7 +211,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	cfg.Middlewares = append(cfg.Middlewares, b.handlers...)
-	return einoruntime.NewChatModelAgent(ctx, cfg)
+	return engine.NewChatModelAgent(ctx, cfg)
 }
 
 // unknownToolsHandler 处理模型幻觉出的不存在的工具调用，

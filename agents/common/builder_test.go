@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"fkteams/agentcore"
-	einoruntime "fkteams/agentcore/eino"
+	"fkteams/agentruntime"
 	agentscommon "fkteams/agents/common"
 	rootcommon "fkteams/common"
 	"fkteams/internal/testmodel"
@@ -25,7 +25,7 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runner, err := einoruntime.NewRunnerFromConfig(ctx, einoruntime.RunnerConfig{
+	runner, err := agentruntime.Engine().NewRunner(ctx, agentcore.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: rootcommon.NewInMemoryStore(),

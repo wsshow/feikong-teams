@@ -3,9 +3,16 @@ package mcp
 import (
 	"context"
 	"fkteams/agentcore"
-	einoMCP "fkteams/agentcore/eino/mcp"
 	"fmt"
 )
+
+type ToolProvider func(context.Context, any) ([]agentcore.Tool, error)
+
+var toolProvider ToolProvider
+
+func RegisterToolProvider(provider ToolProvider) {
+	toolProvider = provider
+}
 
 func getAllMCPTools() (dtg DictToolGroup, err error) {
 
@@ -17,7 +24,10 @@ func getAllMCPTools() (dtg DictToolGroup, err error) {
 
 	dtg = make(DictToolGroup, len(mcpClients))
 	for _, mcpClient := range mcpClients {
-		tools, err := einoMCP.GetTools(ctx, mcpClient.Client)
+		if toolProvider == nil {
+			return nil, fmt.Errorf("MCP tool provider is not registered")
+		}
+		tools, err := toolProvider(ctx, mcpClient.Client)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tools from MCP server %s: %v", mcpClient.Name, err)
 		}

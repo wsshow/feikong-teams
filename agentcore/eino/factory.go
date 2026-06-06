@@ -9,12 +9,6 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-type RunnerConfig struct {
-	Agent           agentcore.Agent
-	EnableStreaming bool
-	CheckPointStore agentcore.CheckPointStore
-}
-
 func NewChatModelAgent(ctx context.Context, cfg *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("agent config is nil")
@@ -81,7 +75,7 @@ func NewLoopAgent(ctx context.Context, cfg *agentcore.LoopAgentConfig) (agentcor
 	return WrapNamedAgent(cfg.Name, cfg.Description, loopAgent), nil
 }
 
-func NewRunnerFromConfig(ctx context.Context, cfg RunnerConfig) (agentcore.Runner, error) {
+func NewRunnerFromConfig(ctx context.Context, cfg agentcore.RunnerConfig) (agentcore.Runner, error) {
 	runnerAgent, err := AdaptAgentForRunner(cfg.Agent)
 	if err != nil {
 		return nil, err

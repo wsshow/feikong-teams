@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/agentcore/eino/middlewares/fkfs"
 	"fkteams/common"
 	"fmt"
@@ -49,5 +50,5 @@ func New(ctx context.Context) (agentcore.AgentMiddleware, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentcore.WrapRuntimeAgentMiddleware(skillsMiddleware), nil
+	return einoruntime.WrapAgentMiddleware("skills", skillsMiddleware), nil
 }

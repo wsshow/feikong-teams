@@ -9,12 +9,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-type AgentToolConfig struct {
-	ToolName        func(displayName string, index int) string
-	RegisterDisplay func(toolName, displayName string)
-}
-
-func NewAgentTools(ctx context.Context, subAgents []agentcore.Agent, cfg AgentToolConfig) ([]agentcore.Tool, error) {
+func NewAgentTools(ctx context.Context, subAgents []agentcore.Agent, cfg agentcore.AgentToolConfig) ([]agentcore.Tool, error) {
 	runnerAgents, err := AdaptAgentsForRunner(subAgents)
 	if err != nil {
 		return nil, err
@@ -34,7 +29,7 @@ func NewAgentTools(ctx context.Context, subAgents []agentcore.Agent, cfg AgentTo
 		if cfg.RegisterDisplay != nil {
 			cfg.RegisterDisplay(wrapped.toolName, displayName)
 		}
-		agentTools = append(agentTools, agentcore.WrapRuntimeTool(adk.NewAgentTool(ctx, wrapped)))
+		agentTools = append(agentTools, WrapTool(adk.NewAgentTool(ctx, wrapped)))
 	}
 	return agentTools, nil
 }

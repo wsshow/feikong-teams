@@ -17,13 +17,13 @@ const (
 
 // AllMemoryTypes 所有合法记忆类型
 var AllMemoryTypes = map[MemoryType]bool{
-	Preference:  true,
-	Fact:        true,
-	Feedback:    true,
-	Lesson:      true,
-	Decision:    true,
-	Insight:     true,
-	Experience:  true,
+	Preference: true,
+	Fact:       true,
+	Feedback:   true,
+	Lesson:     true,
+	Decision:   true,
+	Insight:    true,
+	Experience: true,
 }
 
 // TypeMeta 记忆类型元信息

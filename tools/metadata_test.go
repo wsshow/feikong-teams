@@ -19,10 +19,6 @@ func (t stubTool) Handler() any {
 	return nil
 }
 
-func (t stubTool) RuntimeTool() any {
-	return nil
-}
-
 func mustPolicy(t *testing.T, name string) ToolPolicy {
 	t.Helper()
 	policy, ok := PolicyForTool(name)

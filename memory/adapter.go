@@ -3,22 +3,17 @@ package memory
 import (
 	"context"
 	"fkteams/agentcore"
-	"fmt"
 
 	"fkteams/providers/copilot"
 )
 
 type chatModelLLMAdapter struct {
-	model agentcore.NativeChatModel
+	model agentcore.ChatModel
 }
 
 // NewLLMClient 基于核心模型创建 LLMClient
 func NewLLMClient(m agentcore.ChatModel) (LLMClient, error) {
-	chatModel, ok := m.(agentcore.NativeChatModel)
-	if !ok {
-		return nil, fmt.Errorf("model does not support native generation: %T", m)
-	}
-	return &chatModelLLMAdapter{model: chatModel}, nil
+	return &chatModelLLMAdapter{model: m}, nil
 }
 
 func (a *chatModelLLMAdapter) Complete(ctx context.Context, prompt string) (string, error) {

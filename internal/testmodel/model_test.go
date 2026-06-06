@@ -65,11 +65,7 @@ func TestWithToolsReturnsToolBoundModel(t *testing.T) {
 		t.Fatalf("with tools: %v", err)
 	}
 
-	native, ok := bound.(agentcore.NativeChatModel)
-	if !ok {
-		t.Fatalf("expected native chat model, got %T", bound)
-	}
-	if _, err := native.Generate(context.Background(), []agentcore.Message{UserMessage("hello")}); err != nil {
+	if _, err := bound.Generate(context.Background(), []agentcore.Message{UserMessage("hello")}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
 

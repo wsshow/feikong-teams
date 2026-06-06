@@ -39,7 +39,7 @@ func NewForModel(inner agentcore.ChatModel) (agentcore.ChatModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentcore.WrapRuntimeChatModel(New(runnerModel)), nil
+	return einoruntime.WrapChatModel(New(runnerModel)), nil
 }
 
 func (m *injectChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {

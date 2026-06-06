@@ -20,7 +20,6 @@ type StreamResult struct {
 type Call struct {
 	Input []agentcore.Message
 	Tools []agentcore.ToolInfo
-	Opts  []agentcore.ModelOption
 }
 
 type Model struct {
@@ -37,7 +36,7 @@ type state struct {
 	withToolsCalls [][]agentcore.ToolInfo
 }
 
-var _ agentcore.NativeChatModel = (*Model)(nil)
+var _ agentcore.ChatModel = (*Model)(nil)
 
 func New(responses ...agentcore.Message) *Model {
 	m := &Model{state: &state{}}
@@ -53,10 +52,6 @@ func AssistantMessage(content string) agentcore.Message {
 
 func UserMessage(content string) agentcore.Message {
 	return agentcore.Message{Role: agentcore.RoleUser, Content: content}
-}
-
-func (m *Model) RuntimeModel() any {
-	return nil
 }
 
 func (m *Model) EnqueueGenerate(message agentcore.Message, err error) *Model {
@@ -79,14 +74,13 @@ func (m *Model) EnqueueStreamResult(chunks []agentcore.Message, err error) *Mode
 	return m
 }
 
-func (m *Model) Generate(_ context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.Message, error) {
+func (m *Model) Generate(_ context.Context, input []agentcore.Message) (agentcore.Message, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 
 	m.state.generateCalls = append(m.state.generateCalls, Call{
 		Input: copyMessages(input),
 		Tools: copyTools(m.tools),
-		Opts:  copyOptions(opts),
 	})
 	if len(m.state.generateQueue) == 0 {
 		return agentcore.Message{}, fmt.Errorf("testmodel: no queued generate response")
@@ -97,14 +91,13 @@ func (m *Model) Generate(_ context.Context, input []agentcore.Message, opts ...a
 	return resp.Message, resp.Err
 }
 
-func (m *Model) Stream(_ context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.MessageStream, error) {
+func (m *Model) Stream(_ context.Context, input []agentcore.Message) (agentcore.MessageStream, error) {
 	m.state.mu.Lock()
 	defer m.state.mu.Unlock()
 
 	m.state.streamCalls = append(m.state.streamCalls, Call{
 		Input: copyMessages(input),
 		Tools: copyTools(m.tools),
-		Opts:  copyOptions(opts),
 	})
 	if len(m.state.streamQueue) == 0 {
 		return nil, fmt.Errorf("testmodel: no queued stream response")
@@ -160,19 +153,12 @@ func copyTools(in []agentcore.ToolInfo) []agentcore.ToolInfo {
 	return out
 }
 
-func copyOptions(in []agentcore.ModelOption) []agentcore.ModelOption {
-	out := make([]agentcore.ModelOption, len(in))
-	copy(out, in)
-	return out
-}
-
 func copyCalls(in []Call) []Call {
 	out := make([]Call, len(in))
 	for i, call := range in {
 		out[i] = Call{
 			Input: copyMessages(call.Input),
 			Tools: copyTools(call.Tools),
-			Opts:  copyOptions(call.Opts),
 		}
 	}
 	return out

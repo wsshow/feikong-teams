@@ -3,6 +3,7 @@ package warperror
 import (
 	"context"
 	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -32,7 +33,7 @@ func NewHandler(cfg *Config) agentcore.AgentMiddleware {
 	if cfg != nil && cfg.Handler != nil {
 		handler = cfg.Handler
 	}
-	return agentcore.WrapRuntimeAgentMiddleware(&agentHandler{
+	return einoruntime.WrapAgentMiddleware("wrap_tool_error", &agentHandler{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		handler:                      handler,
 	})
@@ -124,7 +125,7 @@ func New(cfg *Config) agentcore.ToolMiddleware {
 		handler = cfg.Handler
 	}
 
-	return agentcore.WrapRuntimeToolMiddleware(compose.ToolMiddleware{
+	return einoruntime.WrapToolMiddleware("wrap_tool_error", compose.ToolMiddleware{
 		Invokable:  newInvokable(handler),
 		Streamable: newStreamable(handler),
 	})

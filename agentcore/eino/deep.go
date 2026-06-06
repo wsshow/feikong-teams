@@ -10,19 +10,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-type DeepAgentConfig struct {
-	Name               string
-	Description        string
-	Model              agentcore.ChatModel
-	Tools              []agentcore.Tool
-	SubAgents          []agentcore.Agent
-	Middlewares        []agentcore.AgentMiddleware
-	ModelRetryConfig   *agentcore.ModelRetryConfig
-	MaxIterations      int
-	EmitInternalEvents bool
-}
-
-func NewDeepAgent(ctx context.Context, cfg *DeepAgentConfig) (agentcore.Agent, error) {
+func NewDeepAgent(ctx context.Context, cfg *agentcore.DeepAgentConfig) (agentcore.Agent, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("deep agent config is nil")
 	}

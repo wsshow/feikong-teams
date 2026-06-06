@@ -9,15 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/agentcore/eino/providers/ark"
-	"fkteams/agentcore/eino/providers/claude"
-	einocopilot "fkteams/agentcore/eino/providers/copilot"
-	"fkteams/agentcore/eino/providers/deepseek"
-	"fkteams/agentcore/eino/providers/gemini"
-	"fkteams/agentcore/eino/providers/ollama"
-	"fkteams/agentcore/eino/providers/openai"
-	"fkteams/agentcore/eino/providers/openrouter"
-	"fkteams/agentcore/eino/providers/qwen"
 	"fkteams/providers/copilot"
 	"fkteams/providers/providerkit"
 )
@@ -50,18 +41,6 @@ type Config struct {
 type Factory func(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error)
 
 var factories = map[Type]Factory{}
-
-func init() {
-	Register(OpenAI, openai.New)
-	Register(DeepSeek, deepseek.New)
-	Register(Claude, claude.New)
-	Register(Ollama, ollama.New)
-	Register(Ark, ark.New)
-	Register(Gemini, gemini.New)
-	Register(Qwen, qwen.New)
-	Register(OpenRouter, openrouter.New)
-	Register(Copilot, einocopilot.New)
-}
 
 // Register 注册提供者工厂函数
 func Register(t Type, f Factory) {

@@ -12,18 +12,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const DefaultMaxTokensBeforeSummary = 800 * 1024
-
-// SummaryPersistCallback 摘要持久化回调
-type SummaryPersistCallback func(summaryText string)
-
-type summaryPersistCallbackKey struct{}
-
-// WithSummaryPersistCallback 设置摘要持久化回调到 context
-func WithSummaryPersistCallback(ctx context.Context, cb SummaryPersistCallback) context.Context {
-	return context.WithValue(ctx, summaryPersistCallbackKey{}, cb)
-}
-
 type Config struct {
 	MaxTokensBeforeSummary int
 	Model                  agentcore.ChatModel
@@ -37,7 +25,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 		return nil, fmt.Errorf("model is nil")
 	}
 
-	maxBefore := DefaultMaxTokensBeforeSummary
+	maxBefore := agentcore.DefaultMaxTokensBeforeSummary
 	if cfg.MaxTokensBeforeSummary > 0 {
 		maxBefore = cfg.MaxTokensBeforeSummary
 	}
@@ -53,7 +41,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 		},
 		Callback: func(ctx context.Context, _ adk.ChatModelAgentState, after adk.ChatModelAgentState) error {
 			summaryText := latestSummaryText(after.Messages)
-			if cb, ok := ctx.Value(summaryPersistCallbackKey{}).(SummaryPersistCallback); ok {
+			if cb, ok := agentcore.SummaryPersistCallbackFromContext(ctx); ok {
 				cb(summaryText)
 			}
 			_ = fkevent.DispatchEvent(ctx, fkevent.Event{
@@ -69,7 +57,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentcore.WrapRuntimeAgentMiddleware(handler), nil
+	return einoruntime.WrapAgentMiddleware("summary", handler), nil
 }
 
 func latestSummaryText(messages []*schema.Message) string {

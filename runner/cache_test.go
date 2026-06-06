@@ -7,7 +7,7 @@ import (
 )
 
 type cacheRunnerStub struct {
-	id int
+	_ byte
 }
 
 func (cacheRunnerStub) Run(context.Context, agentcore.TurnInput, agentcore.RunOptions) (*agentcore.RunResult, error) {

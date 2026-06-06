@@ -14,22 +14,18 @@ func AdaptChatModelForRunner(m agentcore.ChatModel) (model.ToolCallingChatModel,
 	if m == nil {
 		return nil, fmt.Errorf("model is nil")
 	}
-	runtimeModel := m.RuntimeModel()
-	if runtimeModel != nil {
-		chatModel, ok := runtimeModel.(model.ToolCallingChatModel)
-		if !ok {
-			return nil, fmt.Errorf("unsupported runtime model: %T", runtimeModel)
+	if runtimeModel, ok := m.(interface {
+		runnerModel() model.ToolCallingChatModel
+	}); ok {
+		if runtimeModel.runnerModel() == nil {
+			return nil, fmt.Errorf("model is nil")
 		}
-		return chatModel, nil
+		return runtimeModel.runnerModel(), nil
 	}
-	nativeModel, ok := m.(agentcore.NativeChatModel)
-	if !ok {
-		return nil, fmt.Errorf("unsupported native model: %T", m)
-	}
-	return &nativeChatModelAdapter{inner: nativeModel}, nil
+	return &nativeChatModelAdapter{inner: m}, nil
 }
 
-func WrapChatModel(inner model.ToolCallingChatModel) agentcore.NativeChatModel {
+func WrapChatModel(inner model.ToolCallingChatModel) agentcore.ChatModel {
 	return &runtimeChatModelAdapter{inner: inner}
 }
 
@@ -37,23 +33,23 @@ type runtimeChatModelAdapter struct {
 	inner model.ToolCallingChatModel
 }
 
-func (m *runtimeChatModelAdapter) RuntimeModel() any {
+func (m *runtimeChatModelAdapter) runnerModel() model.ToolCallingChatModel {
 	if m == nil {
 		return nil
 	}
 	return m.inner
 }
 
-func (m *runtimeChatModelAdapter) Generate(ctx context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.Message, error) {
-	msg, err := m.inner.Generate(ctx, adaptMessagesForRunner(input), adaptModelOptionsForRunner(opts)...)
+func (m *runtimeChatModelAdapter) Generate(ctx context.Context, input []agentcore.Message) (agentcore.Message, error) {
+	msg, err := m.inner.Generate(ctx, adaptMessagesForRunner(input))
 	if err != nil {
 		return agentcore.Message{}, err
 	}
 	return adaptMessageFromRunner(msg), nil
 }
 
-func (m *runtimeChatModelAdapter) Stream(ctx context.Context, input []agentcore.Message, opts ...agentcore.ModelOption) (agentcore.MessageStream, error) {
-	stream, err := m.inner.Stream(ctx, adaptMessagesForRunner(input), adaptModelOptionsForRunner(opts)...)
+func (m *runtimeChatModelAdapter) Stream(ctx context.Context, input []agentcore.Message) (agentcore.MessageStream, error) {
+	stream, err := m.inner.Stream(ctx, adaptMessagesForRunner(input))
 	if err != nil {
 		return nil, err
 	}
@@ -88,12 +84,10 @@ func (s *runtimeMessageStreamAdapter) Close() {
 	s.inner.Close()
 }
 
-type nativeChatModelAdapter struct {
-	inner agentcore.NativeChatModel
-}
+type nativeChatModelAdapter struct{ inner agentcore.ChatModel }
 
 func (m *nativeChatModelAdapter) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	msg, err := m.inner.Generate(ctx, adaptMessagesFromRunner(input), adaptModelOptions(opts)...)
+	msg, err := m.inner.Generate(ctx, adaptMessagesFromRunner(input))
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +95,7 @@ func (m *nativeChatModelAdapter) Generate(ctx context.Context, input []*schema.M
 }
 
 func (m *nativeChatModelAdapter) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	stream, err := m.inner.Stream(ctx, adaptMessagesFromRunner(input), adaptModelOptions(opts)...)
+	stream, err := m.inner.Stream(ctx, adaptMessagesFromRunner(input))
 	if err != nil {
 		return nil, err
 	}
@@ -157,28 +151,6 @@ func adaptMessagesFromRunner(messages []*schema.Message) []agentcore.Message {
 	result := make([]agentcore.Message, 0, len(messages))
 	for _, msg := range messages {
 		result = append(result, adaptMessageFromRunner(msg))
-	}
-	return result
-}
-
-func adaptModelOptions(opts []model.Option) []agentcore.ModelOption {
-	result := make([]agentcore.ModelOption, 0, len(opts))
-	for _, opt := range opts {
-		result = append(result, agentcore.ModelOption{Runtime: opt})
-	}
-	return result
-}
-
-func adaptModelOptionsForRunner(opts []agentcore.ModelOption) []model.Option {
-	result := make([]model.Option, 0, len(opts))
-	for _, opt := range opts {
-		if opt.Runtime == nil {
-			continue
-		}
-		runnerOpt, ok := opt.Runtime.(model.Option)
-		if ok {
-			result = append(result, runnerOpt)
-		}
 	}
 	return result
 }

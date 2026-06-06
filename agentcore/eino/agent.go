@@ -13,22 +13,49 @@ func WrapAgent(agent adk.Agent) agentcore.Agent {
 		return nil
 	}
 	ctx := context.Background()
-	return agentcore.WrapRuntimeAgent(agent.Name(ctx), agent.Description(ctx), agent)
+	return WrapNamedAgent(agent.Name(ctx), agent.Description(ctx), agent)
 }
 
 func WrapNamedAgent(name, description string, agent adk.Agent) agentcore.Agent {
-	return agentcore.WrapRuntimeAgent(name, description, agent)
+	return &runtimeAgent{name: name, description: description, inner: agent}
+}
+
+type runtimeAgent struct {
+	name        string
+	description string
+	inner       adk.Agent
+}
+
+func (a *runtimeAgent) Name() string {
+	if a == nil {
+		return ""
+	}
+	return a.name
+}
+
+func (a *runtimeAgent) Description() string {
+	if a == nil {
+		return ""
+	}
+	return a.description
+}
+
+func (a *runtimeAgent) runnerAgent() adk.Agent {
+	if a == nil {
+		return nil
+	}
+	return a.inner
 }
 
 func AdaptAgentForRunner(agent agentcore.Agent) (adk.Agent, error) {
-	if agent == nil || agent.RuntimeAgent() == nil {
+	if agent == nil {
 		return nil, fmt.Errorf("agent is nil")
 	}
-	runnerAgent, ok := agent.RuntimeAgent().(adk.Agent)
-	if !ok {
-		return nil, fmt.Errorf("unsupported runtime agent: %T", agent.RuntimeAgent())
+	runnerAgent, ok := agent.(interface{ runnerAgent() adk.Agent })
+	if !ok || runnerAgent.runnerAgent() == nil {
+		return nil, fmt.Errorf("unsupported agent: %T", agent)
 	}
-	return runnerAgent, nil
+	return runnerAgent.runnerAgent(), nil
 }
 
 func AdaptAgentsForRunner(agents []agentcore.Agent) ([]adk.Agent, error) {

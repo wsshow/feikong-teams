@@ -66,7 +66,7 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 		return nil, fmt.Errorf("dispatch: adapt tools: %w", err)
 	}
 
-	return agentcore.WrapRuntimeAgentMiddleware(&middleware{
+	return einoruntime.WrapAgentMiddleware("dispatch", &middleware{
 		chatModel:      chatModel,
 		tools:          runnerTools,
 		maxConcurrency: int64(cfg.MaxConcurrency),

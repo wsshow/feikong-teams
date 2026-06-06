@@ -111,7 +111,6 @@ type converter struct {
 	turnID         string
 	sink           agentcore.EventSink
 	lastEvent      agentcore.Event
-	streamSeq      int64
 	toolRefsByID   sync.Map
 	toolOrdersByID sync.Map
 }

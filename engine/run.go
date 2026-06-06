@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fkteams/agentcore"
-	"fkteams/agentcore/eino/middlewares/summary"
 	"fkteams/common"
 	"fkteams/fkevent"
 )
@@ -22,7 +21,7 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, er
 		if !cfg.Input.Message.IsEmpty() {
 			cfg.Recorder.RecordUserMessage(cfg.Input.Message)
 		}
-		ctx = summary.WithSummaryPersistCallback(ctx, func(s string) {
+		ctx = agentcore.WithSummaryPersistCallback(ctx, func(s string) {
 			cfg.Recorder.SetSummary(s, countBefore)
 		})
 	}

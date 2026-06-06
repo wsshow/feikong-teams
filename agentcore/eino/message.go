@@ -18,7 +18,13 @@ func adaptMessagesForRunner(messages []agentcore.Message) []adk.Message {
 			ToolName:              msg.ToolName,
 			Name:                  msg.Name,
 			UserInputMultiContent: adaptPartsForRunner(msg.UserInputMultiContent),
-			MultiContent:          adaptChatPartsForRunner(msg.MultiContent),
+		}
+		if len(msg.MultiContent) > 0 {
+			if msg.Role == agentcore.RoleAssistant {
+				m.AssistantGenMultiContent = adaptOutputPartsForRunner(msg.MultiContent)
+			} else {
+				m.UserInputMultiContent = append(m.UserInputMultiContent, adaptPartsForRunner(msg.MultiContent)...)
+			}
 		}
 		if len(msg.ToolCalls) > 0 {
 			m.ToolCalls = adaptToolCallsForRunner(msg.ToolCalls)
@@ -40,7 +46,7 @@ func adaptMessageFromRunner(msg *schema.Message) agentcore.Message {
 		ToolCallID:            msg.ToolCallID,
 		ToolName:              msg.ToolName,
 		UserInputMultiContent: adaptPartsFromRunner(msg.UserInputMultiContent),
-		MultiContent:          adaptChatPartsFromRunner(msg.MultiContent),
+		MultiContent:          adaptOutputPartsFromRunner(msg.AssistantGenMultiContent),
 		Name:                  msg.Name,
 	}
 }
@@ -183,61 +189,78 @@ func adaptPartsFromRunner(parts []schema.MessageInputPart) []agentcore.ContentPa
 	return result
 }
 
-func adaptChatPartsForRunner(parts []agentcore.ContentPart) []schema.ChatMessagePart {
-	result := make([]schema.ChatMessagePart, 0, len(parts))
+func adaptOutputPartsForRunner(parts []agentcore.ContentPart) []schema.MessageOutputPart {
+	result := make([]schema.MessageOutputPart, 0, len(parts))
 	for _, part := range parts {
-		p := schema.ChatMessagePart{Type: schema.ChatMessagePartType(part.Type), Text: part.Text}
+		p := schema.MessageOutputPart{Type: schema.ChatMessagePartType(part.Type), Text: part.Text}
 		switch part.Type {
 		case agentcore.ContentPartImageURL:
-			p.ImageURL = &schema.ChatMessageImageURL{
-				URL:      part.URL,
-				Detail:   schema.ImageURLDetail(part.Detail),
-				MIMEType: part.MIMEType,
-			}
-			if part.Base64Data != "" {
-				p.ImageURL.URL = "data:" + part.MIMEType + ";base64," + part.Base64Data
+			p.Image = &schema.MessageOutputImage{
+				MessagePartCommon: schema.MessagePartCommon{
+					URL:        stringPtr(part.URL),
+					Base64Data: stringPtr(part.Base64Data),
+					MIMEType:   part.MIMEType,
+				},
 			}
 		case agentcore.ContentPartAudioURL:
-			p.AudioURL = &schema.ChatMessageAudioURL{URL: part.URL, MIMEType: part.MIMEType}
+			p.Audio = &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data), MIMEType: part.MIMEType}}
 		case agentcore.ContentPartVideoURL:
-			p.VideoURL = &schema.ChatMessageVideoURL{URL: part.URL, MIMEType: part.MIMEType}
+			p.Video = &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data), MIMEType: part.MIMEType}}
 		case agentcore.ContentPartFileURL:
-			p.FileURL = &schema.ChatMessageFileURL{URL: part.URL, MIMEType: part.MIMEType}
+			p.Extra = map[string]any{"url": part.URL, "mime_type": part.MIMEType}
 		}
 		result = append(result, p)
 	}
 	return result
 }
 
-func adaptChatPartsFromRunner(parts []schema.ChatMessagePart) []agentcore.ContentPart {
+func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []agentcore.ContentPart {
 	result := make([]agentcore.ContentPart, 0, len(parts))
 	for _, part := range parts {
 		p := agentcore.ContentPart{Type: agentcore.ContentPartType(part.Type), Text: part.Text}
 		switch part.Type {
 		case schema.ChatMessagePartTypeImageURL:
 			p.Type = agentcore.ContentPartImageURL
-			if part.ImageURL != nil {
-				p.URL = part.ImageURL.URL
-				p.MIMEType = part.ImageURL.MIMEType
-				p.Detail = string(part.ImageURL.Detail)
+			if part.Image != nil {
+				if part.Image.URL != nil {
+					p.URL = *part.Image.URL
+				}
+				if part.Image.Base64Data != nil {
+					p.Base64Data = *part.Image.Base64Data
+				}
+				p.MIMEType = part.Image.MIMEType
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			p.Type = agentcore.ContentPartAudioURL
-			if part.AudioURL != nil {
-				p.URL = part.AudioURL.URL
-				p.MIMEType = part.AudioURL.MIMEType
+			if part.Audio != nil {
+				if part.Audio.URL != nil {
+					p.URL = *part.Audio.URL
+				}
+				if part.Audio.Base64Data != nil {
+					p.Base64Data = *part.Audio.Base64Data
+				}
+				p.MIMEType = part.Audio.MIMEType
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			p.Type = agentcore.ContentPartVideoURL
-			if part.VideoURL != nil {
-				p.URL = part.VideoURL.URL
-				p.MIMEType = part.VideoURL.MIMEType
+			if part.Video != nil {
+				if part.Video.URL != nil {
+					p.URL = *part.Video.URL
+				}
+				if part.Video.Base64Data != nil {
+					p.Base64Data = *part.Video.Base64Data
+				}
+				p.MIMEType = part.Video.MIMEType
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			p.Type = agentcore.ContentPartFileURL
-			if part.FileURL != nil {
-				p.URL = part.FileURL.URL
-				p.MIMEType = part.FileURL.MIMEType
+			if part.Extra != nil {
+				if url, ok := part.Extra["url"].(string); ok {
+					p.URL = url
+				}
+				if mimeType, ok := part.Extra["mime_type"].(string); ok {
+					p.MIMEType = mimeType
+				}
 			}
 		}
 		result = append(result, p)

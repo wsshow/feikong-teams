@@ -3,8 +3,7 @@ package deep
 import (
 	"context"
 	"fkteams/agentcore"
-	einoruntime "fkteams/agentcore/eino"
-	"fkteams/agentcore/eino/middlewares/summary"
+	"fkteams/agentruntime"
 	"fkteams/agents/common"
 	rootcommon "fkteams/common"
 	"fkteams/fkenv"
@@ -29,20 +28,21 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
-	maxTokens := summary.DefaultMaxTokensBeforeSummary
+	engine := agentruntime.Engine()
+	maxTokens := agentcore.DefaultMaxTokensBeforeSummary
 	if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
 		if n, _ := strconv.Atoi(v); n > 0 {
 			maxTokens = n
 		}
 	}
-	summaryMiddleware, err := summary.New(ctx, &summary.Config{
+	summaryMiddleware, err := engine.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
 		Model:                  chatModel,
 		MaxTokensBeforeSummary: maxTokens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init summary middleware: %w", err)
 	}
-	return einoruntime.NewDeepAgent(ctx, &einoruntime.DeepAgentConfig{
+	return engine.NewDeepAgent(ctx, &agentcore.DeepAgentConfig{
 		Name:             "deep_researcher",
 		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
 		Model:            chatModel,

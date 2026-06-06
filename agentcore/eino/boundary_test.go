@@ -11,7 +11,9 @@ import (
 
 func TestEinoImportsStayInsideAdapter(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	adapterRoot := filepath.Join("agentcore", "eino")
+	adapterRoots := []string{
+		filepath.ToSlash(filepath.Join("agentcore", "eino")) + "/",
+	}
 	einoPrefix := "github.com/cloudwego/" + "eino"
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -39,8 +41,8 @@ func TestEinoImportsStayInsideAdapter(t *testing.T) {
 		}
 		for _, spec := range file.Imports {
 			importPath := strings.Trim(spec.Path.Value, `"`)
-			if strings.HasPrefix(importPath, einoPrefix) && !strings.HasPrefix(rel, filepath.ToSlash(adapterRoot)+"/") {
-				t.Errorf("%s imports %s outside %s", rel, importPath, filepath.ToSlash(adapterRoot))
+			if strings.HasPrefix(importPath, einoPrefix) && !isPathUnderAny(rel, adapterRoots) {
+				t.Errorf("%s imports %s outside adapter packages", rel, importPath)
 			}
 		}
 		return nil
@@ -48,4 +50,13 @@ func TestEinoImportsStayInsideAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func isPathUnderAny(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }

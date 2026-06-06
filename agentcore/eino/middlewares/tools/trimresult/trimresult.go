@@ -9,6 +9,7 @@ package trimresult
 import (
 	"context"
 	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fkteams/eventlog"
 	"fmt"
 	"strings"
@@ -54,7 +55,7 @@ func New(cfg *Config) agentcore.AgentMiddleware {
 		}
 	}
 
-	return agentcore.WrapRuntimeAgentMiddleware(&handler{
+	return einoruntime.WrapAgentMiddleware("trim_result", &handler{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		prefixes:                     prefixes,
 		placeholder:                  placeholder,

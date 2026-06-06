@@ -20,12 +20,11 @@ func AdaptToolsForRunner(ctx context.Context, tools []agentcore.Tool) ([]tool.Ba
 		if t == nil {
 			continue
 		}
-		if runtimeTool := t.RuntimeTool(); runtimeTool != nil {
-			baseTool, ok := runtimeTool.(tool.BaseTool)
-			if !ok {
-				return nil, fmt.Errorf("unsupported runtime tool: %T", runtimeTool)
+		if runtimeTool, ok := t.(interface{ runnerTool() tool.BaseTool }); ok {
+			if runtimeTool.runnerTool() == nil {
+				return nil, fmt.Errorf("tool is nil")
 			}
-			result = append(result, baseTool)
+			result = append(result, runtimeTool.runnerTool())
 			continue
 		}
 		info, err := t.Info(ctx)
@@ -51,6 +50,36 @@ func AdaptToolsForRunner(ctx context.Context, tools []agentcore.Tool) ([]tool.Ba
 		result = append(result, baseTool)
 	}
 	return result, nil
+}
+
+type runtimeTool struct {
+	inner tool.BaseTool
+}
+
+func WrapTool(inner tool.BaseTool) agentcore.Tool {
+	return &runtimeTool{inner: inner}
+}
+
+func (t *runtimeTool) Info(ctx context.Context) (*agentcore.ToolInfo, error) {
+	if t == nil || t.inner == nil {
+		return nil, fmt.Errorf("tool is nil")
+	}
+	info, err := t.inner.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &agentcore.ToolInfo{Name: info.Name, Desc: info.Desc, Extra: info.Extra}, nil
+}
+
+func (t *runtimeTool) Handler() any {
+	return nil
+}
+
+func (t *runtimeTool) runnerTool() tool.BaseTool {
+	if t == nil {
+		return nil
+	}
+	return t.inner
 }
 
 type reflectedTool struct {

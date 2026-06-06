@@ -11,13 +11,11 @@ type ToolInfo struct {
 type Tool interface {
 	Info(ctx context.Context) (*ToolInfo, error)
 	Handler() any
-	RuntimeTool() any
 }
 
 type functionTool struct {
 	info    ToolInfo
 	handler any
-	runtime any
 }
 
 func InferTool(name, desc string, handler any) (Tool, error) {
@@ -26,10 +24,6 @@ func InferTool(name, desc string, handler any) (Tool, error) {
 
 func NewTool(info ToolInfo, handler any) Tool {
 	return &functionTool{info: info, handler: handler}
-}
-
-func WrapRuntimeTool(runtime any) Tool {
-	return &functionTool{runtime: runtime}
 }
 
 func (t *functionTool) Info(context.Context) (*ToolInfo, error) {
@@ -43,8 +37,4 @@ func (t *functionTool) Info(context.Context) (*ToolInfo, error) {
 
 func (t *functionTool) Handler() any {
 	return t.handler
-}
-
-func (t *functionTool) RuntimeTool() any {
-	return t.runtime
 }

@@ -1,11 +1,22 @@
 package agentcore
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Agent interface {
 	Name() string
 	Description() string
-	RuntimeAgent() any
+}
+
+type AgentToolNameFunc func(displayName string, index int) string
+
+type AgentToolDisplayFunc func(toolName, displayName string)
+
+type AgentToolConfig struct {
+	ToolName        AgentToolNameFunc
+	RegisterDisplay AgentToolDisplayFunc
 }
 
 type UnknownToolHandler func(ctx context.Context, name, arguments string) (string, error)
@@ -45,33 +56,65 @@ type LoopAgentConfig struct {
 	MaxIterations int
 }
 
-type runtimeAgent struct {
-	name        string
-	description string
-	runtime     any
+type DeepAgentConfig struct {
+	Name               string
+	Description        string
+	Model              ChatModel
+	Tools              []Tool
+	SubAgents          []Agent
+	Middlewares        []AgentMiddleware
+	ModelRetryConfig   *ModelRetryConfig
+	MaxIterations      int
+	EmitInternalEvents bool
 }
 
-func WrapRuntimeAgent(name, description string, runtime any) Agent {
-	return &runtimeAgent{name: name, description: description, runtime: runtime}
+type RunnerConfig struct {
+	Agent           Agent
+	EnableStreaming bool
+	CheckPointStore CheckPointStore
 }
 
-func (a *runtimeAgent) Name() string {
-	if a == nil {
-		return ""
-	}
-	return a.name
+type SummaryPersistCallback func(summaryText string)
+
+const DefaultMaxTokensBeforeSummary = 800 * 1024
+
+type summaryPersistCallbackKey struct{}
+
+func WithSummaryPersistCallback(ctx context.Context, cb SummaryPersistCallback) context.Context {
+	return context.WithValue(ctx, summaryPersistCallbackKey{}, cb)
 }
 
-func (a *runtimeAgent) Description() string {
-	if a == nil {
-		return ""
-	}
-	return a.description
+func SummaryPersistCallbackFromContext(ctx context.Context) (SummaryPersistCallback, bool) {
+	cb, ok := ctx.Value(summaryPersistCallbackKey{}).(SummaryPersistCallback)
+	return cb, ok
 }
 
-func (a *runtimeAgent) RuntimeAgent() any {
-	if a == nil {
-		return nil
-	}
-	return a.runtime
+type SummaryConfig struct {
+	MaxTokensBeforeSummary int
+	Model                  ChatModel
+}
+
+type DispatchConfig struct {
+	Model          ChatModel
+	ToolNames      []string
+	Tools          []Tool
+	MaxConcurrency int
+	TaskTimeout    time.Duration
+}
+
+type Engine interface {
+	NewChatModelAgent(ctx context.Context, cfg *ChatAgentConfig) (Agent, error)
+	NewLoopAgent(ctx context.Context, cfg *LoopAgentConfig) (Agent, error)
+	NewDeepAgent(ctx context.Context, cfg *DeepAgentConfig) (Agent, error)
+	NewRunner(ctx context.Context, cfg RunnerConfig) (Runner, error)
+	NewAgentTools(ctx context.Context, subAgents []Agent, cfg AgentToolConfig) ([]Tool, error)
+	DecorateChatModel(ctx context.Context, model ChatModel) (ChatModel, error)
+	NewPatchMiddleware(ctx context.Context) (AgentMiddleware, error)
+	NewToolErrorMiddleware() AgentMiddleware
+	NewAutoContinueMiddleware() (AgentMiddleware, error)
+	NewTrimResultMiddleware() AgentMiddleware
+	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
+	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
+	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)
+	NewDestructiveGuardMiddleware() ToolMiddleware
 }

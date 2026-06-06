@@ -8,16 +8,63 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
+type agentMiddleware struct {
+	name  string
+	inner adk.ChatModelAgentMiddleware
+}
+
+func WrapAgentMiddleware(name string, inner adk.ChatModelAgentMiddleware) agentcore.AgentMiddleware {
+	return &agentMiddleware{name: name, inner: inner}
+}
+
+func (m *agentMiddleware) Name() string {
+	if m == nil {
+		return ""
+	}
+	return m.name
+}
+
+func (m *agentMiddleware) runnerMiddleware() adk.ChatModelAgentMiddleware {
+	if m == nil {
+		return nil
+	}
+	return m.inner
+}
+
+type toolMiddleware struct {
+	name  string
+	inner compose.ToolMiddleware
+}
+
+func WrapToolMiddleware(name string, inner compose.ToolMiddleware) agentcore.ToolMiddleware {
+	return &toolMiddleware{name: name, inner: inner}
+}
+
+func (m *toolMiddleware) Name() string {
+	if m == nil {
+		return ""
+	}
+	return m.name
+}
+
+func (m *toolMiddleware) runnerMiddleware() compose.ToolMiddleware {
+	if m == nil {
+		return compose.ToolMiddleware{}
+	}
+	return m.inner
+}
+
 func AdaptAgentMiddlewareForRunner(m agentcore.AgentMiddleware) (adk.ChatModelAgentMiddleware, error) {
 	if m == nil {
 		return nil, fmt.Errorf("middleware is nil")
 	}
-	runtimeMiddleware := m.RuntimeMiddleware()
-	handler, ok := runtimeMiddleware.(adk.ChatModelAgentMiddleware)
-	if !ok {
-		return nil, fmt.Errorf("unsupported runtime agent middleware: %T", runtimeMiddleware)
+	handler, ok := m.(interface {
+		runnerMiddleware() adk.ChatModelAgentMiddleware
+	})
+	if !ok || handler.runnerMiddleware() == nil {
+		return nil, fmt.Errorf("unsupported agent middleware: %T", m)
 	}
-	return handler, nil
+	return handler.runnerMiddleware(), nil
 }
 
 func AdaptAgentMiddlewaresForRunner(middlewares []agentcore.AgentMiddleware) ([]adk.ChatModelAgentMiddleware, error) {
@@ -39,10 +86,9 @@ func AdaptToolMiddlewareForRunner(m agentcore.ToolMiddleware) (compose.ToolMiddl
 	if m == nil {
 		return compose.ToolMiddleware{}, fmt.Errorf("middleware is nil")
 	}
-	runtimeMiddleware := m.RuntimeMiddleware()
-	handler, ok := runtimeMiddleware.(compose.ToolMiddleware)
+	handler, ok := m.(interface{ runnerMiddleware() compose.ToolMiddleware })
 	if !ok {
-		return compose.ToolMiddleware{}, fmt.Errorf("unsupported runtime tool middleware: %T", runtimeMiddleware)
+		return compose.ToolMiddleware{}, fmt.Errorf("unsupported tool middleware: %T", m)
 	}
-	return handler, nil
+	return handler.runnerMiddleware(), nil
 }

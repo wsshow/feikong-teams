@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fkteams/agentcore"
+	einoruntime "fkteams/agentcore/eino"
 	"fmt"
 	"strings"
 
@@ -66,7 +67,7 @@ func ContinueTool() (agentcore.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentcore.WrapRuntimeTool(t), nil
+	return einoruntime.WrapTool(t), nil
 }
 
 // NewHandler 创建自动续接中间件，包含工具注册和 AfterModel 钩子。
@@ -75,7 +76,7 @@ func NewHandler() (agentcore.AgentMiddleware, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agentcore.WrapRuntimeAgentMiddleware(&handler{
+	return einoruntime.WrapAgentMiddleware("autocontinue", &handler{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		continueTool:                 t,
 	}), nil
