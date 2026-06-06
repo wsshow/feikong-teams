@@ -13,6 +13,31 @@ function newChatWithRecordedMigrations() {
   return chat;
 }
 
+function fakeToolFlow(connected) {
+  const el = {
+    isConnected: connected,
+    removed: false,
+    attrs: {},
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+    remove() {
+      this.removed = true;
+      this.isConnected = false;
+    },
+  };
+  return {
+    el,
+    status: { textContent: "" },
+    argsWrap: { style: { display: "none" } },
+    args: { textContent: "" },
+    resultWrap: { style: { display: "none" } },
+    result: { textContent: "" },
+    argsRaw: "",
+    resultRaw: "",
+  };
+}
+
 test("member tool flow key resolves idx and id aliases to final ref key", () => {
   const chat = newChatWithRecordedMigrations();
   const entry = { toolFlowKeyByName: { member_echo: "idx:0" } };
@@ -104,4 +129,28 @@ test("dispatch task handling does not assume the first tool call", () => {
   });
 
   assert.deepEqual(chat._pendingDispatchTasks, [{ title: "task" }]);
+});
+
+test("member tool flow migration keeps visible source when target is stale", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  chat.updateMemberDetailVisibility = () => {};
+  const source = fakeToolFlow(true);
+  const staleTarget = fakeToolFlow(false);
+  const entry = {
+    toolFlows: {
+      "idx:0": source,
+      "ref:stale": staleTarget,
+    },
+    toolFlowKeyByName: {
+      member_echo: "idx:0",
+    },
+  };
+
+  chat.migrateMemberToolFlow(entry, "idx:0", "ref:stale");
+
+  assert.equal(entry.toolFlows["ref:stale"], source);
+  assert.equal(entry.toolFlows["idx:0"], undefined);
+  assert.equal(source.el.removed, false);
+  assert.equal(source.el.attrs["data-tool-flow-key"], "ref:stale");
+  assert.equal(entry.toolFlowKeyByName.member_echo, "ref:stale");
 });

@@ -851,7 +851,7 @@ FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName, 
   item.className = "parallel-member-event parallel-member-event-tool parallel-member-tool-flow";
   item.setAttribute("data-tool-flow-key", key);
   item.innerHTML = `
-    <details open>
+    <details>
       <summary>
         <span class="parallel-member-tool-title">${this.escapeHtml(displayName || "工具调用")}</span>
         <span class="parallel-member-tool-status">准备参数</span>
@@ -889,10 +889,20 @@ FKTeamsChat.prototype.migrateMemberToolFlow = function (entry, fromKey, toKey) {
   const from = entry.toolFlows[fromKey];
   if (!from) return;
   const to = entry.toolFlows[toKey];
+  if (to && (!to.el || !to.el.isConnected)) {
+    delete entry.toolFlows[toKey];
+    entry.toolFlows[toKey] = from;
+    delete entry.toolFlows[fromKey];
+    if (from.el) from.el.setAttribute("data-tool-flow-key", toKey);
+    this.rebindMemberToolFlowAliases(entry, fromKey, toKey);
+    this.updateMemberDetailVisibility(entry);
+    return;
+  }
   if (!to) {
     entry.toolFlows[toKey] = from;
     delete entry.toolFlows[fromKey];
     if (from.el) from.el.setAttribute("data-tool-flow-key", toKey);
+    this.rebindMemberToolFlowAliases(entry, fromKey, toKey);
     return;
   }
   if ((from.argsRaw || "") && !(to.argsRaw || "")) {
@@ -910,7 +920,17 @@ FKTeamsChat.prototype.migrateMemberToolFlow = function (entry, fromKey, toKey) {
   }
   if (from.el && from.el !== to.el) from.el.remove();
   delete entry.toolFlows[fromKey];
+  this.rebindMemberToolFlowAliases(entry, fromKey, toKey);
   this.updateMemberDetailVisibility(entry);
+};
+
+FKTeamsChat.prototype.rebindMemberToolFlowAliases = function (entry, fromKey, toKey) {
+  if (!entry?.toolFlowKeyByName || !fromKey || !toKey) return;
+  Object.keys(entry.toolFlowKeyByName).forEach((name) => {
+    if (entry.toolFlowKeyByName[name] === fromKey) {
+      entry.toolFlowKeyByName[name] = toKey;
+    }
+  });
 };
 
 FKTeamsChat.prototype.updateMemberToolFlowArgs = function (entry, key, displayName, args, append, order) {
