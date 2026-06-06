@@ -233,30 +233,6 @@ func pendingToolCallFromEvent(spanID, ref, id string, index *int, name, argument
 	}
 }
 
-func toolCallRefFromEvent(event Event, tc agentcore.ToolCall, position int) string {
-	if tc.Index != nil && event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
-		return event.ToolCallRef
-	}
-	return ""
-}
-
-func toolCallRefFromEventAt(event Event, tc agentcore.ToolCall, position int) string {
-	if event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[position]; ref != "" {
-			return ref
-		}
-	}
-	if ref := toolCallRefFromEvent(event, tc, position); ref != "" {
-		return ref
-	}
-	return ""
-}
-
 func toolCallSpanFromEvent(event Event, tc agentcore.ToolCall) string {
 	if tc.Index != nil && event.ToolCallSpanIDs != nil {
 		if span := event.ToolCallSpanIDs[*tc.Index]; span != "" {
@@ -592,7 +568,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			if tc.Function.Name == "" {
 				continue
 			}
-			ref := toolCallRefFromEventAt(event, tc, i)
+			ref := events.ToolCallRefAt(event, tc, i)
 			if ref == "" {
 				continue
 			}

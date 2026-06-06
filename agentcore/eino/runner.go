@@ -134,55 +134,10 @@ func (c *converter) emit(event agentcore.Event) error {
 	event.RunID = firstNonEmpty(event.RunID, c.runID)
 	event.TurnID = firstNonEmpty(event.TurnID, c.turnID)
 	c.lastEvent = events.NormalizeEvent(event)
-	if err := validateToolEventIdentity(c.lastEvent); err != nil {
+	if err := events.ValidateEventContract(c.lastEvent); err != nil {
 		return err
 	}
 	return c.sink(c.lastEvent)
-}
-
-func validateToolEventIdentity(event agentcore.Event) error {
-	switch event.Type {
-	case agentcore.EventToolStart:
-		if event.ToolCallRef == "" || event.ToolCallID == "" {
-			return fmt.Errorf("tool_start missing stable tool identity")
-		}
-	case agentcore.EventToolUpdate, agentcore.EventToolEnd:
-		if event.ToolCallRef == "" || event.ToolCallID == "" {
-			return fmt.Errorf("%s missing stable tool identity", event.Type)
-		}
-	case agentcore.EventMessageDelta:
-		if event.DeltaKind == agentcore.DeltaToolArgs || event.DeltaKind == agentcore.DeltaToolResult {
-			if event.ToolCallRef == "" || event.ToolCallID == "" {
-				return fmt.Errorf("message_delta %s missing stable tool identity", event.DeltaKind)
-			}
-		}
-	case agentcore.EventMessageEnd:
-		if event.Role == agentcore.RoleTool && (event.ToolCallRef == "" || event.ToolCallID == "") {
-			return fmt.Errorf("tool message_end missing stable tool identity")
-		}
-		for i, tc := range event.ToolCalls {
-			if events.IsInternalToolName(tc.Function.Name) {
-				continue
-			}
-			if tc.ID == "" {
-				return fmt.Errorf("message_end tool call missing id at position %d", i)
-			}
-			if toolCallRefFromMap(event, tc, i) == "" {
-				return fmt.Errorf("message_end tool call missing ref at position %d", i)
-			}
-		}
-	}
-	return nil
-}
-
-func toolCallRefFromMap(event agentcore.Event, tc agentcore.ToolCall, position int) string {
-	if tc.Index != nil && event.ToolCallRefs != nil {
-		return event.ToolCallRefs[*tc.Index]
-	}
-	if event.ToolCallRefs != nil {
-		return event.ToolCallRefs[position]
-	}
-	return ""
 }
 
 func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent]) (*adk.AgentEvent, error) {

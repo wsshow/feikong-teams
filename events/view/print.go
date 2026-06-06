@@ -46,33 +46,6 @@ func isInternalContinueContent(content string) bool {
 	return events.IsInternalContinueContent(content)
 }
 
-func eventToolCalls(event Event) []agentcore.ToolCall {
-	if event.ToolCall == nil {
-		return event.ToolCalls
-	}
-	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
-	toolCalls = append(toolCalls, *event.ToolCall)
-	toolCalls = append(toolCalls, event.ToolCalls...)
-	return toolCalls
-}
-
-func toolCallRefFromEventAt(event Event, tool agentcore.ToolCall, position int) string {
-	if tool.Index != nil && event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[*tool.Index]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[position]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCall != nil && position == 0 {
-		return event.ToolCallRef
-	}
-	return ""
-}
-
 func FormatToolDisplay(name string) toolmeta.ToolDisplay {
 	return toolmeta.FormatToolDisplay(name)
 }
@@ -616,14 +589,14 @@ func newPrintEvent() (func(Event), func()) {
 	}
 
 	memberToolKey := func(event Event, tool agentcore.ToolCall, position int) string {
-		if ref := toolCallRefFromEventAt(event, tool, position); ref != "" {
+		if ref := events.ToolCallRefAt(event, tool, position); ref != "" {
 			return "ref:" + ref
 		}
 		return ""
 	}
 
 	regularToolKey := func(event Event, tool agentcore.ToolCall, position int) string {
-		if ref := toolCallRefFromEventAt(event, tool, position); ref != "" {
+		if ref := events.ToolCallRefAt(event, tool, position); ref != "" {
 			return "ref:" + ref
 		}
 		return ""
@@ -1062,7 +1035,7 @@ func newPrintEvent() (func(Event), func()) {
 		case EventToolStart:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				for i, tool := range eventToolCalls(event) {
+				for i, tool := range events.ToolCallsFromEvent(event) {
 					if tool.Function.Name == "" {
 						continue
 					}
@@ -1071,7 +1044,7 @@ func newPrintEvent() (func(Event), func()) {
 				}
 				return
 			}
-			agentTools, otherTools := splitAgentToolCalls(eventToolCalls(event))
+			agentTools, otherTools := splitAgentToolCalls(events.ToolCallsFromEvent(event))
 			if len(agentTools) > 0 {
 				if inReasoning {
 					inReasoning = false
@@ -1104,7 +1077,8 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			for i, tool := range eventToolCalls(event) {
+			toolCalls := events.ToolCallsFromEvent(event)
+			for i, tool := range toolCalls {
 				if isInternalToolName(tool.Function.Name) {
 					continue
 				}
@@ -1122,7 +1096,7 @@ func newPrintEvent() (func(Event), func()) {
 					flow.Args = tool.Function.Arguments
 					sendToolPanel(key, flow, "op", tool.Function.Arguments, false)
 				}
-				if i == len(eventToolCalls(event))-1 {
+				if i == len(toolCalls)-1 {
 					lastToolName = tool.Function.Name
 				}
 			}
@@ -1740,7 +1714,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 		case EventToolStart:
 			flushStream()
-			toolCalls := eventToolCalls(event)
+			toolCalls := events.ToolCallsFromEvent(event)
 			for i, tc := range toolCalls {
 				if isInternalToolName(tc.Function.Name) {
 					continue

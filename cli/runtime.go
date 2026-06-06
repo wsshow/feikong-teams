@@ -2380,7 +2380,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 	case events.EventToolStart:
 		m.activeOutput = -1
 		m.activeReason = -1
-		for i, tool := range runtimeEventToolCalls(event) {
+		for i, tool := range events.ToolCallsFromEvent(event) {
 			if display, ok := runtimeAgentToolDisplay(tool.Function.Name); ok {
 				aliases := runtimeAgentToolCallAliases(tool)
 				key := runtimeAgentToolCallKey(tool)
@@ -2393,7 +2393,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 				continue
 			}
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
-			key := runtimeToolCallKey(event, tool, i)
+			key := events.ToolCallRefAt(event, tool, i)
 			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
 	case events.EventToolEnd, events.EventToolUpdate:
@@ -2465,8 +2465,8 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 	case events.EventToolStart:
 		member.ActiveOutput = -1
 		member.ActiveReason = -1
-		for i, tool := range runtimeEventToolCalls(event) {
-			key := runtimeToolCallKey(event, tool, i)
+		for i, tool := range events.ToolCallsFromEvent(event) {
+			key := events.ToolCallRefAt(event, tool, i)
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
 			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
@@ -2592,16 +2592,6 @@ func runtimeAgentToolDisplay(name string) (toolmeta.ToolDisplay, bool) {
 	return display, false
 }
 
-func runtimeEventToolCalls(event events.Event) []agentcore.ToolCall {
-	if event.ToolCall == nil {
-		return event.ToolCalls
-	}
-	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
-	toolCalls = append(toolCalls, *event.ToolCall)
-	toolCalls = append(toolCalls, event.ToolCalls...)
-	return toolCalls
-}
-
 func runtimeAgentTaskFromCompleteArgs(args string) string {
 	args = strings.TrimSpace(args)
 	if args == "" {
@@ -2669,23 +2659,6 @@ func compactRuntimeAliases(aliases []string) []string {
 
 func runtimeToolEventKey(event events.Event) string {
 	if event.ToolCallRef != "" {
-		return event.ToolCallRef
-	}
-	return ""
-}
-
-func runtimeToolCallKey(event events.Event, tool agentcore.ToolCall, position int) string {
-	if tool.Index != nil && event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[*tool.Index]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[position]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
 	return ""

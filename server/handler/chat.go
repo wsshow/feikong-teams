@@ -235,33 +235,6 @@ func extractAskInfo(interrupts []agentcore.Interrupt) *ask.AskInfo {
 	return nil
 }
 
-func handlerEventToolCalls(event events.Event) []agentcore.ToolCall {
-	if event.ToolCall == nil {
-		return event.ToolCalls
-	}
-	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
-	toolCalls = append(toolCalls, *event.ToolCall)
-	toolCalls = append(toolCalls, event.ToolCalls...)
-	return toolCalls
-}
-
-func toolCallRefForMap(event events.Event, tc agentcore.ToolCall, position int) string {
-	if tc.Index != nil && event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[*tc.Index]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCallRefs != nil {
-		if ref := event.ToolCallRefs[position]; ref != "" {
-			return ref
-		}
-	}
-	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
-		return event.ToolCallRef
-	}
-	return ""
-}
-
 // --- 事件/内容转换 ---
 
 // convertEventToMap 将事件转换为前端可用的格式
@@ -315,7 +288,7 @@ func convertEventToMap(event events.Event) map[string]any {
 	if event.ReasoningContent != "" {
 		result["reasoning_content"] = event.ReasoningContent
 	}
-	if toolCallsFromEvent := handlerEventToolCalls(event); len(toolCallsFromEvent) > 0 {
+	if toolCallsFromEvent := events.ToolCallsFromEvent(event); len(toolCallsFromEvent) > 0 {
 		toolCalls := make([]map[string]any, 0, len(toolCallsFromEvent))
 		for i, tc := range toolCallsFromEvent {
 			display := toolmeta.FormatToolDisplay(tc.Function.Name)
@@ -327,7 +300,7 @@ func convertEventToMap(event events.Event) map[string]any {
 			if tc.ID != "" {
 				toolCall["id"] = tc.ID
 			}
-			if ref := toolCallRefForMap(event, tc, i); ref != "" {
+			if ref := events.ToolCallRefAt(event, tc, i); ref != "" {
 				toolCall["ref"] = ref
 			}
 			if tc.Index != nil {
