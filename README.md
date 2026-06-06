@@ -186,6 +186,7 @@ docker compose up -d
 
 - `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
 - Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；执行失败会保存为 `error` 会话状态，HTTP 同步接口会返回错误响应。
+- 流式事件保留 `message_id`、成员智能体作用域和分片顺序；Web 前端据此将子智能体思考、工具调用和输出归并到同一成员卡片。
 - Runner 可被入口层缓存复用，checkpoint store 为并发安全实现；配置更新会重建 Agent 注册表并清空 Runner/MCP/通道缓存。
 - 内置工具必须在工具策略表中声明只读、破坏性、串行化和审批元数据；MCP 和成员智能体工具作为外部扩展，不强制使用内置策略表。
 

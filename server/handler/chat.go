@@ -280,6 +280,12 @@ func convertEventToMap(event events.Event) map[string]any {
 	if event.DeltaKind != "" {
 		result["delta_kind"] = event.DeltaKind
 	}
+	if event.MessageID != "" && event.DeltaKind != "" {
+		result["stream_id"] = fmt.Sprintf("%s:%s", event.MessageID, event.DeltaKind)
+		if event.Sequence != 0 {
+			result["chunk_index"] = event.Sequence
+		}
+	}
 	if event.Delta != "" {
 		result["delta"] = event.Delta
 	}
@@ -337,6 +343,12 @@ func convertEventToMap(event events.Event) map[string]any {
 	}
 	if event.ToolName != "" {
 		result["tool_name"] = event.ToolName
+		display := toolmeta.FormatToolDisplay(event.ToolName)
+		result["tool_display_name"] = display.DisplayName
+		result["tool_kind"] = display.Kind
+		if display.Target != "" {
+			result["tool_target"] = display.Target
+		}
 	}
 	if event.ToolCallIndex != nil {
 		result["tool_call_index"] = *event.ToolCallIndex
