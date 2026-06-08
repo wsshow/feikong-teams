@@ -1,24 +1,11 @@
 package cli
 
 import (
+	cliruntime "fkteams/cli/runtime"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 )
-
-// ExtractAgentMention 提取输入中的智能体 @ 提及
-// 返回智能体名字（不含@符号）和剩余的查询内容
-func ExtractAgentMention(input string) (agentName string, query string) {
-	input = strings.TrimSpace(input)
-	// 匹配 @智能体名称 模式（名字可以是中文或英文）
-	re := regexp.MustCompile(`^@([\p{Han}\w]+)\s*(.*)$`)
-	matches := re.FindStringSubmatch(input)
-	if len(matches) == 3 {
-		return matches[1], strings.TrimSpace(matches[2])
-	}
-	return "", input
-}
 
 // ReadPipeInput 检测 stdin 是否为管道并读取内容
 // 返回管道内容和是否检测到管道（即使内容为空，isPipe 也可能为 true）
@@ -37,49 +24,19 @@ func ReadPipeInput() (content string, isPipe bool) {
 	return strings.TrimSpace(string(data)), true
 }
 
-// WorkMode 工作模式
-type WorkMode string
+type WorkMode = cliruntime.WorkMode
 
 const (
-	ModeTeam   WorkMode = "team"
-	ModeDeep   WorkMode = "deep"
-	ModeGroup  WorkMode = "group"
-	ModeCustom WorkMode = "custom"
+	ModeTeam   = cliruntime.ModeTeam
+	ModeDeep   = cliruntime.ModeDeep
+	ModeGroup  = cliruntime.ModeGroup
+	ModeCustom = cliruntime.ModeCustom
 )
 
-// String 返回模式字符串
-func (m WorkMode) String() string {
-	return string(m)
+func ExtractAgentMention(input string) (agentName string, query string) {
+	return cliruntime.ExtractAgentMention(input)
 }
 
-// GetPromptPrefix 获取提示符前缀
-func (m WorkMode) GetPromptPrefix() string {
-	switch m {
-	case ModeTeam:
-		return "团队模式> "
-	case ModeDeep:
-		return "深度模式> "
-	case ModeGroup:
-		return "多智能体讨论模式> "
-	case ModeCustom:
-		return "自定义会议模式> "
-	default:
-		return "未知模式> "
-	}
-}
-
-// ParseWorkMode 解析工作模式
 func ParseWorkMode(mode string) WorkMode {
-	switch mode {
-	case "team":
-		return ModeTeam
-	case "deep":
-		return ModeDeep
-	case "group":
-		return ModeGroup
-	case "custom":
-		return ModeCustom
-	default:
-		return ModeTeam
-	}
+	return cliruntime.ParseWorkMode(mode)
 }

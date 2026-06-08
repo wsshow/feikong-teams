@@ -1,5 +1,5 @@
 // Package cli 提供 CLI 交互模式的会话管理、查询执行和信号处理
-package cli
+package runtime
 
 import (
 	"context"

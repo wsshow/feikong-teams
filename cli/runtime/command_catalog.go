@@ -1,4 +1,4 @@
-package cli
+package runtime
 
 // CommandInfo 命令信息。
 type CommandInfo struct {
