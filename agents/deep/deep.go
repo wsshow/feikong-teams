@@ -29,7 +29,7 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 	}
 
 	engine := agentruntime.Engine()
-	middlewareProvider, ok := engine.(agentcore.AgentMiddlewareProvider)
+	middlewareProvider, ok := engine.(agentcore.AgentPipelineProvider)
 	if !ok {
 		return nil, fmt.Errorf("runtime does not support deep agent middlewares")
 	}

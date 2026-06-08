@@ -16,8 +16,8 @@ func (t stubTool) Info(context.Context) (*agentcore.ToolInfo, error) {
 	return t.info, nil
 }
 
-func (t stubTool) Handler() any {
-	return nil
+func (t stubTool) Invoke(context.Context, agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
+	return nil, nil
 }
 
 func mustPolicy(t *testing.T, name string) ToolPolicy {

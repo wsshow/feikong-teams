@@ -2,7 +2,6 @@ package eino
 
 import (
 	"context"
-	"encoding/json"
 	"fkteams/agentcore"
 	"fmt"
 	"reflect"
@@ -31,7 +30,10 @@ func AdaptToolsForRunner(ctx context.Context, tools []agentcore.Tool) ([]tool.Ba
 		if err != nil {
 			return nil, err
 		}
-		baseTool, err := newReflectedTool(info, t.Handler())
+		if info == nil {
+			return nil, fmt.Errorf("tool info is nil")
+		}
+		baseTool, err := newCoreTool(info, t)
 		if err != nil {
 			return nil, err
 		}
@@ -71,8 +73,19 @@ func (t *runtimeTool) Info(ctx context.Context) (*agentcore.ToolInfo, error) {
 	return &agentcore.ToolInfo{Name: info.Name, Desc: info.Desc, Extra: info.Extra}, nil
 }
 
-func (t *runtimeTool) Handler() any {
-	return nil
+func (t *runtimeTool) Invoke(ctx context.Context, invocation agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
+	if t == nil || t.inner == nil {
+		return nil, fmt.Errorf("tool is nil")
+	}
+	invokable, ok := t.inner.(tool.InvokableTool)
+	if !ok {
+		return nil, fmt.Errorf("tool is not invokable")
+	}
+	result, err := invokable.InvokableRun(ctx, invocation.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	return &agentcore.ToolResult{Content: result}, nil
 }
 
 func (t *runtimeTool) runnerTool() tool.BaseTool {
@@ -84,38 +97,29 @@ func (t *runtimeTool) runnerTool() tool.BaseTool {
 
 type reflectedTool struct {
 	info      *schema.ToolInfo
-	handler   reflect.Value
 	inputType reflect.Type
+	inner     agentcore.Tool
 }
 
-func newReflectedTool(info *agentcore.ToolInfo, handler any) (tool.InvokableTool, error) {
-	if handler == nil {
-		return nil, fmt.Errorf("tool %s handler is nil", info.Name)
-	}
-	handlerValue := reflect.ValueOf(handler)
-	handlerType := handlerValue.Type()
-	if handlerType.Kind() != reflect.Func || handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
-		return nil, fmt.Errorf("tool %s handler must be func(context.Context, *Input) (*Output, error)", info.Name)
-	}
-	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
-	if !handlerType.In(0).Implements(contextType) {
-		return nil, fmt.Errorf("tool %s first argument must be context.Context", info.Name)
-	}
-	inputType := handlerType.In(1)
-	if inputType.Kind() != reflect.Pointer || inputType.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("tool %s second argument must be pointer to struct", info.Name)
-	}
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
-	if !handlerType.Out(1).Implements(errorType) {
-		return nil, fmt.Errorf("tool %s second return value must be error", info.Name)
+func newCoreTool(info *agentcore.ToolInfo, inner agentcore.Tool) (tool.InvokableTool, error) {
+	inputType := reflect.TypeOf(struct{}{})
+	if provider, ok := inner.(agentcore.ToolInputTypeProvider); ok {
+		inputType = provider.InputType()
+		if inputType == nil {
+			return nil, fmt.Errorf("tool %s input type is nil", info.Name)
+		}
+		if inputType.Kind() != reflect.Pointer || inputType.Elem().Kind() != reflect.Struct {
+			return nil, fmt.Errorf("tool %s input type must be pointer to struct", info.Name)
+		}
+		inputType = inputType.Elem()
 	}
 	toolInfo := &schema.ToolInfo{
 		Name:        info.Name,
 		Desc:        info.Desc,
 		Extra:       info.Extra,
-		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(schemaForType(inputType.Elem())),
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(schemaForType(inputType)),
 	}
-	return &reflectedTool{info: toolInfo, handler: handlerValue, inputType: inputType}, nil
+	return &reflectedTool{info: toolInfo, inputType: inputType, inner: inner}, nil
 }
 
 func (t *reflectedTool) Info(context.Context) (*schema.ToolInfo, error) {
@@ -123,36 +127,17 @@ func (t *reflectedTool) Info(context.Context) (*schema.ToolInfo, error) {
 }
 
 func (t *reflectedTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
-	input := reflect.New(t.inputType.Elem())
-	if strings.TrimSpace(argumentsInJSON) != "" {
-		if err := json.Unmarshal([]byte(argumentsInJSON), input.Interface()); err != nil {
-			return "", err
-		}
-	}
-	out := t.handler.Call([]reflect.Value{reflect.ValueOf(ctx), input})
-	if !out[1].IsNil() {
-		return "", out[1].Interface().(error)
-	}
-	if isNilable(out[0].Kind()) && out[0].IsNil() {
-		return "", nil
-	}
-	if text, ok := out[0].Interface().(string); ok {
-		return text, nil
-	}
-	data, err := json.Marshal(out[0].Interface())
+	result, err := t.inner.Invoke(ctx, agentcore.ToolInvocation{
+		Name:      t.info.Name,
+		Arguments: argumentsInJSON,
+	})
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
-}
-
-func isNilable(kind reflect.Kind) bool {
-	switch kind {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return true
-	default:
-		return false
+	if result == nil {
+		return "", nil
 	}
+	return result.Content, nil
 }
 
 func schemaForType(t reflect.Type) *jsonschema.Schema {

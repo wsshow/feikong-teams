@@ -114,20 +114,16 @@ type ModelDecorator interface {
 	DecorateChatModel(ctx context.Context, model ChatModel) (ChatModel, error)
 }
 
-type AgentMiddlewareProvider interface {
-	NewPatchMiddleware(ctx context.Context) (AgentMiddleware, error)
-	NewToolErrorMiddleware() AgentMiddleware
-	NewAutoContinueMiddleware() (AgentMiddleware, error)
-	NewTrimResultMiddleware() AgentMiddleware
+type AgentPipelineProvider interface {
+	DefaultAgentMiddlewares(ctx context.Context) ([]AgentMiddleware, error)
 	NewSteeringMiddleware() AgentMiddleware
 	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
 	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)
 }
 
-type ToolMiddlewareProvider interface {
-	NewHookToolMiddleware() ToolMiddleware
-	NewDestructiveGuardMiddleware() ToolMiddleware
+type ToolPipelineProvider interface {
+	DefaultToolMiddlewares() []ToolMiddleware
 }
 
 type MCPToolProvider interface {

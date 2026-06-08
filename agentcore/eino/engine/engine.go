@@ -52,19 +52,44 @@ func (e *Engine) DecorateChatModel(ctx context.Context, chatModel agentcore.Chat
 	return inject.NewForModel(chatModel)
 }
 
-func (e *Engine) NewPatchMiddleware(ctx context.Context) (agentcore.AgentMiddleware, error) {
+func (e *Engine) DefaultAgentMiddlewares(ctx context.Context) ([]agentcore.AgentMiddleware, error) {
+	result := make([]agentcore.AgentMiddleware, 0, 5)
+	patchMiddleware, err := e.newPatchMiddleware(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, patchMiddleware)
+	result = append(result, e.newToolErrorMiddleware())
+	acMiddleware, err := e.newAutoContinueMiddleware()
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, acMiddleware)
+	result = append(result, e.newTrimResultMiddleware())
+	result = append(result, e.NewSteeringMiddleware())
+	return result, nil
+}
+
+func (e *Engine) DefaultToolMiddlewares() []agentcore.ToolMiddleware {
+	return []agentcore.ToolMiddleware{
+		e.newHookToolMiddleware(),
+		e.newDestructiveGuardMiddleware(),
+	}
+}
+
+func (e *Engine) newPatchMiddleware(ctx context.Context) (agentcore.AgentMiddleware, error) {
 	return patch.New(ctx)
 }
 
-func (e *Engine) NewToolErrorMiddleware() agentcore.AgentMiddleware {
+func (e *Engine) newToolErrorMiddleware() agentcore.AgentMiddleware {
 	return warperror.NewHandler(nil)
 }
 
-func (e *Engine) NewAutoContinueMiddleware() (agentcore.AgentMiddleware, error) {
+func (e *Engine) newAutoContinueMiddleware() (agentcore.AgentMiddleware, error) {
 	return autocontinue.NewHandler()
 }
 
-func (e *Engine) NewTrimResultMiddleware() agentcore.AgentMiddleware {
+func (e *Engine) newTrimResultMiddleware() agentcore.AgentMiddleware {
 	return trimresult.New(nil)
 }
 
@@ -99,11 +124,11 @@ func (e *Engine) NewDispatchMiddleware(ctx context.Context, cfg *agentcore.Dispa
 	})
 }
 
-func (e *Engine) NewDestructiveGuardMiddleware() agentcore.ToolMiddleware {
+func (e *Engine) newDestructiveGuardMiddleware() agentcore.ToolMiddleware {
 	return destructiveguard.New()
 }
 
-func (e *Engine) NewHookToolMiddleware() agentcore.ToolMiddleware {
+func (e *Engine) newHookToolMiddleware() agentcore.ToolMiddleware {
 	return hooktools.New()
 }
 

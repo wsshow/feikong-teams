@@ -15,6 +15,10 @@ func TestEinoImportsStayInsideAdapter(t *testing.T) {
 		filepath.ToSlash(filepath.Join("agentcore", "eino")) + "/",
 	}
 	einoPrefix := "github.com/cloudwego/" + "eino"
+	localAdapterPrefix := "fkteams/agentcore/eino"
+	localAdapterConsumers := []string{
+		filepath.ToSlash(filepath.Join("agentcore", "runtime")) + "/",
+	}
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -42,6 +46,11 @@ func TestEinoImportsStayInsideAdapter(t *testing.T) {
 		for _, spec := range file.Imports {
 			importPath := strings.Trim(spec.Path.Value, `"`)
 			if strings.HasPrefix(importPath, einoPrefix) && !isPathUnderAny(rel, adapterRoots) {
+				t.Errorf("%s imports %s outside adapter packages", rel, importPath)
+			}
+			if strings.HasPrefix(importPath, localAdapterPrefix) &&
+				!isPathUnderAny(rel, adapterRoots) &&
+				!isPathUnderAny(rel, localAdapterConsumers) {
 				t.Errorf("%s imports %s outside adapter packages", rel, importPath)
 			}
 		}

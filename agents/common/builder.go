@@ -118,7 +118,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decorate chat model: %w", err)
 	}
-	agentMiddlewareProvider, hasAgentMiddlewareProvider := engine.(agentcore.AgentMiddlewareProvider)
+	agentPipelineProvider, hasAgentPipelineProvider := engine.(agentcore.AgentPipelineProvider)
 
 	// 提示词
 	instruction := b.instruction
@@ -162,16 +162,16 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		EmitInternalEvents: true,
 	}
 
-	if hasAgentMiddlewareProvider {
-		defaultMiddlewares, err := defaultAgentMiddlewares(ctx, agentMiddlewareProvider)
+	if hasAgentPipelineProvider {
+		defaultMiddlewares, err := agentPipelineProvider.DefaultAgentMiddlewares(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("init default agent middlewares: %w", err)
 		}
 		cfg.Middlewares = append(cfg.Middlewares, defaultMiddlewares...)
 	}
 
 	if b.enableSummary {
-		if !hasAgentMiddlewareProvider {
+		if !hasAgentPipelineProvider {
 			return nil, fmt.Errorf("runtime does not support summary middleware")
 		}
 		maxTokens := agentcore.DefaultMaxTokensBeforeSummary
@@ -180,7 +180,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 				maxTokens = n
 			}
 		}
-		summaryMiddleware, err := agentMiddlewareProvider.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
+		summaryMiddleware, err := agentPipelineProvider.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
 			Model:                  coreModel,
 			MaxTokensBeforeSummary: maxTokens,
 		})
@@ -191,10 +191,10 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	if b.enableSkills {
-		if !hasAgentMiddlewareProvider {
+		if !hasAgentPipelineProvider {
 			return nil, fmt.Errorf("runtime does not support skills middleware")
 		}
-		skillsMiddleware, err := agentMiddlewareProvider.NewSkillsMiddleware(ctx)
+		skillsMiddleware, err := agentPipelineProvider.NewSkillsMiddleware(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("init skills middleware: %w", err)
 		}
@@ -212,10 +212,10 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		if dispatchConfig.Model == nil {
 			dispatchConfig.Model = coreModel
 		}
-		if !hasAgentMiddlewareProvider {
+		if !hasAgentPipelineProvider {
 			return nil, fmt.Errorf("runtime does not support dispatch middleware")
 		}
-		dispatchMiddleware, err := agentMiddlewareProvider.NewDispatchMiddleware(ctx, dispatchConfig)
+		dispatchMiddleware, err := agentPipelineProvider.NewDispatchMiddleware(ctx, dispatchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch middleware: %w", err)
 		}
@@ -241,50 +241,9 @@ func decorateChatModel(ctx context.Context, engine agentcore.Engine, model agent
 }
 
 func defaultToolMiddlewares(engine agentcore.Engine) []agentcore.ToolMiddleware {
-	provider, ok := engine.(agentcore.ToolMiddlewareProvider)
+	provider, ok := engine.(agentcore.ToolPipelineProvider)
 	if !ok {
 		return nil
 	}
-	middlewares := make([]agentcore.ToolMiddleware, 0, 2)
-	if middleware := provider.NewHookToolMiddleware(); middleware != nil {
-		middlewares = append(middlewares, middleware)
-	}
-	if middleware := provider.NewDestructiveGuardMiddleware(); middleware != nil {
-		middlewares = append(middlewares, middleware)
-	}
-	return middlewares
-}
-
-func defaultAgentMiddlewares(ctx context.Context, provider agentcore.AgentMiddlewareProvider) ([]agentcore.AgentMiddleware, error) {
-	middlewares := make([]agentcore.AgentMiddleware, 0, 5)
-
-	// patch 中间件默认启用，放在 Handlers 最前面确保其他中间件处理的是完整消息历史
-	patchMiddleware, err := provider.NewPatchMiddleware(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("init patch middleware: %w", err)
-	}
-	if patchMiddleware != nil {
-		middlewares = append(middlewares, patchMiddleware)
-	}
-
-	if middleware := provider.NewToolErrorMiddleware(); middleware != nil {
-		middlewares = append(middlewares, middleware)
-	}
-
-	acMiddleware, err := provider.NewAutoContinueMiddleware()
-	if err != nil {
-		return nil, fmt.Errorf("init autocontinue middleware: %w", err)
-	}
-	if acMiddleware != nil {
-		middlewares = append(middlewares, acMiddleware)
-	}
-
-	if middleware := provider.NewTrimResultMiddleware(); middleware != nil {
-		middlewares = append(middlewares, middleware)
-	}
-	if middleware := provider.NewSteeringMiddleware(); middleware != nil {
-		middlewares = append(middlewares, middleware)
-	}
-
-	return middlewares, nil
+	return provider.DefaultToolMiddlewares()
 }

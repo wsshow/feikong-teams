@@ -54,7 +54,7 @@ func NewTextSearchTool(ctx context.Context, config *Config) (agentcore.Tool, err
 		return nil, fmt.Errorf("failed to create duckduckgo client: %w", err)
 	}
 
-	return agentcore.NewTool(agentcore.ToolInfo{Name: name, Desc: desc}, cli.TextSearch), nil
+	return agentcore.NewTool(agentcore.ToolInfo{Name: name, Desc: desc}, cli.TextSearch)
 }
 
 func NewSearch(ctx context.Context, config *Config) (Search, error) {
