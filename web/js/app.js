@@ -35,6 +35,9 @@ class FKTeamsChat {
     this._sessionEventBuffer = {}; // 非当前会话的事件缓冲，切回时回放
     this._sessionLoadPromises = {}; // 会话加载中的请求，避免重复弹错
     this._streamOffsets = this.loadStreamOffsets(); // 每个会话下一次订阅的事件 offset
+    this._lastMainScrollTop = 0; // 用于判断用户是否主动向上查看历史内容
+    this._touchScrollStartY = null;
+    this._keyboardViewportRAF = null;
     this.fileSuggestions = null; // 文件建议弹窗
     this.selectedFileIndex = -1; // 当前选中的文件索引
     this.currentPath = ""; // 当前浏览的路径
@@ -236,6 +239,8 @@ class FKTeamsChat {
     this.messageInput.addEventListener("compositionend", () => {
       this._messageInputComposing = false;
     });
+    this.messageInput.addEventListener("focus", () => this.handleInputFocus());
+    this.messageInput.addEventListener("blur", () => this.handleInputBlur());
     this.messageInput.addEventListener("keydown", (e) => this.handleKeyDown(e));
     this.sessionIdInput.addEventListener("change", () => {
       const newSessionId = this.sessionIdInput.value || "default";
@@ -307,6 +312,21 @@ class FKTeamsChat {
     // 监听滚动事件（使用 rAF 节流避免高频触发）
     if (this.mainContent) {
       this._scrollRAF = null;
+      this.mainContent.addEventListener("wheel", (e) => {
+        if (e.deltaY < -2) {
+          this.pauseAutoScrollForUser();
+        }
+      }, { passive: true });
+      this.mainContent.addEventListener("touchstart", (e) => {
+        this._touchScrollStartY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : null;
+      }, { passive: true });
+      this.mainContent.addEventListener("touchmove", (e) => {
+        if (this._touchScrollStartY === null || !e.touches || e.touches.length === 0) return;
+        const deltaY = e.touches[0].clientY - this._touchScrollStartY;
+        if (deltaY > 4) {
+          this.pauseAutoScrollForUser();
+        }
+      }, { passive: true });
       this.mainContent.addEventListener("scroll", () => {
         if (!this._scrollRAF) {
           this._scrollRAF = requestAnimationFrame(() => {
@@ -322,25 +342,104 @@ class FKTeamsChat {
         this.scrollToBottomAndResume(),
       );
     }
+    this.bindKeyboardViewport();
+  }
+
+  bindKeyboardViewport() {
+    this.updateKeyboardViewport();
+    const viewport = window.visualViewport;
+    const schedule = () => this.scheduleKeyboardViewportUpdate();
+    if (viewport) {
+      viewport.addEventListener("resize", schedule);
+      viewport.addEventListener("scroll", schedule);
+    } else {
+      window.addEventListener("resize", schedule);
+    }
+  }
+
+  scheduleKeyboardViewportUpdate() {
+    if (this._keyboardViewportRAF) return;
+    this._keyboardViewportRAF = requestAnimationFrame(() => {
+      this._keyboardViewportRAF = null;
+      this.updateKeyboardViewport();
+    });
+  }
+
+  updateKeyboardViewport() {
+    const viewport = window.visualViewport;
+    const height = viewport ? viewport.height : window.innerHeight;
+    if (height > 0) {
+      document.documentElement.style.setProperty("--app-viewport-height", `${height}px`);
+    }
+    const keyboardOpen = !!(viewport && window.innerHeight - viewport.height > 80);
+    document.body.classList.toggle("mobile-keyboard-open", keyboardOpen);
+    if (document.activeElement === this.messageInput) {
+      this.keepInputVisible();
+    }
+  }
+
+  handleInputFocus() {
+    this.scheduleKeyboardViewportUpdate();
+    setTimeout(() => this.keepInputVisible(), 80);
+    setTimeout(() => this.keepInputVisible(), 260);
+  }
+
+  handleInputBlur() {
+    setTimeout(() => this.scheduleKeyboardViewportUpdate(), 80);
+  }
+
+  keepInputVisible() {
+    if (!this.mainContent || !this.messageInput) return;
+    const wrapper = this.messageInput.closest(".input-container") || this.messageInput.closest(".input-wrapper");
+    if (!wrapper) return;
+    const viewport = window.visualViewport;
+    const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    const rect = wrapper.getBoundingClientRect();
+    const overflow = rect.bottom - viewportBottom + 12;
+    if (overflow > 0) {
+      this.mainContent.scrollTop += overflow;
+    } else if (!this.userScrolledUp) {
+      this.mainContent.scrollTop = this.mainContent.scrollHeight;
+    }
+  }
+
+  pauseAutoScrollForUser() {
+    if (!this.mainContent || !this.messagesContainer) return;
+    const hasMessages = this.messagesContainer.querySelector(".message");
+    if (!hasMessages) return;
+    const { scrollTop, scrollHeight, clientHeight } = this.mainContent;
+    if (scrollHeight <= clientHeight + 8) return;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    if (distanceFromBottom > 8 || this.isProcessing) {
+      this.userScrolledUp = true;
+      this.showScrollToBottomBtn(true);
+    }
   }
 
   handleScroll() {
     const { scrollTop, scrollHeight, clientHeight } = this.mainContent;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const scrollingUp = scrollTop < (this._lastMainScrollTop || 0) - 1;
+    const hasMessages =
+      this.messagesContainer &&
+      this.messagesContainer.querySelector(".message");
+    const pauseThreshold = this.isProcessing ? 16 : 100;
+    const resumeThreshold = this.isProcessing ? 24 : 100;
 
-    // 如果距离底部超过 100px，认为用户向上滚动了
-    if (distanceFromBottom > 100) {
+    // 流式输出时，只要用户明显向上滚动，就暂停自动跟随，避免被新 chunk 拉回底部。
+    if (scrollingUp && distanceFromBottom > 8 && hasMessages) {
+      this.userScrolledUp = true;
+      this.showScrollToBottomBtn(true);
+    } else if (distanceFromBottom > pauseThreshold) {
       // 仅当有实际消息时才显示回到底部按钮（欢迎页不显示）
-      var hasMessages =
-        this.messagesContainer &&
-        this.messagesContainer.querySelector(".message");
       this.userScrolledUp = !!hasMessages;
       this.showScrollToBottomBtn(!!hasMessages);
-    } else {
+    } else if (distanceFromBottom <= resumeThreshold) {
       // 用户回到了底部附近
       this.userScrolledUp = false;
       this.showScrollToBottomBtn(false);
     }
+    this._lastMainScrollTop = scrollTop;
   }
 
   showScrollToBottomBtn(show) {
@@ -719,6 +818,9 @@ class FKTeamsChat {
       return;
     }
     requestAnimationFrame(() => {
+      if (this.userScrolledUp) {
+        return;
+      }
       if (this.mainContent) {
         this.mainContent.scrollTop = this.mainContent.scrollHeight;
       }

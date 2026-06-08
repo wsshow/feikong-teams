@@ -8,6 +8,7 @@
   min-width: 0;
   height: 100vh;
   height: 100dvh;
+  height: var(--app-viewport-height);
   overflow-y: auto;
   overflow-x: hidden;
 }

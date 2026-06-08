@@ -29,6 +29,7 @@
     --sidebar-width: 250px;
     --transition: 200ms ease;
     --radius: 8px;
+    --app-viewport-height: 100dvh;
     --font-hand: 'Caveat', 'STKaiti', 'KaiTi', cursive;
     --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
 }
