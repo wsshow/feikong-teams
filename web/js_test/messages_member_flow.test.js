@@ -171,3 +171,69 @@ test("dispatch task handling does not assume the first tool call", () => {
 
   assert.deepEqual(chat._pendingDispatchTasks, [{ title: "task" }]);
 });
+
+test("member final message marks the member card done", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = {};
+  let status = null;
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.flushMemberInnerToolResults = () => {};
+  chat.memberCallIDFromEvent = () => "call-1";
+  chat.setMemberFinalOutput = () => {};
+  chat.setMemberFinalReasoning = () => {};
+  chat.updateMemberActivity = () => {};
+  chat.finalizeMemberMarkdown = () => {};
+  chat.updateMemberStatus = (_entry, state, text) => {
+    status = { entry: _entry, state, text };
+  };
+  chat.scrollToBottom = () => {};
+
+  chat.handleMemberMessage({
+    member_call_id: "call-1",
+    content: "done",
+  });
+
+  assert.deepEqual(status, { entry, state: "done", text: "完成" });
+});
+
+test("agent tool result uses event metadata when stored tool mapping was reset", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = {};
+  let ensured = null;
+  let status = null;
+
+  chat.isMemberRunEvent = () => false;
+  chat.toolCallsByID = {};
+  chat.parallelToolMemberByID = {};
+  chat.parallelMemberResultChunks = {};
+  chat.lastToolName = "";
+  chat.ensureMemberCard = (key, label, agentName) => {
+    ensured = { key, label, agentName };
+    return entry;
+  };
+  chat.memberHasOutputContent = () => false;
+  chat.setMemberFinalOutput = () => {};
+  chat.updateMemberStatus = (_entry, state, text) => {
+    status = { entry: _entry, state, text };
+  };
+  chat.scrollToBottom = () => {};
+
+  chat.handleToolResult({
+    type: "tool_result",
+    tool_call_id: "call-1",
+    tool_call_ref: "tool_call:call-1",
+    tool_name: "ask_fkagent_researcher",
+    tool_display_name: "指派给 researcher",
+    tool_kind: "agent",
+    tool_target: "researcher",
+    content: "result",
+  });
+
+  assert.deepEqual(ensured, {
+    key: "call:call-1",
+    label: "researcher",
+    agentName: "researcher",
+  });
+  assert.deepEqual(status, { entry, state: "done", text: "完成" });
+});

@@ -954,6 +954,7 @@ FKTeamsChat.prototype.handleMemberMessage = function (event) {
   if (event.content) this.setMemberFinalOutput(entry, event.content, event.sequence);
   if (event.content) this.updateMemberActivity(entry, "输出完成");
   this.finalizeMemberMarkdown(entry);
+  this.updateMemberStatus(entry, "done", "完成");
   this.scrollToBottom();
 };
 
@@ -2369,7 +2370,9 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
     this.scrollToBottom();
     return;
   }
-  const toolCall = event.tool_call_id ? this.toolCallsByID[event.tool_call_id] : null;
+  const toolCall = event.tool_call_id
+    ? this.toolCallsByID[event.tool_call_id] || this.coreToolCallFromEvent(event)
+    : this.coreToolCallFromEvent(event);
   const toolName = toolCall?.name || event.tool_name || this.lastToolName || "";
   const toolDisplay = this.getToolDisplay(toolCall || { name: toolName });
 
