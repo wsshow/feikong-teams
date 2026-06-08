@@ -12,7 +12,9 @@ var defaultEinoEngine = einoengine.NewEngine()
 var defaultEngine agentcore.Engine = defaultEinoEngine
 
 func init() {
-	toolmcp.RegisterToolProvider(defaultEinoEngine.MCPTools)
+	if provider, ok := any(defaultEinoEngine).(agentcore.MCPToolProvider); ok {
+		toolmcp.RegisterToolProvider(provider.MCPTools)
+	}
 }
 
 func Engine() agentcore.Engine {

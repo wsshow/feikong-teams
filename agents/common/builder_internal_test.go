@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"fkteams/agentcore"
 	"fkteams/internal/testmodel"
 )
 
@@ -27,4 +28,43 @@ func TestAgentBuilderBuildDoesNotMutateResolvedTools(t *testing.T) {
 	if len(builder.tools) != 0 {
 		t.Fatalf("expected builder tools to remain empty after second build, got %d", len(builder.tools))
 	}
+}
+
+func TestRuntimeOptionalCapabilitiesAreNotRequired(t *testing.T) {
+	engine := minimalEngine{}
+	model := testmodel.New()
+
+	decorated, err := decorateChatModel(context.Background(), engine, model)
+	if err != nil {
+		t.Fatalf("decorate model: %v", err)
+	}
+	if decorated != model {
+		t.Fatal("model should be returned unchanged when runtime has no decorator")
+	}
+
+	if middlewares := defaultToolMiddlewares(engine); len(middlewares) != 0 {
+		t.Fatalf("tool middlewares = %d, want 0", len(middlewares))
+	}
+}
+
+type minimalEngine struct{}
+
+func (minimalEngine) NewChatModelAgent(context.Context, *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
+	return nil, nil
+}
+
+func (minimalEngine) NewLoopAgent(context.Context, *agentcore.LoopAgentConfig) (agentcore.Agent, error) {
+	return nil, nil
+}
+
+func (minimalEngine) NewDeepAgent(context.Context, *agentcore.DeepAgentConfig) (agentcore.Agent, error) {
+	return nil, nil
+}
+
+func (minimalEngine) NewRunner(context.Context, agentcore.RunnerConfig) (agentcore.Runner, error) {
+	return nil, nil
+}
+
+func (minimalEngine) NewAgentTools(context.Context, []agentcore.Agent, agentcore.AgentToolConfig) ([]agentcore.Tool, error) {
+	return nil, nil
 }

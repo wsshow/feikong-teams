@@ -108,7 +108,13 @@ type Engine interface {
 	NewDeepAgent(ctx context.Context, cfg *DeepAgentConfig) (Agent, error)
 	NewRunner(ctx context.Context, cfg RunnerConfig) (Runner, error)
 	NewAgentTools(ctx context.Context, subAgents []Agent, cfg AgentToolConfig) ([]Tool, error)
+}
+
+type ModelDecorator interface {
 	DecorateChatModel(ctx context.Context, model ChatModel) (ChatModel, error)
+}
+
+type AgentMiddlewareProvider interface {
 	NewPatchMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewToolErrorMiddleware() AgentMiddleware
 	NewAutoContinueMiddleware() (AgentMiddleware, error)
@@ -117,6 +123,13 @@ type Engine interface {
 	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
 	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)
+}
+
+type ToolMiddlewareProvider interface {
 	NewHookToolMiddleware() ToolMiddleware
 	NewDestructiveGuardMiddleware() ToolMiddleware
+}
+
+type MCPToolProvider interface {
+	MCPTools(ctx context.Context, rawClient any) ([]Tool, error)
 }

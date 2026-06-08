@@ -191,7 +191,7 @@ docker compose up -d
 
 ## 架构与安全边界
 
-- `agentcore` 定义运行时无关的 Agent、Runner、Message、Tool、Event 等核心接口；`agentcore/eino` 是当前 CloudWeGo Eino ADK 适配实现，负责模型、工具、中间件、AgentTool 和 HITL resume 的具体落地。
+- `agentcore` 定义运行时无关的 Agent、Runner、Message、Tool、Event 等核心接口；运行时只需实现核心 `Engine`，模型装饰、中间件和 MCP 工具加载通过可选能力接口扩展；`agentcore/eino` 是当前 CloudWeGo Eino ADK 适配实现，负责模型、工具、中间件、AgentTool 和 HITL resume 的具体落地。
 - `engine.Session` 统一装配会话 ID、事件回调、历史记录、非交互标记和人工中断处理，并提供 `WithText` / `WithMessage` / `WithInput` 三种输入入口；Eino 运行时负责具体的 Runner 执行与 HITL resume 协议适配。
 - `hooks` 提供运行期扩展点总线，当前接入 `before_run` / `after_run` / `on_event` / `before_tool_call` / `after_tool_call` / `before_model_request` / `after_model_response`；入口层可通过 `Session.WithHookBus` 注入独立 HookBus，未指定时使用全局 HookBus。
 - Web、CLI、SSE、WebSocket 和通道入口共用同一执行管线；WebSocket、流式任务和终端交互模式支持运行中 follow-up 排队和 steering 转向，steering 会在工具完成后的下一次模型调用前注入。Web 运行中输入默认追加为 follow-up，可在队列面板中将未执行项转为 steering，并可编辑、删除、上移/下移；终端运行中可随时追加转向消息，下一次模型调用前会合并消费当前队列，按 `Esc` 暂停时会把未消费转向回填到输入框。

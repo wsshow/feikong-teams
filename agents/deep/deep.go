@@ -29,13 +29,17 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 	}
 
 	engine := agentruntime.Engine()
+	middlewareProvider, ok := engine.(agentcore.AgentMiddlewareProvider)
+	if !ok {
+		return nil, fmt.Errorf("runtime does not support deep agent middlewares")
+	}
 	maxTokens := agentcore.DefaultMaxTokensBeforeSummary
 	if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
 		if n, _ := strconv.Atoi(v); n > 0 {
 			maxTokens = n
 		}
 	}
-	summaryMiddleware, err := engine.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
+	summaryMiddleware, err := middlewareProvider.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
 		Model:                  chatModel,
 		MaxTokensBeforeSummary: maxTokens,
 	})
@@ -51,7 +55,7 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		Tools:            toolList,
 		MaxIterations:    common.MaxIterations(),
 		Middlewares: []agentcore.AgentMiddleware{
-			engine.NewSteeringMiddleware(),
+			middlewareProvider.NewSteeringMiddleware(),
 			summaryMiddleware,
 		},
 	})
