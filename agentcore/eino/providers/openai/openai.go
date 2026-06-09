@@ -3,6 +3,8 @@ package openai
 import (
 	"context"
 
+	openaiModel "github.com/cloudwego/eino-ext/components/model/openai"
+
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
 	"fkteams/providers/providerkit"
@@ -10,13 +12,13 @@ import (
 
 // New 创建 OpenAI 及兼容 API 的聊天模型
 func New(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
-	modelCfg := &ChatModelConfig{
+	modelCfg := &openaiModel.ChatModelConfig{
 		APIKey:     cfg.APIKey,
 		BaseURL:    cfg.BaseURL,
 		Model:      cfg.Model,
 		HTTPClient: providerkit.HTTPClientWithHeaders(cfg.ExtraHeaders),
 	}
-	chatModel, err := NewChatModel(ctx, modelCfg)
+	chatModel, err := openaiModel.NewChatModel(ctx, modelCfg)
 	if err != nil {
 		return nil, err
 	}
