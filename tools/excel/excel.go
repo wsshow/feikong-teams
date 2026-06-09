@@ -55,7 +55,7 @@ func (et *ExcelTools) validatePath(userPath string) (string, error) {
 	}
 
 	// 检查路径是否在允许的目录内
-	if !strings.HasPrefix(absPath, et.baseDir) {
+	if absPath != et.baseDir && !strings.HasPrefix(absPath, et.baseDir+string(os.PathSeparator)) {
 		return "", fmt.Errorf("访问被拒绝: 路径 %s 不在允许的目录 %s 内", absPath, et.baseDir)
 	}
 
