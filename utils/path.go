@@ -17,8 +17,11 @@ func PathExists(path string) (bool, error) {
 
 // EnsureDir 确保目录存在，不存在则创建
 func EnsureDir(path string) error {
-	_, err := os.Stat(path)
+	info, err := os.Stat(path)
 	if err == nil {
+		if !info.IsDir() {
+			return os.ErrExist
+		}
 		return nil
 	}
 	if os.IsNotExist(err) {
