@@ -4,7 +4,6 @@ import (
 	"fkteams/fkenv"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -18,7 +17,7 @@ type uvInitializer struct{}
 func (u *uvInitializer) Name() string { return "uv" }
 
 func (u *uvInitializer) Run() error {
-	uvPath, err := exec.LookPath("uv")
+	uvPath, err := lookPath("uv")
 	if err != nil {
 		pterm.Warning.Println("未检测到 uv，正在安装...")
 		if err := u.install(); err != nil {
@@ -26,7 +25,7 @@ func (u *uvInitializer) Run() error {
 		}
 	} else {
 		// 获取当前版本并升级
-		out, _ := exec.Command(uvPath, "--version").CombinedOutput()
+		out, _ := combinedOutput(uvPath, "--version")
 		currentVersion := strings.TrimSpace(string(out))
 		pterm.Info.Printfln("当前版本: %s，正在检查更新...", currentVersion)
 
@@ -34,7 +33,7 @@ func (u *uvInitializer) Run() error {
 			return fmt.Errorf("upgrade failed: %w", err)
 		}
 
-		out, _ = exec.Command(uvPath, "--version").CombinedOutput()
+		out, _ = combinedOutput(uvPath, "--version")
 		newVersion := strings.TrimSpace(string(out))
 		if newVersion != currentVersion {
 			pterm.Info.Printfln("已升级: %s → %s", currentVersion, newVersion)
@@ -49,17 +48,16 @@ func (u *uvInitializer) Run() error {
 
 // install 执行 uv 安装，支持 FEIKONG_PROXY_URL 代理
 func (u *uvInitializer) install() error {
-	var cmd *exec.Cmd
+	var name string
+	var args []string
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("powershell", "-ExecutionPolicy", "ByPass", "-c",
-			"irm https://astral.sh/uv/install.ps1 | iex")
+		name = "powershell"
+		args = []string{"-ExecutionPolicy", "ByPass", "-c", "irm https://astral.sh/uv/install.ps1 | iex"}
 	} else {
-		cmd = exec.Command("sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh")
+		name = "sh"
+		args = []string{"-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"}
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = appendProxyEnv(os.Environ())
-	if err := cmd.Run(); err != nil {
+	if err := runCommand(appendProxyEnv(os.Environ()), name, args...); err != nil {
 		return fmt.Errorf("install command failed: %w", err)
 	}
 	return nil
@@ -67,10 +65,7 @@ func (u *uvInitializer) install() error {
 
 // upgrade 升级 uv 到最新版本
 func (u *uvInitializer) upgrade(uvPath string) error {
-	cmd := exec.Command(uvPath, "self", "update")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runCommand(nil, uvPath, "self", "update")
 }
 
 // ConfigureMirror 当 FEIKONG_PROXY_URL 不为空或 mirror 为 true 时，配置 uv 国内镜像源
