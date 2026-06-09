@@ -5,7 +5,8 @@
 class FKTeamsChat {
   constructor() {
     this.ws = null;
-    this.sessionId = localStorage.getItem("fk_session_id") || "";
+    this._startupSessionId = localStorage.getItem("fk_session_id") || "";
+    this.sessionId = "";
     this._hasLoadedSession = false;
     this.mode = "team";
     this.isProcessing = false;
@@ -170,11 +171,7 @@ class FKTeamsChat {
     }
     this.loadAgents();
     this.loadVersion();
-    // 仅在页面全新加载（DOM 为空）时自动恢复会话历史
-    // 如果 DOM 已有内容，说明浏览器保留了页面状态，不应覆盖
-    if (this.sessionId && this.messagesContainer.querySelector(".welcome-message")) {
-      this.loadSession(this.sessionId);
-    }
+    this.restoreStartupSessionIfActive();
     this.connect();
   }
 
@@ -185,9 +182,7 @@ class FKTeamsChat {
     this.sendBtn = document.getElementById("send-btn");
     this.cancelBtn = document.getElementById("cancel-btn");
     this.sessionIdInput = document.getElementById("session-id");
-    if (this.sessionId) {
-      this.sessionIdInput.value = this.sessionId;
-    }
+    this.sessionIdInput.value = this.sessionId;
     this.statusIndicator = document.getElementById("status-indicator");
     this.historyManageBtn = document.getElementById("history-manage-btn");
     this.historySearchInput = document.getElementById("history-search-input");
@@ -225,6 +220,26 @@ class FKTeamsChat {
       this.queuePanel.className = "runtime-queue-panel";
       this.queuePanel.style.display = "none";
       inputWrapper.parentNode.insertBefore(this.queuePanel, inputWrapper);
+    }
+  }
+
+  async restoreStartupSessionIfActive() {
+    const sessionId = this._startupSessionId;
+    if (!sessionId || !this.messagesContainer?.querySelector(".welcome-message")) {
+      return;
+    }
+    try {
+      const response = await this.fetchWithAuth(
+        `/api/fkteams/sessions/${encodeURIComponent(sessionId)}`,
+        { cache: "no-cache" },
+      );
+      if (!response.ok) return;
+      const result = await response.json();
+      if (result.code === 0 && result.data?.active_task) {
+        this.loadSession(sessionId);
+      }
+    } catch (error) {
+      console.error("Error checking startup session:", error);
     }
   }
 

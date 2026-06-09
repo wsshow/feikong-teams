@@ -13,10 +13,6 @@ FKTeamsChat.prototype.loadAgents = async function () {
     } catch (error) {
         console.error('加载智能体列表失败:', error);
     }
-    // 智能体列表就绪后，尝试恢复上次会话
-    if (this.sessionId && !this._hasLoadedSession) {
-        this.loadSession(this.sessionId);
-    }
 };
 
 // 处理输入框输入，检测@提及和#文件
