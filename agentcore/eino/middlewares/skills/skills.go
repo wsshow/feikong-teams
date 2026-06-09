@@ -14,8 +14,11 @@ import (
 )
 
 func ensureDir(path string) error {
-	_, err := os.Stat(path)
+	info, err := os.Stat(path)
 	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%s 不是目录", path)
+		}
 		return nil
 	}
 	if os.IsNotExist(err) {
