@@ -3,6 +3,8 @@ package deepseek
 import (
 	"context"
 
+	deepseekModel "github.com/cloudwego/eino-ext/components/model/deepseek"
+
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
 	"fkteams/providers/providerkit"
@@ -10,7 +12,7 @@ import (
 
 // New 创建 DeepSeek 原生 API 的聊天模型
 func New(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
-	chatModel, err := NewChatModel(ctx, &ChatModelConfig{
+	chatModel, err := deepseekModel.NewChatModel(ctx, &deepseekModel.ChatModelConfig{
 		APIKey:     cfg.APIKey,
 		BaseURL:    cfg.BaseURL,
 		Model:      cfg.Model,
