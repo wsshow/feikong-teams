@@ -1402,6 +1402,8 @@ FKTeamsChat.prototype.renderHistoryAgentMessage = function (msg) {
         if (evt.action) {
           this.renderSingleAction(evt.action, msg.agent_name);
         }
+        currentMessageEl = null;
+        currentContent = "";
         break;
     }
   });
