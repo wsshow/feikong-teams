@@ -40,24 +40,28 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 			ContextTokens: maxBefore,
 		},
 		Callback: func(ctx context.Context, _ adk.ChatModelAgentState, after adk.ChatModelAgentState) error {
-			summaryText := latestSummaryText(after.Messages)
-			if cb, ok := agentcore.SummaryPersistCallbackFromContext(ctx); ok {
-				cb(summaryText)
-			}
-			_ = events.DispatchEvent(ctx, events.Event{
-				Type:       events.EventAction,
-				AgentName:  "系统",
-				ActionType: events.ActionContextCompress,
-				Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
-				Detail:     summaryText,
-			})
-			return nil
+			return handleSummaryCallback(ctx, after)
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	return einoruntime.WrapAgentMiddleware("summary", handler), nil
+}
+
+func handleSummaryCallback(ctx context.Context, after adk.ChatModelAgentState) error {
+	summaryText := latestSummaryText(after.Messages)
+	if cb, ok := agentcore.SummaryPersistCallbackFromContext(ctx); ok {
+		cb(summaryText)
+	}
+	_ = events.DispatchEvent(ctx, events.Event{
+		Type:       events.EventAction,
+		AgentName:  "系统",
+		ActionType: events.ActionContextCompress,
+		Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
+		Detail:     summaryText,
+	})
+	return nil
 }
 
 func latestSummaryText(messages []*schema.Message) string {
