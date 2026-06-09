@@ -9,6 +9,28 @@ function newChatWithRecordedMigrations() {
   return chat;
 }
 
+test("message event hides thinking after visible render handler", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const calls = [];
+  chat.sessionId = "session-1";
+  chat.rememberStreamEvent = () => {};
+  chat.handleCoreMessageDelta = () => {
+    calls.push("render");
+  };
+  chat.hideThinkingIndicator = () => {
+    calls.push("hide");
+  };
+
+  chat.handleServerEvent({
+    type: "message_delta",
+    session_id: "session-1",
+    role: "assistant",
+    content: "hello",
+  });
+
+  assert.deepEqual(calls, ["render", "hide"]);
+});
+
 test("member tool flow key uses only canonical ref", () => {
   const chat = newChatWithRecordedMigrations();
   const entry = {};

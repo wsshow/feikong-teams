@@ -946,6 +946,7 @@ FKTeamsChat.prototype.handleMemberStreamChunk = function (event) {
   this.flushMemberInnerToolResults(entry, this.memberCallIDFromEvent(event));
   this.updateMemberActivity(entry, "输出中");
   this.appendMemberStreamEvent(entry, event, "output", "输出");
+  this.hideThinkingAfterVisibleRender(event);
   this.scrollToBottom();
 };
 
@@ -954,6 +955,7 @@ FKTeamsChat.prototype.handleMemberReasoningChunk = function (event) {
   if (!entry) return;
   this.updateMemberActivity(entry, "正在思考");
   this.appendMemberStreamEvent(entry, event, "reasoning", "思考过程");
+  this.hideThinkingAfterVisibleRender(event);
   this.scrollToBottom();
 };
 
@@ -966,6 +968,7 @@ FKTeamsChat.prototype.handleMemberMessage = function (event) {
   if (event.content) this.updateMemberActivity(entry, "输出完成");
   this.finalizeMemberMarkdown(entry);
   this.updateMemberStatus(entry, "done", "完成");
+  this.hideThinkingAfterVisibleRender(event);
   this.scrollToBottom();
 };
 
@@ -1194,6 +1197,17 @@ FKTeamsChat.prototype.shouldHideThinkingIndicatorForEvent = function (event) {
   }
 };
 
+FKTeamsChat.prototype.hideThinkingAfterVisibleRender = function (event) {
+  if (!event) return;
+  if (event.type === "message_start" && event.role !== "user" && event.role !== "tool") {
+    this.hideThinkingIndicator();
+    return;
+  }
+  if (this.shouldHideThinkingIndicatorForEvent(event)) {
+    this.hideThinkingIndicator();
+  }
+};
+
 // 显示智能体切换通知
 FKTeamsChat.prototype.showAgentSwitchNotification = function (
   agentName,
@@ -1288,10 +1302,6 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     return;
   }
 
-  // 首个可见内容事件到来时移除思考指示器；生命周期事件不算响应内容。
-  if (this.shouldHideThinkingIndicatorForEvent(event)) {
-    this.hideThinkingIndicator();
-  }
   // resume 后收到内容事件则标记回放成功
   if (
     this._resumePending &&
@@ -1348,50 +1358,62 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       break;
     case "cancelled":
       this.handleCancelled(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "message_start":
       if (this._cancelledSessionId === eventSessionId) break;
       this.updateThinkingIndicator("准备响应");
       this.handleCoreMessageStart(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "message_delta":
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleCoreMessageDelta(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "message_end":
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleCoreMessageEnd(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "tool_start":
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleCoreToolStart(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "tool_update":
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleCoreToolUpdate(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "tool_end":
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleCoreToolEnd(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "action":
       if (this._cancelledSessionId === eventSessionId) break;
       this.handleAction(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "usage":
       break;
     case "dispatch_progress":
       this.handleDispatchProgress(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "approval_required":
       this.showApprovalRequest(event.message);
       this.showApprovalDialog(event.message);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "ask_questions":
       this.showInlineAskForm(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     case "error":
       this.handleError(event);
+      this.hideThinkingAfterVisibleRender(event);
       break;
     default:
       console.log("Unknown event:", event);
@@ -2045,11 +2067,13 @@ FKTeamsChat.prototype.handleCoreMessageStart = function (event) {
     const entry = this.memberEntryFromEvent(event);
     if (!entry) return;
     this.updateMemberActivity(entry, event.delta_kind === "reasoning" ? "正在思考" : "准备输出");
+    this.hideThinkingAfterVisibleRender(event);
     this.scrollToBottom();
     return;
   }
   this.finalizeParallelMemberResults();
   this.getMessageElementForEvent(event);
+  this.hideThinkingAfterVisibleRender(event);
   this.scrollToBottom();
 };
 
@@ -2093,6 +2117,7 @@ FKTeamsChat.prototype.handleCoreMessageEnd = function (event) {
     this.handleToolCallsPreparing(event);
     this.handleToolCalls(event);
   }
+  this.hideThinkingAfterVisibleRender(event);
 };
 
 FKTeamsChat.prototype.handleCoreToolStart = function (event) {
@@ -2102,6 +2127,7 @@ FKTeamsChat.prototype.handleCoreToolStart = function (event) {
   if (toolCall.arguments) {
     this.handleToolCalls(nextEvent);
   }
+  this.hideThinkingAfterVisibleRender(event);
 };
 
 FKTeamsChat.prototype.handleCoreToolArgsDelta = function (event) {
@@ -2116,6 +2142,7 @@ FKTeamsChat.prototype.handleCoreToolArgsDelta = function (event) {
   }
 
   this.handleToolCallsArgsDelta({ ...event, content });
+  this.hideThinkingAfterVisibleRender(event);
 };
 
 FKTeamsChat.prototype.handleCoreToolUpdate = function (event) {
@@ -2126,12 +2153,14 @@ FKTeamsChat.prototype.handleCoreToolUpdate = function (event) {
   }
   if (!content) return;
   this.handleToolResult({ ...event, type: "tool_result_chunk", content });
+  this.hideThinkingAfterVisibleRender(event);
 };
 
 FKTeamsChat.prototype.handleCoreToolEnd = function (event) {
   const content = event.tool_result || event.content || "";
   if (!content) return;
   this.handleToolResult({ ...event, type: "tool_result", content });
+  this.hideThinkingAfterVisibleRender(event);
 };
 
 FKTeamsChat.prototype.handleStreamChunk = function (event) {
