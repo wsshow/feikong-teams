@@ -31,6 +31,28 @@ function fakeMessageBody() {
   };
 }
 
+function fakeClassList(initial = []) {
+  const classes = new Set(initial);
+  return {
+    add(name) { classes.add(name); },
+    remove(name) { classes.delete(name); },
+    contains(name) { return classes.has(name); },
+  };
+}
+
+function fakeElement() {
+  return {
+    innerHTML: "",
+    className: "",
+    classList: fakeClassList(),
+    setAttribute() {},
+    addEventListener() {},
+    querySelector() {
+      return { addEventListener() {} };
+    },
+  };
+}
+
 test("history action splits assistant text timeline", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   const bodies = [];
@@ -95,16 +117,11 @@ test("sidebar history shows loading before debounced fetch", () => {
 
 test("sidebar session render clears loading layout", () => {
   const chat = Object.create(FKTeamsChat.prototype);
-  const classes = new Set(["loading"]);
   chat.sidebarSessionList = {
     innerHTML: "",
     appendChild() {},
     querySelectorAll() { return []; },
-    classList: {
-      add(name) { classes.add(name); },
-      remove(name) { classes.delete(name); },
-      contains(name) { return classes.has(name); },
-    },
+    classList: fakeClassList(["loading"]),
   };
   chat._sidebarMenuOutsideBound = true;
   chat.escapeHtml = (value) => String(value || "");
@@ -113,4 +130,43 @@ test("sidebar session render clears loading layout", () => {
   chat.renderSidebarSessions([]);
 
   assert.equal(chat.sidebarSessionList.classList.contains("loading"), false);
+});
+
+test("sidebar session render shows labels for stored statuses", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const items = [];
+  const oldDocument = global.document;
+  global.document = {
+    createElement() {
+      return fakeElement();
+    },
+  };
+  chat.sidebarSessionList = {
+    innerHTML: "",
+    appendChild(item) { items.push(item); },
+    querySelectorAll() { return []; },
+    classList: fakeClassList(),
+  };
+  chat._sidebarMenuOutsideBound = true;
+  chat.escapeHtml = (value) => String(value || "");
+  chat.formatTime = () => "刚刚";
+
+  try {
+    chat.renderSidebarSessions([
+      { session_id: "completed", title: "done", status: "completed", mod_time: "2026-01-01T00:00:00Z" },
+      { session_id: "error", title: "err", status: "error", mod_time: "2026-01-01T00:00:00Z" },
+      { session_id: "cancelled", title: "cancel", status: "cancelled", mod_time: "2026-01-01T00:00:00Z" },
+      { session_id: "idle", title: "idle", status: "idle", mod_time: "2026-01-01T00:00:00Z" },
+      { session_id: "active", title: "active", status: "active", mod_time: "2026-01-01T00:00:00Z" },
+    ]);
+
+    const html = items.map((item) => item.innerHTML).join("\n");
+    assert.match(html, /已完成/);
+    assert.match(html, /失败/);
+    assert.match(html, /已取消/);
+    assert.match(html, /未开始/);
+    assert.match(html, /已保存/);
+  } finally {
+    global.document = oldDocument;
+  }
 });

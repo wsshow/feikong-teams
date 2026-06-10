@@ -448,6 +448,19 @@
     color: var(--success);
 }
 
+.session-status-label.error {
+    color: var(--error);
+}
+
+.session-status-label.cancelled,
+.session-status-label.idle {
+    color: var(--text-tertiary);
+}
+
+.session-status-label.active {
+    color: var(--info);
+}
+
 @keyframes session-pulse {
 
     0%,

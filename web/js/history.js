@@ -144,8 +144,11 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
     if (isProcessing) {
       statusHtml =
         '<span class="session-status-label processing">处理中</span>';
-    } else if (file.status === "completed") {
-      statusHtml = '<span class="session-status-label completed">已完成</span>';
+    } else {
+      const statusInfo = this.getSidebarSessionStatusInfo(file.status);
+      if (statusInfo) {
+        statusHtml = `<span class="session-status-label ${statusInfo.className}">${statusInfo.label}</span>`;
+      }
     }
 
     item.innerHTML = `
@@ -232,6 +235,17 @@ FKTeamsChat.prototype.renderSidebarSessions = function (files) {
 
     this.sidebarSessionList.appendChild(item);
   });
+};
+
+FKTeamsChat.prototype.getSidebarSessionStatusInfo = function (status) {
+  const map = {
+    completed: { label: "已完成", className: "completed" },
+    error: { label: "失败", className: "error" },
+    cancelled: { label: "已取消", className: "cancelled" },
+    idle: { label: "未开始", className: "idle" },
+    active: { label: "已保存", className: "active" },
+  };
+  return map[status] || null;
 };
 
 FKTeamsChat.prototype.closeSidebarSessionMenus = function () {
