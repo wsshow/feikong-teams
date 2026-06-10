@@ -216,13 +216,17 @@ test("thinking indicator hides for visible message content", () => {
   }), false);
 });
 
-test("queued executing user message waits for processing start", () => {
+test("queued executing user message renders from user_message event", () => {
   const chat = Object.create(FKTeamsChat.prototype);
-  let added = 0;
+  let rendered = null;
+  let turnID = "";
 
   chat.messagesContainer = { querySelectorAll: () => [] };
-  chat.addUserMessage = () => {
-    added += 1;
+  chat.beginRealtimeTurn = (id) => {
+    turnID = id;
+  };
+  chat.addQueuedFollowUpMessage = (content, queueID) => {
+    rendered = { content, queueID };
   };
 
   chat.handleUserMessageEvent({
@@ -230,19 +234,27 @@ test("queued executing user message waits for processing start", () => {
     content: "later",
     queued_executing: true,
     queue_kind: "follow_up",
+    queue_id: "queue-1",
+    turn_id: "turn-1",
   });
 
-  assert.equal(added, 0);
+  assert.equal(turnID, "turn-1");
+  assert.deepEqual(rendered, { content: "later", queueID: "queue-1" });
 });
 
-test("queued follow-up is rendered when processing starts", () => {
+test("processing start does not render queued follow-up user card", () => {
   const chat = Object.create(FKTeamsChat.prototype);
-  let rendered = null;
+  const calls = [];
 
   chat.updateStatus = () => {};
-  chat.showThinkingIndicator = () => {};
+  chat.beginRealtimeTurn = (id) => {
+    calls.push({ turnID: id });
+  };
+  chat.showThinkingIndicator = () => {
+    calls.push("thinking");
+  };
   chat.addQueuedFollowUpMessage = (content, queueID) => {
-    rendered = { content, queueID };
+    calls.push({ content, queueID });
   };
 
   chat.handleProcessingStart({
@@ -251,9 +263,88 @@ test("queued follow-up is rendered when processing starts", () => {
     queue_kind: "follow_up",
     content: "later",
     queue_id: "queue-1",
+    turn_id: "turn-1",
   });
 
-  assert.deepEqual(rendered, { content: "later", queueID: "queue-1" });
+  assert.deepEqual(calls, [{ turnID: "turn-1" }, "thinking"]);
+});
+
+test("realtime turn change resets render state once", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let finalized = 0;
+  let reset = 0;
+
+  chat.finalizeParallelMemberResults = () => {
+    finalized += 1;
+  };
+  chat.resetParallelState = () => {
+    reset += 1;
+  };
+
+  chat.beginRealtimeTurn("turn-1");
+  chat.beginRealtimeTurn("turn-1");
+
+  assert.equal(finalized, 1);
+  assert.equal(reset, 1);
+  assert.equal(chat.currentRealtimeTurnID, "turn-1");
+});
+
+test("queued steering does not reset realtime turn state", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let turnID = "";
+
+  chat.updateStatus = () => {};
+  chat.showThinkingIndicator = () => {};
+  chat.addSteeringExecutionNotice = () => {};
+  chat.beginRealtimeTurn = (id) => {
+    turnID = id;
+  };
+
+  chat.handleProcessingStart({
+    type: "processing_start",
+    queued_executing: true,
+    queue_kind: "steering",
+    content: "adjust",
+    queue_id: "queue-1",
+    turn_id: "turn-1",
+  });
+
+  assert.equal(turnID, "turn-1");
+});
+
+test("user message is inserted before existing thinking indicator", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const oldDocument = global.document;
+  const messageEl = {
+    className: "",
+    dataset: {},
+    innerHTML: "",
+    setAttribute() {},
+  };
+  const calls = [];
+  const container = {
+    insertBefore(child, before) { calls.push({ action: "insertBefore", child, before }); },
+    appendChild(child) { calls.push({ action: "appendChild", child }); },
+  };
+  const thinking = { parentElement: container };
+
+  global.document = {
+    createElement() { return messageEl; },
+    getElementById(id) { return id === "thinking-indicator" ? thinking : null; },
+  };
+  chat.messagesContainer = container;
+  chat.getCurrentTime = () => "00:00";
+  chat.escapeHtml = (value) => String(value || "");
+  chat.addQuestionToNav = () => {};
+  chat.scrollToBottom = () => {};
+
+  try {
+    chat.addUserMessage("later", null);
+  } finally {
+    global.document = oldDocument;
+  }
+
+  assert.deepEqual(calls, [{ action: "insertBefore", child: messageEl, before: thinking }]);
 });
 
 test("dispatch task handling does not assume the first tool call", () => {

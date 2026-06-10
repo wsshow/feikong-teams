@@ -337,26 +337,28 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
-	stream.Publish(map[string]any{
+	currentRunID := newTurnRunID(sessionID)
+	stream.Publish(attachTurnMeta(map[string]any{
 		"type":       events.NotifyUserMessage,
 		"session_id": sessionID,
 		"content":    userDisplayText,
-	})
+	}, currentRunID))
 
 	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
-	steeringSource := buildSteeringSource(stream, recorder, sessionID)
+	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
 	updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
-	stream.Publish(map[string]any{
+	stream.Publish(attachTurnMeta(map[string]any{
 		"type":       events.NotifyProcessingStart,
 		"session_id": sessionID,
 		"message":    "开始处理您的请求...",
-	})
+	}, currentRunID))
 
 	for {
 		_, runErr := engine.NewSession(r, sessionID).
+			WithRunID(currentRunID).
 			WithInput(currentInput).
 			OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)).
 			WithHistory(recorder).
@@ -392,8 +394,9 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
+			currentRunID = queuedTurnRunID(sessionID, queued)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
-			publishQueuedExecutionStart(stream, sessionID, queued)
+			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
 			continue
 		}
 

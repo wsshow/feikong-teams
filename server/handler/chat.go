@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var globalRunnerCache = runner.NewCache()
@@ -33,6 +35,33 @@ func resolveRunner(ctx context.Context, mode, agentName string) (agentcore.Runne
 }
 
 // --- 聊天输入构建 ---
+
+func newTurnRunID(sessionID string) string {
+	return fmt.Sprintf("%s:run:%s", sessionID, uuid.NewString())
+}
+
+func queuedTurnRunID(sessionID string, queued taskstream.QueuedMessage) string {
+	if queued.ID != "" {
+		return fmt.Sprintf("%s:queue:%s", sessionID, queued.ID)
+	}
+	return newTurnRunID(sessionID)
+}
+
+func turnIDForRun(runID string) string {
+	if runID == "" {
+		return ""
+	}
+	return events.TurnID(runID, 1)
+}
+
+func attachTurnMeta(data map[string]any, runID string) map[string]any {
+	if runID == "" {
+		return data
+	}
+	data["run_id"] = runID
+	data["turn_id"] = turnIDForRun(runID)
+	return data
+}
 
 // buildChatInput 构建输入消息（含历史），支持多模态
 func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart, manager appstate.MemoryManager) (input engine.TurnInput, displayText string) {
@@ -108,23 +137,23 @@ func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
 	})
 }
 
-func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, queued taskstream.QueuedMessage) {
+func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, queued taskstream.QueuedMessage, runID string) {
 	if queued.Kind == taskstream.QueueFollowUp {
-		stream.Publish(map[string]any{
+		stream.Publish(attachTurnMeta(map[string]any{
 			"type":             events.NotifyUserMessage,
 			"session_id":       sessionID,
 			"content":          queued.DisplayText,
 			"queue_id":         queued.ID,
 			"queue_kind":       string(queued.Kind),
 			"queued_executing": true,
-		})
+		}, runID))
 	}
 
 	message := "继续处理排队消息..."
 	if queued.Kind == taskstream.QueueSteering {
 		message = "应用转向消息..."
 	}
-	stream.Publish(map[string]any{
+	stream.Publish(attachTurnMeta(map[string]any{
 		"type":             events.NotifyProcessingStart,
 		"session_id":       sessionID,
 		"message":          message,
@@ -132,10 +161,10 @@ func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, qu
 		"queue_kind":       string(queued.Kind),
 		"content":          queued.DisplayText,
 		"queued_executing": true,
-	})
+	}, runID))
 }
 
-func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) agentcore.SteeringSource {
+func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string) agentcore.SteeringSource {
 	return func(context.Context) ([]agentcore.Message, error) {
 		queued := stream.TakeSteeringMessages(1)
 		if len(queued) == 0 {
@@ -148,7 +177,11 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 			recorder.RecordUserMessage(message)
 			messages = append(messages, message)
 		}
-		publishQueuedExecutionStart(stream, sessionID, queued[0])
+		runID := ""
+		if currentRunID != nil {
+			runID = currentRunID()
+		}
+		publishQueuedExecutionStart(stream, sessionID, queued[0], runID)
 		return messages, nil
 	}
 }
@@ -346,6 +379,9 @@ func convertEventToMap(event events.Event) map[string]any {
 	result := map[string]any{
 		"type":       event.Type,
 		"agent_name": event.AgentName,
+	}
+	if event.RunID != "" {
+		result["run_id"] = event.RunID
 	}
 	if event.EventID != "" {
 		result["event_id"] = event.EventID

@@ -102,20 +102,21 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		})
 
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
-		stream.Publish(map[string]any{
+		initialRunID := newTurnRunID(sessionID)
+		stream.Publish(attachTurnMeta(map[string]any{
 			"type":       events.NotifyUserMessage,
 			"session_id": sessionID,
 			"content":    userDisplayText,
-		})
+		}, initialRunID))
 
-		stream.Publish(map[string]any{
+		stream.Publish(attachTurnMeta(map[string]any{
 			"type":       events.NotifyProcessingStart,
 			"session_id": sessionID,
 			"message":    "开始处理您的请求...",
-		})
+		}, initialRunID))
 
 		// 后台执行任务
-		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager)
+		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
 
 		OK(c, gin.H{
 			"session_id": sessionID,
@@ -328,15 +329,20 @@ func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream 
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string, manager appstate.MemoryManager) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
-	steeringSource := buildSteeringSource(stream, recorder, sessionID)
+	currentRunID := initialRunID
+	if currentRunID == "" {
+		currentRunID = newTurnRunID(sessionID)
+	}
+	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
 	for {
 		_, runErr := engine.NewSession(r, sessionID).
+			WithRunID(currentRunID).
 			WithInput(currentInput).
 			OnEvent(func(event events.Event) error {
 				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
@@ -385,8 +391,9 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
+			currentRunID = queuedTurnRunID(sessionID, queued)
 			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
-			publishQueuedExecutionStart(stream, sessionID, queued)
+			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
 			continue
 		}
 

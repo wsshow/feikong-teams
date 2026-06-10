@@ -43,6 +43,11 @@ func (s *Session) WithMessages(messages []agentcore.Message) *Session {
 	return s
 }
 
+func (s *Session) WithRunID(runID string) *Session {
+	s.cfg.RunID = runID
+	return s
+}
+
 func (s *Session) OnEvent(handler EventHandler) *Session {
 	s.cfg.EventCallback = handler
 	return s

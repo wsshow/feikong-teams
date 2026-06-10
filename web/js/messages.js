@@ -52,12 +52,20 @@ FKTeamsChat.prototype.normalizeToolCallsForEvent = function (event) {
 };
 
 FKTeamsChat.prototype.getStreamKey = function (event) {
-  return [event.agent_name || "", event.run_path || ""].join("|");
+  return [event.turn_id || this.currentRealtimeTurnID || "", event.agent_name || "", event.run_path || ""].join("|");
+};
+
+FKTeamsChat.prototype.beginRealtimeTurn = function (turnID) {
+  if (!turnID || this.currentRealtimeTurnID === turnID) return;
+  this.finalizeParallelMemberResults();
+  this.resetParallelState();
+  this.currentRealtimeTurnID = turnID;
 };
 
 FKTeamsChat.prototype.resetParallelState = function () {
   this.currentMessageElement = null;
   this.currentMessageElements = {};
+  this.currentRealtimeTurnID = "";
   this.pendingToolCalls = {};
   this.toolCallsByID = {};
   this.parallelPanel = null;
@@ -1312,6 +1320,10 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
     this._resumeReplayed = true;
   }
 
+  if (event.turn_id) {
+    this.beginRealtimeTurn(event.turn_id);
+  }
+
   switch (event.type) {
     case "connected":
       break;
@@ -1423,12 +1435,18 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
 FKTeamsChat.prototype.handleUserMessageEvent = function (event) {
   const content = event.content || "";
   if (!content) return;
+  if (event.turn_id) {
+    this.beginRealtimeTurn(event.turn_id);
+  }
 
   if (event.queued) {
     return;
   }
 
   if (event.queued_executing) {
+    if (event.queue_kind === "follow_up") {
+      this.addQueuedFollowUpMessage(content, event.queue_id || "");
+    }
     return;
   }
 
@@ -1449,12 +1467,13 @@ FKTeamsChat.prototype.handleProcessingStart = function (event, eventSessionId) {
   this._resumePending = false;
   this.isProcessing = true;
   this.updateStatus("processing", "处理中...");
-  this.showThinkingIndicator(event.queued_executing ? "处理队列" : "思考中");
+  if (event.turn_id) {
+    this.beginRealtimeTurn(event.turn_id);
+  }
   if (event.queued_executing && event.queue_kind === "steering") {
     this.addSteeringExecutionNotice(event.content || "", event.queue_id || "");
-  } else if (event.queued_executing && event.queue_kind === "follow_up") {
-    this.addQueuedFollowUpMessage(event.content || "", event.queue_id || "");
   }
+  this.showThinkingIndicator(event.queued_executing ? "处理队列" : "思考中");
 };
 
 FKTeamsChat.prototype.addQueuedFollowUpMessage = function (content, queueID) {
@@ -3121,7 +3140,12 @@ FKTeamsChat.prototype.addUserMessage = function (content, attachments, options) 
             <div class="message-body">${this.escapeHtml(content)}</div>
         </div>
     `;
-  this.messagesContainer.appendChild(messageEl);
+  const thinking = document.getElementById("thinking-indicator");
+  if (thinking && thinking.parentElement === this.messagesContainer) {
+    this.messagesContainer.insertBefore(messageEl, thinking);
+  } else {
+    this.messagesContainer.appendChild(messageEl);
+  }
 
   // 添加到问题列表
   this.addQuestionToNav(content, messageEl);

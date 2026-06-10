@@ -23,7 +23,7 @@ func (e *core) run(ctx context.Context, cfg runConfig) (*agentcore.RunResult, er
 		cfg.OnStart(ctx)
 	}
 
-	result, err := e.runLoop(ctx, input, cfg.interruptHandler())
+	result, err := e.runLoop(ctx, input, cfg.RunID, cfg.interruptHandler())
 
 	if hookErr := cfg.invokeAfterRun(ctx, input, result, err); hookErr != nil && err == nil {
 		err = hookErr

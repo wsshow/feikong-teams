@@ -23,10 +23,12 @@ func (h *historySinkStub) SetSummary(string, int) {}
 
 type runnerStub struct {
 	input agentcore.TurnInput
+	opts  agentcore.RunOptions
 }
 
-func (r *runnerStub) Run(_ context.Context, input agentcore.TurnInput, _ agentcore.RunOptions) (*agentcore.RunResult, error) {
+func (r *runnerStub) Run(_ context.Context, input agentcore.TurnInput, opts agentcore.RunOptions) (*agentcore.RunResult, error) {
 	r.input = input
+	r.opts = opts
 	return &agentcore.RunResult{}, nil
 }
 
@@ -75,6 +77,13 @@ func TestSessionBuilderConfiguresRunConfig(t *testing.T) {
 	}
 }
 
+func TestSessionBuilderConfiguresRunID(t *testing.T) {
+	session := NewSession(&runnerStub{}, "session-1").WithRunID("run-1")
+	if session.cfg.RunID != "run-1" {
+		t.Fatalf("run id = %q, want run-1", session.cfg.RunID)
+	}
+}
+
 func TestSessionBuilderConfiguresHookBus(t *testing.T) {
 	bus := hooks.NewBus()
 	session := NewSession(&runnerStub{}, "session-1").WithHookBus(bus)
@@ -96,6 +105,23 @@ func TestSessionBuilderConfiguresTurnInput(t *testing.T) {
 	}
 	if session.cfg.Input.Message.Content != "hello" {
 		t.Fatalf("input message = %q, want hello", session.cfg.Input.Message.Content)
+	}
+}
+
+func TestSessionRunUsesConfiguredRunID(t *testing.T) {
+	runner := &runnerStub{}
+	_, err := NewSession(runner, "session-1").
+		WithRunID("run-1").
+		WithText("hello").
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if runner.opts.RunID != "run-1" {
+		t.Fatalf("run id = %q, want run-1", runner.opts.RunID)
+	}
+	if runner.opts.CheckpointID != "session-1" {
+		t.Fatalf("checkpoint id = %q, want session-1", runner.opts.CheckpointID)
 	}
 }
 

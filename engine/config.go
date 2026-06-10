@@ -23,6 +23,9 @@ type runConfig struct {
 	// Input 本轮运行输入
 	Input agentcore.TurnInput
 
+	// RunID 本轮运行 ID；为空时使用 checkpointID
+	RunID string
+
 	// EventCallback 接收智能体执行期间的事件
 	EventCallback func(events.Event) error
 

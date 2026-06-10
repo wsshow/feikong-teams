@@ -99,6 +99,18 @@ func TestConvertEventToMapOmitsStreamMetadataForNonDeltaEvents(t *testing.T) {
 	}
 }
 
+func TestConvertEventToMapKeepsRunAndTurnID(t *testing.T) {
+	got := convertEventToMap(events.Event{
+		Type:   events.EventMessageStart,
+		RunID:  "run-1",
+		TurnID: "run-1:turn:1",
+		Role:   agentcore.RoleAssistant,
+	})
+
+	requireMapValue(t, got, "run_id", "run-1")
+	requireMapValue(t, got, "turn_id", "run-1:turn:1")
+}
+
 func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
 	toolIndex := 0
 	got := convertEventToMap(events.Event{
