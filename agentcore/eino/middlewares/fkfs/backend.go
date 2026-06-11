@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"fkteams/common/pathguard"
+
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/spf13/afero"
@@ -23,10 +25,10 @@ type LocalBackend struct {
 func NewLocalBackend(baseDir string) (*LocalBackend, error) {
 	absPath, err := filepath.Abs(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
+		return nil, fmt.Errorf("resolve absolute path: %w", err)
 	}
 	if err := os.MkdirAll(absPath, 0755); err != nil {
-		return nil, fmt.Errorf("无法创建目录 %s: %w", absPath, err)
+		return nil, fmt.Errorf("create directory %s: %w", absPath, err)
 	}
 	return &LocalBackend{
 		fs:      afero.NewBasePathFs(afero.NewOsFs(), absPath),
@@ -34,29 +36,60 @@ func NewLocalBackend(baseDir string) (*LocalBackend, error) {
 	}, nil
 }
 
-// resolvePath 将路径转换为相对于 baseDir 的路径，供 BasePathFs 使用
-func (b *LocalBackend) resolvePath(path string) string {
-	absPath, err := filepath.Abs(path)
+// resolvePath 将宿主机绝对路径和虚拟根路径统一约束到 baseDir 下。
+func (b *LocalBackend) resolvePath(path string) (string, error) {
+	resolved, err := pathguard.ResolveWorkspace(b.baseDir, b.normalizePath(path))
 	if err != nil {
-		return path
+		return "", err
 	}
-	rel, err := filepath.Rel(b.baseDir, absPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return path
+	if resolved.RelPath == "" {
+		return ".", nil
 	}
-	return rel
+	return resolved.RelPath, nil
+}
+
+func (b *LocalBackend) normalizePath(path string) string {
+	if path == "" {
+		return "."
+	}
+	cleanPath := filepath.Clean(path)
+	if !filepath.IsAbs(cleanPath) || isWithinBase(cleanPath, b.baseDir) {
+		return cleanPath
+	}
+	volume := filepath.VolumeName(cleanPath)
+	cleanPath = strings.TrimPrefix(cleanPath, volume)
+	cleanPath = strings.TrimLeft(cleanPath, string(filepath.Separator))
+	if cleanPath == "" {
+		return "."
+	}
+	return cleanPath
+}
+
+func isWithinBase(path, base string) bool {
+	path = filepath.Clean(path)
+	base = filepath.Clean(base)
+	return path == base || strings.HasPrefix(path, base+string(os.PathSeparator))
 }
 
 func (b *LocalBackend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, fmt.Errorf("ls request is nil")
+	}
 	path := req.Path
 	if path == "" {
 		path = "."
 	}
-	path = b.resolvePath(path)
+	path, err := b.resolvePath(path)
+	if err != nil {
+		return nil, err
+	}
 
 	entries, err := afero.ReadDir(b.fs, path)
 	if err != nil {
-		return nil, fmt.Errorf("无法读取目录 %s: %w", path, err)
+		return nil, fmt.Errorf("read directory %s: %w", req.Path, err)
 	}
 
 	result := make([]filesystem.FileInfo, 0, len(entries))
@@ -72,10 +105,19 @@ func (b *LocalBackend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest
 }
 
 func (b *LocalBackend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
-	filePath := b.resolvePath(req.FilePath)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, fmt.Errorf("read request is nil")
+	}
+	filePath, err := b.resolvePath(req.FilePath)
+	if err != nil {
+		return nil, err
+	}
 	data, err := afero.ReadFile(b.fs, filePath)
 	if err != nil {
-		return nil, fmt.Errorf("读取文件失败 %s: %w", req.FilePath, err)
+		return nil, fmt.Errorf("read file %s: %w", req.FilePath, err)
 	}
 
 	content := string(data)
@@ -85,8 +127,9 @@ func (b *LocalBackend) Read(ctx context.Context, req *filesystem.ReadRequest) (*
 		offset = 0
 	}
 	limit := req.Limit
-	if limit <= 0 {
-		limit = 2000
+
+	if offset == 0 && limit <= 0 {
+		return &filesystem.FileContent{Content: content}, nil
 	}
 
 	if offset == 0 {
@@ -105,6 +148,10 @@ func (b *LocalBackend) Read(ctx context.Context, req *filesystem.ReadRequest) (*
 		start += idx + 1
 	}
 
+	if limit <= 0 {
+		return &filesystem.FileContent{Content: content[start:]}, nil
+	}
+
 	end := start
 	for i := 0; i < limit; i++ {
 		idx := strings.IndexByte(content[end:], '\n')
@@ -118,8 +165,14 @@ func (b *LocalBackend) Read(ctx context.Context, req *filesystem.ReadRequest) (*
 }
 
 func (b *LocalBackend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, fmt.Errorf("grep request is nil")
+	}
 	if req.Pattern == "" {
-		return nil, fmt.Errorf("pattern 不能为空")
+		return nil, fmt.Errorf("pattern cannot be empty")
 	}
 
 	pattern := req.Pattern
@@ -131,18 +184,24 @@ func (b *LocalBackend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest)
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("无效的正则表达式: %w", err)
+		return nil, fmt.Errorf("invalid regex pattern: %w", err)
 	}
 
 	searchPath := req.Path
 	if searchPath == "" {
 		searchPath = "."
 	}
-	searchPath = b.resolvePath(searchPath)
+	searchPath, err = b.resolvePath(searchPath)
+	if err != nil {
+		return nil, err
+	}
 
 	var matches []filesystem.GrepMatch
 
 	err = afero.Walk(b.fs, searchPath, func(path string, info os.FileInfo, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return nil
 		}
@@ -188,7 +247,7 @@ func (b *LocalBackend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("搜索文件失败: %w", err)
+		return nil, fmt.Errorf("grep files: %w", err)
 	}
 
 	if req.BeforeLines > 0 || req.AfterLines > 0 {
@@ -260,15 +319,28 @@ func (b *LocalBackend) applyContext(matches []filesystem.GrepMatch, req *filesys
 }
 
 func (b *LocalBackend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, fmt.Errorf("glob request is nil")
+	}
 	basePath := req.Path
 	if basePath == "" {
 		basePath = "."
 	}
-	basePath = b.resolvePath(basePath)
+	basePath, err := b.resolvePath(basePath)
+	if err != nil {
+		return nil, err
+	}
 
 	var result []filesystem.FileInfo
+	isAbsolutePattern := strings.HasPrefix(req.Pattern, "/")
 
-	err := afero.Walk(b.fs, basePath, func(path string, info os.FileInfo, walkErr error) error {
+	err = afero.Walk(b.fs, basePath, func(path string, info os.FileInfo, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return nil
 		}
@@ -277,23 +349,26 @@ func (b *LocalBackend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoReq
 		}
 
 		var matchPath string
-		if strings.HasPrefix(req.Pattern, "/") {
-			matchPath = path
+		var resultPath string
+		if isAbsolutePattern {
+			matchPath = "/" + filepath.ToSlash(path)
+			resultPath = matchPath
 		} else {
 			rel, relErr := filepath.Rel(basePath, path)
 			if relErr != nil {
 				return nil
 			}
-			matchPath = rel
+			matchPath = filepath.ToSlash(rel)
+			resultPath = rel
 		}
 
 		matched, matchErr := doublestar.Match(req.Pattern, matchPath)
 		if matchErr != nil {
-			return fmt.Errorf("无效的 glob 模式: %w", matchErr)
+			return fmt.Errorf("invalid glob pattern: %w", matchErr)
 		}
 		if matched {
 			result = append(result, filesystem.FileInfo{
-				Path:       matchPath,
+				Path:       resultPath,
 				IsDir:      false,
 				Size:       info.Size(),
 				ModifiedAt: info.ModTime().Format(time.RFC3339),
@@ -309,36 +384,57 @@ func (b *LocalBackend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoReq
 }
 
 func (b *LocalBackend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
-	filePath := b.resolvePath(req.FilePath)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if req == nil {
+		return fmt.Errorf("write request is nil")
+	}
+	filePath, err := b.resolvePath(req.FilePath)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(filePath)
 	if dir != "." {
 		if err := b.fs.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("创建目录失败: %w", err)
+			return fmt.Errorf("create directory: %w", err)
 		}
 	}
 	return afero.WriteFile(b.fs, filePath, []byte(req.Content), 0644)
 }
 
 func (b *LocalBackend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
-	filePath := b.resolvePath(req.FilePath)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if req == nil {
+		return fmt.Errorf("edit request is nil")
+	}
+	filePath, err := b.resolvePath(req.FilePath)
+	if err != nil {
+		return err
+	}
 	data, err := afero.ReadFile(b.fs, filePath)
 	if err != nil {
-		return fmt.Errorf("文件不存在: %s", req.FilePath)
+		return fmt.Errorf("read file %s: %w", req.FilePath, err)
 	}
 
 	if req.OldString == "" {
-		return fmt.Errorf("oldString 不能为空")
+		return fmt.Errorf("oldString cannot be empty")
+	}
+	if req.OldString == req.NewString {
+		return fmt.Errorf("oldString and newString must be different")
 	}
 
 	content := string(data)
 	if !strings.Contains(content, req.OldString) {
-		return fmt.Errorf("在文件 %s 中未找到 oldString", req.FilePath)
+		return fmt.Errorf("oldString not found in file %s", req.FilePath)
 	}
 
 	if !req.ReplaceAll {
 		firstIdx := strings.Index(content, req.OldString)
 		if strings.Contains(content[firstIdx+len(req.OldString):], req.OldString) {
-			return fmt.Errorf("在文件 %s 中发现多处匹配，但 ReplaceAll 为 false", req.FilePath)
+			return fmt.Errorf("oldString appears multiple times in file %s; set ReplaceAll to true", req.FilePath)
 		}
 	}
 

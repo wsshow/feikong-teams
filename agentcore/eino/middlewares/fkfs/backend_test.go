@@ -68,6 +68,58 @@ func TestLocalBackendReadSupportsLineWindow(t *testing.T) {
 	}
 }
 
+func TestLocalBackendReadLimitZeroReturnsEntireFile(t *testing.T) {
+	baseDir := t.TempDir()
+	backend := newTestBackend(t, baseDir)
+	lines := make([]string, 0, 2501)
+	for i := 0; i < 2501; i++ {
+		lines = append(lines, fmt.Sprintf("line%d", i+1))
+	}
+	content := strings.Join(lines, "\n")
+	writeTestFile(t, baseDir, "large.txt", content)
+
+	got, err := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: "large.txt"})
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if got.Content != content {
+		t.Fatalf("Read() returned %d bytes, want %d bytes", len(got.Content), len(content))
+	}
+}
+
+func TestLocalBackendSupportsVirtualAbsolutePath(t *testing.T) {
+	baseDir := t.TempDir()
+	backend := newTestBackend(t, baseDir)
+	writeTestFile(t, baseDir, "docs/guide.md", "hello")
+
+	got, err := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: "/docs/guide.md"})
+	if err != nil {
+		t.Fatalf("Read virtual absolute path: %v", err)
+	}
+	if got.Content != "hello" {
+		t.Fatalf("content = %q, want hello", got.Content)
+	}
+}
+
+func TestLocalBackendRejectsPathEscape(t *testing.T) {
+	baseDir := t.TempDir()
+	backend := newTestBackend(t, baseDir)
+	writeTestFile(t, filepath.Dir(baseDir), "outside.txt", "outside")
+
+	if _, err := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: "../outside.txt"}); err == nil {
+		t.Fatal("Read() error = nil, want path escape error")
+	}
+}
+
+func TestLocalBackendMissingFileWrapsNotExist(t *testing.T) {
+	backend := newTestBackend(t, t.TempDir())
+
+	_, err := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: "missing.txt"})
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Read() error = %v, want os.ErrNotExist", err)
+	}
+}
+
 func TestLocalBackendGrepFiltersAndAddsContext(t *testing.T) {
 	baseDir := t.TempDir()
 	backend := newTestBackend(t, baseDir)
@@ -147,6 +199,20 @@ func TestLocalBackendGlobInfoWriteAndEdit(t *testing.T) {
 	if !reflect.DeepEqual(got, []string{"src/app.go"}) {
 		t.Fatalf("glob matches = %v, want src/app.go", got)
 	}
+
+	absoluteMatches, err := backend.GlobInfo(context.Background(), &filesystem.GlobInfoRequest{
+		Pattern: "/src/*.go",
+	})
+	if err != nil {
+		t.Fatalf("GlobInfo() absolute error = %v", err)
+	}
+	got = got[:0]
+	for _, match := range absoluteMatches {
+		got = append(got, match.Path)
+	}
+	if !reflect.DeepEqual(got, []string{"/src/app.go"}) {
+		t.Fatalf("absolute glob matches = %v, want /src/app.go", got)
+	}
 }
 
 func TestLocalBackendEditValidatesSingleReplacement(t *testing.T) {
@@ -159,7 +225,7 @@ func TestLocalBackendEditValidatesSingleReplacement(t *testing.T) {
 		OldString: "same",
 		NewString: "other",
 	})
-	if err == nil || !strings.Contains(err.Error(), "多处匹配") {
+	if err == nil || !strings.Contains(err.Error(), "multiple times") {
 		t.Fatalf("Edit() error = %v, want multiple match error", err)
 	}
 
@@ -168,7 +234,7 @@ func TestLocalBackendEditValidatesSingleReplacement(t *testing.T) {
 		OldString: "",
 		NewString: "other",
 	})
-	if err == nil || !strings.Contains(err.Error(), "oldString 不能为空") {
+	if err == nil || !strings.Contains(err.Error(), "oldString cannot be empty") {
 		t.Fatalf("Edit() error = %v, want empty oldString error", err)
 	}
 }

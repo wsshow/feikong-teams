@@ -46,6 +46,10 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 	if err != nil {
 		return nil, fmt.Errorf("init summary middleware: %w", err)
 	}
+	agentsMDMiddleware, err := middlewareProvider.NewAgentsMDMiddleware(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("init agents.md middleware: %w", err)
+	}
 	return engine.NewDeepAgent(ctx, &agentcore.DeepAgentConfig{
 		Name:             "deep_researcher",
 		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
@@ -57,6 +61,7 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		Middlewares: []agentcore.AgentMiddleware{
 			middlewareProvider.NewSteeringMiddleware(),
 			summaryMiddleware,
+			agentsMDMiddleware,
 		},
 	})
 }

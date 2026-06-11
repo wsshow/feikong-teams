@@ -120,6 +120,7 @@ type AgentPipelineProvider interface {
 	NewSummaryMiddleware(ctx context.Context, cfg *SummaryConfig) (AgentMiddleware, error)
 	NewSkillsMiddleware(ctx context.Context) (AgentMiddleware, error)
 	NewDispatchMiddleware(ctx context.Context, cfg *DispatchConfig) (AgentMiddleware, error)
+	NewAgentsMDMiddleware(ctx context.Context) (AgentMiddleware, error)
 }
 
 type ToolPipelineProvider interface {

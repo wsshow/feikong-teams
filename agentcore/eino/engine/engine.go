@@ -6,6 +6,7 @@ import (
 
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
+	"fkteams/agentcore/eino/middlewares/agentsmd"
 	"fkteams/agentcore/eino/middlewares/autocontinue"
 	"fkteams/agentcore/eino/middlewares/dispatch"
 	"fkteams/agentcore/eino/middlewares/inject"
@@ -122,6 +123,10 @@ func (e *Engine) NewDispatchMiddleware(ctx context.Context, cfg *agentcore.Dispa
 		MaxConcurrency: cfg.MaxConcurrency,
 		TaskTimeout:    cfg.TaskTimeout,
 	})
+}
+
+func (e *Engine) NewAgentsMDMiddleware(ctx context.Context) (agentcore.AgentMiddleware, error) {
+	return agentsmd.New(ctx)
 }
 
 func (e *Engine) newDestructiveGuardMiddleware() agentcore.ToolMiddleware {

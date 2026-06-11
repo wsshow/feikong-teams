@@ -171,6 +171,7 @@ func (m *middleware) createSubAgent(ctx context.Context, name, desc string) (adk
 		Instruction:      subAgentInstruction,
 		Model:            m.chatModel,
 		ModelRetryConfig: einoruntime.AdaptModelRetryConfigForRunner(rootcommon.NewModelRetryConfig()),
+		Handlers:         m.handlers,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: m.tools},
 		},

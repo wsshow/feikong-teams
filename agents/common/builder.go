@@ -227,6 +227,14 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		cfg.Middlewares = append(cfg.Middlewares, dispatchMiddleware)
 	}
 
+	if hasAgentPipelineProvider {
+		agentsMDMiddleware, err := agentPipelineProvider.NewAgentsMDMiddleware(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("init agents.md middleware: %w", err)
+		}
+		cfg.Middlewares = append(cfg.Middlewares, agentsMDMiddleware)
+	}
+
 	cfg.Middlewares = append(cfg.Middlewares, b.handlers...)
 	return engine.NewChatModelAgent(ctx, cfg)
 }

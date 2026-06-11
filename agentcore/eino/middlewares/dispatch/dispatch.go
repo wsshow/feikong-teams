@@ -6,6 +6,7 @@ import (
 	"context"
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
+	"fkteams/agentcore/eino/middlewares/agentsmd"
 	"fmt"
 	"time"
 
@@ -65,10 +66,19 @@ func New(ctx context.Context, cfg *Config) (agentcore.AgentMiddleware, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dispatch: adapt tools: %w", err)
 	}
+	agentsMDMiddleware, err := agentsmd.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dispatch: init agents.md middleware: %w", err)
+	}
+	agentsMDHandler, err := einoruntime.AdaptAgentMiddlewareForRunner(agentsMDMiddleware)
+	if err != nil {
+		return nil, fmt.Errorf("dispatch: adapt agents.md middleware: %w", err)
+	}
 
 	return einoruntime.WrapAgentMiddleware("dispatch", &middleware{
 		chatModel:      chatModel,
 		tools:          runnerTools,
+		handlers:       []adk.ChatModelAgentMiddleware{agentsMDHandler},
 		maxConcurrency: int64(cfg.MaxConcurrency),
 		taskTimeout:    cfg.TaskTimeout,
 	}), nil
@@ -78,6 +88,7 @@ type middleware struct {
 	*adk.BaseChatModelAgentMiddleware
 	chatModel      model.ToolCallingChatModel
 	tools          []tool.BaseTool
+	handlers       []adk.ChatModelAgentMiddleware
 	maxConcurrency int64
 	taskTimeout    time.Duration
 }
