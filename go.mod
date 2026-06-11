@@ -15,7 +15,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/cloudwego/eino v0.9.4
+	github.com/cloudwego/eino v0.9.5
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.68
 	github.com/cloudwego/eino-ext/components/model/claude v0.1.19
 	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.6
