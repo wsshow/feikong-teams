@@ -340,6 +340,57 @@ test("loaded session updates sidebar active state without reloading list", () =>
   assert.equal(reloaded, false);
 });
 
+test("confirmed delete removes sidebar item without reloading list", async () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let reloaded = false;
+  let modalReloaded = false;
+  let notified = false;
+  const sidebarItems = [
+    {
+      dataset: { sessionId: "delete-me" },
+      remove() {
+        sidebarItems.splice(sidebarItems.indexOf(this), 1);
+      },
+    },
+    {
+      dataset: { sessionId: "keep-me" },
+      remove() {
+        sidebarItems.splice(sidebarItems.indexOf(this), 1);
+      },
+    },
+  ];
+  chat.sidebarSessionList = {
+    innerHTML: "",
+    classList: fakeClassList(),
+    querySelectorAll(selector) {
+      if (selector === ".sidebar-session-item") return sidebarItems;
+      return [];
+    },
+  };
+  chat.currentDeleteSessionId = "delete-me";
+  chat._sessionDOMCache = {};
+  chat._processingSessions = new Set(["delete-me"]);
+  chat.historyModal = { style: { display: "none" } };
+  chat.hideDeleteModal = () => { chat.currentDeleteSessionId = null; };
+  chat.fetchWithAuth = async () => ({
+    ok: true,
+    json: async () => ({ code: 0 }),
+  });
+  chat.showNotification = (message, type) => {
+    notified = message === "删除成功" && type === "success";
+  };
+  chat.loadSessions = async () => { modalReloaded = true; };
+  chat.loadSidebarHistory = async () => { reloaded = true; };
+
+  await chat.confirmDelete();
+
+  assert.equal(notified, true);
+  assert.deepEqual(sidebarItems.map((item) => item.dataset.sessionId), ["keep-me"]);
+  assert.equal(chat._processingSessions.has("delete-me"), false);
+  assert.equal(modalReloaded, false);
+  assert.equal(reloaded, false);
+});
+
 test("missing loaded session falls back to home page", async () => withFakeLocalStorage(async (store) => {
   const chat = Object.create(FKTeamsChat.prototype);
   let saveCount = 0;

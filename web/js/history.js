@@ -418,6 +418,34 @@ FKTeamsChat.prototype.updateSidebarSessionActive = function () {
   });
 };
 
+FKTeamsChat.prototype.removeSidebarSessionItem = function (sessionId) {
+  if (!this.sidebarSessionList) return;
+  if (this._processingSessions) this._processingSessions.delete(sessionId);
+
+  const items = Array.from(
+    this.sidebarSessionList.querySelectorAll?.(".sidebar-session-item") || [],
+  );
+  const item = items.find((el) => {
+    if (el.dataset?.sessionId) return el.dataset.sessionId === sessionId;
+    if (typeof el.getAttribute === "function") {
+      return el.getAttribute("data-session-id") === sessionId;
+    }
+    return false;
+  });
+  if (item && typeof item.remove === "function") {
+    item.remove();
+  }
+
+  const remainingItems = Array.from(
+    this.sidebarSessionList.querySelectorAll?.(".sidebar-session-item") || [],
+  );
+  if (remainingItems.length === 0) {
+    this.sidebarSessionList.classList?.remove("loading");
+    this.sidebarSessionList.innerHTML =
+      '<div class="sidebar-session-empty">暂无会话记录</div>';
+  }
+};
+
 // ===== 历史记录弹窗管理 =====
 
 FKTeamsChat.prototype.showHistoryModal = async function () {
@@ -1794,7 +1822,7 @@ FKTeamsChat.prototype.confirmDelete = async function () {
     if (this.historyModal && this.historyModal.style.display !== "none") {
       await this.loadSessions();
     }
-    await this.loadSidebarHistory();
+    this.removeSidebarSessionItem(sessionId);
   } catch (error) {
     console.error("Error deleting session:", error);
     this.showNotification(error.message || "删除失败", "error");
