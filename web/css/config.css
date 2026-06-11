@@ -841,10 +841,10 @@
 
 .agent-edit-panel {
   background: var(--bg-secondary);
-  border-radius: 14px;
+  border-radius: 12px;
   width: 90%;
-  max-width: 540px;
-  max-height: 80vh;
+  max-width: 680px;
+  max-height: 86vh;
   overflow-y: auto;
   padding: 24px;
   box-shadow: 4px 6px 0px rgba(60, 50, 30, 0.1);
@@ -880,40 +880,272 @@
 }
 
 /* 工具多选 */
-.config-tools-select {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px;
+.fk-checklist {
+  position: relative;
+  overflow: visible;
   border: 1.5px solid var(--border-color);
-  border-radius: var(--radius);
+  border-radius: 8px;
   background: var(--bg-primary);
-  min-height: 40px;
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition);
 }
 
-.config-tool-chip {
+.fk-checklist:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.fk-checklist-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 10px;
+  align-items: start;
+  min-height: 46px;
+  padding: 8px 9px 8px 10px;
+  border-radius: 7px;
+  background: var(--bg-primary);
+  cursor: text;
+}
+
+.fk-checklist.open .fk-checklist-search {
+  border-bottom: 1px solid rgba(188, 181, 170, 0.45);
+  border-radius: 7px 7px 0 0;
+}
+
+.fk-checklist-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fk-checklist-value input {
+  flex: 1 1 160px;
+  min-width: 120px;
+  height: 32px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-body);
+}
+
+.fk-checklist-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 16px;
-  font-size: 12px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
   cursor: pointer;
-  transition: all var(--transition);
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  transition:
+    background var(--transition),
+    color var(--transition),
+    transform var(--transition);
+}
+
+.fk-checklist-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--accent-primary);
+}
+
+.fk-checklist-toggle svg {
+  width: 17px;
+  height: 17px;
+  transition: transform var(--transition);
+}
+
+.fk-checklist.open .fk-checklist-toggle svg {
+  transform: rotate(180deg);
+}
+
+.fk-checklist-list {
+  display: none;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.fk-checklist.open .fk-checklist-list {
+  display: grid;
+}
+
+.fk-checklist-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.fk-checklist-list::-webkit-scrollbar-track {
+  background: rgba(188, 181, 170, 0.16);
+}
+
+.fk-checklist-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(141, 132, 118, 0.35);
+}
+
+.fk-checklist-option {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.fk-checklist-option + .fk-checklist-option {
+  border-top: 1px solid rgba(188, 181, 170, 0.28);
+}
+
+.fk-checklist-option:hover {
+  background: var(--bg-hover);
+}
+
+.fk-checklist-option.selected {
+  background: rgba(107, 127, 198, 0.08);
+}
+
+.fk-checklist-option-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fk-checklist-checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.fk-checklist-title {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fk-checklist-category {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(107, 127, 198, 0.1);
+  color: var(--accent-primary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.fk-checklist-desc,
+.fk-checklist-meta {
+  display: block;
+  margin-left: 28px;
+  min-width: 0;
   color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fk-checklist-meta {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fk-checklist-meta code {
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.config-tool-includes {
+  margin-left: 8px;
+}
+
+.fk-checklist-empty {
+  display: none;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(188, 181, 170, 0.28);
+  color: var(--text-tertiary);
+  text-align: center;
+  font-size: 13px;
+}
+
+.fk-checklist.open .fk-checklist-empty:not([hidden]) {
+  display: block;
+}
+
+.fk-checklist-selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fk-checklist-selected.empty {
+  display: none;
+}
+
+.fk-checklist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border: 1px solid rgba(107, 127, 198, 0.16);
+  border-radius: 7px;
+  background: rgba(107, 127, 198, 0.09);
+  color: var(--accent-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 32px;
+  overflow: hidden;
   user-select: none;
 }
 
-.config-tool-chip:hover {
-  border-color: var(--accent-secondary);
+.fk-checklist-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.config-tool-chip.selected {
-  background: var(--accent-primary);
-  color: white;
-  border-color: var(--accent-primary);
+.fk-checklist-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fk-checklist-chip button:hover {
+  background: rgba(107, 127, 198, 0.13);
+  color: var(--accent-primary);
 }
 
 /* ===== 底部按钮 ===== */
@@ -962,10 +1194,19 @@
 }
 
 .agent-edit-footer {
+  position: sticky;
+  bottom: -24px;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 20px;
+  margin: 18px -24px -24px;
+  padding: 12px 24px 16px;
+  border-top: 1px solid rgba(188, 181, 170, 0.45);
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    var(--bg-secondary) 18%
+  );
 }
 
 /* ===== 通道折叠面板 ===== */
@@ -1516,8 +1757,30 @@
     padding: 20px 16px;
   }
 
+  .agent-edit-footer {
+    bottom: -20px;
+    margin: 18px -16px -20px;
+    padding: 12px 16px 14px;
+  }
+
   .agent-edit-title {
     font-size: 20px;
+  }
+
+  .fk-checklist-value input {
+    font-size: 16px;
+  }
+
+  .fk-checklist-list {
+    max-height: 300px;
+  }
+
+  .fk-checklist-option {
+    padding: 11px 12px;
+  }
+
+  .fk-checklist-title {
+    font-size: 14px;
   }
 
   .agent-card {

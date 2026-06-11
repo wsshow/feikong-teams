@@ -12,6 +12,7 @@ FKTeamsChat.prototype.initConfig = function () {
 
   this._configData = null;
   this._toolNames = [];
+  this._toolCatalog = [];
   this._modelCache = {}; // provider+baseUrl+apiKey → [{id}]
 
   // 打开配置
@@ -101,10 +102,14 @@ FKTeamsChat.prototype.loadConfig = async function () {
 };
 
 FKTeamsChat.prototype.loadToolNames = async function () {
-  const resp = await this.fetchWithAuth("/api/fkteams/config/tools");
+  let resp = await this.fetchWithAuth("/api/fkteams/config/tool-catalog");
+  if (resp.status === 404) {
+    resp = await this.fetchWithAuth("/api/fkteams/config/tools");
+  }
   const result = await resp.json();
   if (result.code !== 0) throw new Error(result.message);
-  this._toolNames = result.data || [];
+  this._toolCatalog = this.normalizeToolCatalog(result.data || []);
+  this._toolNames = this._toolCatalog.map((tool) => tool.name);
 };
 
 // ===== 填充表单 =====
@@ -680,6 +685,303 @@ FKTeamsChat.prototype._rebuildAgentCardsDOM = function () {
 
 // ===== 智能体编辑器 =====
 
+FKTeamsChat.prototype.normalizeToolCatalog = function (data) {
+  const list = Array.isArray(data) ? data : [];
+  return list
+    .map((item) => {
+      if (typeof item === "string") {
+        return {
+          name: item,
+          display_name: item,
+          description: "可配置工具组。",
+          category: item.startsWith("mcp-") ? "MCP" : "工具",
+          builtin: !item.startsWith("mcp-"),
+          included_tools: [],
+        };
+      }
+      const name = String(item?.name || "").trim();
+      if (!name) return null;
+      return {
+        name,
+        display_name: item.display_name || name,
+        description: item.description || "可配置工具组。",
+        category: item.category || (name.startsWith("mcp-") ? "MCP" : "工具"),
+        builtin: item.builtin === undefined ? !name.startsWith("mcp-") : item.builtin !== false,
+        included_tools: Array.isArray(item.included_tools)
+          ? item.included_tools.filter(Boolean)
+          : [],
+      };
+    })
+    .filter(Boolean);
+};
+
+FKTeamsChat.prototype.getAgentToolCatalog = function () {
+  const result = [];
+  const seen = new Set();
+  const addTool = (tool) => {
+    if (!tool || !tool.name || seen.has(tool.name)) return;
+    seen.add(tool.name);
+    result.push(tool);
+  };
+
+  (this._toolCatalog || []).forEach(addTool);
+  const mcpServers = this._configData?.custom?.mcp_servers || [];
+  mcpServers
+    .filter((server) => server.enabled === true && server.name)
+    .forEach((server) => {
+      addTool({
+        name: "mcp-" + server.name,
+        display_name: "MCP: " + server.name,
+        description: server.desc || "来自 MCP 服务 " + server.name + " 的工具组。",
+        category: "MCP",
+        builtin: false,
+        included_tools: [],
+      });
+    });
+
+  return result;
+};
+
+FKTeamsChat.prototype.renderConfigChecklist = function (config) {
+  const selectedValues = new Set(config.selectedValues || []);
+  const items = Array.isArray(config.items) ? config.items : [];
+  const optionsHtml = items
+    .map((item) => {
+      const selected = selectedValues.has(item.value);
+      const searchText = (item.searchText || [
+        item.value,
+        item.label,
+        item.description,
+        item.category,
+      ].join(" ")).toLowerCase();
+      const metaHtml = item.metaHtml
+        ? `<span class="fk-checklist-meta">${item.metaHtml}</span>`
+        : "";
+      return `
+        <label class="fk-checklist-option ${selected ? "selected" : ""}" data-value="${this.escapeHtml(item.value)}" data-search="${this.escapeHtml(searchText)}">
+          <span class="fk-checklist-option-line">
+            <input type="checkbox" class="fk-checklist-checkbox" data-value="${this.escapeHtml(item.value)}" ${selected ? "checked" : ""} />
+            <span class="fk-checklist-title">${this.escapeHtml(item.label || item.value)}</span>
+            <span class="fk-checklist-category">${this.escapeHtml(item.category || "工具")}</span>
+          </span>
+          <span class="fk-checklist-desc">${this.escapeHtml(item.description || "可配置工具组。")}</span>
+          ${metaHtml}
+        </label>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="fk-checklist ${this.escapeHtml(config.className || "")}" id="${this.escapeHtml(config.id)}">
+      <div class="fk-checklist-search" role="combobox" aria-expanded="false" aria-controls="${this.escapeHtml(config.listId)}">
+        <div class="fk-checklist-value">
+          <div class="fk-checklist-selected" id="${this.escapeHtml(config.selectedId)}"></div>
+          <input type="search" id="${this.escapeHtml(config.searchId)}" placeholder="${this.escapeHtml(config.searchPlaceholder || "搜索")}" autocomplete="off" />
+        </div>
+        <button type="button" class="fk-checklist-toggle" aria-label="展开工具列表">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="fk-checklist-list" id="${this.escapeHtml(config.listId)}" role="listbox">
+        ${optionsHtml}
+      </div>
+      <div class="fk-checklist-empty" id="${this.escapeHtml(config.emptyId)}">${this.escapeHtml(config.emptyText || "没有匹配的选项")}</div>
+    </div>
+  `;
+};
+
+FKTeamsChat.prototype.bindConfigChecklist = function (root, config) {
+  const picker = root.querySelector("#" + config.id);
+  const searchInput = root.querySelector("#" + config.searchId);
+  const selectedEl = root.querySelector("#" + config.selectedId);
+  const emptyEl = root.querySelector("#" + config.emptyId);
+  const searchWrap = picker.querySelector(".fk-checklist-search");
+  const toggleButton = picker.querySelector(".fk-checklist-toggle");
+  const options = Array.from(picker.querySelectorAll(".fk-checklist-option"));
+  const optionByValue = new Map(
+    options.map((option) => {
+      const checkbox = option.querySelector(".fk-checklist-checkbox");
+      return [checkbox.dataset.value, { option, checkbox }];
+    }),
+  );
+  let selectedOrder = (config.selectedValues || []).filter((value) =>
+    optionByValue.has(value),
+  );
+
+  const selectedItem = (value) => {
+    const entry = optionByValue.get(value);
+    if (!entry?.checkbox?.checked) return null;
+    return {
+      value,
+      label:
+        entry.option.querySelector(".fk-checklist-title")?.textContent ||
+        value,
+    };
+  };
+
+  const setOpen = (open) => {
+    picker.classList.toggle("open", open);
+    searchWrap.setAttribute("aria-expanded", String(open));
+    toggleButton.setAttribute(
+      "aria-label",
+      open ? "收起工具列表" : "展开工具列表",
+    );
+  };
+
+  const refresh = () => {
+    const query = (searchInput.value || "").trim().toLowerCase();
+    let visibleCount = 0;
+
+    options.forEach((option) => {
+      const checkbox = option.querySelector(".fk-checklist-checkbox");
+      const isSelected = checkbox.checked;
+      const isVisible = !query || (option.dataset.search || "").includes(query);
+      option.classList.toggle("selected", isSelected);
+      option.style.display = isVisible ? "" : "none";
+      if (isVisible) visibleCount += 1;
+      if (isSelected && !selectedOrder.includes(checkbox.dataset.value)) {
+        selectedOrder.push(checkbox.dataset.value);
+      }
+    });
+
+    selectedOrder = selectedOrder.filter((value) => {
+      const entry = optionByValue.get(value);
+      return entry?.checkbox?.checked;
+    });
+    const selected = selectedOrder.map(selectedItem).filter(Boolean);
+
+    selectedEl.innerHTML = selected.length
+      ? selected
+          .map((item) => `<span class="fk-checklist-chip" data-value="${this.escapeHtml(item.value)}"><span>${this.escapeHtml(item.label)}</span><button type="button" aria-label="移除 ${this.escapeHtml(item.label)}">&times;</button></span>`)
+          .join("")
+      : "";
+    selectedEl.classList.toggle("empty", selected.length === 0);
+    searchInput.placeholder = selected.length
+      ? config.searchPlaceholderSelected || "继续搜索"
+      : config.searchPlaceholder || "搜索";
+    emptyEl.hidden = visibleCount !== 0;
+  };
+
+  picker.addEventListener("change", (e) => {
+    const checkbox = e.target.closest(".fk-checklist-checkbox");
+    if (!checkbox) return;
+    if (checkbox.checked) {
+      selectedOrder = selectedOrder.filter(
+        (value) => value !== checkbox.dataset.value,
+      );
+      selectedOrder.push(checkbox.dataset.value);
+    } else {
+      selectedOrder = selectedOrder.filter(
+        (value) => value !== checkbox.dataset.value,
+      );
+    }
+    refresh();
+  });
+  selectedEl.addEventListener("click", (e) => {
+    const chip = e.target.closest(".fk-checklist-chip");
+    if (!chip) return;
+    e.preventDefault();
+    const checkbox = options
+      .map((option) => option.querySelector(".fk-checklist-checkbox"))
+      .find((item) => item.dataset.value === chip.dataset.value);
+    if (checkbox) {
+      checkbox.checked = false;
+      selectedOrder = selectedOrder.filter(
+        (value) => value !== chip.dataset.value,
+      );
+      refresh();
+      searchInput.focus();
+      setOpen(true);
+    }
+  });
+  searchWrap.addEventListener("click", (e) => {
+    if (e.target.closest(".fk-checklist-toggle")) return;
+    setOpen(true);
+    if (!e.target.closest(".fk-checklist-chip")) searchInput.focus();
+  });
+  toggleButton.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const open = !picker.classList.contains("open");
+    setOpen(open);
+    if (open) searchInput.focus();
+  });
+  searchInput.addEventListener("focus", () => setOpen(true));
+  searchInput.addEventListener("input", () => {
+    setOpen(true);
+    refresh();
+  });
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (searchInput.value) {
+      searchInput.value = "";
+      refresh();
+    } else {
+      setOpen(false);
+    }
+  });
+  const closeOnOutsideClick = (e) => {
+    if (!e.target.closest("#" + config.id)) setOpen(false);
+  };
+  (picker.closest(".agent-edit-panel") || root).addEventListener(
+    "click",
+    closeOnOutsideClick,
+  );
+  setOpen(false);
+  refresh();
+};
+
+FKTeamsChat.prototype.renderAgentToolPicker = function (agent) {
+  const selectedTools = agent.tools || [];
+  const items = this.getAgentToolCatalog().map((tool) => {
+    const includedTools = tool.included_tools || [];
+    const includedHtml = includedTools.length
+      ? `<span class="config-tool-includes">包含 ${includedTools.slice(0, 5).map((name) => this.escapeHtml(name)).join(" / ")}</span>`
+      : "";
+    return {
+      value: tool.name,
+      label: tool.display_name || tool.name,
+      category: tool.category || "工具",
+      description: tool.description || "可配置工具组。",
+      metaHtml: `<code>${this.escapeHtml(tool.name)}</code>${includedHtml}`,
+      searchText: [
+        tool.name,
+        tool.display_name,
+        tool.description,
+        tool.category,
+        ...includedTools,
+      ].join(" "),
+    };
+  });
+
+  return this.renderConfigChecklist({
+    id: "ae-tools",
+    className: "agent-tools-picker",
+    searchId: "ae-tool-search",
+    listId: "ae-tool-list",
+    emptyId: "ae-tool-empty",
+    selectedId: "ae-tool-selected",
+    searchPlaceholder: "搜索或选择工具组",
+    searchPlaceholderSelected: "继续搜索工具组",
+    emptyText: "没有匹配的工具组",
+    selectedValues: selectedTools,
+    items,
+  });
+};
+
+FKTeamsChat.prototype.bindAgentToolPicker = function (overlay) {
+  this.bindConfigChecklist(overlay, {
+    id: "ae-tools",
+    searchId: "ae-tool-search",
+    emptyId: "ae-tool-empty",
+    selectedId: "ae-tool-selected",
+    searchPlaceholder: "搜索或选择工具组",
+    searchPlaceholderSelected: "继续搜索工具组",
+  });
+};
+
 FKTeamsChat.prototype.openAgentEditor = function (idx) {
   const agent = this._customAgents[idx];
   const overlay = document.createElement("div");
@@ -698,25 +1000,7 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
     )
     .join("");
 
-  // 内置工具（排除 mcp- 前缀的，MCP 工具单独渲染）
-  const toolChips = this._toolNames
-    .filter(function (t) { return !t.startsWith("mcp-"); })
-    .map((t) => {
-      const selected = (agent.tools || []).includes(t) ? "selected" : "";
-      return `<span class="config-tool-chip ${selected}" data-tool="${this.escapeHtml(t)}">${this.escapeHtml(t)}</span>`;
-    })
-    .join("");
-
-  // MCP 工具（只显示已启用的服务）
-  const mcpServers = this._configData?.custom?.mcp_servers || [];
-  const mcpChips = mcpServers
-    .filter(function (s) { return s.enabled === true; })
-    .map((s) => {
-      const toolName = "mcp-" + s.name;
-      const selected = (agent.tools || []).includes(toolName) ? "selected" : "";
-      return `<span class="config-tool-chip ${selected}" data-tool="${this.escapeHtml(toolName)}">${this.escapeHtml(toolName)}</span>`;
-    })
-    .join("");
+  const toolPicker = this.renderAgentToolPicker(agent);
 
   overlay.innerHTML = `
     <div class="agent-edit-panel">
@@ -741,8 +1025,8 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
         </select>
       </div>
       <div class="config-field">
-        <label>工具 (点击选择/取消)</label>
-        <div class="config-tools-select" id="ae-tools">${toolChips}${mcpChips}</div>
+        <label>可用工具</label>
+        ${toolPicker}
       </div>
       <div class="agent-edit-footer">
         <button class="config-btn config-btn-cancel" id="ae-cancel">取消</button>
@@ -751,11 +1035,7 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
     </div>
   `;
 
-  // 工具选择交互
-  overlay.querySelector("#ae-tools").addEventListener("click", (e) => {
-    const chip = e.target.closest(".config-tool-chip");
-    if (chip) chip.classList.toggle("selected");
-  });
+  this.bindAgentToolPicker(overlay);
 
   // 转换 select 为自定义组件
   overlay
@@ -787,22 +1067,16 @@ FKTeamsChat.prototype.openAgentEditor = function (idx) {
       system_prompt: overlay.querySelector("#ae-prompt").value,
       model: overlay.querySelector("#ae-model").value,
       tools: Array.from(
-        overlay.querySelectorAll(".config-tool-chip.selected"),
-      ).map((c) => c.dataset.tool),
+        overlay.querySelectorAll("#ae-tool-selected .fk-checklist-chip"),
+      ).map((chip) => chip.dataset.value),
     };
     overlay.remove();
     this._rebuildAgentCardsDOM();
   });
 
-  // 点击背景关闭
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) {
-      if (!agent.name && idx === this._customAgents.length - 1) {
-        this._customAgents.pop();
-      }
-      overlay.remove();
-    }
-  });
+  overlay
+    .querySelector(".agent-edit-panel")
+    .addEventListener("click", (e) => e.stopPropagation());
 
   document.body.appendChild(overlay);
   overlay.querySelector("#ae-name").focus();
