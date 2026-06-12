@@ -41,7 +41,7 @@ func TestTextSearchErrorHandling(t *testing.T) {
 				Query: "golang",
 			},
 			wantErrorMessage: false,
-			expectResults:    false, // May not have results in test
+			expectResults:    true,
 		},
 		{
 			name: "valid query with time range",
@@ -50,12 +50,17 @@ func TestTextSearchErrorHandling(t *testing.T) {
 				TimeRange: TimeRangeWeek,
 			},
 			wantErrorMessage: false,
-			expectResults:    false,
+			expectResults:    true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if !tt.wantErrorMessage {
+				server := newMockTextSearchServer(t, tt.request)
+				defer server.Close()
+			}
+
 			client := &client{
 				httpCli: &http.Client{
 					Timeout: 10 * time.Second,
@@ -97,9 +102,53 @@ func TestTextSearchErrorHandling(t *testing.T) {
 			if len(resp.Results) > 0 {
 				t.Logf("Found %d results", len(resp.Results))
 			}
+			hasResults := len(resp.Results) > 0
+			if hasResults != tt.expectResults {
+				t.Errorf("TextSearch() results presence = %v, want %v", hasResults, tt.expectResults)
+			}
 		})
 	}
 }
+
+func newMockTextSearchServer(t *testing.T, request *TextSearchRequest) *httptest.Server {
+	t.Helper()
+	originalURL := searchHTMLURL
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm() error = %v", err)
+		}
+		if got := r.Form.Get("q"); got != request.Query {
+			t.Errorf("query = %q, want %q", got, request.Query)
+		}
+		if got := r.Form.Get("df"); got != string(request.TimeRange) {
+			t.Errorf("time range = %q, want %q", got, request.TimeRange)
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(mockTextSearchHTML))
+	}))
+	searchHTMLURL = server.URL
+	t.Cleanup(func() {
+		searchHTMLURL = originalURL
+	})
+	return server
+}
+
+const mockTextSearchHTML = `
+<html>
+  <body>
+    <div id="links">
+      <div class="web-result">
+        <h2 class="result__title">
+          <a href="https://go.dev/">The Go Programming Language</a>
+        </h2>
+        <a class="result__snippet">Build simple, secure, scalable systems.</a>
+      </div>
+    </div>
+  </body>
+</html>`
 
 func TestTextSearchResponseStructure(t *testing.T) {
 	tests := []struct {
