@@ -359,6 +359,9 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			NonInteractive().
 			WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
 			WithContext(func(ctx context.Context) context.Context {
+				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
+			}).
+			WithContext(func(ctx context.Context) context.Context {
 				return agentcore.WithSteeringSource(ctx, steeringSource)
 			}).
 			Run(ctx)
@@ -590,6 +593,7 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID string   `json:"session_id" binding:"required"`
+			AskID     string   `json:"ask_id"`
 			Selected  []string `json:"selected"`
 			FreeText  string   `json:"free_text"`
 		}
@@ -609,10 +613,11 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 		}
 
 		resp := &ask.AskResponse{
+			AskID:    req.AskID,
 			Selected: req.Selected,
 			FreeText: req.FreeText,
 		}
-		if err := stream.SubmitInterrupt(taskstream.InterruptAsk, resp); err == nil {
+		if err := stream.SubmitAskResponse(req.AskID, resp); err == nil {
 			OK(c, gin.H{"message": "response submitted"})
 		} else {
 			Fail(c, http.StatusConflict, "no pending ask request")
@@ -660,30 +665,36 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 	channelHandler := engine.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
-		if info := extractAskInfo(interrupts); info != nil {
-			stream.BeginInterrupt(taskstream.InterruptAsk)
+		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
+			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)
 			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
 
-			recorder.RecordEvent(events.Event{
-				Type:       events.EventAction,
-				ActionType: events.ActionAskQuestions,
-				Content:    info.Question,
-			})
-			stream.Publish(map[string]any{
+			info := askInterrupt.Info
+			askID := askInterrupt.ID
+			memberEvent := askInterrupt.Event
+			askEvent := memberEvent
+			askEvent.Type = events.EventAction
+			askEvent.ActionType = events.ActionAskQuestions
+			askEvent.Content = info.Question
+			askEvent.Detail = askID
+			recorder.RecordEvent(askEvent)
+			stream.Publish(attachMemberPayload(map[string]any{
 				"type":         events.NotifyAskQuestions,
 				"session_id":   sessionID,
+				"ask_id":       askID,
 				"question":     info.Question,
 				"options":      info.Options,
 				"multi_select": info.MultiSelect,
-			})
+			}, memberEvent))
 
-			result, err := channelHandler(ctx, interrupts)
+			result, err := engine.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
-				recorder.RecordEvent(events.Event{
-					Type:       events.EventAction,
-					ActionType: events.ActionAskResponse,
-					Content:    askResponseText(result),
-				})
+				answerEvent := memberEvent
+				answerEvent.Type = events.EventAction
+				answerEvent.ActionType = events.ActionAskResponse
+				answerEvent.Content = askResponseText(result)
+				answerEvent.Detail = askID
+				recorder.RecordEvent(answerEvent)
 			}
 			return result, err
 		}

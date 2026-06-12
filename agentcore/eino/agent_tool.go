@@ -61,13 +61,39 @@ func (a *agentToolNameAgent) Description(ctx context.Context) string {
 }
 
 func (a *agentToolNameAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	ctx, scope := a.contextWithMemberScope(ctx)
 	innerIter := a.inner.Run(ctx, input, opts...)
-	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+	return a.wrapMemberEvents(innerIter, scope)
+}
+
+func (a *agentToolNameAgent) Resume(ctx context.Context, info *adk.ResumeInfo, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	inner, ok := a.inner.(adk.ResumableAgent)
+	if !ok {
+		return newErrorAgentIterator(fmt.Errorf("agent %q does not support resume", a.displayName))
+	}
+	ctx, scope := a.contextWithMemberScope(ctx)
+	innerIter := inner.Resume(ctx, info, opts...)
+	return a.wrapMemberEvents(innerIter, scope)
+}
+
+func (a *agentToolNameAgent) contextWithMemberScope(ctx context.Context) (context.Context, MemberScope) {
 	scope := MemberScope{
 		CallID:   compose.GetToolCallID(ctx),
 		ToolName: a.toolName,
 		Name:     a.displayName,
 	}
+	if scope.CallID != "" {
+		ctx = agentcore.WithInterruptMetadata(ctx, agentcore.InterruptMetadata{
+			MemberCallID:   scope.CallID,
+			MemberToolName: scope.ToolName,
+			MemberName:     scope.Name,
+		})
+	}
+	return ctx, scope
+}
+
+func (a *agentToolNameAgent) wrapMemberEvents(innerIter *adk.AsyncIterator[*adk.AgentEvent], scope MemberScope) *adk.AsyncIterator[*adk.AgentEvent] {
+	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 
 	go func() {
 		defer gen.Close()

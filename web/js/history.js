@@ -1183,38 +1183,57 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
     }
     let hasError = false;
     let hasCancelled = false;
+    let lastAskFlowKey = "";
 
-    (msg.events || []).forEach((evt) => {
+    (msg.events || []).forEach((evt, evtIndex) => {
       if (evt.type === "cancelled") {
         hasCancelled = true;
         return;
       }
       if (evt.type === "reasoning" && evt.content) {
-        this.appendMemberReasoningFinal(entry, evt.content);
+        this.appendMemberReasoningFinal(entry, evt.content, evt.sequence);
         return;
       }
       if (evt.type === "text" && evt.content) {
-        this.appendMemberOutputFinal(entry, evt.content);
+        this.appendMemberOutputFinal(entry, evt.content, evt.sequence);
         return;
       }
       if (evt.type === "error" && evt.content) {
         hasError = true;
-        this.appendMemberOutputFinal(entry, "\n\n" + evt.content);
+        this.appendMemberOutputFinal(entry, "\n\n" + evt.content, evt.sequence);
         return;
       }
       if (evt.type === "tool_call" && evt.tool_call) {
+        if (evt.tool_call.name === "ask_questions") return;
         const display = this.historyToolDisplay(evt.tool_call);
         const flowKey = evt.tool_call.ref ? "ref:" + evt.tool_call.ref : "";
         if (!flowKey) return;
-        this.ensureMemberToolFlow(entry, flowKey, display.displayName);
-        this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, evt.tool_call.arguments || "", false);
+        this.ensureMemberToolFlow(entry, flowKey, display.displayName, evt.sequence);
+        this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, evt.tool_call.arguments || "", false, evt.sequence);
         if (evt.tool_call.result) {
           this.updateMemberToolFlowResult(entry, flowKey, display.displayName, evt.tool_call.result, false);
         }
         return;
       }
       if (evt.type === "action" && evt.action?.content) {
-        this.appendMemberOp(entry, evt.action.content);
+        if (evt.action.action_type === "ask_questions") {
+          const reusable = this.findReusableMemberAskFlow ? this.findReusableMemberAskFlow(entry, evt) : null;
+          lastAskFlowKey = reusable?.key || (this.memberAskFlowKey ? this.memberAskFlowKey(evt) : "") || "ask:history:" + index + ":" + evtIndex;
+          const flow = reusable?.flow || this.ensureMemberToolFlow(entry, lastAskFlowKey, "ask_questions", evt.sequence);
+          if (flow?.status) flow.status.textContent = "待回复";
+          if (flow?.argsWrap) flow.argsWrap.style.display = "";
+          if (flow?.args) flow.args.textContent = evt.action.content;
+          return;
+        }
+        if (evt.action.action_type === "ask_response" && (lastAskFlowKey || evt.action.detail)) {
+          const responseFlowKey = evt.action.detail && this.memberAskFlowKey ? this.memberAskFlowKey(evt) : lastAskFlowKey;
+          this.updateMemberToolFlowResult(entry, responseFlowKey, "ask_questions", evt.action.content, false);
+          const flow = entry.toolFlows?.[responseFlowKey];
+          if (flow?.status) flow.status.textContent = "已回答";
+          if (flow) flow.askCompleted = true;
+          return;
+        }
+        this.appendMemberTextEvent(entry, "tool", "工具事件", evt.action.content, evt.sequence);
       }
     });
 

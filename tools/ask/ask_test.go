@@ -101,6 +101,46 @@ func TestAskQuestionsReturnsResumeResponse(t *testing.T) {
 	}
 }
 
+func TestAskQuestionsUsesRuntimeHandlerForMemberAsk(t *testing.T) {
+	called := false
+	ctx := WithRuntimeHandler(context.Background(), func(_ context.Context, req RuntimeRequest) (*AskResponse, error) {
+		called = true
+		if req.ID == "" {
+			t.Fatal("runtime request missing ID")
+		}
+		if req.Info.Question != "选哪个？" {
+			t.Fatalf("question = %q, want 选哪个？", req.Info.Question)
+		}
+		if req.Metadata.MemberCallID != "member-call" {
+			t.Fatalf("member call ID = %q, want member-call", req.Metadata.MemberCallID)
+		}
+		if req.ToolCallID != "ask-tool-call" || req.ToolName != "ask_questions" {
+			t.Fatalf("tool identity = %q/%q, want ask-tool-call/ask_questions", req.ToolCallID, req.ToolName)
+		}
+		return &AskResponse{AskID: req.ID, Selected: []string{"A"}}, nil
+	})
+	ctx = agentcore.WithToolRuntimeMetadata(ctx, agentcore.ToolRuntimeMetadata{
+		CallID: "ask-tool-call",
+		Name:   "ask_questions",
+	})
+	ctx = agentcore.WithInterruptMetadata(ctx, agentcore.InterruptMetadata{
+		MemberCallID:   "member-call",
+		MemberToolName: "ask_fkagent_member",
+		MemberName:     "member",
+	})
+
+	result, err := AskQuestions(ctx, &AskRequest{Question: "选哪个？"})
+	if err != nil {
+		t.Fatalf("AskQuestions() error = %v", err)
+	}
+	if !called {
+		t.Fatal("runtime handler was not called")
+	}
+	if len(result.Selected) != 1 || result.Selected[0] != "A" {
+		t.Fatalf("result = %#v, want selected A", result)
+	}
+}
+
 func TestAskQuestionsReraisesInterruptForNonTargetResume(t *testing.T) {
 	runtimeErr := errors.New("rerun interrupt")
 	runtime := &askRuntime{interruptErr: runtimeErr}

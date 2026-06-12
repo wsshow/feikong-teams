@@ -21,6 +21,28 @@ type ToolInvocation struct {
 	Meta      map[string]any
 }
 
+type toolRuntimeMetadataKey struct{}
+
+type ToolRuntimeMetadata struct {
+	CallID string
+	Name   string
+}
+
+func WithToolRuntimeMetadata(ctx context.Context, metadata ToolRuntimeMetadata) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, toolRuntimeMetadataKey{}, metadata)
+}
+
+func ToolRuntimeMetadataFromContext(ctx context.Context) (ToolRuntimeMetadata, bool) {
+	if ctx == nil {
+		return ToolRuntimeMetadata{}, false
+	}
+	metadata, ok := ctx.Value(toolRuntimeMetadataKey{}).(ToolRuntimeMetadata)
+	return metadata, ok
+}
+
 type ToolResult struct {
 	Content string
 }

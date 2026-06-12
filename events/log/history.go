@@ -84,6 +84,7 @@ const (
 // MessageEvent 单个消息事件
 type MessageEvent struct {
 	Type         MsgEventType            `json:"type"`
+	Sequence     int64                   `json:"sequence,omitempty"`
 	Content      string                  `json:"content,omitempty"`
 	ContentParts []agentcore.ContentPart `json:"content_parts,omitempty"`
 	Error        *events.FriendlyError   `json:"error,omitempty"`
@@ -139,6 +140,7 @@ type pendingToolCall struct {
 	ID          string
 	Index       *int
 	EventIndex  int
+	Sequence    int64
 	Name        string
 	DisplayName string
 	Kind        string
@@ -195,13 +197,14 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 	return &record
 }
 
-func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string) pendingToolCall {
+func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string, sequence int64) pendingToolCall {
 	display := toolmeta.FormatToolDisplay(name)
 	return pendingToolCall{
 		Ref:         ref,
 		ID:          id,
 		Index:       index,
 		EventIndex:  -1,
+		Sequence:    sequence,
 		Name:        name,
 		DisplayName: display.DisplayName,
 		Kind:        display.Kind,
@@ -210,9 +213,10 @@ func pendingToolCallFromEvent(ref, id string, index *int, name, arguments string
 	}
 }
 
-func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall) int {
+func (h *HistoryRecorder) appendToolCallEvent(ctx *activeMessageContext, tc pendingToolCall, sequence int64) int {
 	record := toolCallRecordFromPending(tc, "")
 	ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+		Sequence: sequence,
 		Type:     MsgTypeToolCall,
 		ToolCall: ptrToolCallRecord(record),
 	})

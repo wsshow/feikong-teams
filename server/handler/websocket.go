@@ -36,6 +36,7 @@ type WSMessage struct {
 	AgentName   string        `json:"agent_name,omitempty"`
 	Decision    int           `json:"decision,omitempty"`
 	Contents    []ContentPart `json:"contents,omitempty"`
+	AskID       string        `json:"ask_id,omitempty"`
 	AskSelected []string      `json:"ask_selected,omitempty"`
 	AskFreeText string        `json:"ask_free_text,omitempty"`
 }
@@ -173,11 +174,12 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			case "ask_response":
 				sid := wsMsg.SessionID
 				resp := &ask.AskResponse{
+					AskID:    wsMsg.AskID,
 					Selected: wsMsg.AskSelected,
 					FreeText: wsMsg.AskFreeText,
 				}
 				if stream := GlobalStreams.Get(sid); stream != nil {
-					_ = stream.SubmitInterrupt(taskstream.InterruptAsk, resp)
+					_ = stream.SubmitAskResponse(wsMsg.AskID, resp)
 				}
 
 			case "ping":
@@ -197,32 +199,38 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 	channelHandler := engine.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
-		if info := extractAskInfo(interrupts); info != nil {
-			stream.BeginInterrupt(taskstream.InterruptAsk)
+		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
+			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)
 			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
 
-			recorder.RecordEvent(events.Event{
-				Type:       events.EventAction,
-				ActionType: events.ActionAskQuestions,
-				Content:    info.Question,
-			})
-			payload := map[string]any{
+			info := askInterrupt.Info
+			askID := askInterrupt.ID
+			memberEvent := askInterrupt.Event
+			askEvent := memberEvent
+			askEvent.Type = events.EventAction
+			askEvent.ActionType = events.ActionAskQuestions
+			askEvent.Content = info.Question
+			askEvent.Detail = askID
+			recorder.RecordEvent(askEvent)
+			payload := attachMemberPayload(map[string]any{
 				"type":         events.NotifyAskQuestions,
 				"session_id":   sessionID,
+				"ask_id":       askID,
 				"question":     info.Question,
 				"options":      info.Options,
 				"multi_select": info.MultiSelect,
-			}
+			}, memberEvent)
 			_ = writeJSON(payload)
 
-			result, err := channelHandler(ctx, interrupts)
+			result, err := engine.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 
 			if err == nil {
-				recorder.RecordEvent(events.Event{
-					Type:       events.EventAction,
-					ActionType: events.ActionAskResponse,
-					Content:    askResponseText(result),
-				})
+				answerEvent := memberEvent
+				answerEvent.Type = events.EventAction
+				answerEvent.ActionType = events.ActionAskResponse
+				answerEvent.Content = askResponseText(result)
+				answerEvent.Detail = askID
+				recorder.RecordEvent(answerEvent)
 			}
 			return result, err
 		}
@@ -361,6 +369,9 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			OnInterrupt(interruptHandler).
 			NonInteractive().
 			WithContext(approval.RegistryContext(approval.NewDefaultRegistry())).
+			WithContext(func(ctx context.Context) context.Context {
+				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
+			}).
 			WithContext(func(ctx context.Context) context.Context {
 				return agentcore.WithSteeringSource(ctx, steeringSource)
 			}).

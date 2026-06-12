@@ -62,7 +62,14 @@ func (r *Runner) Run(ctx context.Context, input agentcore.TurnInput, opts agentc
 		}
 
 		if lastEvent != nil && lastEvent.Action != nil && lastEvent.Action.Interrupted != nil {
-			interrupts := adaptInterruptsFromRunner(lastEvent.Action.Interrupted.InterruptContexts)
+			scope := converter.lastScope()
+			var memberOrder *int
+			if scope.CallID != "" {
+				if order, ok := converter.identities.orderForID(scope.CallID); ok {
+					memberOrder = intPtr(order)
+				}
+			}
+			interrupts := adaptInterruptsFromRunner(lastEvent.Action.Interrupted.InterruptContexts, scope, memberOrder)
 			if len(interrupts) > 0 && opts.InterruptHandler != nil {
 				targets, handlerErr := opts.InterruptHandler(ctx, interrupts)
 				if handlerErr != nil {
@@ -91,14 +98,41 @@ func (r *Runner) Run(ctx context.Context, input agentcore.TurnInput, opts agentc
 	return &agentcore.RunResult{LastEvent: converter.lastEvent()}, nil
 }
 
-func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx) []agentcore.Interrupt {
+func adaptInterruptsFromRunner(interrupts []*adk.InterruptCtx, scope MemberScope, memberOrder *int) []agentcore.Interrupt {
 	result := make([]agentcore.Interrupt, 0, len(interrupts))
 	for _, ic := range interrupts {
-		result = append(result, agentcore.Interrupt{
+		info := ic.Info
+		metadata := agentcore.InterruptMetadata{}
+		switch payload := info.(type) {
+		case agentcore.InterruptPayload:
+			info = payload.Info
+			metadata = payload.Metadata
+		case *agentcore.InterruptPayload:
+			if payload != nil {
+				info = payload.Info
+				metadata = payload.Metadata
+			}
+		}
+		next := agentcore.Interrupt{
 			ID:          ic.ID,
 			IsRootCause: ic.IsRootCause,
-			Info:        ic.Info,
-		})
+			Info:        info,
+		}
+		if metadata.MemberCallID != "" {
+			next.MemberCallID = metadata.MemberCallID
+			next.MemberToolName = metadata.MemberToolName
+			next.MemberName = metadata.MemberName
+			next.MemberOrder = metadata.MemberOrder
+		} else if scope.CallID != "" {
+			next.MemberCallID = scope.CallID
+			next.MemberToolName = scope.ToolName
+			next.MemberName = scope.Name
+			next.MemberOrder = memberOrder
+		}
+		if next.MemberCallID != "" && next.MemberOrder == nil {
+			next.MemberOrder = memberOrder
+		}
+		result = append(result, next)
 	}
 	return result
 }
@@ -107,6 +141,7 @@ type converter struct {
 	emitter    *events.Emitter
 	identities *toolIdentityTracker
 	unknowns   *unknownToolRecorder
+	scope      MemberScope
 }
 
 func newConverter(emitter *events.Emitter, unknowns *unknownToolRecorder) *converter {
@@ -123,6 +158,13 @@ func (c *converter) emit(event agentcore.Event) error {
 
 func (c *converter) lastEvent() agentcore.Event {
 	return c.emitter.LastEvent()
+}
+
+func (c *converter) lastScope() MemberScope {
+	if c == nil {
+		return MemberScope{}
+	}
+	return c.scope
 }
 
 func (c *converter) drain(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent]) (*adk.AgentEvent, error) {
@@ -186,6 +228,7 @@ func (c *converter) flushUnknownToolReports() error {
 func (c *converter) process(ctx context.Context, event *adk.AgentEvent) error {
 	scope, cleanupScope := consumeAgentEventScope(event)
 	defer cleanupScope()
+	c.scope = scope
 
 	if event.Err != nil {
 		if isContextCanceled(ctx, event.Err) {

@@ -198,9 +198,13 @@ type Event struct {
 }
 
 type Interrupt struct {
-	ID          string
-	IsRootCause bool
-	Info        any
+	ID             string
+	IsRootCause    bool
+	Info           any
+	MemberCallID   string
+	MemberToolName string
+	MemberName     string
+	MemberOrder    *int
 }
 
 type InterruptHandler func(ctx context.Context, interrupts []Interrupt) (map[string]any, error)

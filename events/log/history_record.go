@@ -78,6 +78,7 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 		}
 		if !h.updateToolCallEvent(ctx, tc, content) {
 			ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+				Sequence: tc.Sequence,
 				Type:     MsgTypeToolCall,
 				ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 			})
@@ -97,9 +98,10 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 	if event.ToolName == "" || event.ToolCallRef == "" {
 		return
 	}
-	pending := pendingToolCallFromEvent(event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
+	pending := pendingToolCallFromEvent(event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, event.Sequence)
 	if !events.IsInternalToolName(pending.Name) {
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+			Sequence: event.Sequence,
 			Type:     MsgTypeToolCall,
 			ToolCall: ptrToolCallRecord(toolCallRecordFromPending(pending, content)),
 		})
@@ -208,7 +210,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 		ctx := h.ensureMessageContext(event)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Type: MsgTypeUsage,
+			Sequence: event.Sequence,
+			Type:     MsgTypeUsage,
 			Usage: &UsageRecord{
 				PromptTokens:     event.PromptTokens,
 				CompletionTokens: event.CompletionTokens,
@@ -238,8 +241,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				ctx.msg.Events[n-1].Content += content
 			} else {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Type:    MsgTypeReasoning,
-					Content: content,
+					Sequence: event.Sequence,
+					Type:     MsgTypeReasoning,
+					Content:  content,
 				})
 			}
 		case events.DeltaOutput, "":
@@ -248,8 +252,9 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				ctx.msg.Events[n-1].Content += content
 			} else {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-					Type:    MsgTypeText,
-					Content: content,
+					Sequence: event.Sequence,
+					Type:     MsgTypeText,
+					Content:  content,
 				})
 			}
 		case events.DeltaToolResult:
@@ -324,8 +329,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 				}
 			}
 			if !updated {
-				pending := pendingToolCallFromEvent(ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
-				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
+				pending := pendingToolCallFromEvent(ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments, event.Sequence)
+				pending.EventIndex = h.appendToolCallEvent(ctx, pending, event.Sequence)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}
 		}
@@ -364,7 +369,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	case EventAction:
 		ctx := h.ensureMessageContext(event)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Type: MsgTypeAction,
+			Sequence: event.Sequence,
+			Type:     MsgTypeAction,
 			Action: &ActionRecord{
 				ActionType: event.ActionType,
 				Content:    event.Content,
@@ -377,9 +383,10 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		friendly := events.NormalizeFriendlyError(event.Error)
 		friendly.TechnicalDetail = truncateErrorContent(friendly.TechnicalDetail)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
-			Type:    MsgTypeError,
-			Content: friendly.Message,
-			Error:   &friendly,
+			Sequence: event.Sequence,
+			Type:     MsgTypeError,
+			Content:  friendly.Message,
+			Error:    &friendly,
 		})
 
 	}
@@ -411,6 +418,7 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 		if !events.IsInternalToolName(tc.Name) {
 			if !h.updateToolCallEvent(ctx, tc, content) {
 				ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+					Sequence: tc.Sequence,
 					Type:     MsgTypeToolCall,
 					ToolCall: ptrToolCallRecord(toolCallRecordFromPending(tc, content)),
 				})

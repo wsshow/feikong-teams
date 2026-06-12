@@ -58,6 +58,47 @@ func TestBeginInterruptDrainsStaleDecision(t *testing.T) {
 	}
 }
 
+func TestSubmitAskResponseRoutesByAskID(t *testing.T) {
+	s := newTestStream()
+	first, err := s.BeginAsk("ask-1")
+	if err != nil {
+		t.Fatalf("begin first ask: %v", err)
+	}
+	second, err := s.BeginAsk("ask-2")
+	if err != nil {
+		t.Fatalf("begin second ask: %v", err)
+	}
+
+	if err := s.SubmitAskResponse("ask-2", "second answer"); err != nil {
+		t.Fatalf("submit second ask: %v", err)
+	}
+	select {
+	case got := <-second:
+		if got != "second answer" {
+			t.Fatalf("second response = %v, want second answer", got)
+		}
+	case <-time.After(20 * time.Millisecond):
+		t.Fatal("timed out waiting for second ask response")
+	}
+	select {
+	case got := <-first:
+		t.Fatalf("first ask should still be pending, got %v", got)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if err := s.SubmitAskResponse("ask-1", "first answer"); err != nil {
+		t.Fatalf("submit first ask: %v", err)
+	}
+	select {
+	case got := <-first:
+		if got != "first answer" {
+			t.Fatalf("first response = %v, want first answer", got)
+		}
+	case <-time.After(20 * time.Millisecond):
+		t.Fatal("timed out waiting for first ask response")
+	}
+}
+
 func TestUnsubscribeDoesNotCancelTask(t *testing.T) {
 	cancelled := make(chan struct{}, 1)
 	s := NewManager().Register(StreamConfig{

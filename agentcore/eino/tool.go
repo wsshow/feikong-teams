@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -127,8 +128,14 @@ func (t *reflectedTool) Info(context.Context) (*schema.ToolInfo, error) {
 }
 
 func (t *reflectedTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	callID := compose.GetToolCallID(ctx)
+	ctx = agentcore.WithToolRuntimeMetadata(ctx, agentcore.ToolRuntimeMetadata{
+		CallID: callID,
+		Name:   t.info.Name,
+	})
 	result, err := t.inner.Invoke(ctx, agentcore.ToolInvocation{
 		Name:      t.info.Name,
+		CallID:    callID,
 		Arguments: argumentsInJSON,
 	})
 	if err != nil {

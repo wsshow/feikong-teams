@@ -2,6 +2,7 @@ package eventlog
 
 import (
 	"fkteams/agentcore"
+	"fkteams/events"
 	"testing"
 )
 
@@ -53,6 +54,64 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	}
 	if messages[1].MemberCallID != "call_1" {
 		t.Fatalf("second message member_call_id = %q, want call_1", messages[1].MemberCallID)
+	}
+}
+
+func TestHistoryRecorderPreservesMemberEventSequences(t *testing.T) {
+	recorder := NewHistoryRecorder()
+	memberOrder := 0
+
+	recorder.RecordEvent(Event{
+		Sequence:       10,
+		Type:           EventMessageDelta,
+		Role:           agentcore.RoleAssistant,
+		DeltaKind:      agentcore.DeltaReasoning,
+		AgentName:      "ask-member",
+		Content:        "thinking",
+		MemberCallID:   "member-call-1",
+		MemberToolName: "ask_fkagent_member",
+		MemberName:     "Ask Member",
+		MemberOrder:    &memberOrder,
+	})
+	recorder.RecordEvent(Event{
+		Sequence:       11,
+		Type:           EventMessageDelta,
+		Role:           agentcore.RoleAssistant,
+		DeltaKind:      agentcore.DeltaOutput,
+		AgentName:      "ask-member",
+		Content:        "about to ask",
+		MemberCallID:   "member-call-1",
+		MemberToolName: "ask_fkagent_member",
+		MemberName:     "Ask Member",
+		MemberOrder:    &memberOrder,
+	})
+	recorder.RecordEvent(Event{
+		Sequence:       12,
+		Type:           EventAction,
+		ActionType:     events.ActionAskQuestions,
+		AgentName:      "ask-member",
+		Content:        "Choose?",
+		Detail:         "ask-1",
+		MemberCallID:   "member-call-1",
+		MemberToolName: "ask_fkagent_member",
+		MemberName:     "Ask Member",
+		MemberOrder:    &memberOrder,
+	})
+	recorder.FinalizeCurrent()
+
+	messages := recorder.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	events := messages[0].Events
+	if len(events) != 3 {
+		t.Fatalf("event count = %d, want 3: %#v", len(events), events)
+	}
+	want := []int64{10, 11, 12}
+	for i, sequence := range want {
+		if events[i].Sequence != sequence {
+			t.Fatalf("event %d sequence = %d, want %d", i, events[i].Sequence, sequence)
+		}
 	}
 }
 

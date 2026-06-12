@@ -6,7 +6,11 @@ import (
 	"encoding/gob"
 	"fkteams/agentcore"
 	"fmt"
+
+	"github.com/google/uuid"
 )
+
+type handlerContextKey struct{}
 
 func init() {
 	gob.Register(&AskInfo{})
@@ -26,8 +30,31 @@ func (a *AskInfo) String() string {
 
 // AskResponse 用户的回答
 type AskResponse struct {
+	AskID    string   `json:"ask_id,omitempty"`
 	Selected []string `json:"selected,omitempty"`
 	FreeText string   `json:"free_text,omitempty"`
+}
+
+type RuntimeRequest struct {
+	ID         string
+	Info       *AskInfo
+	Metadata   agentcore.InterruptMetadata
+	ToolCallID string
+	ToolName   string
+}
+
+type RuntimeHandler func(context.Context, RuntimeRequest) (*AskResponse, error)
+
+func WithRuntimeHandler(ctx context.Context, handler RuntimeHandler) context.Context {
+	if handler == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, handlerContextKey{}, handler)
+}
+
+func runtimeHandlerFromContext(ctx context.Context) (RuntimeHandler, bool) {
+	handler, ok := ctx.Value(handlerContextKey{}).(RuntimeHandler)
+	return handler, ok
 }
 
 // AskRequest 工具输入参数
@@ -53,6 +80,29 @@ func AskQuestions(ctx context.Context, req *AskRequest) (*AskResult, error) {
 		Question:    req.Question,
 		Options:     req.Options,
 		MultiSelect: req.MultiSelect,
+	}
+
+	if handler, ok := runtimeHandlerFromContext(ctx); ok {
+		if metadata, hasMetadata := agentcore.InterruptMetadataFromContext(ctx); hasMetadata && metadata.MemberCallID != "" {
+			toolMetadata, _ := agentcore.ToolRuntimeMetadataFromContext(ctx)
+			resp, err := handler(ctx, RuntimeRequest{
+				ID:         uuid.NewString(),
+				Info:       info,
+				Metadata:   metadata,
+				ToolCallID: toolMetadata.CallID,
+				ToolName:   toolMetadata.Name,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if resp == nil {
+				return nil, fmt.Errorf("no response received")
+			}
+			return &AskResult{
+				Selected: resp.Selected,
+				FreeText: resp.FreeText,
+			}, nil
+		}
 	}
 
 	// 检查是否从中断恢复

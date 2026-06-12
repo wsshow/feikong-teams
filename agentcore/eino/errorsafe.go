@@ -31,7 +31,19 @@ func (e *errorSafeAgent) Description(ctx context.Context) string {
 
 func (e *errorSafeAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
 	innerIter := e.inner.Run(ctx, input, opts...)
+	return e.wrap(ctx, innerIter)
+}
 
+func (e *errorSafeAgent) Resume(ctx context.Context, info *adk.ResumeInfo, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	inner, ok := e.inner.(adk.ResumableAgent)
+	if !ok {
+		return newErrorAgentIterator(fmt.Errorf("agent %q does not support resume", e.inner.Name(ctx)))
+	}
+	innerIter := inner.Resume(ctx, info, opts...)
+	return e.wrap(ctx, innerIter)
+}
+
+func (e *errorSafeAgent) wrap(ctx context.Context, innerIter *adk.AsyncIterator[*adk.AgentEvent]) *adk.AsyncIterator[*adk.AgentEvent] {
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 
 	go func() {
@@ -65,6 +77,13 @@ func (e *errorSafeAgent) Run(ctx context.Context, input *adk.AgentInput, opts ..
 		}
 	}()
 
+	return iter
+}
+
+func newErrorAgentIterator(err error) *adk.AsyncIterator[*adk.AgentEvent] {
+	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+	gen.Send(&adk.AgentEvent{Err: err})
+	gen.Close()
 	return iter
 }
 

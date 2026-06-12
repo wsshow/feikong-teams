@@ -203,6 +203,64 @@ test("history agent message renders stored error event", () => {
   assert.match(items[0].innerHTML, /does not support image_url/);
 });
 
+test("history member group passes event sequence to member timeline", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = { toolFlows: {} };
+  const calls = [];
+
+  chat.ensureMemberCard = () => entry;
+  chat.historyMemberLabel = () => "Ask Member";
+  chat.takeHistoryMemberTask = () => null;
+  chat.appendMemberReasoningFinal = (_entry, content, order) => calls.push(["reasoning", content, order]);
+  chat.appendMemberOutputFinal = (_entry, content, order) => calls.push(["output", content, order]);
+  chat.ensureMemberToolFlow = (_entry, key, displayName, order) => {
+    calls.push(["tool", key, displayName, order]);
+    entry.toolFlows[key] = {};
+    return entry.toolFlows[key];
+  };
+  chat.appendMemberTextEvent = (_entry, type, title, text, order) => calls.push([type, title, text, order]);
+  chat.historyToolDisplay = (toolCall) => ({ displayName: toolCall.display_name || toolCall.name });
+  chat.updateMemberToolFlowArgs = () => {};
+  chat.updateMemberToolFlowResult = () => {};
+  chat.updateMemberStatus = () => {};
+  chat.finalizeMemberMarkdown = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.updateParallelMembersHeader = () => {};
+  chat.escapeHtml = (value) => String(value || "");
+
+  chat.renderHistoryMemberGroup([{
+    member_call_id: "member-call-1",
+    member_name: "Ask Member",
+    events: [
+      { type: "reasoning", content: "thinking", sequence: 10 },
+      { type: "text", content: "about to ask", sequence: 11 },
+      {
+        type: "action",
+        sequence: 12,
+        action: { action_type: "ask_questions", content: "Choose?", detail: "ask-1" },
+      },
+      {
+        type: "tool_call",
+        sequence: 13,
+        tool_call: { ref: "tool_call:1", name: "echo", arguments: "{}" },
+      },
+      {
+        type: "action",
+        sequence: 14,
+        action: { action_type: "status", content: "done" },
+      },
+    ],
+  }]);
+
+  assert.deepEqual(calls, [
+    ["reasoning", "thinking", 10],
+    ["output", "about to ask", 11],
+    ["tool", "ask:ask-1", "ask_questions", 12],
+    ["tool", "ref:tool_call:1", "echo", 13],
+    ["tool", "工具事件", "done", 14],
+  ]);
+});
+
 test("sidebar history shows loading before debounced fetch", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   let debounceCalled = false;

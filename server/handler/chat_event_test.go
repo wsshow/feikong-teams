@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"fkteams/agentcore"
 	"fkteams/agents/toolmeta"
 	"fkteams/events"
+	eventlog "fkteams/events/log"
+	"fkteams/server/handler/taskstream"
+	"fkteams/tools/ask"
 )
 
 func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
@@ -197,6 +201,141 @@ func TestConvertEventToMapUsesPositionToolRefsWhenToolCallIndexMissing(t *testin
 	}
 	requireMapValue(t, toolCalls[0], "ref", "tool_call:tool-call-1")
 	requireMapValue(t, toolCalls[1], "ref", "tool_call:tool-call-2")
+}
+
+func TestAskInterruptIDPrefersRootCause(t *testing.T) {
+	got := askInterruptID([]agentcore.Interrupt{
+		{ID: "wrapper"},
+		{ID: "root", IsRootCause: true, Info: &ask.AskInfo{Question: "choose"}},
+	})
+	if got != "root" {
+		t.Fatalf("askInterruptID = %q, want root", got)
+	}
+}
+
+func TestExtractAskInterruptUsesAskRootCauseMetadata(t *testing.T) {
+	order := 2
+	got := extractAskInterrupt([]agentcore.Interrupt{
+		{ID: "wrapper", IsRootCause: true, Info: "approval"},
+		{
+			ID:             "ask-root",
+			IsRootCause:    true,
+			Info:           &ask.AskInfo{Question: "choose"},
+			MemberCallID:   "member-call",
+			MemberToolName: "ask_fkagent_member",
+			MemberName:     "Member",
+			MemberOrder:    &order,
+		},
+	})
+	if got == nil {
+		t.Fatal("expected ask interrupt")
+	}
+	if got.ID != "ask-root" || got.Info.Question != "choose" {
+		t.Fatalf("unexpected ask interrupt: %#v", got)
+	}
+	if got.Event.MemberCallID != "member-call" || got.Event.MemberOrder == nil || *got.Event.MemberOrder != order {
+		t.Fatalf("member metadata was not preserved: %#v", got.Event)
+	}
+}
+
+func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
+	stream := taskstream.NewManager().Register(taskstream.StreamConfig{
+		SessionID: "session-member-ask-order",
+		Cancel:    func() {},
+	})
+	recorder := eventlog.NewHistoryRecorder()
+	handler := buildMemberAskRuntimeHandler(stream, recorder, "session-member-ask-order")
+	memberOrder := 1
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	respCh := make(chan *ask.AskResponse, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := handler(ctx, ask.RuntimeRequest{
+			ID:         "ask-order-1",
+			ToolCallID: "ask-tool-call-1",
+			ToolName:   "ask_questions",
+			Info: &ask.AskInfo{
+				Question:    "Choose one?",
+				Options:     []string{"A", "B"},
+				MultiSelect: true,
+			},
+			Metadata: agentcore.InterruptMetadata{
+				MemberCallID:   "member-call-1",
+				MemberToolName: "ask_fkagent_member",
+				MemberName:     "Member",
+				MemberOrder:    &memberOrder,
+			},
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	var askPayload map[string]any
+	deadline := time.After(time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for askPayload == nil {
+		select {
+		case err := <-errCh:
+			t.Fatalf("handler returned before ask response: %v", err)
+		case <-deadline:
+			t.Fatal("timed out waiting for ask notification")
+		case <-ticker.C:
+			for _, item := range stream.EventsSince(0) {
+				if item.Data["type"] == events.NotifyAskQuestions {
+					askPayload = item.Data
+					break
+				}
+			}
+		}
+	}
+
+	requireMapValue(t, askPayload, "type", events.NotifyAskQuestions)
+	requireMapValue(t, askPayload, "session_id", "session-member-ask-order")
+	requireMapValue(t, askPayload, "ask_id", "ask-order-1")
+	requireMapValue(t, askPayload, "detail", "ask-order-1")
+	requireMapValue(t, askPayload, "question", "Choose one?")
+	requireMapValue(t, askPayload, "multi_select", true)
+	requireMapValue(t, askPayload, "tool_call_id", "ask-tool-call-1")
+	requireMapValue(t, askPayload, "tool_call_ref", "tool_call:ask-tool-call-1")
+	requireMapValue(t, askPayload, "tool_name", "ask_questions")
+	requireMapValue(t, askPayload, "is_member_event", true)
+	requireMapValue(t, askPayload, "member_call_id", "member-call-1")
+	requireMapValue(t, askPayload, "member_tool_name", "ask_fkagent_member")
+	requireMapValue(t, askPayload, "member_name", "Member")
+	requireMapValue(t, askPayload, "member_order", memberOrder)
+	if got, ok := askPayload["sequence"].(int64); !ok || got == 0 {
+		t.Fatalf("ask notification sequence = %#v, want non-zero int64", askPayload["sequence"])
+	}
+	if got, ok := askPayload["event_id"].(string); !ok || got == "" {
+		t.Fatalf("ask notification event_id = %#v, want non-empty string", askPayload["event_id"])
+	}
+	if got, ok := askPayload["created_at"].(time.Time); !ok || got.IsZero() {
+		t.Fatalf("ask notification created_at = %#v, want non-zero time", askPayload["created_at"])
+	}
+
+	if err := stream.SubmitAskResponse("ask-order-1", &ask.AskResponse{
+		AskID:    "ask-order-1",
+		Selected: []string{"A"},
+	}); err != nil {
+		t.Fatalf("submit ask response: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("handler returned error after response: %v", err)
+	case resp := <-respCh:
+		if resp.AskID != "ask-order-1" || len(resp.Selected) != 1 || resp.Selected[0] != "A" {
+			t.Fatalf("unexpected ask response: %#v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for handler to resume")
+	}
 }
 
 func requireMapValue(t *testing.T, got map[string]any, key string, want any) {

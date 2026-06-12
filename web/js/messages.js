@@ -208,6 +208,25 @@ FKTeamsChat.prototype.memberKeyForToolCall = function (toolCall) {
   return "";
 };
 
+FKTeamsChat.prototype.prepareMemberPanelForToolCalls = function (toolCalls) {
+  const agentCalls = (toolCalls || []).filter((toolCall) => this.getToolDisplay(toolCall).kind === "agent");
+  if (agentCalls.length === 0) return;
+  const hasExistingCard = agentCalls.some((toolCall) => {
+    const key = this.memberKeyForToolCall(toolCall);
+    const entry = key ? this.parallelMemberCards[key] : null;
+    return !!(entry && entry.el && entry.el.isConnected);
+  });
+  if (hasExistingCard) return;
+  if (
+    this.parallelPanel &&
+    this.parallelPanel.isConnected &&
+    !this.parallelPanelBatchMode &&
+    this.parallelEntriesForPanel(this.parallelPanel).length > 0
+  ) {
+    this.parallelPanel = null;
+  }
+};
+
 FKTeamsChat.prototype.hasActiveTextSelection = function () {
   const selection = window.getSelection ? window.getSelection() : null;
   return !!(selection && !selection.isCollapsed && String(selection).trim());
@@ -287,6 +306,19 @@ FKTeamsChat.prototype.parallelPanelCompleted = function (panel) {
 };
 
 FKTeamsChat.prototype.resolveMemberToolFlowKey = function (entry, event, toolCall) {
+  if ((toolCall?.name || event?.tool_name) === "ask_questions") {
+    const toolKey = this.memberToolFlowKey(event, toolCall) || this.memberAskToolFlowKey(event);
+    if (toolKey) return toolKey;
+    const activeKeys = Array.isArray(entry?.activeAskFlowKeys)
+      ? entry.activeAskFlowKeys
+      : (entry?.activeAskFlowKey ? [entry.activeAskFlowKey] : []);
+    for (const activeKey of activeKeys) {
+      const activeFlow = activeKey && entry?.toolFlows ? entry.toolFlows[activeKey] : null;
+      if (activeFlow && activeFlow.el && activeFlow.el.isConnected && !activeFlow.askToolCompleted) {
+        return activeKey;
+      }
+    }
+  }
   const finalKey = this.memberToolFlowKey(event, toolCall);
   return finalKey;
 };
@@ -390,6 +422,9 @@ FKTeamsChat.prototype.ensureMemberCard = function (key, label, agentName, order)
     taskDetail: card.querySelector(".parallel-member-task-detail"),
     timeline: card.querySelector(".parallel-member-timeline"),
     detail: card.querySelector(".parallel-member-detail"),
+    statusState: "running",
+    statusText: "运行中",
+    activityText: "",
   };
   card._memberEntry = entry;
   this.parallelMemberCards[key] = entry;
@@ -404,17 +439,47 @@ FKTeamsChat.prototype.updateMemberActivity = function (entry, text) {
   if (!entry.activity) entry.activity = entry.el.querySelector(".parallel-member-activity");
   if (!entry.activity) return;
   const value = String(text || "").trim();
-  if (!value) {
+  entry.activityText = value;
+  const displayValue = entry.statusState === "running" && this.memberHasPendingAsk(entry)
+    ? "等待用户回答"
+    : value;
+  if (!displayValue) {
     entry.activity.textContent = "";
     entry.activity.style.display = "none";
     return;
   }
-  entry.activity.textContent = this.truncateRunes(value, 80);
+  entry.activity.textContent = this.truncateRunes(displayValue, 80);
   entry.activity.style.display = "";
 };
 
-FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
+FKTeamsChat.prototype.memberHasPendingAsk = function (entry) {
+  const activeKeys = Array.isArray(entry?.activeAskFlowKeys)
+    ? entry.activeAskFlowKeys
+    : (entry?.activeAskFlowKey ? [entry.activeAskFlowKey] : []);
+  return activeKeys.some((key) => {
+    const flow = key && entry?.toolFlows ? entry.toolFlows[key] : null;
+    return !!(
+      flow &&
+      flow.el &&
+      flow.el.isConnected !== false &&
+      flow.askPending &&
+      !flow.askCompleted &&
+      !flow.askToolCompleted
+    );
+  });
+};
+
+FKTeamsChat.prototype.renderMemberState = function (entry) {
   if (!entry || !entry.el) return;
+  let status = entry.statusState || "running";
+  let text = entry.statusText || "运行中";
+  let activity = entry.activityText || text;
+
+  if (status === "running" && this.memberHasPendingAsk(entry)) {
+    text = "待回复";
+    activity = "等待用户回答";
+  }
+
   entry.el.classList.remove(
     "parallel-member-running",
     "parallel-member-done",
@@ -440,10 +505,18 @@ FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
   if (status === "done" || status === "error" || status === "cancelled") {
     this.updateMemberActivity(entry, "");
     this.finalizeMemberMarkdown(entry);
-  } else if (text) {
-    this.updateMemberActivity(entry, text);
+  } else if (activity) {
+    this.updateMemberActivity(entry, activity);
   }
   this.updateParallelMembersHeader(entry.panel);
+};
+
+FKTeamsChat.prototype.updateMemberStatus = function (entry, status, text) {
+  if (!entry || !entry.el) return;
+  entry.statusState = status || "running";
+  entry.statusText = text || "";
+  entry.activityText = text || "";
+  this.renderMemberState(entry);
 };
 
 FKTeamsChat.prototype.finalizeMemberMarkdown = function (entry) {
@@ -742,14 +815,25 @@ FKTeamsChat.prototype.memberToolFlowKey = function (event, toolCall) {
   return "";
 };
 
+FKTeamsChat.prototype.memberAskToolFlowKey = function (event) {
+  if (event?.tool_call_ref) return "ref:" + event.tool_call_ref;
+  if (event?.tool_call_id) return "ref:tool_call:" + event.tool_call_id;
+  return "";
+};
+
 FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName, order) {
   if (!entry || !entry.timeline || !key) return null;
   if (!entry.toolFlows) entry.toolFlows = {};
   const existing = entry.toolFlows[key];
   if (existing && existing.el && existing.el.isConnected) {
+    if (displayName) existing.displayName = displayName;
+    const currentOrder = this.memberTimelineOrder(existing.el.getAttribute("data-event-order") || existing.order);
+    const nextOrder = this.memberTimelineOrder(order);
+    const desiredOrder = nextOrder < currentOrder ? nextOrder : currentOrder;
+    existing.order = desiredOrder;
     const title = existing.el.querySelector(".parallel-member-tool-title");
     if (title && displayName) title.textContent = displayName;
-    this.insertMemberTimelineItem(entry, existing.el, existing.el.getAttribute("data-event-order"));
+    this.insertMemberTimelineItem(entry, existing.el, desiredOrder);
     return existing;
   }
   entry.lastTimelineType = "toolflow:" + key;
@@ -781,12 +865,24 @@ FKTeamsChat.prototype.ensureMemberToolFlow = function (entry, key, displayName, 
     args: item.querySelector(".parallel-member-tool-args pre"),
     resultWrap: item.querySelector(".parallel-member-tool-result"),
     result: item.querySelector(".parallel-member-tool-result pre"),
+    displayName: displayName || "工具调用",
+    order,
     argsRaw: "",
     resultRaw: "",
   };
   entry.toolFlows[key] = flow;
   this.updateMemberActivity(entry, `准备调用工具：${displayName || "工具调用"}`);
   this.updateMemberDetailVisibility(entry);
+  return flow;
+};
+
+FKTeamsChat.prototype.anchorMemberToolFlow = function (entry, key, displayName, order) {
+  const flow = this.ensureMemberToolFlow(entry, key, displayName, order);
+  if (flow && order !== undefined && order !== null && Number.isFinite(Number(order))) {
+    flow.order = order;
+    flow.provisionalOrder = false;
+    this.insertMemberTimelineItem(entry, flow.el, order);
+  }
   return flow;
 };
 
@@ -851,7 +947,46 @@ FKTeamsChat.prototype.updateMemberToolFlowResult = function (entry, key, display
     flow.result.textContent = flow.resultRaw;
     if (flow.status) flow.status.textContent = "已完成";
   }
+  if (displayName === "ask_questions") {
+    flow.askToolCompleted = true;
+    if (Array.isArray(entry?.activeAskFlowKeys)) {
+      entry.activeAskFlowKeys = entry.activeAskFlowKeys.filter((activeKey) => activeKey !== key);
+    }
+    if (entry?.activeAskFlowKey === key) delete entry.activeAskFlowKey;
+    this.renderMemberState(entry);
+  }
   this.updateMemberActivity(entry, `工具完成：${displayName || "工具调用"}`);
+};
+
+FKTeamsChat.prototype.handleMemberAskToolCallEvent = function (entry, event, toolCall, displayName) {
+  if (!entry) return null;
+  const key = this.resolveMemberToolFlowKey(entry, event, toolCall);
+  if (!key) return null;
+  const flow = this.anchorMemberToolFlow(entry, key, displayName || "ask_questions", event.sequence);
+  if (!flow) return null;
+  flow.askToolCallID = toolCall?.id || event?.tool_call_id || flow.askToolCallID || "";
+  flow.askToolCallRef = toolCall?.ref || event?.tool_call_ref || flow.askToolCallRef || "";
+  flow.askToolAnchored = true;
+  if (flow.status && !flow.askPending && !flow.askCompleted) {
+    flow.status.textContent = "准备提问";
+  }
+  return flow;
+};
+
+FKTeamsChat.prototype.completeMemberAskToolFlow = function (entry) {
+  if (!entry || !Array.isArray(entry.activeAskFlowKeys)) return;
+  const key = entry.activeAskFlowKeys.find((activeKey) => {
+    const flow = activeKey && entry.toolFlows ? entry.toolFlows[activeKey] : null;
+    return flow && flow.el && flow.el.isConnected && !flow.askToolCompleted;
+  });
+  if (!key) return;
+  const flow = entry.toolFlows[key];
+  flow.askToolCompleted = true;
+  flow.askCompleted = true;
+  if (flow.status) flow.status.textContent = "已完成";
+  entry.activeAskFlowKeys = entry.activeAskFlowKeys.filter((activeKey) => activeKey !== key);
+  if (entry.activeAskFlowKey === key) delete entry.activeAskFlowKey;
+  this.renderMemberState(entry);
 };
 
 FKTeamsChat.prototype.extractMemberTaskContent = function (argsText) {
@@ -1420,7 +1555,7 @@ FKTeamsChat.prototype.handleServerEvent = function (event) {
       this.hideThinkingAfterVisibleRender(event);
       break;
     case "ask_questions":
-      this.showInlineAskForm(event);
+      this.handleAskQuestions(event);
       this.hideThinkingAfterVisibleRender(event);
       break;
     case "error":
@@ -2358,6 +2493,10 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
     if (!entry) return;
     toolCalls.forEach((toolCall, i) => {
       const display = this.getToolDisplay(toolCall);
+      if (toolCall.name === "ask_questions") {
+        this.handleMemberAskToolCallEvent(entry, event, toolCall, display.displayName || "ask_questions");
+        return;
+      }
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, i);
       this.ensureMemberToolFlow(entry, flowKey, display.displayName, event.sequence);
@@ -2367,6 +2506,7 @@ FKTeamsChat.prototype.handleToolCallsPreparing = function (event) {
   }
 
   this.hasToolCallAfterMessage = true;
+  this.prepareMemberPanelForToolCalls(toolCalls);
   toolCalls.forEach((toolCall, i) => {
     this.lastToolName = toolCall.name;
     const key = this.toolCallKey(toolCall, i);
@@ -2398,6 +2538,11 @@ FKTeamsChat.prototype.handleToolCallsArgsDelta = function (event) {
     const toolCall = this.normalizeToolCallForEvent(event, null, 0);
     const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, 0);
     const display = this.getToolDisplay(toolCall);
+    if (toolCall.name === "ask_questions") {
+      this.handleMemberAskToolCallEvent(entry, event, toolCall, display.displayName || "ask_questions");
+      this.scrollToBottom();
+      return;
+    }
     this.updateMemberToolFlowArgs(entry, flowKey, display.displayName || "工具调用", event.content, true, event.sequence);
     this.scrollToBottom();
     return;
@@ -2442,6 +2587,10 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     if (!entry) return;
     toolCalls.forEach((toolCall, i) => {
       const display = this.getToolDisplay(toolCall);
+      if (toolCall.name === "ask_questions") {
+        this.handleMemberAskToolCallEvent(entry, event, toolCall, display.displayName || "ask_questions");
+        return;
+      }
       if (toolCall.id) this.toolCallsByID[toolCall.id] = toolCall;
       const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, i);
       this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, toolCall.arguments || "", false, event.sequence);
@@ -2469,6 +2618,7 @@ FKTeamsChat.prototype.handleToolCalls = function (event) {
     }
   }
 
+  this.prepareMemberPanelForToolCalls(toolCalls);
   toolCalls.forEach((toolCall, i) => {
     this.lastToolName = toolCall.name;
     const key = this.toolCallKey(toolCall, i);
@@ -2507,6 +2657,11 @@ FKTeamsChat.prototype.handleToolResult = function (event) {
     const entry = this.memberEntryFromEvent(event);
     if (!entry) return;
     const toolCall = this.normalizeToolCallForEvent(event, null, 0);
+    if (toolCall.name === "ask_questions") {
+      if (event.type !== "tool_result_chunk") this.completeMemberAskToolFlow(entry);
+      this.scrollToBottom();
+      return;
+    }
     const display = this.getToolDisplay(toolCall);
     const flowKey = this.resolveMemberToolFlowKey(entry, event, toolCall, 0);
     if (event.type === "tool_result_chunk") {
@@ -3376,14 +3531,103 @@ FKTeamsChat.prototype.sendApprovalDecision = function (decision) {
 };
 
 // 在聊天流中内联显示提问表单
-FKTeamsChat.prototype.showInlineAskForm = function (event) {
+FKTeamsChat.prototype.handleAskQuestions = function (event) {
+  if (this.isMemberRunEvent(event)) {
+    this.showMemberAskQuestions(event);
+    return;
+  }
+  this.showInlineAskForm(event);
+};
+
+FKTeamsChat.prototype.memberAskFlowKey = function (event) {
+  const toolKey = this.memberAskToolFlowKey(event);
+  if (toolKey) return toolKey;
+  return "ask:" + (this.memberAskID(event) || event.event_id || event.sequence || Date.now());
+};
+
+FKTeamsChat.prototype.memberAskID = function (event) {
+  return event?.ask_id || event?.detail || event?.action?.detail || "";
+};
+
+FKTeamsChat.prototype.findReusableMemberAskFlow = function (entry, event) {
+  if (!entry) return null;
+  if (!entry.toolFlows) entry.toolFlows = {};
+  const toolKey = this.memberAskToolFlowKey(event);
+  if (toolKey && entry.toolFlows[toolKey]?.el?.isConnected) {
+    return { key: toolKey, flow: entry.toolFlows[toolKey] };
+  }
+  const askID = this.memberAskID(event);
+  const mappedKey = askID && entry.askFlowByAskID ? entry.askFlowByAskID[askID] : "";
+  if (mappedKey && entry.toolFlows[mappedKey]?.el?.isConnected) {
+    return { key: mappedKey, flow: entry.toolFlows[mappedKey] };
+  }
+  const askKey = askID ? "ask:" + askID : "";
+  if (askKey && entry.toolFlows[askKey]?.el?.isConnected) {
+    return { key: askKey, flow: entry.toolFlows[askKey] };
+  }
+  return null;
+};
+
+FKTeamsChat.prototype.showMemberAskQuestions = function (event) {
+  const entry = this.memberEntryFromEvent(event);
+  if (!entry) {
+    this.showInlineAskForm(event);
+    return;
+  }
+  const existing = this.findReusableMemberAskFlow(entry, event);
+  const key = existing?.key || this.memberAskFlowKey(event);
+  const flow = existing?.flow || this.ensureMemberToolFlow(entry, key, "ask_questions", event.sequence);
+  if (!flow) {
+    this.showInlineAskForm(event);
+    return;
+  }
+
+  const details = flow.el.querySelector("details");
+  if (!Array.isArray(entry.activeAskFlowKeys)) entry.activeAskFlowKeys = [];
+  if (!entry.activeAskFlowKeys.includes(key)) entry.activeAskFlowKeys.push(key);
+  entry.activeAskFlowKey = key;
+  if (!entry.askFlowByAskID) entry.askFlowByAskID = {};
+  flow.askPending = true;
+  flow.askToolCompleted = false;
+  flow.askID = this.memberAskID(event) || flow.askID || "";
+  flow.askToolCallID = event.tool_call_id || flow.askToolCallID || "";
+  flow.askToolCallRef = event.tool_call_ref || flow.askToolCallRef || "";
+  if (!flow.askToolAnchored) flow.provisionalOrder = true;
+  if (flow.askID) entry.askFlowByAskID[flow.askID] = key;
+  if (details) details.open = true;
+  if (flow.status) flow.status.textContent = "待回复";
+  if (flow.argsWrap) flow.argsWrap.style.display = "";
+  if (flow.args) flow.args.textContent = event.question || "请回答以下问题";
+  if (flow.resultWrap) {
+    flow.resultWrap.style.display = "";
+    const label = flow.resultWrap.querySelector(".parallel-member-tool-label");
+    if (label) label.textContent = "回答";
+    if (flow.result) flow.result.style.display = "none";
+    if (!flow.askForm || !flow.askForm.isConnected) {
+      flow.askForm = this.showInlineAskForm(event, flow.resultWrap, {
+        onSubmit: (summary) => {
+          flow.askCompleted = true;
+          if (flow.status) flow.status.textContent = "已回答";
+          this.updateMemberStatus(entry, "running", "处理中");
+        },
+      });
+    }
+  }
+  this.updateMemberStatus(entry, "running", "待回复");
+  this.updateMemberActivity(entry, "等待用户回答");
+  this.updateMemberDetailVisibility(entry);
+  this.scrollToBottom();
+};
+
+FKTeamsChat.prototype.showInlineAskForm = function (event, target, hooks) {
   var self = this;
 
-  // 自动关闭之前未提交的 ask 表单（防止多个表单同时显示）
-  this._dismissPendingAskForms();
+  // 顶层 ask 保持单表单；成员 ask 允许多个并行等待。
+  if (!target) this._dismissPendingAskForms();
 
   var container = document.createElement("div");
   container.className = "inline-ask-form";
+  container.dataset.askId = event.ask_id || event.detail || "";
 
   // 问题文本
   var questionP = document.createElement("div");
@@ -3393,6 +3637,8 @@ FKTeamsChat.prototype.showInlineAskForm = function (event) {
 
   var multiSelect = event.multi_select || false;
   var inputType = multiSelect ? "checkbox" : "radio";
+  var optionName =
+    "inline-ask-opt-" + (event.ask_id || event.detail || Date.now());
 
   // 选项区域
   var optionsDiv = document.createElement("div");
@@ -3412,7 +3658,7 @@ FKTeamsChat.prototype.showInlineAskForm = function (event) {
       label.className = "inline-ask-option-label";
       var input = document.createElement("input");
       input.type = inputType;
-      input.name = "inline-ask-opt-" + Date.now();
+      input.name = optionName;
       input.value = opt;
       input.className = "inline-ask-option-input";
       label.appendChild(input);
@@ -3425,7 +3671,7 @@ FKTeamsChat.prototype.showInlineAskForm = function (event) {
     customLabel.className = "inline-ask-option-label inline-ask-option-custom";
     var customInput = document.createElement("input");
     customInput.type = inputType;
-    customInput.name = "inline-ask-opt-" + Date.now();
+    customInput.name = optionName;
     customInput.value = "__custom__";
     customInput.className = "inline-ask-option-input";
     customLabel.appendChild(customInput);
@@ -3483,6 +3729,7 @@ FKTeamsChat.prototype.showInlineAskForm = function (event) {
         JSON.stringify({
           type: "ask_response",
           session_id: self.sessionId,
+          ask_id: event.ask_id || event.detail || "",
           ask_selected: selected,
           ask_free_text: freeText,
         }),
@@ -3499,13 +3746,17 @@ FKTeamsChat.prototype.showInlineAskForm = function (event) {
     resultEl.textContent = summary;
     container.appendChild(resultEl);
 
+    if (hooks && typeof hooks.onSubmit === "function") {
+      hooks.onSubmit(summary);
+    }
     self.updateStatus("processing", "处理中...");
     self.scrollToBottom();
   });
 
-  this.messagesContainer.appendChild(container);
+  (target || this.messagesContainer).appendChild(container);
   this.updateStatus("processing", "等待回答...");
   this.scrollToBottom();
+  return container;
 };
 
 // 在聊天区域显示提问请求卡片
@@ -3529,6 +3780,7 @@ FKTeamsChat.prototype.showAskDialog = function (event) {
   var submitBtn = document.getElementById("ask-submit-btn");
 
   questionEl.textContent = event.question || "请回答以下问题";
+  modal.dataset.askId = event.ask_id || event.detail || "";
   optionsEl.innerHTML = "";
   freeTextEl.value = "";
 
@@ -3583,7 +3835,7 @@ FKTeamsChat.prototype.showAskDialog = function (event) {
   var newSubmitBtn = submitBtn.cloneNode(true);
   submitBtn.parentNode.replaceChild(newSubmitBtn, submitBtn);
   newSubmitBtn.addEventListener("click", function () {
-    self.submitAskResponse(modal, optionsEl, freeTextEl);
+    self.submitAskResponse(modal, optionsEl, freeTextEl, modal.dataset.askId || "");
   });
 
   modal.style.display = "flex";
@@ -3595,6 +3847,7 @@ FKTeamsChat.prototype.submitAskResponse = function (
   modal,
   optionsEl,
   freeTextEl,
+  askID,
 ) {
   var selected = [];
   var freeText = "";
@@ -3622,6 +3875,7 @@ FKTeamsChat.prototype.submitAskResponse = function (
       JSON.stringify({
         type: "ask_response",
         session_id: this.sessionId,
+        ask_id: askID || "",
         ask_selected: selected,
         ask_free_text: freeText,
       }),

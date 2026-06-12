@@ -42,6 +42,23 @@ func ChannelHandler(ch <-chan any) InterruptHandler {
 	}
 }
 
+func ChannelTargetHandler(ch <-chan any, targetID string) InterruptHandler {
+	return func(ctx context.Context, _ []agentcore.Interrupt) (map[string]any, error) {
+		var decision any
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case decision = <-ch:
+		}
+
+		targets := make(map[string]any, 1)
+		if targetID != "" {
+			targets[targetID] = decision
+		}
+		return targets, nil
+	}
+}
+
 // CallbackHandler 通过回调函数获取统一决策
 func CallbackHandler(promptFunc func() any) InterruptHandler {
 	return func(_ context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {

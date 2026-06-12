@@ -519,6 +519,36 @@ test("agent tool result does not finish a started member task", () => {
   assert.equal(status, null);
 });
 
+test("member ask tool result does not create a second tool card", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const flow = { el: { isConnected: true }, status: { textContent: "已回答" } };
+  const entry = {
+    toolFlows: { "ask:interrupt-1": flow },
+    activeAskFlowKeys: ["ask:interrupt-1"],
+    activeAskFlowKey: "ask:interrupt-1",
+  };
+  let ensured = false;
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.normalizeToolCallForEvent = () => ({ name: "ask_questions" });
+  chat.ensureMemberToolFlow = () => {
+    ensured = true;
+    return null;
+  };
+  chat.scrollToBottom = () => {};
+
+  chat.handleToolResult({
+    type: "tool_result",
+    member_call_id: "member-call-1",
+    tool_name: "ask_questions",
+    content: "{\"selected\":[\"A\"]}",
+  });
+
+  assert.equal(ensured, false);
+  assert.equal(flow.status.textContent, "已完成");
+  assert.deepEqual(entry.activeAskFlowKeys, []);
+});
+
 test("member event reopens a prematurely completed member card", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   const classNames = new Set(["parallel-member-done"]);
@@ -547,4 +577,427 @@ test("member event reopens a prematurely completed member card", () => {
   assert.equal(got, entry);
   assert.equal(entry.memberStarted, true);
   assert.deepEqual(status, { entry, state: "running", text: "运行中" });
+});
+
+test("new top-level member tool batch starts a fresh panel", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const oldPanel = { isConnected: true };
+  chat.parallelPanel = oldPanel;
+  chat.parallelPanelBatchMode = false;
+  chat.parallelMemberCards = {};
+  chat.parallelEntriesForPanel = (panel) => panel === oldPanel ? [{}] : [];
+  chat.getToolDisplay = () => ({ kind: "agent" });
+  chat.memberKeyForToolCall = (toolCall) => "call:" + toolCall.id;
+
+  chat.prepareMemberPanelForToolCalls([{ id: "call-2", name: "ask_fkagent_researcher" }]);
+
+  assert.equal(chat.parallelPanel, null);
+});
+
+test("existing member tool batch keeps the current panel", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const oldPanel = { isConnected: true };
+  chat.parallelPanel = oldPanel;
+  chat.parallelPanelBatchMode = false;
+  chat.parallelMemberCards = {
+    "call:call-1": { el: { isConnected: true } },
+  };
+  chat.parallelEntriesForPanel = () => [{}];
+  chat.getToolDisplay = () => ({ kind: "agent" });
+  chat.memberKeyForToolCall = (toolCall) => "call:" + toolCall.id;
+
+  chat.prepareMemberPanelForToolCalls([{ id: "call-1", name: "ask_fkagent_researcher" }]);
+
+  assert.equal(chat.parallelPanel, oldPanel);
+});
+
+test("member ask questions are routed into member card", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  let memberEvent = null;
+  let globalEvent = null;
+
+  chat.isMemberRunEvent = (event) => !!event.member_call_id;
+  chat.showMemberAskQuestions = (event) => {
+    memberEvent = event;
+  };
+  chat.showInlineAskForm = (event) => {
+    globalEvent = event;
+  };
+
+  chat.handleAskQuestions({
+    type: "ask_questions",
+    member_call_id: "call-1",
+    question: "Need input?",
+  });
+
+  assert.equal(memberEvent.member_call_id, "call-1");
+  assert.equal(globalEvent, null);
+});
+
+test("member ask questions create flow keyed by ask id", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const details = { open: false };
+  const status = { textContent: "" };
+  const argsWrap = { style: { display: "none" } };
+  const args = { textContent: "" };
+  const label = { textContent: "结果" };
+  const resultWrap = {
+    style: { display: "none" },
+    querySelector(selector) {
+      return selector === ".parallel-member-tool-label" ? label : null;
+    },
+  };
+  const result = { style: { display: "" } };
+  const flow = {
+    el: { isConnected: true, querySelector: (selector) => (selector === "details" ? details : null) },
+    status,
+    argsWrap,
+    args,
+    resultWrap,
+    result,
+  };
+  const entry = { toolFlows: {} };
+  let ensuredKey = "";
+  let formTarget = null;
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.ensureMemberToolFlow = (_entry, key) => {
+    ensuredKey = key;
+    entry.toolFlows[key] = flow;
+    return flow;
+  };
+  chat.showInlineAskForm = (_event, target) => {
+    formTarget = target;
+    return { isConnected: true };
+  };
+  chat.updateMemberStatus = () => {};
+  chat.updateMemberActivity = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.scrollToBottom = () => {};
+
+  chat.showMemberAskQuestions({
+    type: "ask_questions",
+    ask_id: "interrupt-1",
+    member_call_id: "call-1",
+    question: "Need input?",
+  });
+
+  assert.equal(ensuredKey, "ask:interrupt-1");
+  assert.equal(details.open, true);
+  assert.equal(status.textContent, "待回复");
+  assert.equal(argsWrap.style.display, "");
+  assert.equal(args.textContent, "Need input?");
+  assert.equal(label.textContent, "回答");
+  assert.equal(result.style.display, "none");
+  assert.equal(formTarget, resultWrap);
+});
+
+test("member pending ask derives card status from ask state", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const classes = new Set();
+  const statusEl = { textContent: "" };
+  const activityEl = { textContent: "", style: { display: "none" } };
+  const entry = {
+    el: {
+      classList: {
+        add(name) { classes.add(name); },
+        remove(...names) { names.forEach((name) => classes.delete(name)); },
+      },
+      querySelector(selector) {
+        if (selector === ".parallel-member-status") return statusEl;
+        if (selector === ".parallel-member-activity") return activityEl;
+        return null;
+      },
+    },
+    panel: {},
+    activity: activityEl,
+    activeAskFlowKeys: ["ask:ask-1"],
+    activeAskFlowKey: "ask:ask-1",
+    toolFlows: {
+      "ask:ask-1": {
+        el: { isConnected: true },
+        askPending: true,
+        askCompleted: false,
+        askToolCompleted: false,
+      },
+    },
+  };
+  chat.truncateRunes = (text) => text;
+  chat.updateParallelMembersHeader = () => {};
+  chat.finalizeMemberMarkdown = () => {};
+
+  chat.updateMemberStatus(entry, "running", "运行中");
+
+  assert.equal(statusEl.textContent, "待回复");
+  assert.equal(activityEl.textContent, "等待用户回答");
+  assert.equal(activityEl.style.display, "");
+  assert.ok(classes.has("parallel-member-running"));
+});
+
+test("member ask submission releases pending status", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const statusEl = { textContent: "" };
+  const activityEl = { textContent: "", style: { display: "none" } };
+  const entry = {
+    el: {
+      classList: {
+        add() {},
+        remove() {},
+      },
+      querySelector(selector) {
+        if (selector === ".parallel-member-status") return statusEl;
+        if (selector === ".parallel-member-activity") return activityEl;
+        return null;
+      },
+    },
+    panel: {},
+    activity: activityEl,
+    activeAskFlowKeys: ["ask:ask-1"],
+    toolFlows: {
+      "ask:ask-1": {
+        el: { isConnected: true },
+        askPending: true,
+        askCompleted: true,
+        askToolCompleted: false,
+      },
+    },
+  };
+  chat.truncateRunes = (text) => text;
+  chat.updateParallelMembersHeader = () => {};
+  chat.finalizeMemberMarkdown = () => {};
+
+  chat.updateMemberStatus(entry, "running", "处理中");
+
+  assert.equal(statusEl.textContent, "处理中");
+  assert.equal(activityEl.textContent, "处理中");
+});
+
+test("member ask id does not claim existing unbound ask tool flow", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const oldFlow = { el: { isConnected: true }, displayName: "ask_questions" };
+  const newFlow = {
+    el: { isConnected: true, querySelector: (selector) => (selector === "details" ? { open: false } : null) },
+    status: { textContent: "" },
+    argsWrap: { style: { display: "none" } },
+    args: { textContent: "" },
+    resultWrap: {
+      style: { display: "none" },
+      querySelector(selector) {
+        return selector === ".parallel-member-tool-label" ? { textContent: "" } : null;
+      },
+    },
+    result: { style: { display: "" } },
+  };
+  const entry = { toolFlows: { "ref:ask-tool": oldFlow } };
+  let ensuredKey = "";
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.ensureMemberToolFlow = (_entry, key) => {
+    ensuredKey = key;
+    entry.toolFlows[key] = newFlow;
+    return newFlow;
+  };
+  chat.showInlineAskForm = () => ({ isConnected: true });
+  chat.updateMemberStatus = () => {};
+  chat.updateMemberActivity = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.scrollToBottom = () => {};
+
+  chat.showMemberAskQuestions({
+    type: "ask_questions",
+    ask_id: "interrupt-1",
+    member_call_id: "call-1",
+    question: "Need input?",
+  });
+
+  assert.equal(ensuredKey, "ask:interrupt-1");
+  assert.equal(entry.toolFlows["ask:interrupt-1"], newFlow);
+  assert.equal(entry.toolFlows["ref:ask-tool"], oldFlow);
+  assert.equal(newFlow.askID, "interrupt-1");
+  assert.equal(entry.activeAskFlowKeys[0], "ask:interrupt-1");
+});
+
+test("member ask flow ids keep repeated questions separate", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = { toolFlows: {}, timeline: { querySelectorAll: () => [], appendChild() {} } };
+  const created = [];
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.insertMemberTimelineItem = (_entry, item, order) => {
+    item.order = order;
+    item.parentElement = entry.timeline;
+  };
+  chat.escapeHtml = (value) => String(value || "");
+  chat.updateMemberActivity = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.updateMemberStatus = () => {};
+  chat.scrollToBottom = () => {};
+  chat.showInlineAskForm = () => ({ isConnected: true });
+
+  const makeFlowEl = (key) => ({
+    isConnected: true,
+    getAttribute(name) {
+      return name === "data-event-order" ? String(this.order ?? "") : "";
+    },
+    setAttribute(name, value) {
+      if (name === "data-tool-flow-key") this.key = value;
+      if (name === "data-event-order") this.order = value;
+    },
+    querySelector(selector) {
+      if (selector === "details") return { open: false };
+      if (selector === ".parallel-member-tool-title") return { textContent: "ask_questions" };
+      if (selector === ".parallel-member-tool-status") return { textContent: "" };
+      if (selector === ".parallel-member-tool-args") return { style: { display: "none" } };
+      if (selector === ".parallel-member-tool-args pre") return { textContent: "" };
+      if (selector === ".parallel-member-tool-result") {
+        return {
+          style: { display: "none" },
+          querySelector(labelSelector) {
+            return labelSelector === ".parallel-member-tool-label" ? { textContent: "" } : null;
+          },
+        };
+      }
+      if (selector === ".parallel-member-tool-result pre") return { textContent: "", style: { display: "" } };
+      return null;
+    },
+  });
+
+  const oldDocument = global.document;
+  global.document = {
+    createElement() {
+      const key = "created-" + created.length;
+      const el = makeFlowEl(key);
+      created.push(el);
+      return el;
+    },
+  };
+  try {
+    chat.showMemberAskQuestions({ ask_id: "ask-1", member_call_id: "call-1", question: "First?" });
+    chat.showMemberAskQuestions({ ask_id: "ask-2", member_call_id: "call-1", question: "Second?" });
+
+    assert.equal(chat.resolveMemberToolFlowKey(entry, { tool_name: "ask_questions" }, { name: "ask_questions" }), "ask:ask-1");
+    chat.updateMemberToolFlowResult(entry, "ask:ask-1", "ask_questions", "{\"selected\":[\"A\"]}", false);
+    assert.equal(chat.resolveMemberToolFlowKey(entry, { tool_name: "ask_questions" }, { name: "ask_questions" }), "ask:ask-2");
+    assert.deepEqual(entry.activeAskFlowKeys, ["ask:ask-2"]);
+  } finally {
+    global.document = oldDocument;
+  }
+});
+
+test("member ask form uses event sequence for timeline order", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = { toolFlows: {}, activeAskFlowKeys: [] };
+  let requestedOrder;
+  const flow = {
+    el: { querySelector: (selector) => (selector === "details" ? { open: false } : null) },
+    status: { textContent: "" },
+    argsWrap: { style: { display: "none" } },
+    args: { textContent: "" },
+    resultWrap: {
+      style: { display: "none" },
+      querySelector(selector) {
+        return selector === ".parallel-member-tool-label" ? { textContent: "" } : null;
+      },
+    },
+    result: { style: { display: "" } },
+  };
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.ensureMemberToolFlow = (_entry, _key, _displayName, order) => {
+    requestedOrder = order;
+    return flow;
+  };
+  chat.showInlineAskForm = () => ({ isConnected: true });
+  chat.updateMemberActivity = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.updateMemberStatus = () => {};
+  chat.scrollToBottom = () => {};
+
+  chat.showMemberAskQuestions({
+    ask_id: "ask-with-order",
+    member_call_id: "call-1",
+    question: "Need input?",
+    sequence: 10,
+  });
+
+  assert.equal(requestedOrder, 10);
+});
+
+test("member ask tool call anchors an early ask form to tool sequence", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = { toolFlows: {}, activeAskFlowKeys: [] };
+  const flows = {};
+
+  const makeFlow = () => ({
+    el: {
+      isConnected: true,
+      getAttribute(name) {
+        return name === "data-event-order" ? String(this.order ?? "") : "";
+      },
+      setAttribute(name, value) {
+        if (name === "data-event-order") this.order = Number(value);
+      },
+      querySelector(selector) {
+        return selector === "details" ? { open: false } : null;
+      },
+    },
+    status: { textContent: "" },
+    argsWrap: { style: { display: "none" } },
+    args: { textContent: "" },
+    resultWrap: {
+      style: { display: "none" },
+      querySelector(selector) {
+        return selector === ".parallel-member-tool-label" ? { textContent: "" } : null;
+      },
+    },
+    result: { style: { display: "" } },
+  });
+
+  chat.memberEntryFromEvent = () => entry;
+  chat.ensureMemberToolFlow = (_entry, key, _displayName, order) => {
+    if (!flows[key]) {
+      flows[key] = makeFlow();
+      entry.toolFlows[key] = flows[key];
+    }
+    if (order !== undefined) flows[key].order = order;
+    return flows[key];
+  };
+  chat.insertMemberTimelineItem = (_entry, item, order) => {
+    item.order = Number(order);
+  };
+  chat.getToolDisplay = (toolCall) => ({ displayName: toolCall.name, kind: "tool" });
+  chat.showInlineAskForm = () => ({ isConnected: true });
+  chat.updateMemberActivity = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.updateMemberStatus = () => {};
+  chat.scrollToBottom = () => {};
+
+  chat.showMemberAskQuestions({
+    ask_id: "ask-1",
+    tool_call_id: "ask-call-1",
+    tool_call_ref: "tool_call:ask-call-1",
+    member_call_id: "member-call-1",
+    question: "Need input?",
+    sequence: 5,
+  });
+
+  const key = "ref:tool_call:ask-call-1";
+  assert.equal(flows[key].order, 5);
+  assert.equal(flows[key].provisionalOrder, true);
+
+  chat.handleToolCalls({
+    type: "message_end",
+    member_call_id: "member-call-1",
+    sequence: 20,
+    tool_calls: [{
+      id: "ask-call-1",
+      ref: "tool_call:ask-call-1",
+      name: "ask_questions",
+    }],
+  });
+
+  assert.equal(flows[key].order, 20);
+  assert.equal(flows[key].provisionalOrder, false);
+  assert.deepEqual(Object.keys(entry.toolFlows), [key]);
+  assert.deepEqual(entry.activeAskFlowKeys, [key]);
 });

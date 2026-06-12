@@ -107,15 +107,19 @@ type Stream struct {
 	watcherNext uint64
 
 	// 生命周期
-	done        bool
-	status      string // "processing", "completed", "error", "cancelled"
-	createdAt   time.Time
-	doneAt      time.Time
-	interruptCh chan any // 审批/ask 通道
-	pendingKind InterruptKind
-	submitted   bool
-	steering    []QueuedMessage
-	followUps   []QueuedMessage
+	done         bool
+	status       string // "processing", "completed", "error", "cancelled"
+	createdAt    time.Time
+	doneAt       time.Time
+	interruptCh  chan any // 审批/ask 通道
+	pendingKind  InterruptKind
+	pendingID    string
+	pendingIDs   map[string]bool
+	submittedIDs map[string]bool
+	pendingAsks  map[string]chan any
+	submitted    bool
+	steering     []QueuedMessage
+	followUps    []QueuedMessage
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
@@ -427,10 +431,39 @@ func (s *Stream) QueuedCount() int {
 
 // BeginInterrupt 标记当前流正在等待指定类型的人工输入。
 func (s *Stream) BeginInterrupt(kind InterruptKind) {
+	s.BeginInterruptWithID(kind, "")
+}
+
+// BeginInterruptWithID 标记当前流正在等待指定 ID 的人工输入。
+func (s *Stream) BeginInterruptWithID(kind InterruptKind, id string) {
+	var ids []string
+	if id != "" {
+		ids = []string{id}
+	}
+	s.BeginInterruptWithIDs(kind, ids)
+}
+
+// BeginInterruptWithIDs 标记当前流正在等待一组指定 ID 的人工输入。
+func (s *Stream) BeginInterruptWithIDs(kind InterruptKind, ids []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.drainInterruptLocked()
 	s.pendingKind = kind
+	s.pendingID = ""
+	s.pendingIDs = make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if s.pendingID == "" {
+			s.pendingID = id
+		}
+		s.pendingIDs[id] = true
+	}
+	if len(s.pendingIDs) == 0 {
+		s.pendingIDs = nil
+	}
+	s.submittedIDs = make(map[string]bool, len(s.pendingIDs))
 	s.submitted = false
 }
 
@@ -440,12 +473,79 @@ func (s *Stream) CompleteInterrupt(kind InterruptKind) {
 	defer s.mu.Unlock()
 	if s.pendingKind == kind {
 		s.pendingKind = InterruptNone
+		s.pendingID = ""
+		s.pendingIDs = nil
+		s.submittedIDs = nil
 		s.submitted = false
 	}
 }
 
+// BeginAsk 开始一个独立 ask 等待项。
+func (s *Stream) BeginAsk(id string) (<-chan any, error) {
+	if id == "" {
+		return nil, fmt.Errorf("ask id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done || s.status != "processing" {
+		return nil, fmt.Errorf("task is not processing")
+	}
+	if s.pendingAsks == nil {
+		s.pendingAsks = make(map[string]chan any)
+	}
+	if _, exists := s.pendingAsks[id]; exists {
+		return nil, fmt.Errorf("ask request already pending")
+	}
+	ch := make(chan any, 1)
+	s.pendingAsks[id] = ch
+	return ch, nil
+}
+
+// CompleteAsk 清除一个独立 ask 等待项。
+func (s *Stream) CompleteAsk(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingAsks == nil {
+		return
+	}
+	delete(s.pendingAsks, id)
+	if len(s.pendingAsks) == 0 {
+		s.pendingAsks = nil
+	}
+}
+
+// SubmitAskResponse 提交指定 ask ID 的回答。
+func (s *Stream) SubmitAskResponse(id string, value any) error {
+	s.mu.Lock()
+	if s.done || s.status != "processing" {
+		s.mu.Unlock()
+		return fmt.Errorf("task is not processing")
+	}
+	if id == "" && len(s.pendingAsks) == 1 {
+		for pendingID := range s.pendingAsks {
+			id = pendingID
+		}
+	}
+	if ch, ok := s.pendingAsks[id]; ok {
+		delete(s.pendingAsks, id)
+		if len(s.pendingAsks) == 0 {
+			s.pendingAsks = nil
+		}
+		s.mu.Unlock()
+		ch <- value
+		return nil
+	}
+	s.mu.Unlock()
+	return s.SubmitInterruptWithID(InterruptAsk, id, value)
+}
+
 // SubmitInterrupt 提交人工输入。仅当前确实存在同类型 pending 时才接受。
 func (s *Stream) SubmitInterrupt(kind InterruptKind, value any) error {
+	return s.SubmitInterruptWithID(kind, "", value)
+}
+
+// SubmitInterruptWithID 提交指定 ID 的人工输入。
+func (s *Stream) SubmitInterruptWithID(kind InterruptKind, id string, value any) error {
 	s.mu.Lock()
 	if s.done || s.status != "processing" {
 		s.mu.Unlock()
@@ -455,11 +555,32 @@ func (s *Stream) SubmitInterrupt(kind InterruptKind, value any) error {
 		s.mu.Unlock()
 		return fmt.Errorf("no pending %s request", kind)
 	}
-	if s.submitted {
-		s.mu.Unlock()
-		return fmt.Errorf("%s request already submitted", kind)
+	if len(s.pendingIDs) > 0 {
+		if id == "" && len(s.pendingIDs) == 1 {
+			for pendingID := range s.pendingIDs {
+				id = pendingID
+			}
+		}
+		if !s.pendingIDs[id] {
+			s.mu.Unlock()
+			return fmt.Errorf("pending %s request id mismatch", kind)
+		}
+		if s.submittedIDs[id] {
+			s.mu.Unlock()
+			return fmt.Errorf("%s request already submitted", kind)
+		}
+		s.submittedIDs[id] = true
+	} else {
+		if s.pendingID != "" && id != s.pendingID {
+			s.mu.Unlock()
+			return fmt.Errorf("pending %s request id mismatch", kind)
+		}
+		if s.submitted {
+			s.mu.Unlock()
+			return fmt.Errorf("%s request already submitted", kind)
+		}
+		s.submitted = true
 	}
-	s.submitted = true
 	ch := s.interruptCh
 	s.mu.Unlock()
 
@@ -469,7 +590,11 @@ func (s *Stream) SubmitInterrupt(kind InterruptKind, value any) error {
 	default:
 		s.mu.Lock()
 		if s.pendingKind == kind {
-			s.submitted = false
+			if len(s.pendingIDs) > 0 && id != "" {
+				s.submittedIDs[id] = false
+			} else {
+				s.submitted = false
+			}
 		}
 		s.mu.Unlock()
 		return fmt.Errorf("%s request is not ready", kind)

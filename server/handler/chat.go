@@ -379,14 +379,165 @@ func askResponseText(result map[string]any) string {
 
 // extractAskInfo 从中断上下文中提取 ask_questions 信息
 func extractAskInfo(interrupts []agentcore.Interrupt) *ask.AskInfo {
+	if interrupt := extractAskInterrupt(interrupts); interrupt != nil {
+		return interrupt.Info
+	}
+	return nil
+}
+
+type askInterrupt struct {
+	ID    string
+	Info  *ask.AskInfo
+	Event events.Event
+}
+
+func extractAskInterrupt(interrupts []agentcore.Interrupt) *askInterrupt {
 	for _, ic := range interrupts {
-		if ic.IsRootCause {
-			if info, ok := ic.Info.(*ask.AskInfo); ok {
-				return info
-			}
+		if !ic.IsRootCause {
+			continue
+		}
+		info, ok := ic.Info.(*ask.AskInfo)
+		if !ok {
+			continue
+		}
+		return &askInterrupt{
+			ID:    ic.ID,
+			Info:  info,
+			Event: memberEventFromInterrupt(ic),
 		}
 	}
 	return nil
+}
+
+func askInterruptID(interrupts []agentcore.Interrupt) string {
+	if interrupt := extractAskInterrupt(interrupts); interrupt != nil && interrupt.ID != "" {
+		return interrupt.ID
+	}
+	for _, ic := range interrupts {
+		if ic.ID != "" {
+			return ic.ID
+		}
+	}
+	return ""
+}
+
+func interruptMemberEvent(interrupts []agentcore.Interrupt) events.Event {
+	for _, ic := range interrupts {
+		if ic.MemberCallID == "" {
+			continue
+		}
+		return memberEventFromInterrupt(ic)
+	}
+	return events.Event{}
+}
+
+func memberEventFromInterrupt(ic agentcore.Interrupt) events.Event {
+	if ic.MemberCallID == "" {
+		return events.Event{}
+	}
+	return events.Event{
+		MemberCallID:     ic.MemberCallID,
+		MemberToolName:   ic.MemberToolName,
+		MemberName:       ic.MemberName,
+		MemberOrder:      ic.MemberOrder,
+		ParentToolCallID: ic.MemberCallID,
+		ParentToolName:   ic.MemberToolName,
+	}
+}
+
+func memberEventFromMetadata(metadata agentcore.InterruptMetadata) events.Event {
+	if metadata.MemberCallID == "" {
+		return events.Event{}
+	}
+	return events.Event{
+		MemberCallID:     metadata.MemberCallID,
+		MemberToolName:   metadata.MemberToolName,
+		MemberName:       metadata.MemberName,
+		MemberOrder:      metadata.MemberOrder,
+		ParentToolCallID: metadata.MemberCallID,
+		ParentToolName:   metadata.MemberToolName,
+	}
+}
+
+func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) ask.RuntimeHandler {
+	return func(ctx context.Context, req ask.RuntimeRequest) (*ask.AskResponse, error) {
+		responseCh, err := stream.BeginAsk(req.ID)
+		if err != nil {
+			return nil, err
+		}
+		defer stream.CompleteAsk(req.ID)
+
+		memberEvent := memberEventFromMetadata(req.Metadata)
+		askEvent := memberEvent
+		askEvent.Type = events.EventAction
+		askEvent.ActionType = events.ActionAskQuestions
+		askEvent.Content = req.Info.Question
+		askEvent.Detail = req.ID
+		askEvent = events.NormalizeEvent(askEvent)
+		recorder.RecordEvent(askEvent)
+
+		askPayload := convertEventToMap(askEvent)
+		askPayload["type"] = events.NotifyAskQuestions
+		askPayload["session_id"] = sessionID
+		askPayload["ask_id"] = req.ID
+		askPayload["question"] = req.Info.Question
+		askPayload["options"] = req.Info.Options
+		askPayload["multi_select"] = req.Info.MultiSelect
+		if req.ToolCallID != "" {
+			askPayload["tool_call_id"] = req.ToolCallID
+			askPayload["tool_call_ref"] = "tool_call:" + req.ToolCallID
+		}
+		if req.ToolName != "" {
+			askPayload["tool_name"] = req.ToolName
+		}
+		stream.Publish(askPayload)
+
+		var raw any
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case raw = <-responseCh:
+		}
+		resp, ok := raw.(*ask.AskResponse)
+		if !ok || resp == nil {
+			return nil, fmt.Errorf("invalid ask response")
+		}
+		if resp.AskID == "" {
+			resp.AskID = req.ID
+		}
+
+		answerEvent := memberEvent
+		answerEvent.Type = events.EventAction
+		answerEvent.ActionType = events.ActionAskResponse
+		answerEvent.Content = askResponseText(map[string]any{req.ID: resp})
+		answerEvent.Detail = req.ID
+		answerEvent = events.NormalizeEvent(answerEvent)
+		recorder.RecordEvent(answerEvent)
+		return resp, nil
+	}
+}
+
+func attachMemberPayload(payload map[string]any, event events.Event) map[string]any {
+	if event.MemberCallID != "" {
+		payload["is_member_event"] = true
+		payload["member_call_id"] = event.MemberCallID
+	}
+	if event.MemberToolName != "" {
+		payload["member_tool_name"] = event.MemberToolName
+	}
+	if event.MemberName != "" {
+		payload["member_name"] = event.MemberName
+	}
+	if event.MemberOrder != nil {
+		payload["member_order"] = *event.MemberOrder
+	}
+	if event.ParentToolCallID != "" {
+		payload["parent_tool_call_id"] = event.ParentToolCallID
+	}
+	if event.ParentToolName != "" {
+		payload["parent_tool_name"] = event.ParentToolName
+	}
+	return payload
 }
 
 // --- 事件/内容转换 ---

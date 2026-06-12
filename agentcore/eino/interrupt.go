@@ -15,6 +15,12 @@ func init() {
 type interruptRuntime struct{}
 
 func (interruptRuntime) Interrupt(ctx context.Context, info any) error {
+	if metadata, ok := agentcore.InterruptMetadataFromContext(ctx); ok && metadata.MemberCallID != "" {
+		return tool.Interrupt(ctx, agentcore.InterruptPayload{
+			Info:     info,
+			Metadata: metadata,
+		})
+	}
 	return tool.Interrupt(ctx, info)
 }
 
