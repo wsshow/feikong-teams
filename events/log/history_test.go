@@ -315,6 +315,54 @@ func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.
 	}
 }
 
+func TestHistoryRecorderMergesToolResultByIDWhenRefDiffers(t *testing.T) {
+	recorder := NewHistoryRecorder()
+	toolIndex := 0
+
+	recorder.RecordEvent(Event{
+		Sequence:    1,
+		Type:        EventToolStart,
+		AgentName:   "assistant",
+		ToolCallRef: "ref_from_args",
+		ToolCallRefs: map[int]string{
+			0: "ref_from_args",
+		},
+		ToolCalls: []agentcore.ToolCall{{
+			ID:    "call_1",
+			Index: &toolIndex,
+			Function: agentcore.FunctionCall{
+				Name:      "echo",
+				Arguments: `{"text":"hello"}`,
+			},
+		}},
+	})
+	recorder.RecordEvent(Event{
+		Sequence:    2,
+		Type:        EventToolEnd,
+		AgentName:   "assistant",
+		ToolCallID:  "call_1",
+		ToolCallRef: "ref_from_result",
+		ToolName:    "echo",
+		Content:     "echo: hello",
+	})
+	recorder.FinalizeCurrent()
+
+	messages := recorder.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	if len(messages[0].Events) != 1 || messages[0].Events[0].ToolCall == nil {
+		t.Fatalf("events = %#v, want one merged tool call", messages[0].Events)
+	}
+	toolCall := messages[0].Events[0].ToolCall
+	if toolCall.Arguments != `{"text":"hello"}` {
+		t.Fatalf("tool args = %q, want original args", toolCall.Arguments)
+	}
+	if toolCall.Result != "echo: hello" {
+		t.Fatalf("tool result = %q, want echo: hello", toolCall.Result)
+	}
+}
+
 func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.T) {
 	recorder := NewHistoryRecorder()
 	toolIndex := 0

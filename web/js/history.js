@@ -1065,6 +1065,12 @@ FKTeamsChat.prototype.historyToolDisplay = function (tc) {
   };
 };
 
+FKTeamsChat.prototype.historyToolCallKey = function (tc) {
+  if (tc?.id) return "ref:tool_call:" + tc.id;
+  if (tc?.ref) return "ref:" + tc.ref;
+  return "";
+};
+
 FKTeamsChat.prototype.queueHistoryMemberTask = function (tc) {
   const display = this.historyToolDisplay(tc);
   if (display.kind !== "agent") return;
@@ -1206,10 +1212,12 @@ FKTeamsChat.prototype.renderHistoryMemberGroup = function (messages) {
       if (evt.type === "tool_call" && evt.tool_call) {
         if (evt.tool_call.name === "ask_questions") return;
         const display = this.historyToolDisplay(evt.tool_call);
-        const flowKey = evt.tool_call.ref ? "ref:" + evt.tool_call.ref : "";
+        const flowKey = this.historyToolCallKey(evt.tool_call);
         if (!flowKey) return;
         this.ensureMemberToolFlow(entry, flowKey, display.displayName, evt.sequence);
-        this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, evt.tool_call.arguments || "", false, evt.sequence);
+        if (evt.tool_call.arguments || !evt.tool_call.result) {
+          this.updateMemberToolFlowArgs(entry, flowKey, display.displayName, evt.tool_call.arguments || "", false, evt.sequence);
+        }
         if (evt.tool_call.result) {
           this.updateMemberToolFlowResult(entry, flowKey, display.displayName, evt.tool_call.result, false);
         }
@@ -1620,8 +1628,27 @@ FKTeamsChat.prototype.renderSingleToolCall = function (tc) {
   const toolCallEl = document.createElement("div");
   const toolDisplay = this.historyToolDisplay(tc);
   if (toolDisplay.kind === "agent") return;
+  const toolKey = this.historyToolCallKey(tc);
+  const existing = toolKey ? this.findToolCallCard(toolKey) : null;
+  if (existing) {
+    if (tc.arguments) {
+      let argsDisplay = tc.arguments;
+      try {
+        const args = JSON.parse(tc.arguments);
+        argsDisplay = JSON.stringify(args, null, 2);
+      } catch {
+        // 保持原样
+      }
+      const argsEl = existing.querySelector(".tool-call-args");
+      if (argsEl) argsEl.textContent = argsDisplay;
+    }
+    if (tc.result) {
+      this.appendToolResultToCard(existing, tc.result, toolDisplay);
+    }
+    return;
+  }
   toolCallEl.className = "tool-call" + (toolDisplay.kind === "agent" ? " agent-tool-call" : "");
-  if (tc.ref) toolCallEl.setAttribute("data-tool-key", "ref:" + tc.ref);
+  if (toolKey) toolCallEl.setAttribute("data-tool-key", toolKey);
   if (tc.id) toolCallEl.setAttribute("data-tool-call-id", tc.id);
   if (tc.index !== undefined && tc.index !== null) toolCallEl.setAttribute("data-tool-index", tc.index);
 

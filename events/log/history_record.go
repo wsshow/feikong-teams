@@ -34,6 +34,9 @@ func toolResultKey(event Event) string {
 	if event.ToolCallRef != "" {
 		return event.ToolCallRef
 	}
+	if event.ToolCallID != "" {
+		return "tool_call:" + event.ToolCallID
+	}
 	return ""
 }
 
@@ -46,21 +49,38 @@ func toolResultContentFromEvent(event Event) string {
 }
 
 func eventMatchesPendingToolCall(tc pendingToolCall, event Event) bool {
-	return tc.Ref != "" && tc.Ref == event.ToolCallRef
+	if tc.Ref != "" && event.ToolCallRef != "" && tc.Ref == event.ToolCallRef {
+		return true
+	}
+	return tc.ID != "" && event.ToolCallID != "" && tc.ID == event.ToolCallID
 }
 
 func eventMatchesToolCallRecord(record *ToolCallRecord, event Event) bool {
 	if record == nil {
 		return false
 	}
-	return record.Ref != "" && record.Ref == event.ToolCallRef
+	if record.Ref != "" && event.ToolCallRef != "" && record.Ref == event.ToolCallRef {
+		return true
+	}
+	return record.ID != "" && event.ToolCallID != "" && record.ID == event.ToolCallID
+}
+
+func pendingToolCallMatchesResultKey(tc pendingToolCall, resultKey string) bool {
+	if resultKey == "" {
+		return false
+	}
+	if tc.Ref != "" && tc.Ref == resultKey {
+		return true
+	}
+	return tc.ID != "" && resultKey == "tool_call:"+tc.ID
 }
 
 func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Event, content string) {
 	if ctx == nil || content == "" || events.IsInternalContinueContent(content) {
 		return
 	}
-	if event.ToolCallRef == "" {
+	resultKey := toolResultKey(event)
+	if resultKey == "" {
 		return
 	}
 	idx := -1
@@ -95,10 +115,10 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 		}
 		return
 	}
-	if event.ToolName == "" || event.ToolCallRef == "" {
+	if event.ToolName == "" {
 		return
 	}
-	pending := pendingToolCallFromEvent(event.ToolCallRef, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, event.Sequence)
+	pending := pendingToolCallFromEvent(resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, event.Sequence)
 	if !events.IsInternalToolName(pending.Name) {
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Sequence: event.Sequence,
@@ -403,8 +423,7 @@ func (h *HistoryRecorder) flushChunkedToolResults(ctx *activeMessageContext) {
 		}
 		idx := -1
 		for i := range ctx.pendingToolCalls {
-			sameRef := ctx.pendingToolCalls[i].Ref != "" && ctx.pendingToolCalls[i].Ref == resultKey
-			if sameRef {
+			if pendingToolCallMatchesResultKey(ctx.pendingToolCalls[i], resultKey) {
 				idx = i
 				break
 			}

@@ -92,6 +92,16 @@ func (t *toolIdentityTracker) attach(event *agentcore.Event) {
 			event.ToolCallRef = value
 		}
 	}
+	if event.ToolCallRef == "" && event.ToolName != "" {
+		if mappedID := t.resultIDByName(event.ToolName, event.Type == agentcore.EventToolEnd); mappedID != "" {
+			event.ToolCallID = mappedID
+			if ref, ok := t.refsByID.Load(event.ToolCallID); ok {
+				if value, ok := ref.(string); ok && value != "" {
+					event.ToolCallRef = value
+				}
+			}
+		}
+	}
 	if order, ok := t.orderForID(event.ToolCallID); ok {
 		event.ToolCallIndex = &order
 	}

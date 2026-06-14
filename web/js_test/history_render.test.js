@@ -261,6 +261,56 @@ test("history member group passes event sequence to member timeline", () => {
   ]);
 });
 
+test("history member tool records merge by tool call id", () => {
+  const chat = Object.create(FKTeamsChat.prototype);
+  const entry = { toolFlows: {} };
+  const calls = [];
+
+  chat.ensureMemberCard = () => entry;
+  chat.historyMemberLabel = () => "Ask Member";
+  chat.takeHistoryMemberTask = () => null;
+  chat.appendMemberReasoningFinal = () => {};
+  chat.appendMemberOutputFinal = () => {};
+  chat.ensureMemberToolFlow = (_entry, key, displayName, order) => {
+    calls.push(["tool", key, displayName, order]);
+    entry.toolFlows[key] = entry.toolFlows[key] || {};
+    return entry.toolFlows[key];
+  };
+  chat.historyToolDisplay = (toolCall) => ({ displayName: toolCall.display_name || toolCall.name });
+  chat.updateMemberToolFlowArgs = (_entry, key, displayName, args, append, order) => calls.push(["args", key, args, order]);
+  chat.updateMemberToolFlowResult = (_entry, key, displayName, result) => calls.push(["result", key, result]);
+  chat.appendMemberTextEvent = () => {};
+  chat.updateMemberStatus = () => {};
+  chat.finalizeMemberMarkdown = () => {};
+  chat.updateMemberDetailVisibility = () => {};
+  chat.updateParallelMembersHeader = () => {};
+  chat.escapeHtml = (value) => String(value || "");
+
+  chat.renderHistoryMemberGroup([{
+    member_call_id: "member-call-1",
+    member_name: "Ask Member",
+    events: [
+      {
+        type: "tool_call",
+        sequence: 13,
+        tool_call: { id: "call-1", ref: "args-ref", name: "echo", arguments: "{\"text\":\"hello\"}" },
+      },
+      {
+        type: "tool_call",
+        sequence: 14,
+        tool_call: { id: "call-1", ref: "result-ref", name: "echo", result: "echo: hello" },
+      },
+    ],
+  }]);
+
+  assert.deepEqual(calls, [
+    ["tool", "ref:tool_call:call-1", "echo", 13],
+    ["args", "ref:tool_call:call-1", "{\"text\":\"hello\"}", 13],
+    ["tool", "ref:tool_call:call-1", "echo", 14],
+    ["result", "ref:tool_call:call-1", "echo: hello"],
+  ]);
+});
+
 test("sidebar history shows loading before debounced fetch", () => {
   const chat = Object.create(FKTeamsChat.prototype);
   let debounceCalled = false;
