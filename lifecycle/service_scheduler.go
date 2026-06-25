@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	appschedule "fkteams/internal/app/schedule"
 	"fkteams/log"
 	"fkteams/runner"
 	"fkteams/tools/scheduler"
@@ -31,7 +32,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 		return nil // 调度器初始化失败不阻止应用启动
 	}
 
-	executor := scheduler.NewBackgroundExecutor(runner.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks"))
+	executor := appschedule.NewBackgroundExecutor(runner.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks"))
 	sched.SetExecutor(executor)
 	sched.Start()
 	log.Println("[scheduler] 定时任务调度服务已启动")
