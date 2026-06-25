@@ -343,6 +343,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	if importPath == "fkteams/server" || strings.HasPrefix(importPath, "fkteams/server/") {
 		t.Errorf("%s imports removed root server package; use internal/adapters/transport/http", rel)
 	}
+	if strings.HasPrefix(rel, "internal/") && (importPath == "fkteams/commands" || strings.HasPrefix(importPath, "fkteams/commands/")) {
+		t.Errorf("%s imports root commands package; move reusable behavior into internal/app or internal/adapters", rel)
+	}
 }
 
 func TestTurnSessionCreationStaysInsideChatUseCase(t *testing.T) {

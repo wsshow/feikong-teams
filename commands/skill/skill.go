@@ -3,13 +3,10 @@ package skill
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"fkteams/internal/app/appdata"
+	appskill "fkteams/internal/app/skill"
 
-	"github.com/goccy/go-yaml"
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
@@ -38,37 +35,11 @@ func Command(initConfig func() error) *ucli.Command {
 	}
 }
 
-type localSkillInfo struct {
-	Dir         string `yaml:"-"`
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-}
-
 func listSkills() error {
 	skillsDir := appdata.SkillsDir()
-
-	entries, err := os.ReadDir(skillsDir)
+	skills, err := appskill.ListLocalSkills()
 	if err != nil {
-		if os.IsNotExist(err) {
-			pterm.Info.Println("暂无可用的技能")
-			pterm.FgGray.Printfln("技能目录: %s", skillsDir)
-			return nil
-		}
 		return fmt.Errorf("读取技能目录失败: %w", err)
-	}
-
-	var skills []localSkillInfo
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		skillFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
-		info := parseSkillFile(skillFile)
-		if info.Name == "" {
-			info.Name = entry.Name()
-		}
-		info.Dir = entry.Name()
-		skills = append(skills, info)
 	}
 
 	if len(skills) == 0 {
@@ -83,8 +54,8 @@ func listSkills() error {
 		if desc == "" {
 			desc = "(无描述)"
 		}
-		pterm.Bold.Printf("  %s", s.Dir)
-		if s.Name != "" && s.Name != s.Dir {
+		pterm.Bold.Printf("  %s", s.Slug)
+		if s.Name != "" && s.Name != s.Slug {
 			pterm.FgGray.Printf("  %s", s.Name)
 		}
 		fmt.Println()
@@ -92,25 +63,4 @@ func listSkills() error {
 	}
 
 	return nil
-}
-
-// parseSkillFile 解析 SKILL.md 的 YAML frontmatter 提取 name 和 description
-func parseSkillFile(path string) localSkillInfo {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return localSkillInfo{}
-	}
-
-	content := string(data)
-	parts := strings.SplitN(content, "---", 3)
-	if len(parts) < 3 {
-		return localSkillInfo{}
-	}
-
-	var info localSkillInfo
-	if err := yaml.Unmarshal([]byte(parts[1]), &info); err != nil {
-		return localSkillInfo{}
-	}
-	info.Description = strings.Join(strings.Fields(info.Description), " ")
-	return info
 }

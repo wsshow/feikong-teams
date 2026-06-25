@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	appskill "fkteams/internal/app/skill"
+
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
@@ -27,7 +29,7 @@ func searchCommand() *ucli.Command {
 			},
 			&ucli.StringSliceFlag{
 				Name:  "provider",
-				Usage: "指定后端（可多次指定），可选: " + strings.Join(ProviderNames(), ", "),
+				Usage: "指定后端（可多次指定），可选: " + strings.Join(appskill.ProviderNames(), ", "),
 			},
 		},
 		Action: func(ctx context.Context, cmd *ucli.Command) error {
@@ -37,7 +39,7 @@ func searchCommand() *ucli.Command {
 			}
 			page := int(cmd.Int("page"))
 			size := int(cmd.Int("size"))
-			providers, err := GetProvidersByNames(cmd.StringSlice("provider"))
+			providers, err := appskill.GetProvidersByNames(cmd.StringSlice("provider"))
 			if err != nil {
 				return err
 			}
@@ -46,7 +48,7 @@ func searchCommand() *ucli.Command {
 	}
 }
 
-func searchSkills(ctx context.Context, keyword string, page, size int, providers []Provider) error {
+func searchSkills(ctx context.Context, keyword string, page, size int, providers []appskill.Provider) error {
 	for _, p := range providers {
 		resp, err := p.Search(ctx, keyword, page, size, "", "")
 		if err != nil {

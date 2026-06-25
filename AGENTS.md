@@ -30,7 +30,7 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   root.go                   #   根命令，注册子命令和全局 flag
   chat.go, web.go, serve.go #   聊天 / Web 服务 / API 服务
   session.go, agent.go      #   会话和智能体管理
-  skill/                    #   技能安装、移除、搜索
+  skill/                    #   技能 CLI 参数解析和终端展示，核心能力委托 internal/app/skill
                             #   CLI 命令层使用 internal/ports/runtime 和 domain/message
 internal/app/               # 应用用例层，入口只调用这里
   config/                   #   TOML 配置加载、保存、热重载和示例生成
@@ -44,6 +44,7 @@ internal/app/               # 应用用例层，入口只调用这里
   tools/                    #   工具注册、解析、策略标记和内置工具实现
   memory/                   #   长期记忆检索、注入、提取、BM25 和 Markdown 持久化
   schedule/                 #   定时任务用例入口、后台任务结果收集，工具/HTTP/CLI 只调用这里
+  skill/                    #   技能 provider、安装、移除、搜索结果和本地文件管理
   lifecycle/                #   Application 生命周期编排内核
                             #   用例层禁止依赖 agentcore 旧门面
 internal/domain/

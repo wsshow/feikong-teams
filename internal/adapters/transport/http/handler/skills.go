@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/commands/skill"
+	appskill "fkteams/internal/app/skill"
 	"fkteams/internal/runtime/log"
 	"net/http"
 	"strconv"
@@ -12,14 +12,14 @@ import (
 // GetInstalledSkillsHandler 返回已安装技能列表。
 func GetInstalledSkillsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		skills, err := skill.ListLocalSkills()
+		skills, err := appskill.ListLocalSkills()
 		if err != nil {
 			log.Printf("failed to list skills: %v", err)
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if skills == nil {
-			skills = []skill.LocalSkillInfo{}
+			skills = []appskill.LocalSkillInfo{}
 		}
 		OK(c, gin.H{"skills": skills, "total": len(skills)})
 	}
@@ -55,7 +55,7 @@ func SearchSkillsHandler() gin.HandlerFunc {
 			order = "desc"
 		}
 
-		provider := skill.GetDefaultProvider()
+		provider := appskill.GetDefaultProvider()
 		if provider == nil {
 			Fail(c, http.StatusServiceUnavailable, "no skill provider available")
 			return
@@ -68,7 +68,7 @@ func SearchSkillsHandler() gin.HandlerFunc {
 			return
 		}
 		if resp == nil {
-			OK(c, gin.H{"skills": []skill.SkillResult{}, "total": 0})
+			OK(c, gin.H{"skills": []appskill.SkillResult{}, "total": 0})
 			return
 		}
 
@@ -87,13 +87,13 @@ func InstallSkillHandler() gin.HandlerFunc {
 			return
 		}
 
-		provider := skill.GetDefaultProvider()
+		provider := appskill.GetDefaultProvider()
 		if provider == nil {
 			Fail(c, http.StatusServiceUnavailable, "no skill provider available")
 			return
 		}
 
-		if err := skill.InstallSkillFromProvider(c.Request.Context(), req.Slug, "", provider); err != nil {
+		if err := appskill.InstallSkillFromProvider(c.Request.Context(), req.Slug, "", provider); err != nil {
 			log.Printf("failed to install skill: slug=%s, err=%v", req.Slug, err)
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -112,7 +112,7 @@ func RemoveSkillHandler() gin.HandlerFunc {
 			return
 		}
 
-		if err := skill.RemoveLocalSkill(slug); err != nil {
+		if err := appskill.RemoveLocalSkill(slug); err != nil {
 			log.Printf("failed to remove skill: slug=%s, err=%v", slug, err)
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -131,13 +131,13 @@ func GetSkillFilesHandler() gin.HandlerFunc {
 			return
 		}
 
-		files, err := skill.ListSkillFiles(slug, c.Query("path"))
+		files, err := appskill.ListSkillFiles(slug, c.Query("path"))
 		if err != nil {
 			Fail(c, http.StatusNotFound, err.Error())
 			return
 		}
 		if files == nil {
-			files = []skill.SkillFileEntry{}
+			files = []appskill.SkillFileEntry{}
 		}
 
 		OK(c, gin.H{"slug": slug, "files": files})
@@ -154,7 +154,7 @@ func GetSkillFileContentHandler() gin.HandlerFunc {
 			return
 		}
 
-		content, err := skill.ReadSkillFile(slug, filePath)
+		content, err := appskill.ReadSkillFile(slug, filePath)
 		if err != nil {
 			Fail(c, http.StatusNotFound, err.Error())
 			return
