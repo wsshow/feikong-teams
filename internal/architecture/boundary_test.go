@@ -220,8 +220,8 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	if importPath == "fkteams/log" {
 		t.Errorf("%s imports removed root log package; use internal/runtime/log", rel)
 	}
-	if strings.HasPrefix(rel, "internal/") && importPath == "fkteams/events" {
-		t.Errorf("%s imports root events facade; use internal/runtime/events inside internal packages", rel)
+	if strings.HasPrefix(rel, "internal/") && (importPath == "fkteams/events" || strings.HasPrefix(importPath, "fkteams/events/")) {
+		t.Errorf("%s imports root events package; use internal/domain/event or internal/runtime/events inside internal packages", rel)
 	}
 	if importPath == "fkteams/memory" {
 		t.Errorf("%s imports removed root memory package; use internal/domain/memory or internal/app/memory", rel)

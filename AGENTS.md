@@ -42,7 +42,7 @@ internal/app/               # 应用用例层，入口只调用这里
     catalog/                #   内置智能体定义、注册表、AgentBuilder 和成员工具元信息
   tools/                    #   工具注册、解析、策略标记和内置工具实现
   memory/                   #   长期记忆检索、注入、提取、BM25 和 Markdown 持久化
-  schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
+  schedule/                 #   定时任务用例入口、后台任务结果收集，工具/HTTP/CLI 只调用这里
   lifecycle/                #   Application 生命周期编排内核
                             #   用例层禁止依赖 agentcore 旧门面
 internal/domain/
@@ -105,7 +105,7 @@ channels/                   # 消息通道桥接
 events/                     # 事件协议与展示/历史
   types.go                  #   domain/event 事件类型别名和常量导出
   facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
-  view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
+  view/                     #   CLI 事件渲染、JSON 输出回调
                             #   内部包必须使用 internal/runtime/events，展示层禁止依赖 agentcore 旧门面
 web/                        # 内嵌前端（//go:embed）
 tui/                        # 终端 UI 组件与 Markdown 渲染
