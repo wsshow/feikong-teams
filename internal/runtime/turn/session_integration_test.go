@@ -2,10 +2,10 @@ package turn
 
 import (
 	"context"
-	"fkteams/events"
 	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/hooks"
 	"testing"
 )

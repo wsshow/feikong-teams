@@ -3,7 +3,7 @@ package eventlog
 import (
 	"fkteams/internal/domain/message"
 
-	"fkteams/events"
+	"fkteams/internal/runtime/events"
 
 	"sort"
 	"strings"

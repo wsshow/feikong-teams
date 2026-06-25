@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/events"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/testmodel"
 
 	"github.com/cloudwego/eino/adk"

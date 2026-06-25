@@ -46,6 +46,7 @@ internal/domain/
   session/                  #   会话 ID 与 context 绑定
 internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
+  events/                   #   事件分发、Emitter、协议校验、友好错误归一化
   registry/                 #   runtime engine 注册表和默认 runtime 选择
   env/                      #   FEIKONG_* 环境变量读取
   log/                      #   日志 facade 和文件轮转
@@ -106,11 +107,9 @@ channels/                   # 消息通道桥接
                             #   通道桥接使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
 events/                     # 事件协议与展示/历史
   types.go                  #   domain/event 事件类型别名和常量导出
-  event.go                  #   context 事件回调、NormalizeEvent、DispatchEvent
-  emitter.go                #   Emitter + Agent/Turn/Message/Tool 事件构造函数
-  protocol.go               #   工具调用身份协议校验与兼容辅助
+  facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
   view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
-                            #   展示层使用 domain/event 和 domain/message，禁止依赖 agentcore 旧门面
+                            #   内部包必须使用 internal/runtime/events，展示层禁止依赖 agentcore 旧门面
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
 memory/                     # 长期记忆系统（BM25 检索 + 提取 + 注入）
                             #   记忆模型适配使用 internal/ports/runtime 和 domain/message
@@ -173,7 +172,8 @@ mdiff/                      # 文件差异/补丁
 
 - 事件处理使用 `events/types.go` / `internal/domain/event` 中的类型常量，禁止使用字符串字面量
 - 新增事件类型/动作类型/通知类型必须先在 `internal/domain/event` 中定义常量，并由 `events/types.go` 导出别名
-- 运行时适配器发事件优先使用 `events.Emitter` 和 `events.AgentStart` / `events.MessageDelta` / `events.ToolStart` 等构造函数
+- `internal/**` 发事件必须使用 `internal/runtime/events`；根 `events` 只作为外层入口兼容门面
+- 运行时适配器发事件优先使用 `internal/runtime/events.Emitter` 和 `AgentStart` / `MessageDelta` / `ToolStart` 等构造函数
 - 流式事件的规范增量载荷使用 `Content`；不要在核心事件或历史存储中重复维护 `Delta`
 - 工具调用事件必须通过 `tool_call_ref` 保持 `message_delta(tool_args)`、`message_end.tool_calls[]`、`tool_start/update/end` 的稳定关联
 - WebSocket `steer`、`/stream/steer` 和终端运行中 Enter 必须进入 steering 通道，由 `SteeringSource` 在下一次模型调用前消费；运行中的普通 `chat`/`follow_up` 只作为后续任务排队

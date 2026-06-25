@@ -2,9 +2,9 @@ package summary
 
 import (
 	"context"
-	"fkteams/events"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"

@@ -3,10 +3,10 @@ package eino
 import (
 	"context"
 	"errors"
-	"fkteams/events"
 	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fmt"
 	"io"
 	"sort"

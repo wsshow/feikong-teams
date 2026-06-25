@@ -4,7 +4,7 @@ import (
 	"fkteams/agents/toolmeta"
 	domainhistory "fkteams/internal/domain/history"
 
-	"fkteams/events"
+	"fkteams/internal/runtime/events"
 
 	"sync"
 )

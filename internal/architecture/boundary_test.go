@@ -167,6 +167,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	if importPath == "fkteams/log" {
 		t.Errorf("%s imports removed root log package; use internal/runtime/log", rel)
 	}
+	if strings.HasPrefix(rel, "internal/") && importPath == "fkteams/events" {
+		t.Errorf("%s imports root events facade; use internal/runtime/events inside internal packages", rel)
+	}
 }
 
 func TestTurnSessionCreationStaysInsideChatUseCase(t *testing.T) {

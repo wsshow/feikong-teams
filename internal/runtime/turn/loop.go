@@ -2,9 +2,9 @@ package turn
 
 import (
 	"context"
-	"fkteams/events"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 )
 
 // runLoop 装配引擎级选项后执行一次 Runner 调用。

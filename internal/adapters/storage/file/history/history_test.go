@@ -1,8 +1,8 @@
 package eventlog
 
 import (
-	"fkteams/events"
 	"fkteams/internal/domain/message"
+	"fkteams/internal/runtime/events"
 	"testing"
 )
 

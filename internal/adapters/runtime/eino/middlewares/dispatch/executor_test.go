@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/events"
+	"fkteams/internal/runtime/events"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
