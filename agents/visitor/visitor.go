@@ -6,10 +6,10 @@ import (
 	"fkteams/config"
 	"fmt"
 
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
-func NewAgent(ctx context.Context) (agentcore.Agent, error) {
+func NewAgent(ctx context.Context) (runtimeport.Agent, error) {
 	sshCfg := config.Get().Agents.SSHVisitor
 
 	if sshCfg.Host == "" || sshCfg.Username == "" || sshCfg.Password == "" {

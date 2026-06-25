@@ -2,8 +2,8 @@ package custom
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/agents/common"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/providers"
 	"fmt"
 )
@@ -21,10 +21,10 @@ type Config struct {
 	SystemPrompt string
 	Model        Model
 	ToolNames    []string
-	Tools        []agentcore.Tool
+	Tools        []runtimeport.Tool
 }
 
-func NewAgent(ctx context.Context, cfg Config) (agentcore.Agent, error) {
+func NewAgent(ctx context.Context, cfg Config) (runtimeport.Agent, error) {
 	builder := common.NewAgentBuilder(cfg.Name, cfg.Description).
 		WithInstruction(cfg.SystemPrompt).
 		WithTools(cfg.Tools...).

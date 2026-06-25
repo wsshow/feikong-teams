@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/agents/analyst"
 	assistantagent "fkteams/agents/assistant"
 	"fkteams/agents/coder"
@@ -10,6 +9,7 @@ import (
 	"fkteams/agents/researcher"
 	"fkteams/agents/visitor"
 	"fkteams/config"
+	runtimeport "fkteams/internal/ports/runtime"
 	"sync"
 
 	"github.com/pterm/pterm"
@@ -20,7 +20,7 @@ type AgentInfo struct {
 	Name        string
 	Description string
 	Aliases     []string
-	Creator     func(ctx context.Context) (agentcore.Agent, error)
+	Creator     func(ctx context.Context) (runtimeport.Agent, error)
 }
 
 var (
@@ -45,7 +45,7 @@ func buildRegistry() {
 	type agentCreator struct {
 		name    string
 		aliases []string
-		creator func(ctx context.Context) (agentcore.Agent, error)
+		creator func(ctx context.Context) (runtimeport.Agent, error)
 	}
 
 	// 基础智能体（始终可用）
@@ -140,7 +140,7 @@ func loadCustomAgents(ctx context.Context) {
 		Registry = append(Registry, AgentInfo{
 			Name:        agent.Name(),
 			Description: agent.Description(),
-			Creator: func(ctx context.Context) (agentcore.Agent, error) {
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				mc := config.Get().ResolveModel(agentCfg.Model)
 				var model custom.Model
 				if mc != nil {
@@ -192,12 +192,12 @@ func GetAgentByName(name string) *AgentInfo {
 }
 
 // GetTeamAgents 获取团队模式的智能体列表
-func GetTeamAgents(ctx context.Context) ([]agentcore.Agent, error) {
+func GetTeamAgents(ctx context.Context) ([]runtimeport.Agent, error) {
 	initRegistry()
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
-	var subAgents []agentcore.Agent
+	var subAgents []runtimeport.Agent
 	for _, agentInfo := range Registry {
 		agent, err := agentInfo.Creator(ctx)
 		if err != nil {

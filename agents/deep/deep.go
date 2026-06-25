@@ -2,9 +2,9 @@ package deep
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/agents/common"
 	"fkteams/fkenv"
+	runtimeport "fkteams/internal/ports/runtime"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	retry "fkteams/internal/runtime/retry"
 	"fkteams/tools"
@@ -12,7 +12,7 @@ import (
 	"strconv"
 )
 
-func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent, error) {
+func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.Agent, error) {
 
 	toolList, err := tools.GetBuiltinCapabilityTools()
 	if err != nil {
@@ -35,17 +35,17 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 	}
 
 	engine := runtimeregistry.Engine()
-	middlewareProvider, ok := engine.(agentcore.AgentPipelineProvider)
+	middlewareProvider, ok := engine.(runtimeport.AgentPipelineProvider)
 	if !ok {
 		return nil, fmt.Errorf("runtime does not support deep agent middlewares")
 	}
-	maxTokens := agentcore.DefaultMaxTokensBeforeSummary
+	maxTokens := runtimeport.DefaultMaxTokensBeforeSummary
 	if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
 		if n, _ := strconv.Atoi(v); n > 0 {
 			maxTokens = n
 		}
 	}
-	summaryMiddleware, err := middlewareProvider.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
+	summaryMiddleware, err := middlewareProvider.NewSummaryMiddleware(ctx, &runtimeport.SummaryConfig{
 		Model:                  chatModel,
 		MaxTokensBeforeSummary: maxTokens,
 	})
@@ -56,7 +56,7 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 	if err != nil {
 		return nil, fmt.Errorf("init agents.md middleware: %w", err)
 	}
-	return engine.NewDeepAgent(ctx, &agentcore.DeepAgentConfig{
+	return engine.NewDeepAgent(ctx, &runtimeport.DeepAgentConfig{
 		Name:             "deep_researcher",
 		Description:      "深度研究智能体，负责深入分析问题并协调多个成员解决复杂任务。",
 		Model:            chatModel,
@@ -64,7 +64,7 @@ func NewAgent(ctx context.Context, subAgents []agentcore.Agent) (agentcore.Agent
 		SubAgents:        subAgents,
 		Tools:            toolList,
 		MaxIterations:    retry.MaxIterations(),
-		Middlewares: []agentcore.AgentMiddleware{
+		Middlewares: []runtimeport.AgentMiddleware{
 			middlewareProvider.NewSteeringMiddleware(),
 			summaryMiddleware,
 			agentsMDMiddleware,

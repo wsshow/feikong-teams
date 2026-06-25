@@ -2,10 +2,10 @@ package common
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/fkenv"
 	"fkteams/internal/app/appdata"
+	runtimeport "fkteams/internal/ports/runtime"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/runtime/resources"
 	"fkteams/internal/runtime/retry"
@@ -20,22 +20,22 @@ import (
 type AgentBuilder struct {
 	name         string
 	description  string
-	tools        []agentcore.Tool
+	tools        []runtimeport.Tool
 	toolNames    []string
 	instruction  string
 	templateVars map[string]any
 
 	// 模型配置
-	chatModel agentcore.ChatModel
+	chatModel runtimeport.ChatModel
 
 	// 中间件
-	handlers []agentcore.AgentMiddleware
+	handlers []runtimeport.AgentMiddleware
 
 	// 便捷中间件标记
 	enableSummary  bool
 	enableSkills   bool
 	enableDispatch bool
-	dispatchConfig *agentcore.DispatchConfig
+	dispatchConfig *runtimeport.DispatchConfig
 }
 
 // NewAgentBuilder 创建构建器
@@ -52,7 +52,7 @@ func NewAgentBuilder(name, description string) *AgentBuilder {
 }
 
 // WithTools 设置工具列表
-func (b *AgentBuilder) WithTools(tools ...agentcore.Tool) *AgentBuilder {
+func (b *AgentBuilder) WithTools(tools ...runtimeport.Tool) *AgentBuilder {
 	b.tools = append(b.tools, tools...)
 	return b
 }
@@ -75,13 +75,13 @@ func (b *AgentBuilder) WithTemplateVar(key string, value any) *AgentBuilder {
 }
 
 // WithModel 使用自定义模型（不设置则使用默认环境变量配置）
-func (b *AgentBuilder) WithModel(m agentcore.ChatModel) *AgentBuilder {
+func (b *AgentBuilder) WithModel(m runtimeport.ChatModel) *AgentBuilder {
 	b.chatModel = m
 	return b
 }
 
 // WithHandler 添加智能体中间件
-func (b *AgentBuilder) WithHandler(h ...agentcore.AgentMiddleware) *AgentBuilder {
+func (b *AgentBuilder) WithHandler(h ...runtimeport.AgentMiddleware) *AgentBuilder {
 	b.handlers = append(b.handlers, h...)
 	return b
 }
@@ -99,14 +99,14 @@ func (b *AgentBuilder) WithSkills() *AgentBuilder {
 }
 
 // WithDispatch 启用子任务分发中间件，cfg 为 nil 时使用默认配置
-func (b *AgentBuilder) WithDispatch(cfg *agentcore.DispatchConfig) *AgentBuilder {
+func (b *AgentBuilder) WithDispatch(cfg *runtimeport.DispatchConfig) *AgentBuilder {
 	b.enableDispatch = true
 	b.dispatchConfig = cfg
 	return b
 }
 
 // Build 构建智能体
-func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
+func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	// 模型
 	coreModel := b.chatModel
 	if coreModel == nil {
@@ -121,7 +121,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decorate chat model: %w", err)
 	}
-	agentPipelineProvider, hasAgentPipelineProvider := engine.(agentcore.AgentPipelineProvider)
+	agentPipelineProvider, hasAgentPipelineProvider := engine.(runtimeport.AgentPipelineProvider)
 
 	// 提示词
 	instruction := b.instruction
@@ -132,7 +132,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	// 通过名称解析工具
-	toolList := append([]agentcore.Tool(nil), b.tools...)
+	toolList := append([]runtimeport.Tool(nil), b.tools...)
 	var cleaner *resources.Cleaner
 	if state := appstate.FromContext(ctx); state != nil {
 		cleaner = state.Cleaner()
@@ -167,7 +167,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	}
 
 	// 构建配置
-	cfg := &agentcore.ChatAgentConfig{
+	cfg := &runtimeport.ChatAgentConfig{
 		Name:               b.name,
 		Description:        b.description,
 		Instruction:        instruction,
@@ -192,13 +192,13 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 		if !hasAgentPipelineProvider {
 			return nil, fmt.Errorf("runtime does not support summary middleware")
 		}
-		maxTokens := agentcore.DefaultMaxTokensBeforeSummary
+		maxTokens := runtimeport.DefaultMaxTokensBeforeSummary
 		if v := fkenv.Get(fkenv.MaxTokensBeforeSummary); v != "" {
 			if n, _ := strconv.Atoi(v); n > 0 {
 				maxTokens = n
 			}
 		}
-		summaryMiddleware, err := agentPipelineProvider.NewSummaryMiddleware(ctx, &agentcore.SummaryConfig{
+		summaryMiddleware, err := agentPipelineProvider.NewSummaryMiddleware(ctx, &runtimeport.SummaryConfig{
 			Model:                  coreModel,
 			MaxTokensBeforeSummary: maxTokens,
 		})
@@ -222,7 +222,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (agentcore.Agent, error) {
 	if b.enableDispatch {
 		dispatchConfig := b.dispatchConfig
 		if dispatchConfig == nil {
-			dispatchConfig = &agentcore.DispatchConfig{}
+			dispatchConfig = &runtimeport.DispatchConfig{}
 		} else {
 			copied := *dispatchConfig
 			dispatchConfig = &copied
@@ -258,16 +258,16 @@ func unknownToolsHandler(_ context.Context, name, _ string) (string, error) {
 	return fmt.Sprintf("Tool '%s' does not exist. Please check the available tools and try again.", name), nil
 }
 
-func decorateChatModel(ctx context.Context, engine agentcore.Engine, model agentcore.ChatModel) (agentcore.ChatModel, error) {
-	decorator, ok := engine.(agentcore.ModelDecorator)
+func decorateChatModel(ctx context.Context, engine runtimeport.Engine, model runtimeport.ChatModel) (runtimeport.ChatModel, error) {
+	decorator, ok := engine.(runtimeport.ModelDecorator)
 	if !ok {
 		return model, nil
 	}
 	return decorator.DecorateChatModel(ctx, model)
 }
 
-func defaultToolMiddlewares(engine agentcore.Engine) []agentcore.ToolMiddleware {
-	provider, ok := engine.(agentcore.ToolPipelineProvider)
+func defaultToolMiddlewares(engine runtimeport.Engine) []runtimeport.ToolMiddleware {
+	provider, ok := engine.(runtimeport.ToolPipelineProvider)
 	if !ok {
 		return nil
 	}

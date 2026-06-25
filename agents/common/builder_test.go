@@ -5,9 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
 	agentscommon "fkteams/agents/common"
 	_ "fkteams/bootstrap/runtimes"
+	domainevent "fkteams/internal/domain/event"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/testmodel"
@@ -26,7 +28,7 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	runner, err := runtimeregistry.Engine().NewRunner(ctx, agentcore.RunnerConfig{
+	runner, err := runtimeregistry.Engine().NewRunner(ctx, runtimeport.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
 		CheckPointStore: checkpointmemory.NewStore(),
@@ -34,13 +36,13 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create runner: %v", err)
 	}
-	var events []agentcore.Event
-	_, err = runner.Run(ctx, agentcore.TurnInput{
-		Message: agentcore.Message{Role: agentcore.RoleUser, Content: "ping"},
-	}, agentcore.RunOptions{
+	var events []domainevent.Event
+	_, err = runner.Run(ctx, domainmessage.TurnInput{
+		Message: domainmessage.Message{Role: domainmessage.RoleUser, Content: "ping"},
+	}, runtimeport.RunOptions{
 		RunID:        "builder-test",
 		CheckpointID: "builder-test",
-		Sink: func(event agentcore.Event) error {
+		Sink: func(event domainevent.Event) error {
 			events = append(events, event)
 			return nil
 		},
@@ -60,19 +62,19 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	if len(input) < 3 {
 		t.Fatalf("expected system, user and injected context messages, got %#v", input)
 	}
-	if input[0].Role != agentcore.RoleSystem || !strings.Contains(input[0].Content, "you are a tester") {
+	if input[0].Role != domainmessage.RoleSystem || !strings.Contains(input[0].Content, "you are a tester") {
 		t.Fatalf("expected formatted system prompt, got %#v", input[0])
 	}
-	if input[len(input)-2].Role != agentcore.RoleUser || input[len(input)-2].Content != "ping" {
+	if input[len(input)-2].Role != domainmessage.RoleUser || input[len(input)-2].Content != "ping" {
 		t.Fatalf("expected user message before dynamic context, got %#v", input)
 	}
 	assertInjectedContext(t, input[len(input)-1])
 }
 
-func assertInjectedContext(t *testing.T, msg agentcore.Message) {
+func assertInjectedContext(t *testing.T, msg domainmessage.Message) {
 	t.Helper()
 
-	if msg.Role != agentcore.RoleUser {
+	if msg.Role != domainmessage.RoleUser {
 		t.Fatalf("expected injected context to be user message, got %s", msg.Role)
 	}
 	for _, want := range []string{"<system-reminder>", "当前时间", "工作目录"} {

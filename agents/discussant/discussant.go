@@ -6,10 +6,10 @@ import (
 	"fkteams/config"
 	"fmt"
 
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
-func NewAgent(ctx context.Context, member config.TeamMember) (agentcore.Agent, error) {
+func NewAgent(ctx context.Context, member config.TeamMember) (runtimeport.Agent, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveModel(member.Model)
 	if modelCfg == nil {

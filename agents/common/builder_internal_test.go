@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/testmodel"
 )
 
@@ -49,22 +49,22 @@ func TestRuntimeOptionalCapabilitiesAreNotRequired(t *testing.T) {
 
 type minimalEngine struct{}
 
-func (minimalEngine) NewChatModelAgent(context.Context, *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
+func (minimalEngine) NewChatModelAgent(context.Context, *runtimeport.ChatAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (minimalEngine) NewLoopAgent(context.Context, *agentcore.LoopAgentConfig) (agentcore.Agent, error) {
+func (minimalEngine) NewLoopAgent(context.Context, *runtimeport.LoopAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (minimalEngine) NewDeepAgent(context.Context, *agentcore.DeepAgentConfig) (agentcore.Agent, error) {
+func (minimalEngine) NewDeepAgent(context.Context, *runtimeport.DeepAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (minimalEngine) NewRunner(context.Context, agentcore.RunnerConfig) (agentcore.Runner, error) {
+func (minimalEngine) NewRunner(context.Context, runtimeport.RunnerConfig) (runtimeport.Runner, error) {
 	return nil, nil
 }
 
-func (minimalEngine) NewAgentTools(context.Context, []agentcore.Agent, agentcore.AgentToolConfig) ([]agentcore.Tool, error) {
+func (minimalEngine) NewAgentTools(context.Context, []runtimeport.Agent, runtimeport.AgentToolConfig) ([]runtimeport.Tool, error) {
 	return nil, nil
 }

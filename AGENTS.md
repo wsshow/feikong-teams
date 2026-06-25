@@ -76,6 +76,7 @@ agents/                     # 智能体系统
   common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）
   common/common.go          #   NewChatModel / MaxIterations
   toolmeta/                 #   成员智能体工具前缀、显示名和分类注册
+                            #   智能体层使用 internal/ports/runtime，禁止再依赖 agentcore 旧门面
 tools/                      # 工具系统
   registry.go               #   ToolGroupRegistry，注册和解析工具组
   tools.go                  #   GetToolsByName() — 委托注册表和 MCP fallback

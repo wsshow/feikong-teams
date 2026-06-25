@@ -3,8 +3,8 @@ package common
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/config"
+	runtimeport "fkteams/internal/ports/runtime"
 	retry "fkteams/internal/runtime/retry"
 	"fkteams/providers"
 	"fmt"
@@ -26,7 +26,7 @@ func WorkspaceDir() string {
 }
 
 // NewChatModel 使用配置文件的 default 模型创建聊天模型
-func NewChatModel() (agentcore.ChatModel, error) {
+func NewChatModel() (runtimeport.ChatModel, error) {
 	cfg := config.Get()
 	modelCfg := cfg.ResolveModel("default")
 	if modelCfg != nil && (modelCfg.APIKey != "" || modelCfg.Provider != "") {
@@ -36,7 +36,7 @@ func NewChatModel() (agentcore.ChatModel, error) {
 }
 
 // NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
-func NewChatModelWithModelConfig(mc *config.ModelConfig) (agentcore.ChatModel, error) {
+func NewChatModelWithModelConfig(mc *config.ModelConfig) (runtimeport.ChatModel, error) {
 	return providers.NewChatModel(context.Background(), &providers.Config{
 		Provider:     providers.Type(mc.Provider),
 		APIKey:       mc.APIKey,
@@ -47,7 +47,7 @@ func NewChatModelWithModelConfig(mc *config.ModelConfig) (agentcore.ChatModel, e
 }
 
 // NewChatModelWithConfig 使用指定配置创建聊天模型
-func NewChatModelWithConfig(cfg *providers.Config) (agentcore.ChatModel, error) {
+func NewChatModelWithConfig(cfg *providers.Config) (runtimeport.ChatModel, error) {
 	return providers.NewChatModel(context.Background(), cfg)
 }
 

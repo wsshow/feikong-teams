@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 func TestGetRegistryReturnsCopy(t *testing.T) {
@@ -48,13 +48,13 @@ func TestGetTeamAgentsCreatesAgentsInRegistryOrder(t *testing.T) {
 	setTestRegistry(t, []AgentInfo{
 		{
 			Name: "coder",
-			Creator: func(ctx context.Context) (agentcore.Agent, error) {
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				return fakeAgent{name: "coder"}, nil
 			},
 		},
 		{
 			Name: "researcher",
-			Creator: func(ctx context.Context) (agentcore.Agent, error) {
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				return fakeAgent{name: "researcher"}, nil
 			},
 		},
@@ -76,7 +76,7 @@ func TestGetTeamAgentsReturnsCreatorError(t *testing.T) {
 	setTestRegistry(t, []AgentInfo{
 		{
 			Name: "broken",
-			Creator: func(ctx context.Context) (agentcore.Agent, error) {
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				return nil, fmt.Errorf("create failed")
 			},
 		},
