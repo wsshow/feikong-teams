@@ -2,21 +2,21 @@ package tools
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/approval"
 	"fkteams/tools/search"
 	"testing"
 )
 
 type stubTool struct {
-	info *agentcore.ToolInfo
+	info *runtimeport.ToolInfo
 }
 
-func (t stubTool) Info(context.Context) (*agentcore.ToolInfo, error) {
+func (t stubTool) Info(context.Context) (*runtimeport.ToolInfo, error) {
 	return t.info, nil
 }
 
-func (t stubTool) Invoke(context.Context, agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
+func (t stubTool) Invoke(context.Context, runtimeport.ToolInvocation) (*runtimeport.ToolResult, error) {
 	return nil, nil
 }
 
@@ -146,7 +146,7 @@ func TestPolicyIncludesApprovalAndExternalPath(t *testing.T) {
 }
 
 func TestClassifyToolSetsMetadata(t *testing.T) {
-	readTool := stubTool{info: &agentcore.ToolInfo{Name: "git_status"}}
+	readTool := stubTool{info: &runtimeport.ToolInfo{Name: "git_status"}}
 	if err := ClassifyTool(readTool); err != nil {
 		t.Fatalf("classify read tool: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 		t.Fatalf("did not expect destructive metadata for git_status")
 	}
 
-	writeTool := stubTool{info: &agentcore.ToolInfo{Name: "git_clean"}}
+	writeTool := stubTool{info: &runtimeport.ToolInfo{Name: "git_clean"}}
 	if err := ClassifyTool(writeTool); err != nil {
 		t.Fatalf("classify write tool: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestClassifyToolSetsMetadata(t *testing.T) {
 }
 
 func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
-	fileTool := stubTool{info: &agentcore.ToolInfo{Name: "file_read"}}
+	fileTool := stubTool{info: &runtimeport.ToolInfo{Name: "file_read"}}
 	if err := ClassifyTool(fileTool); err != nil {
 		t.Fatalf("classify file tool: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 		t.Fatal("expected external path metadata")
 	}
 
-	scriptTool := stubTool{info: &agentcore.ToolInfo{Name: "bun_run_script"}}
+	scriptTool := stubTool{info: &runtimeport.ToolInfo{Name: "bun_run_script"}}
 	if err := ClassifyTool(scriptTool); err != nil {
 		t.Fatalf("classify script tool: %v", err)
 	}
@@ -197,8 +197,8 @@ func TestClassifyToolSetsPolicyMetadata(t *testing.T) {
 }
 
 func TestClassifyToolRequiresPolicyWhenMarked(t *testing.T) {
-	tool := stubTool{info: &agentcore.ToolInfo{Name: "new_builtin_tool"}}
-	if err := MarkPolicyRequired([]agentcore.Tool{tool}); err != nil {
+	tool := stubTool{info: &runtimeport.ToolInfo{Name: "new_builtin_tool"}}
+	if err := MarkPolicyRequired([]runtimeport.Tool{tool}); err != nil {
 		t.Fatalf("mark policy required: %v", err)
 	}
 	if err := ClassifyTool(tool); err == nil {
@@ -207,7 +207,7 @@ func TestClassifyToolRequiresPolicyWhenMarked(t *testing.T) {
 }
 
 func TestClassifyToolAllowsUnmarkedExternalTool(t *testing.T) {
-	tool := stubTool{info: &agentcore.ToolInfo{Name: "external_tool"}}
+	tool := stubTool{info: &runtimeport.ToolInfo{Name: "external_tool"}}
 	if err := ClassifyTool(tool); err != nil {
 		t.Fatalf("external tool should not require policy: %v", err)
 	}

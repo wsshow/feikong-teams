@@ -65,7 +65,8 @@ agents/                     # 智能体系统
   common/common.go          #   NewChatModel / MaxIterations
   toolmeta/                 #   成员智能体工具前缀、显示名和分类注册
 tools/                      # 工具系统
-  tools.go                  #   GetToolsByName() — 按名称返回工具列表
+  registry.go               #   ToolGroupRegistry，注册和解析工具组
+  tools.go                  #   GetToolsByName() — 委托注册表和 MCP fallback
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具
 lifecycle/                  # 应用生命周期管理
   lifecycle.go              #   Application — Init → Setup → Start → Ready → [wait] → Stop → Cleanup
@@ -133,7 +134,7 @@ bootstrap/                  # 应用目录初始化
 
 ### 工具
 
-- 新工具组必须在 `tools/tools.go` 的 `GetToolsByName()` 中注册
+- 新工具组必须通过 `tools.ToolGroupRegistry` 注册，禁止在 `tools/tools.go` 中增加 switch 分支
 - 工具必须通过 `tools/metadata.go` 的 `ClassifyTools()` 标记元数据（只读/破坏性）
 
 ### 配置

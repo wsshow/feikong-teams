@@ -2,7 +2,7 @@ package tools
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/mcp"
 )
 
@@ -157,7 +157,7 @@ func GetAllToolInfos() []ToolGroupInfo {
 	return infos
 }
 
-func toolNames(list []agentcore.Tool) []string {
+func toolNames(list []runtimeport.Tool) []string {
 	names := make([]string, 0, len(list))
 	for _, t := range list {
 		info, err := t.Info(context.Background())

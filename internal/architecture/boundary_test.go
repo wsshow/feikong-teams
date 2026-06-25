@@ -1,6 +1,7 @@
 package architecture
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -340,6 +341,30 @@ func TestHistoryLogUsesStorageAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestToolResolutionUsesRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "tools", "tools.go")
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "GetToolsByNameWithCleaner" {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			if _, ok := node.(*ast.SwitchStmt); ok {
+				t.Errorf("tools/tools.go GetToolsByNameWithCleaner uses switch; register tool groups through ToolGroupRegistry")
+				return false
+			}
+			return true
+		})
+		return
+	}
+	t.Fatal("GetToolsByNameWithCleaner not found")
 }
 
 func assertNotImported(t *testing.T, rel, importPath string, forbidden []string) {

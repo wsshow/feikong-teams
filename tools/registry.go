@@ -1,0 +1,235 @@
+package tools
+
+import (
+	"fmt"
+	"sync"
+
+	"fkteams/common"
+	"fkteams/config"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/tools/ask"
+	"fkteams/tools/command"
+	"fkteams/tools/doc"
+	"fkteams/tools/excel"
+	"fkteams/tools/fetch"
+	"fkteams/tools/file"
+	"fkteams/tools/git"
+	"fkteams/tools/scheduler"
+	"fkteams/tools/script/bun"
+	"fkteams/tools/script/uv"
+	"fkteams/tools/search"
+	"fkteams/tools/ssh"
+	"fkteams/tools/todo"
+)
+
+type ToolGroupFactory func(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error)
+
+type ToolGroupRegistration struct {
+	Name    string
+	Factory ToolGroupFactory
+}
+
+type ToolGroupRegistry struct {
+	mu     sync.RWMutex
+	order  []string
+	groups map[string]ToolGroupFactory
+	frozen bool
+}
+
+func NewToolGroupRegistry() *ToolGroupRegistry {
+	return &ToolGroupRegistry{groups: make(map[string]ToolGroupFactory)}
+}
+
+func (r *ToolGroupRegistry) Register(reg ToolGroupRegistration) error {
+	if r == nil {
+		return fmt.Errorf("tool group registry is nil")
+	}
+	if reg.Name == "" {
+		return fmt.Errorf("tool group name is empty")
+	}
+	if reg.Factory == nil {
+		return fmt.Errorf("tool group %s factory is nil", reg.Name)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.frozen {
+		return fmt.Errorf("tool group registry is frozen")
+	}
+	if _, exists := r.groups[reg.Name]; exists {
+		return fmt.Errorf("tool group %s already registered", reg.Name)
+	}
+	r.groups[reg.Name] = reg.Factory
+	r.order = append(r.order, reg.Name)
+	return nil
+}
+
+func (r *ToolGroupRegistry) Resolve(name string, cleaner *common.ResourceCleaner) ([]runtimeport.Tool, bool, error) {
+	if r == nil {
+		return nil, false, fmt.Errorf("tool group registry is nil")
+	}
+	r.mu.RLock()
+	factory, ok := r.groups[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	tools, err := factory(cleaner)
+	if err != nil {
+		return nil, true, err
+	}
+	return tools, true, nil
+}
+
+func (r *ToolGroupRegistry) Names() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]string(nil), r.order...)
+}
+
+func (r *ToolGroupRegistry) Freeze() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.frozen = true
+}
+
+func defaultToolGroupRegistry() *ToolGroupRegistry {
+	registry := NewToolGroupRegistry()
+	for _, reg := range builtinToolGroups() {
+		if err := registry.Register(reg); err != nil {
+			panic(err)
+		}
+	}
+	registry.Freeze()
+	return registry
+}
+
+func builtinToolGroups() []ToolGroupRegistration {
+	return []ToolGroupRegistration{
+		{Name: "file", Factory: fileToolGroup},
+		{Name: "git", Factory: gitToolGroup},
+		{Name: "excel", Factory: excelToolGroup},
+		{Name: "todo", Factory: todoToolGroup},
+		{Name: "ssh", Factory: sshToolGroup},
+		{Name: "command", Factory: commandToolGroup},
+		{Name: "scheduler", Factory: schedulerToolGroup},
+		{Name: "search", Factory: searchToolGroup},
+		{Name: "fetch", Factory: fetchToolGroup},
+		{Name: "doc", Factory: docToolGroup},
+		{Name: "ask", Factory: askToolGroup},
+		{Name: "uv", Factory: uvToolGroup},
+		{Name: "bun", Factory: bunToolGroup},
+	}
+}
+
+var defaultRegistry = defaultToolGroupRegistry()
+
+func fileToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	fileTools, err := file.NewFileTools(workspacePath())
+	if err != nil {
+		return nil, fmt.Errorf("初始化文件工具失败: %w", err)
+	}
+	return fileTools.GetTools()
+}
+
+func gitToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	gitTools, err := git.NewGitTools(workspacePath())
+	if err != nil {
+		return nil, fmt.Errorf("初始化Git工具失败: %w", err)
+	}
+	return gitTools.GetTools()
+}
+
+func excelToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	excelTools, err := excel.NewExcelTools(workspacePath())
+	if err != nil {
+		return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
+	}
+	return excelTools.GetTools()
+}
+
+func todoToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	todoTools, err := todo.NewTodoTools(common.SessionsDir())
+	if err != nil {
+		return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
+	}
+	return todoTools.GetTools()
+}
+
+func sshToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	sshCfg := config.Get().Agents.SSHVisitor
+	host := sshCfg.Host
+	username := sshCfg.Username
+	password := sshCfg.Password
+	if host == "" || username == "" || password == "" {
+		return nil, fmt.Errorf("SSH 连接信息未配置，请在配置文件 [agents.ssh_visitor] 中设置 host, username, password")
+	}
+	sshTools, err := ssh.NewSSHTools(host, username, password)
+	if err != nil {
+		return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
+	}
+	if cleaner != nil {
+		cleaner.Add(func() error {
+			sshTools.Close()
+			return nil
+		})
+	}
+	return sshTools.GetTools()
+}
+
+func commandToolGroup(cleaner *common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	if cleaner != nil {
+		cleaner.Add(func() error {
+			command.TerminateAll()
+			command.CleanupTempFiles(workspacePath())
+			return nil
+		})
+	}
+	return command.NewCommandTools(workspacePath()).GetTools()
+}
+
+func schedulerToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	s, err := scheduler.InitGlobal(common.SchedulerDir())
+	if err != nil {
+		return nil, fmt.Errorf("初始化调度器工具失败: %w", err)
+	}
+	return s.GetTools()
+}
+
+func searchToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	return search.GetTools()
+}
+
+func fetchToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	return fetch.GetTools()
+}
+
+func docToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	return doc.GetTools()
+}
+
+func askToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	return ask.GetTools()
+}
+
+func uvToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	uvTools, err := uv.NewUVTools(runtimeDir(), workspacePath())
+	if err != nil {
+		return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
+	}
+	return uvTools.GetTools()
+}
+
+func bunToolGroup(*common.ResourceCleaner) ([]runtimeport.Tool, error) {
+	bunTools, err := bun.NewBunTools(runtimeDir(), workspacePath())
+	if err != nil {
+		return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
+	}
+	return bunTools.GetTools()
+}

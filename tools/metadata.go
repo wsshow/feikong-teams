@@ -2,7 +2,7 @@ package tools
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/approval"
 	"fmt"
 )
@@ -182,7 +182,7 @@ func ShouldSerializeTool(toolName string) bool {
 }
 
 // MarkPolicyRequired 标记工具必须在策略表中声明安全策略。
-func MarkPolicyRequired(tools []agentcore.Tool) error {
+func MarkPolicyRequired(tools []runtimeport.Tool) error {
 	for _, t := range tools {
 		info, err := t.Info(context.Background())
 		if err != nil {
@@ -197,7 +197,7 @@ func MarkPolicyRequired(tools []agentcore.Tool) error {
 }
 
 // ClassifyTool 为工具设置策略元数据
-func ClassifyTool(t agentcore.Tool) error {
+func ClassifyTool(t runtimeport.Tool) error {
 	info, err := t.Info(context.Background())
 	if err != nil {
 		return err
@@ -234,7 +234,7 @@ func ClassifyTool(t agentcore.Tool) error {
 }
 
 // ClassifyTools 批量为工具列表设置元数据
-func ClassifyTools(tools []agentcore.Tool) error {
+func ClassifyTools(tools []runtimeport.Tool) error {
 	for _, t := range tools {
 		if err := ClassifyTool(t); err != nil {
 			return err
