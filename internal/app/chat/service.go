@@ -9,6 +9,7 @@ import (
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/hooks"
 	"fkteams/internal/runtime/turn"
 )
 
@@ -55,6 +56,7 @@ type turnOptions struct {
 	approvalRegistry *approval.Registry
 	steeringSource   runtimeport.SteeringSource
 	askHandler       ask.RuntimeHandler
+	hookBus          *hooks.Bus
 	contextHooks     []ContextHook
 	onFinish         func(ctx context.Context, result *runtimeport.RunResult, err error)
 }
@@ -117,6 +119,12 @@ func WithSteeringSource(source runtimeport.SteeringSource) TurnOption {
 func WithAskRuntimeHandler(handler ask.RuntimeHandler) TurnOption {
 	return func(opts *turnOptions) {
 		opts.askHandler = handler
+	}
+}
+
+func WithHookBus(bus *hooks.Bus) TurnOption {
+	return func(opts *turnOptions) {
+		opts.hookBus = bus
 	}
 }
 
@@ -197,6 +205,9 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest, options ...TurnO
 		session.WithContext(func(ctx context.Context) context.Context {
 			return ask.WithRuntimeHandler(ctx, opts.askHandler)
 		})
+	}
+	if opts.hookBus != nil {
+		session.WithHookBus(opts.hookBus)
 	}
 	for _, hook := range opts.contextHooks {
 		if hook != nil {
