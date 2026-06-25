@@ -178,7 +178,7 @@ func TestEventConstructors(t *testing.T) {
 func TestUserMessagePairTurnIDAndFirstNonEmpty(t *testing.T) {
 	message := agentcore.Message{
 		Role: agentcore.RoleUser,
-		UserInputMultiContent: []agentcore.ContentPart{
+		ContentParts: []agentcore.ContentPart{
 			{Type: agentcore.ContentPartText, Text: "hello"},
 			{Type: agentcore.ContentPartImageURL, URL: "https://example.com/a.png"},
 			{Type: agentcore.ContentPartText, Text: "world"},

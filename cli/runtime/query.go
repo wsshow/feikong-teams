@@ -14,11 +14,12 @@ import (
 	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/common"
-	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
 	appchat "fkteams/internal/app/chat"
+	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/turn"
 	"fkteams/report"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -269,13 +270,13 @@ func getCliRecorder() *eventlog.HistoryRecorder {
 }
 
 // BuildTurnInput 构建一轮输入（包含历史对话，支持上下文压缩摘要）
-func BuildTurnInput(input string) engine.TurnInput {
+func BuildTurnInput(input string) domainmessage.TurnInput {
 	recorder := getCliRecorder()
 	return appchat.BuildTurnInput(recorder, input)
 }
 
 // BuildTurnInputWithMemory 构建包含显式长期记忆依赖的一轮输入。
-func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) engine.TurnInput {
+func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) domainmessage.TurnInput {
 	recorder := getCliRecorder()
 	return appchat.BuildTurnInputWithMemory(recorder, input, manager)
 }
@@ -303,9 +304,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		approvalReg = approval.NewDefaultRegistry()
 	}
 
-	var handler engine.InterruptHandler
+	var handler turn.InterruptHandler
 	if !e.autoReject {
-		handler = engine.InfoHandler(func(info any) (any, bool) {
+		handler = turn.InfoHandler(func(info any) (any, bool) {
 			if askInfo, ok := info.(*ask.AskInfo); ok {
 				return e.promptAskQuestions(askInfo), true
 			}
@@ -339,21 +340,21 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			SessionID: activeSessionID,
 			Runner:    e.runner,
 			Input:     currentInput,
-			EventHandler: func(event events.Event) error {
+		},
+			appchat.OnEvent(func(event events.Event) error {
 				return innerCallback(event)
+			}),
+			appchat.WithHistory(recorder),
+			appchat.OnInterrupt(runtimeport.InterruptHandler(handler)),
+			appchat.WithContext(approval.RegistryContext(approvalReg)),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return agentcore.WithSteeringSource(ctx, steeringSource)
+			}),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return ask.WithRuntimeHandler(ctx, e.askRuntime)
 			},
-			History:          recorder,
-			InterruptHandler: runtimeport.InterruptHandler(handler),
-			ContextHooks: []appchat.ContextHook{
-				approval.RegistryContext(approvalReg),
-				func(ctx context.Context) context.Context {
-					return agentcore.WithSteeringSource(ctx, steeringSource)
-				},
-				func(ctx context.Context) context.Context {
-					return ask.WithRuntimeHandler(ctx, e.askRuntime)
-				},
-			},
-		})
+			),
+		)
 
 		recorder.FinalizeCurrent()
 		if err != nil {

@@ -18,7 +18,7 @@ func TestListAndReadSessionAttachments(t *testing.T) {
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, t.TempDir())
 	recorder.RecordUserMessage(agentcore.Message{
 		Role: agentcore.RoleUser,
-		UserInputMultiContent: []agentcore.ContentPart{
+		ContentParts: []agentcore.ContentPart{
 			{Type: agentcore.ContentPartText, Text: "look"},
 			{Type: agentcore.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
 		},
@@ -56,7 +56,7 @@ func TestReadSessionAttachmentDefaultsToMetadataOnly(t *testing.T) {
 	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, t.TempDir())
 	recorder.RecordUserMessage(agentcore.Message{
 		Role: agentcore.RoleUser,
-		UserInputMultiContent: []agentcore.ContentPart{
+		ContentParts: []agentcore.ContentPart{
 			{Type: agentcore.ContentPartText, Text: "look"},
 			{Type: agentcore.ContentPartImageURL, Base64Data: "abc123", MIMEType: "image/png"},
 		},

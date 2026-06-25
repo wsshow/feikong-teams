@@ -55,7 +55,7 @@ func TestBuildMultimodalTurnInputReturnsDisplayText(t *testing.T) {
 		t.Fatalf("input message = %q, want display text", input.Message.DisplayText())
 	}
 	messages := input.AllMessages()
-	if len(messages) == 0 || len(messages[len(messages)-1].UserInputMultiContent) != 1 {
+	if len(messages) == 0 || len(messages[len(messages)-1].ContentParts) != 1 {
 		t.Fatalf("messages = %#v, want multimodal user message", messages)
 	}
 }
@@ -87,8 +87,8 @@ func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 		ImageURLPart("https://example.com/a.png", "high"),
 	}
 	recorder.RecordUserMessage(agentcore.Message{
-		Role:                  agentcore.RoleUser,
-		UserInputMultiContent: parts,
+		Role:         agentcore.RoleUser,
+		ContentParts: parts,
 	})
 
 	input := BuildTurnInput(recorder, "continue")
@@ -99,8 +99,8 @@ func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 	if historyMessage.Role != agentcore.RoleUser {
 		t.Fatalf("history role = %q, want user", historyMessage.Role)
 	}
-	if len(historyMessage.UserInputMultiContent) != 0 {
-		t.Fatalf("history parts = %#v, want omitted multimodal parts", historyMessage.UserInputMultiContent)
+	if len(historyMessage.ContentParts) != 0 {
+		t.Fatalf("history parts = %#v, want omitted multimodal parts", historyMessage.ContentParts)
 	}
 	if !strings.Contains(historyMessage.Content, "describe this") {
 		t.Fatalf("history content = %q, want original text", historyMessage.Content)

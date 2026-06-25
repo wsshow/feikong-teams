@@ -43,15 +43,14 @@ type ToolCall struct {
 }
 
 type Message struct {
-	Role                  Role          `json:"role"`
-	Content               string        `json:"content,omitempty"`
-	ReasoningContent      string        `json:"reasoning_content,omitempty"`
-	ToolCalls             []ToolCall    `json:"tool_calls,omitempty"`
-	ToolCallID            string        `json:"tool_call_id,omitempty"`
-	ToolName              string        `json:"tool_name,omitempty"`
-	UserInputMultiContent []ContentPart `json:"user_input_multi_content,omitempty"`
-	MultiContent          []ContentPart `json:"multi_content,omitempty"`
-	Name                  string        `json:"name,omitempty"`
+	Role             Role          `json:"role"`
+	Content          string        `json:"content,omitempty"`
+	ReasoningContent string        `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall    `json:"tool_calls,omitempty"`
+	ToolCallID       string        `json:"tool_call_id,omitempty"`
+	ToolName         string        `json:"tool_name,omitempty"`
+	ContentParts     []ContentPart `json:"content_parts,omitempty"`
+	Name             string        `json:"name,omitempty"`
 }
 
 type TurnInput struct {
@@ -66,8 +65,7 @@ func (m Message) IsEmpty() bool {
 		len(m.ToolCalls) == 0 &&
 		m.ToolCallID == "" &&
 		m.ToolName == "" &&
-		len(m.UserInputMultiContent) == 0 &&
-		len(m.MultiContent) == 0 &&
+		len(m.ContentParts) == 0 &&
 		m.Name == ""
 }
 
@@ -75,12 +73,8 @@ func (m Message) DisplayText() string {
 	if strings.TrimSpace(m.Content) != "" {
 		return m.Content
 	}
-	parts := m.UserInputMultiContent
-	if len(parts) == 0 {
-		parts = m.MultiContent
-	}
 	var texts []string
-	for _, part := range parts {
+	for _, part := range m.ContentParts {
 		if part.Type == ContentPartText && strings.TrimSpace(part.Text) != "" {
 			texts = append(texts, part.Text)
 		}

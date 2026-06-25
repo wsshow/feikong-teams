@@ -251,7 +251,7 @@ func TestQueuedMessageBuildsMultimodalUserMessage(t *testing.T) {
 	if msg.Content != "" {
 		t.Fatalf("expected text content to be cleared for multimodal input, got %q", msg.Content)
 	}
-	if len(msg.UserInputMultiContent) != 2 {
-		t.Fatalf("expected multimodal parts to be preserved, got %#v", msg.UserInputMultiContent)
+	if len(msg.ContentParts) != 2 {
+		t.Fatalf("expected multimodal parts to be preserved, got %#v", msg.ContentParts)
 	}
 }

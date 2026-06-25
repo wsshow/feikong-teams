@@ -9,11 +9,11 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/appstate"
-	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
 	appchat "fkteams/internal/app/chat"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/turn"
 	"fkteams/server/handler/taskstream"
 	"fkteams/server/origin"
 	"fkteams/tools/approval"
@@ -198,8 +198,8 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 // --- WebSocket HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, stream *taskstream.Stream) engine.InterruptHandler {
-	channelHandler := engine.ChannelHandler(stream.InterruptCh())
+func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, stream *taskstream.Stream) turn.InterruptHandler {
+	channelHandler := turn.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
@@ -225,7 +225,7 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			}, memberEvent)
 			_ = writeJSON(payload)
 
-			result, err := engine.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
+			result, err := turn.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 
 			if err == nil {
 				answerEvent := memberEvent
@@ -366,24 +366,24 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	chatService := appchat.NewService()
 	for {
 		_, runErr := chatService.RunTurn(taskCtx, appchat.TurnRequest{
-			SessionID:        sessionID,
-			RunID:            currentRunID,
-			Runner:           r,
-			Input:            currentInput,
-			EventHandler:     wsEventCallbackBuffered(recorder, sessionID, stream),
-			History:          recorder,
-			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
-			NonInteractive:   true,
-			ContextHooks: []appchat.ContextHook{
-				approval.RegistryContext(approval.NewDefaultRegistry()),
-				func(ctx context.Context) context.Context {
-					return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
-				},
-				func(ctx context.Context) context.Context {
-					return agentcore.WithSteeringSource(ctx, steeringSource)
-				},
+			SessionID: sessionID,
+			Runner:    r,
+			Input:     currentInput,
+		},
+			appchat.WithRunID(currentRunID),
+			appchat.OnEvent(wsEventCallbackBuffered(recorder, sessionID, stream)),
+			appchat.WithHistory(recorder),
+			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),
+			appchat.NonInteractive(),
+			appchat.WithContext(approval.RegistryContext(approval.NewDefaultRegistry())),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
+			}),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return agentcore.WithSteeringSource(ctx, steeringSource)
 			},
-		})
+			),
+		)
 		if runErr != nil {
 			if isConnectionClosed(taskCtx, runErr) {
 				log.Printf("task cancelled: session=%s", sessionID)

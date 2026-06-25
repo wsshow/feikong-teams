@@ -91,8 +91,7 @@ func TestTurnSessionCreationStaysInsideChatUseCase(t *testing.T) {
 			case ".git", "release", "node_modules", "web":
 				return filepath.SkipDir
 			}
-			if filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "engine")) ||
-				filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "internal", "runtime", "turn")) {
+			if filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "internal", "runtime", "turn")) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -134,9 +133,6 @@ func TestChatInputBuilderStaysInsideChatUseCase(t *testing.T) {
 			case ".git", "release", "node_modules", "web":
 				return filepath.SkipDir
 			}
-			if filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "events", "chat")) {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -174,9 +170,6 @@ func TestRunnerFactoryStaysInsideAgentUseCase(t *testing.T) {
 			case ".git", "release", "node_modules", "web":
 				return filepath.SkipDir
 			}
-			if filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "runner")) {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -193,7 +186,7 @@ func TestRunnerFactoryStaysInsideAgentUseCase(t *testing.T) {
 		}
 		for _, spec := range file.Imports {
 			if strings.Trim(spec.Path.Value, `"`) == "fkteams/runner" {
-				t.Errorf("%s imports runner facade; use internal/app/agent", rel)
+				t.Errorf("%s imports removed runner package; use internal/app/agent", rel)
 			}
 		}
 		return nil

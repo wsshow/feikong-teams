@@ -11,19 +11,18 @@ func adaptMessagesForRunner(messages []agentcore.Message) []adk.Message {
 	result := make([]adk.Message, 0, len(messages))
 	for _, msg := range messages {
 		m := &schema.Message{
-			Role:                  adaptRoleForRunner(msg.Role),
-			Content:               msg.Content,
-			ReasoningContent:      msg.ReasoningContent,
-			ToolCallID:            msg.ToolCallID,
-			ToolName:              msg.ToolName,
-			Name:                  msg.Name,
-			UserInputMultiContent: adaptPartsForRunner(msg.UserInputMultiContent),
+			Role:             adaptRoleForRunner(msg.Role),
+			Content:          msg.Content,
+			ReasoningContent: msg.ReasoningContent,
+			ToolCallID:       msg.ToolCallID,
+			ToolName:         msg.ToolName,
+			Name:             msg.Name,
 		}
-		if len(msg.MultiContent) > 0 {
+		if len(msg.ContentParts) > 0 {
 			if msg.Role == agentcore.RoleAssistant {
-				m.AssistantGenMultiContent = adaptOutputPartsForRunner(msg.MultiContent)
+				m.AssistantGenMultiContent = adaptOutputPartsForRunner(msg.ContentParts)
 			} else {
-				m.UserInputMultiContent = append(m.UserInputMultiContent, adaptPartsForRunner(msg.MultiContent)...)
+				m.UserInputMultiContent = adaptPartsForRunner(msg.ContentParts)
 			}
 		}
 		if len(msg.ToolCalls) > 0 {
@@ -38,16 +37,19 @@ func adaptMessageFromRunner(msg *schema.Message) agentcore.Message {
 	if msg == nil {
 		return agentcore.Message{}
 	}
+	parts := adaptPartsFromRunner(msg.UserInputMultiContent)
+	if len(msg.AssistantGenMultiContent) > 0 {
+		parts = append(parts, adaptOutputPartsFromRunner(msg.AssistantGenMultiContent)...)
+	}
 	return agentcore.Message{
-		Role:                  adaptRoleFromRunner(msg.Role),
-		Content:               msg.Content,
-		ReasoningContent:      msg.ReasoningContent,
-		ToolCalls:             adaptToolCallsFromRunner(msg.ToolCalls),
-		ToolCallID:            msg.ToolCallID,
-		ToolName:              msg.ToolName,
-		UserInputMultiContent: adaptPartsFromRunner(msg.UserInputMultiContent),
-		MultiContent:          adaptOutputPartsFromRunner(msg.AssistantGenMultiContent),
-		Name:                  msg.Name,
+		Role:             adaptRoleFromRunner(msg.Role),
+		Content:          msg.Content,
+		ReasoningContent: msg.ReasoningContent,
+		ToolCalls:        adaptToolCallsFromRunner(msg.ToolCalls),
+		ToolCallID:       msg.ToolCallID,
+		ToolName:         msg.ToolName,
+		ContentParts:     parts,
+		Name:             msg.Name,
 	}
 }
 

@@ -5,11 +5,11 @@ import (
 	"fkteams/agentcore"
 	"fkteams/agents/toolmeta"
 	"fkteams/appstate"
-	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
 	appagent "fkteams/internal/app/agent"
 	appchat "fkteams/internal/app/chat"
+	domainmessage "fkteams/internal/domain/message"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/ask"
 	"fmt"
@@ -71,17 +71,14 @@ func attachContentParts(data map[string]any, parts []agentcore.ContentPart) map[
 }
 
 func messageContentParts(message agentcore.Message) []agentcore.ContentPart {
-	if len(message.UserInputMultiContent) > 0 {
-		return append([]agentcore.ContentPart(nil), message.UserInputMultiContent...)
-	}
-	if len(message.MultiContent) > 0 {
-		return append([]agentcore.ContentPart(nil), message.MultiContent...)
+	if len(message.ContentParts) > 0 {
+		return append([]agentcore.ContentPart(nil), message.ContentParts...)
 	}
 	return nil
 }
 
 // buildChatInput 构建输入消息（含历史），支持多模态
-func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart, manager appstate.MemoryManager) (input engine.TurnInput, displayText string) {
+func buildChatInput(recorder *eventlog.HistoryRecorder, message string, contents []ContentPart, manager appstate.MemoryManager) (input domainmessage.TurnInput, displayText string) {
 	if len(contents) > 0 {
 		parts := convertContentParts(contents)
 		displayText = appchat.ExtractTextFromParts(parts)
@@ -113,7 +110,7 @@ func queuedChatMessage(kind taskstream.QueueKind, message string, contents []Con
 	return queued
 }
 
-func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage, manager appstate.MemoryManager) engine.TurnInput {
+func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage, manager appstate.MemoryManager) domainmessage.TurnInput {
 	if len(msg.Parts) > 0 {
 		displayText := appchat.ExtractTextFromParts(msg.Parts)
 		if displayText == "" {

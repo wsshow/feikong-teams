@@ -60,11 +60,10 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 	}
 
 	_, err = e.chat.RunTurn(ctx, appchat.TurnRequest{
-		SessionID:    "fkteams_scheduler",
-		Runner:       r,
-		Input:        input,
-		EventHandler: callback,
-	})
+		SessionID: "fkteams_scheduler",
+		Runner:    r,
+		Input:     input,
+	}, appchat.OnEvent(callback))
 	if err != nil {
 		errMsg := fmt.Sprintf("execution error: %v", err)
 		e.writeResult(taskID, task, errMsg)

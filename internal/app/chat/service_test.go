@@ -16,16 +16,17 @@ func TestRunTurnDelegatesToRunnerAndPublishesEvents(t *testing.T) {
 
 	result, err := service.RunTurn(context.Background(), TurnRequest{
 		SessionID: "session-1",
-		RunID:     "run-1",
 		Runner:    runner,
 		Input: message.TurnInput{
 			Message: message.Message{Role: message.RoleUser, Content: "ping"},
 		},
-		EventHandler: func(event event.Event) error {
+	},
+		WithRunID("run-1"),
+		OnEvent(func(event event.Event) error {
 			gotEvents = append(gotEvents, event)
 			return nil
-		},
-	})
+		}),
+	)
 	if err != nil {
 		t.Fatalf("run turn: %v", err)
 	}

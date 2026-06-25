@@ -23,18 +23,68 @@ type HistorySink interface {
 	SetSummary(summary string, beforeCount int)
 }
 
-// TurnRequest 描述一次用户输入到运行时执行的完整用例请求。
+// TurnRequest 描述一次用户输入到运行时执行的最小请求。
 type TurnRequest struct {
-	SessionID        string
-	RunID            string
-	Runner           runtimeport.Runner
-	Input            message.TurnInput
-	EventHandler     EventHandler
-	History          HistorySink
-	InterruptHandler runtimeport.InterruptHandler
-	NonInteractive   bool
-	ContextHooks     []ContextHook
-	OnFinish         func(ctx context.Context, result *runtimeport.RunResult, err error)
+	SessionID string
+	Runner    runtimeport.Runner
+	Input     message.TurnInput
+}
+
+type turnOptions struct {
+	runID            string
+	eventHandler     EventHandler
+	history          HistorySink
+	interruptHandler runtimeport.InterruptHandler
+	nonInteractive   bool
+	contextHooks     []ContextHook
+	onFinish         func(ctx context.Context, result *runtimeport.RunResult, err error)
+}
+
+// TurnOption 为一次运行补充可选入口能力。
+type TurnOption func(*turnOptions)
+
+func WithRunID(runID string) TurnOption {
+	return func(opts *turnOptions) {
+		opts.runID = runID
+	}
+}
+
+func OnEvent(handler EventHandler) TurnOption {
+	return func(opts *turnOptions) {
+		opts.eventHandler = handler
+	}
+}
+
+func WithHistory(history HistorySink) TurnOption {
+	return func(opts *turnOptions) {
+		opts.history = history
+	}
+}
+
+func OnInterrupt(handler runtimeport.InterruptHandler) TurnOption {
+	return func(opts *turnOptions) {
+		opts.interruptHandler = handler
+	}
+}
+
+func NonInteractive() TurnOption {
+	return func(opts *turnOptions) {
+		opts.nonInteractive = true
+	}
+}
+
+func WithContext(hook ContextHook) TurnOption {
+	return func(opts *turnOptions) {
+		if hook != nil {
+			opts.contextHooks = append(opts.contextHooks, hook)
+		}
+	}
+}
+
+func OnFinish(handler func(ctx context.Context, result *runtimeport.RunResult, err error)) TurnOption {
+	return func(opts *turnOptions) {
+		opts.onFinish = handler
+	}
 }
 
 // Service 是所有入口共享的聊天用例服务。
@@ -46,7 +96,7 @@ func NewService() *Service {
 }
 
 // RunTurn 执行一次对话回合，并将入口层能力转换为运行时选项。
-func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.RunResult, error) {
+func (s *Service) RunTurn(ctx context.Context, req TurnRequest, options ...TurnOption) (*runtimeport.RunResult, error) {
 	if req.Runner == nil {
 		return nil, fmt.Errorf("chat turn runner is nil")
 	}
@@ -54,31 +104,38 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 		return nil, fmt.Errorf("chat turn session ID is empty")
 	}
 
+	opts := turnOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
+
 	session := turn.NewSession(req.Runner, req.SessionID).
 		WithInput(req.Input)
-	if req.RunID != "" {
-		session.WithRunID(req.RunID)
+	if opts.runID != "" {
+		session.WithRunID(opts.runID)
 	}
-	if req.EventHandler != nil {
-		session.OnEvent(turn.EventHandler(req.EventHandler))
+	if opts.eventHandler != nil {
+		session.OnEvent(turn.EventHandler(opts.eventHandler))
 	}
-	if req.History != nil {
-		session.WithHistory(req.History)
+	if opts.history != nil {
+		session.WithHistory(opts.history)
 	}
-	if req.InterruptHandler != nil {
-		session.OnInterrupt(turn.InterruptHandler(req.InterruptHandler))
+	if opts.interruptHandler != nil {
+		session.OnInterrupt(turn.InterruptHandler(opts.interruptHandler))
 	}
-	if req.NonInteractive {
+	if opts.nonInteractive {
 		session.NonInteractive()
 	}
-	for _, hook := range req.ContextHooks {
+	for _, hook := range opts.contextHooks {
 		if hook != nil {
 			session.WithContext(turn.ContextHook(hook))
 		}
 	}
-	if req.OnFinish != nil {
+	if opts.onFinish != nil {
 		session.OnFinish(func(ctx context.Context, result *runtimeport.RunResult, err error) {
-			req.OnFinish(ctx, result, err)
+			opts.onFinish(ctx, result, err)
 		})
 	}
 	return session.Run(ctx)

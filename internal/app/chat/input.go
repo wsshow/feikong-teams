@@ -64,8 +64,8 @@ func BuildMultimodalTurnInputWithMemory(recorder *eventlog.HistoryRecorder, text
 	// 对话历史
 	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
 	message := agentcore.Message{
-		Role:                  agentcore.RoleUser,
-		UserInputMultiContent: parts,
+		Role:         agentcore.RoleUser,
+		ContentParts: parts,
 	}
 
 	if debugContextEnabled() {
@@ -204,8 +204,8 @@ func logMessages(tag string, msgs []agentcore.Message) {
 		if m.ReasoningContent != "" {
 			extra += fmt.Sprintf(" reasoning=%dchars", len([]rune(m.ReasoningContent)))
 		}
-		if len(m.UserInputMultiContent) > 0 {
-			extra += fmt.Sprintf(" multimodal_parts=%d", len(m.UserInputMultiContent))
+		if len(m.ContentParts) > 0 {
+			extra += fmt.Sprintf(" multimodal_parts=%d", len(m.ContentParts))
 		}
 		if m.Name != "" {
 			extra += fmt.Sprintf(" name=%s", m.Name)

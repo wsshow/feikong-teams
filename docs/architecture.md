@@ -211,9 +211,9 @@ hook payload 使用明确结构体，不在业务代码里散落 `any` 和字符
 以下旧包不作为长期结构保留：
 
 - `agentcore`：拆到 `internal/domain/*` 和 `internal/ports/runtime`。
-- `engine`：退化为兼容门面，实际执行内核迁入 `internal/runtime/turn`。
-- `runner`：退化为兼容门面，Runner 工厂和缓存实现并入 `internal/app/agent`。
-- `events/chat`：退化为兼容门面，turn input builder 实现并入 `internal/app/chat`。
+- `engine`：已移除，实际执行内核迁入 `internal/runtime/turn`。
+- `runner`：已移除，Runner 工厂和缓存实现并入 `internal/app/agent`。
+- `events/chat`：已移除，turn input builder 实现并入 `internal/app/chat`。
 - `events/log`：迁移为 `internal/adapters/storage/file/history` 和 domain history model。
 - `tools/tools.go`：替换为 tool registry。
 - `tools/scheduler`：拆成 schedule domain、app use case、scheduler adapter、tool adapter。

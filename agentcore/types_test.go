@@ -11,7 +11,7 @@ func TestMessageHelpers(t *testing.T) {
 	}
 
 	message := Message{
-		UserInputMultiContent: []ContentPart{
+		ContentParts: []ContentPart{
 			{Type: ContentPartText, Text: "hello"},
 			{Type: ContentPartImageURL, URL: "https://example.com/a.png"},
 			{Type: ContentPartText, Text: "world"},
@@ -25,7 +25,7 @@ func TestMessageHelpers(t *testing.T) {
 		t.Fatalf("DisplayText should prefer content, got %q", got)
 	}
 	message = Message{
-		MultiContent: []ContentPart{{Type: ContentPartText, Text: "fallback"}},
+		ContentParts: []ContentPart{{Type: ContentPartText, Text: "fallback"}},
 	}
 	if got := message.DisplayText(); got != "fallback" {
 		t.Fatalf("DisplayText fallback = %q", got)

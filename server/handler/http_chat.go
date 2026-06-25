@@ -10,10 +10,10 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/appstate"
-	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
 	appchat "fkteams/internal/app/chat"
+	domainmessage "fkteams/internal/domain/message"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -82,7 +82,7 @@ func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -94,15 +94,16 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 		SessionID: sessionID,
 		Runner:    r,
 		Input:     turnInput,
-		EventHandler: func(event events.Event) error {
+	},
+		appchat.OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
 			data, _ := json.Marshal(convertEventToMap(event))
 			_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 			return err
-		},
-		History: recorder,
-		OnFinish: func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		}),
+		appchat.WithHistory(recorder),
+		appchat.OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
@@ -120,15 +121,15 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
-		},
-	})
+		}),
+	)
 	if runErr != nil && !isConnectionClosed(taskCtx, runErr) {
 		log.Printf("stream chat failed: session=%s, err=%v", sessionID, runErr)
 	}
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
@@ -138,21 +139,22 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 		SessionID: sessionID,
 		Runner:    r,
 		Input:     turnInput,
-		EventHandler: func(event events.Event) error {
+	},
+		appchat.OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
 			collectedEvents = append(collectedEvents, event)
 			return nil
-		},
-		History: recorder,
-		OnFinish: func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		}),
+		appchat.WithHistory(recorder),
+		appchat.OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
 				finishErrorChat(recorder, sessionID, userDisplayText, err)
 				return
 			}
 			finishChat(recorder, sessionID, userDisplayText, manager)
-		},
-	})
+		}),
+	)
 	if runErr != nil {
 		Fail(c, http.StatusInternalServerError, runErr.Error())
 		return

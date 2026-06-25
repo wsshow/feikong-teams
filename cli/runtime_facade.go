@@ -4,9 +4,9 @@ import (
 	"fkteams/agentcore"
 	"fkteams/appstate"
 	cliruntime "fkteams/cli/runtime"
-	"fkteams/engine"
 	"fkteams/events"
 	eventlog "fkteams/events/log"
+	domainmessage "fkteams/internal/domain/message"
 )
 
 type ModeRunnerCreator = cliruntime.ModeRunnerCreator
@@ -48,11 +48,11 @@ func IsTemporarySession() bool {
 	return cliruntime.IsTemporarySession()
 }
 
-func BuildTurnInput(input string) engine.TurnInput {
+func BuildTurnInput(input string) domainmessage.TurnInput {
 	return cliruntime.BuildTurnInput(input)
 }
 
-func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) engine.TurnInput {
+func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) domainmessage.TurnInput {
 	return cliruntime.BuildTurnInputWithMemory(input, manager)
 }
 

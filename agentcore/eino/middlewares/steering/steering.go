@@ -45,16 +45,15 @@ func adaptMessages(messages []agentcore.Message) []*schema.Message {
 			continue
 		}
 		m := &schema.Message{
-			Role:                  adaptRole(msg.Role),
-			Content:               msg.Content,
-			ReasoningContent:      msg.ReasoningContent,
-			ToolCallID:            msg.ToolCallID,
-			ToolName:              msg.ToolName,
-			Name:                  msg.Name,
-			UserInputMultiContent: adaptParts(msg.UserInputMultiContent),
+			Role:             adaptRole(msg.Role),
+			Content:          msg.Content,
+			ReasoningContent: msg.ReasoningContent,
+			ToolCallID:       msg.ToolCallID,
+			ToolName:         msg.ToolName,
+			Name:             msg.Name,
 		}
-		if len(msg.MultiContent) > 0 {
-			m.UserInputMultiContent = append(m.UserInputMultiContent, adaptParts(msg.MultiContent)...)
+		if len(msg.ContentParts) > 0 {
+			m.UserInputMultiContent = adaptParts(msg.ContentParts)
 		}
 		result = append(result, m)
 	}

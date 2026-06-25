@@ -11,11 +11,12 @@ import (
 
 	"fkteams/agentcore"
 	"fkteams/appstate"
-	"fkteams/engine"
 	"fkteams/events"
 	"fkteams/events/log"
 	appchat "fkteams/internal/app/chat"
+	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/turn"
 	"fkteams/server/handler/taskstream"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -332,7 +333,7 @@ func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream 
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput engine.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -346,12 +347,13 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 	chatService := appchat.NewService()
 	for {
 		_, runErr := chatService.RunTurn(ctx, appchat.TurnRequest{
-			SessionID:      sessionID,
-			RunID:          currentRunID,
-			Runner:         r,
-			Input:          currentInput,
-			NonInteractive: true,
-			EventHandler: func(event events.Event) error {
+			SessionID: sessionID,
+			Runner:    r,
+			Input:     currentInput,
+		},
+			appchat.WithRunID(currentRunID),
+			appchat.NonInteractive(),
+			appchat.OnEvent(func(event events.Event) error {
 				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
 					return nil
 				}
@@ -360,19 +362,18 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				data["session_id"] = sessionID
 				stream.Publish(data)
 				return nil
+			}),
+			appchat.WithHistory(recorder),
+			appchat.OnInterrupt(runtimeport.InterruptHandler(interruptHandler)),
+			appchat.WithContext(approval.RegistryContext(approval.NewDefaultRegistry())),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
+			}),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return agentcore.WithSteeringSource(ctx, steeringSource)
 			},
-			History:          recorder,
-			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
-			ContextHooks: []appchat.ContextHook{
-				approval.RegistryContext(approval.NewDefaultRegistry()),
-				func(ctx context.Context) context.Context {
-					return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
-				},
-				func(ctx context.Context) context.Context {
-					return agentcore.WithSteeringSource(ctx, steeringSource)
-				},
-			},
-		})
+			),
+		)
 		if runErr != nil {
 			if isConnectionClosed(ctx, runErr) {
 				log.Printf("stream task cancelled: session=%s", sessionID)
@@ -669,8 +670,8 @@ func StreamEventsHandler() gin.HandlerFunc {
 // ==================== 内部辅助 ====================
 
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
-func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) engine.InterruptHandler {
-	channelHandler := engine.ChannelHandler(stream.InterruptCh())
+func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) turn.InterruptHandler {
+	channelHandler := turn.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
@@ -695,7 +696,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 				"multi_select": info.MultiSelect,
 			}, memberEvent))
 
-			result, err := engine.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
+			result, err := turn.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
 				answerEvent := memberEvent
 				answerEvent.Type = events.EventAction

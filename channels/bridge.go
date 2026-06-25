@@ -255,17 +255,18 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
 	_, runErr := appchat.NewService().RunTurn(ctx, appchat.TurnRequest{
-		SessionID:      sessionID,
-		Runner:         r,
-		Input:          turnInput,
-		NonInteractive: true,
-		EventHandler: func(event events.Event) error {
+		SessionID: sessionID,
+		Runner:    r,
+		Input:     turnInput,
+	},
+		appchat.NonInteractive(),
+		appchat.OnEvent(func(event events.Event) error {
 			recorder.RecordEvent(event)
 			return rc.handleEvent(event)
-		},
-		History:      recorder,
-		ContextHooks: []appchat.ContextHook{approval.RegistryContext(approval.NewAutoApproveRegistry())},
-		OnFinish: func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		}),
+		appchat.WithHistory(recorder),
+		appchat.WithContext(approval.RegistryContext(approval.NewAutoApproveRegistry())),
+		appchat.OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
 			if err != nil {
 				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
 				recorder.RecordEvent(events.Event{
@@ -291,8 +292,8 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
 			}
-		},
-	})
+		}),
+	)
 	if runErr != nil {
 		log.Printf("[bridge] task failed: session=%s, err=%v", sessionID, runErr)
 	}

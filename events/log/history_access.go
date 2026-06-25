@@ -24,10 +24,7 @@ func (h *HistoryRecorder) RecordUserMessage(message agentcore.Message) {
 	h.finalizeAllActiveMessages()
 
 	content := message.DisplayText()
-	parts := append([]agentcore.ContentPart(nil), message.UserInputMultiContent...)
-	if len(parts) == 0 {
-		parts = append(parts, message.MultiContent...)
-	}
+	parts := append([]agentcore.ContentPart(nil), message.ContentParts...)
 
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "用户",

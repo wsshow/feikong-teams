@@ -62,7 +62,7 @@ func (m QueuedMessage) Message() agentcore.Message {
 	}
 	if len(m.Parts) > 0 {
 		msg.Content = ""
-		msg.UserInputMultiContent = append([]agentcore.ContentPart(nil), m.Parts...)
+		msg.ContentParts = append([]agentcore.ContentPart(nil), m.Parts...)
 	}
 	return msg
 }
