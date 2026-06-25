@@ -3,7 +3,8 @@ package eventview
 import (
 	"encoding/json"
 
-	"fkteams/events"
+	domainevent "fkteams/internal/domain/event"
+	runtimeevents "fkteams/internal/runtime/events"
 
 	"fmt"
 
@@ -28,7 +29,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 	callback = func(event Event) error {
 		switch event.Type {
 		case EventMessageDelta:
-			if event.DeltaKind != "" && event.DeltaKind != events.DeltaOutput {
+			if event.DeltaKind != "" && event.DeltaKind != domainevent.DeltaOutput {
 				return nil
 			}
 			if lastAgent != event.AgentName {
@@ -41,7 +42,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 		case EventToolStart:
 			flushStream()
-			toolCalls := events.ToolCallsFromEvent(event)
+			toolCalls := runtimeevents.ToolCallsFromEvent(event)
 			for i, tc := range toolCalls {
 				if isInternalToolName(tc.Function.Name) {
 					continue

@@ -200,6 +200,15 @@ func TestRootTUIPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootEventsViewPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "events", "view")); err == nil {
+		t.Fatal("root events/view package exists; use internal/adapters/transport/cli/eventview")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -520,7 +529,7 @@ func TestRootEventsUseDomainTypes(t *testing.T) {
 
 func TestEventViewUsesDomainTypes(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	err := filepath.WalkDir(filepath.Join(root, "events", "view"), func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(filepath.Join(root, "internal", "adapters", "transport", "cli", "eventview"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

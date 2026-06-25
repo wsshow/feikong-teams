@@ -7,8 +7,8 @@ import (
 	"syscall"
 
 	"fkteams/cli"
-	"fkteams/events/view"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
+	"fkteams/internal/adapters/transport/cli/eventview"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/config"

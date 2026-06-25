@@ -2,8 +2,8 @@ package runtime
 
 import (
 	"fkteams/events"
-	"fkteams/events/view"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/adapters/transport/cli/eventview"
 	"fmt"
 	"log"
 	"sync"

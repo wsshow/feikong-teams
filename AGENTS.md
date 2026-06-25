@@ -76,6 +76,7 @@ internal/adapters/scheduler/
 internal/adapters/tools/
   builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
 internal/adapters/transport/
+  cli/eventview/            #   CLI 事件渲染和 JSON 输出回调
   cli/tui/                  #   CLI 终端 UI 组件、Markdown 渲染和交互控件
   cli/report/               #   CLI Markdown 报告导出 HTML 适配器
   cli/update/               #   CLI 自更新、下载、校验和替换适配器
@@ -110,8 +111,7 @@ channels/                   # 消息通道桥接
 events/                     # 事件协议与展示/历史
   types.go                  #   domain/event 事件类型别名和常量导出
   facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
-  view/                     #   CLI 事件渲染、JSON 输出回调
-                            #   内部包必须使用 internal/runtime/events，展示层禁止依赖 agentcore 旧门面
+                            #   内部包必须使用 internal/runtime/events，根 events 只保留外层门面
 web/                        # 内嵌前端（//go:embed）
 cli/                        # CLI 交互循环
                             #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面

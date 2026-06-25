@@ -1,7 +1,7 @@
 package eventview
 
 import (
-	"fkteams/events"
+	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	"strings"
 	"testing"
@@ -93,7 +93,7 @@ func TestMarkdownCollectorCollectsMessagesToolsAndErrors(t *testing.T) {
 			}},
 		},
 		{Type: EventToolEnd, AgentName: "assistant", ToolCallID: "tool-1", Content: `{"message":"搜索完成","results":[{"title":"Go","url":"https://go.dev","summary":"语言"}]}`},
-		{Type: EventAction, ActionType: events.ActionTransfer, AgentName: "assistant", Content: "coder"},
+		{Type: EventAction, ActionType: domainevent.ActionTransfer, AgentName: "assistant", Content: "coder"},
 		{Type: EventError, AgentName: "assistant", Error: "boom"},
 	}
 	for _, event := range eventsToSend {
@@ -112,7 +112,7 @@ func TestMarkdownCollectorCollectsMessagesToolsAndErrors(t *testing.T) {
 
 func TestMarkdownCollectorIgnoresNonOutputDeltaAndInternalTool(t *testing.T) {
 	callback, result := NewMarkdownCollector()
-	if err := callback(Event{Type: EventMessageDelta, DeltaKind: events.DeltaReasoning, AgentName: "assistant", Content: "hidden"}); err != nil {
+	if err := callback(Event{Type: EventMessageDelta, DeltaKind: domainevent.DeltaReasoning, AgentName: "assistant", Content: "hidden"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := callback(Event{

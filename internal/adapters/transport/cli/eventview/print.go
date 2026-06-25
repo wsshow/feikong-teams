@@ -2,11 +2,12 @@ package eventview
 
 import (
 	"encoding/json"
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	fktui "fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/agent/catalog/toolmeta"
+	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
+	runtimeevents "fkteams/internal/runtime/events"
 	"fmt"
 
 	"strings"
@@ -16,29 +17,29 @@ import (
 
 const agentToolPrefix = toolmeta.AgentToolPrefix
 
-type Event = events.Event
+type Event = domainevent.Event
 
 const (
-	EventMessageDelta = events.EventMessageDelta
-	EventMessageEnd   = events.EventMessageEnd
-	EventToolStart    = events.EventToolStart
-	EventToolUpdate   = events.EventToolUpdate
-	EventToolEnd      = events.EventToolEnd
-	EventAction       = events.EventAction
-	EventUsage        = events.EventUsage
-	EventError        = events.EventError
+	EventMessageDelta = domainevent.TypeMessageDelta
+	EventMessageEnd   = domainevent.TypeMessageEnd
+	EventToolStart    = domainevent.TypeToolStart
+	EventToolUpdate   = domainevent.TypeToolUpdate
+	EventToolEnd      = domainevent.TypeToolEnd
+	EventAction       = domainevent.TypeAction
+	EventUsage        = domainevent.TypeUsage
+	EventError        = domainevent.TypeError
 
-	ActionTransfer             = events.ActionTransfer
-	ActionContextCompressStart = events.ActionContextCompressStart
-	ActionContextCompress      = events.ActionContextCompress
+	ActionTransfer             = domainevent.ActionTransfer
+	ActionContextCompressStart = domainevent.ActionContextCompressStart
+	ActionContextCompress      = domainevent.ActionContextCompress
 )
 
 func isInternalToolName(name string) bool {
-	return events.IsInternalToolName(name)
+	return runtimeevents.IsInternalToolName(name)
 }
 
 func isInternalContinueContent(content string) bool {
-	return events.IsInternalContinueContent(content)
+	return runtimeevents.IsInternalContinueContent(content)
 }
 
 func FormatToolDisplay(name string) toolmeta.ToolDisplay {
@@ -171,14 +172,14 @@ func newPrintEvent() (func(Event), func()) {
 	}
 
 	memberToolKey := func(event Event, tool domainmessage.ToolCall, position int) string {
-		if ref := events.ToolCallRefAt(event, tool, position); ref != "" {
+		if ref := runtimeevents.ToolCallRefAt(event, tool, position); ref != "" {
 			return "ref:" + ref
 		}
 		return ""
 	}
 
 	regularToolKey := func(event Event, tool domainmessage.ToolCall, position int) string {
-		if ref := events.ToolCallRefAt(event, tool, position); ref != "" {
+		if ref := runtimeevents.ToolCallRefAt(event, tool, position); ref != "" {
 			return "ref:" + ref
 		}
 		return ""
@@ -386,7 +387,7 @@ func newPrintEvent() (func(Event), func()) {
 		switch event.Type {
 		case EventMessageDelta:
 			switch event.DeltaKind {
-			case events.DeltaReasoning:
+			case domainevent.DeltaReasoning:
 				if isMemberEvent(event) {
 					key, name := memberFromEvent(event)
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "content", Content: event.Content})
@@ -409,7 +410,7 @@ func newPrintEvent() (func(Event), func()) {
 				rw.writeChunk(event.Content)
 				return
 
-			case events.DeltaToolArgs:
+			case domainevent.DeltaToolArgs:
 				if isMemberEvent(event) {
 					key, name := memberFromEvent(event)
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, domainmessage.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
@@ -617,7 +618,7 @@ func newPrintEvent() (func(Event), func()) {
 		case EventToolStart:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				for i, tool := range events.ToolCallsFromEvent(event) {
+				for i, tool := range runtimeevents.ToolCallsFromEvent(event) {
 					if tool.Function.Name == "" {
 						continue
 					}
@@ -626,7 +627,7 @@ func newPrintEvent() (func(Event), func()) {
 				}
 				return
 			}
-			agentTools, otherTools := splitAgentToolCalls(events.ToolCallsFromEvent(event))
+			agentTools, otherTools := splitAgentToolCalls(runtimeevents.ToolCallsFromEvent(event))
 			if len(agentTools) > 0 {
 				if inReasoning {
 					inReasoning = false
@@ -659,7 +660,7 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			toolCalls := events.ToolCallsFromEvent(event)
+			toolCalls := runtimeevents.ToolCallsFromEvent(event)
 			for i, tool := range toolCalls {
 				if isInternalToolName(tool.Function.Name) {
 					continue
