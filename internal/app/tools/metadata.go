@@ -2,8 +2,8 @@ package tools
 
 import (
 	"context"
+	"fkteams/internal/app/tools/approval"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tools/approval"
 	"fmt"
 )
 

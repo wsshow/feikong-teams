@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"fkteams/tools/approval"
+	"fkteams/internal/app/tools/approval"
 )
 
 func TestGitInitRequiresApproval(t *testing.T) {

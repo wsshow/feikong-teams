@@ -12,11 +12,11 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/app/tools/ask"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/turn"
 	"fkteams/server/origin"
-	"fkteams/tools/approval"
-	"fkteams/tools/ask"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

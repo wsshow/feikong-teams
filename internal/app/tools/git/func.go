@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"fkteams/tools/approval"
+	"fkteams/internal/app/tools/approval"
 )
 
 // GitTools Git工具实例

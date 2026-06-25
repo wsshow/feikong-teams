@@ -137,6 +137,15 @@ func TestRootAgentsPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootToolsPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "tools")); err == nil {
+		t.Fatal("root tools package exists; use internal/app/tools")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -152,6 +161,14 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 		forbidden := []string{
 			"fkteams/internal/app",
 			"fkteams/internal/adapters",
+			"fkteams/internal/adapters/runtime/eino",
+			"github.com/cloudwego/eino",
+			"github.com/gin-gonic/gin",
+		}
+		assertNotImported(t, rel, importPath, forbidden)
+	case strings.HasPrefix(rel, "internal/app/tools/"):
+		forbidden := []string{
+			"fkteams/agentcore",
 			"fkteams/internal/adapters/runtime/eino",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
@@ -205,6 +222,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/agents" || strings.HasPrefix(importPath, "fkteams/agents/") {
 		t.Errorf("%s imports removed root agents package; use internal/app/agent/catalog", rel)
+	}
+	if importPath == "fkteams/tools" || strings.HasPrefix(importPath, "fkteams/tools/") {
+		t.Errorf("%s imports removed root tools package; use internal/app/tools", rel)
 	}
 }
 
@@ -498,7 +518,7 @@ func TestHistoryLogUsesStorageAdapter(t *testing.T) {
 
 func TestToolResolutionUsesRegistry(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	path := filepath.Join(root, "tools", "tools.go")
+	path := filepath.Join(root, "internal", "app", "tools", "tools.go")
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -510,7 +530,7 @@ func TestToolResolutionUsesRegistry(t *testing.T) {
 		}
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
 			if _, ok := node.(*ast.SwitchStmt); ok {
-				t.Errorf("tools/tools.go GetToolsByNameWithCleaner uses switch; register tool groups through ToolGroupRegistry")
+				t.Errorf("internal/app/tools/tools.go GetToolsByNameWithCleaner uses switch; register tool groups through ToolGroupRegistry")
 				return false
 			}
 			return true
@@ -522,7 +542,7 @@ func TestToolResolutionUsesRegistry(t *testing.T) {
 
 func TestSchedulerBoundariesUseAppAndAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	legacyDir := filepath.Join(root, "tools", "scheduler")
+	legacyDir := filepath.Join(root, "internal", "app", "tools", "scheduler")
 	if entries, err := os.ReadDir(legacyDir); err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
@@ -558,7 +578,7 @@ func TestSchedulerBoundariesUseAppAndAdapters(t *testing.T) {
 		}
 		for _, spec := range file.Imports {
 			importPath := strings.Trim(spec.Path.Value, `"`)
-			if importPath == "fkteams/tools/scheduler" {
+			if importPath == "fkteams/internal/app/tools/scheduler" {
 				t.Errorf("%s imports removed tools/scheduler package; use app/schedule or scheduler adapters", rel)
 			}
 			if strings.HasPrefix(rel, "internal/adapters/tools/builtin/scheduler/") &&
@@ -572,7 +592,7 @@ func TestSchedulerBoundariesUseAppAndAdapters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registryPath := filepath.Join(root, "tools", "registry.go")
+	registryPath := filepath.Join(root, "internal", "app", "tools", "registry.go")
 	content, err := os.ReadFile(registryPath)
 	if err != nil {
 		t.Fatal(err)
@@ -691,7 +711,7 @@ func TestRootCommonPackageIsNotUsed(t *testing.T) {
 
 func TestToolsUseRuntimePortsDirectly(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	err := filepath.WalkDir(filepath.Join(root, "tools"), func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(filepath.Join(root, "internal", "app", "tools"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

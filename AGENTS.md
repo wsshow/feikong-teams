@@ -40,6 +40,7 @@ internal/app/               # 应用用例层，入口只调用这里
     taskstream/             #   运行中任务事件流、队列、interrupt 状态管理
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
     catalog/                #   内置智能体定义、注册表、AgentBuilder 和成员工具元信息
+  tools/                    #   工具注册、解析、策略标记和内置工具实现
   memory/                   #   长期记忆检索、注入、提取、BM25 和 Markdown 持久化
   schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
   lifecycle/                #   Application 生命周期编排内核
@@ -91,12 +92,6 @@ internal/adapters/storage/
 internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
 internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册
 internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
-tools/                      # 工具系统
-  registry.go               #   ToolGroupRegistry，注册和解析工具组
-  tools.go                  #   GetToolsByName() — 委托注册表和 MCP fallback
-  metadata.go               #   ClassifyTools() — 标记只读/破坏性工具
-                            #   定时任务工具适配器位于 internal/adapters/tools/builtin/scheduler
-                            #   工具层使用 internal/ports/runtime，禁止再依赖 agentcore 旧门面
 server/                     # HTTP 服务（Gin）
   router/                   #   路由注册（Web 模式含内嵌前端，API 模式纯接口）
   handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
@@ -153,8 +148,8 @@ mdiff/                      # 文件差异/补丁
 
 ### 工具
 
-- 新工具组必须通过 `tools.ToolGroupRegistry` 注册，禁止在 `tools/tools.go` 中增加 switch 分支
-- 工具必须通过 `tools/metadata.go` 的 `ClassifyTools()` 标记元数据（只读/破坏性）
+- 新工具组必须通过 `internal/app/tools.ToolGroupRegistry` 注册，禁止在 `internal/app/tools/tools.go` 中增加 switch 分支
+- 工具必须通过 `internal/app/tools/metadata.go` 的 `ClassifyTools()` 标记元数据（只读/破坏性）
 
 ### 配置
 

@@ -2,9 +2,9 @@ package tools
 
 import (
 	"context"
+	"fkteams/internal/app/tools/approval"
+	"fkteams/internal/app/tools/search"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tools/approval"
-	"fkteams/tools/search"
 	"testing"
 )
 

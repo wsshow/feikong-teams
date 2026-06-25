@@ -4,7 +4,7 @@ import (
 	"context"
 	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appdata"
-	"fkteams/tools/command"
+	"fkteams/internal/app/tools/command"
 	"fmt"
 
 	runtimeport "fkteams/internal/ports/runtime"

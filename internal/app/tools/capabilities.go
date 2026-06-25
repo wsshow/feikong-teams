@@ -1,9 +1,9 @@
 package tools
 
 import (
+	"fkteams/internal/app/tools/attachment"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
-	"fkteams/tools/attachment"
 	"fmt"
 )
 

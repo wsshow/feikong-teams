@@ -5,8 +5,8 @@ import (
 	"fkteams/internal/app/config"
 	"fmt"
 
-	"fkteams/tools"
-	"fkteams/tools/mcp"
+	"fkteams/internal/app/tools"
+	"fkteams/internal/app/tools/mcp"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"fkteams/tools/ask"
+	"fkteams/internal/app/tools/ask"
 	"fkteams/tui"
 
 	tea "charm.land/bubbletea/v2"

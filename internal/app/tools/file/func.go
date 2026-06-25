@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
+	"fkteams/internal/app/tools/approval"
 	"fkteams/internal/runtime/pathguard"
 	"fkteams/mdiff"
-	"fkteams/tools/approval"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/spf13/afero"

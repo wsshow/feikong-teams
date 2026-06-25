@@ -2,9 +2,9 @@ package runtimes
 
 import (
 	einoengine "fkteams/internal/adapters/runtime/eino/engine"
+	toolmcp "fkteams/internal/app/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
 	runtimeregistry "fkteams/internal/runtime/registry"
-	toolmcp "fkteams/tools/mcp"
 
 	_ "fkteams/internal/adapters/runtime/eino/providers/register"
 )

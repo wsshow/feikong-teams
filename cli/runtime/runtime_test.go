@@ -3,9 +3,9 @@ package runtime
 import (
 	"context"
 	"fkteams/events"
+	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tools/ask"
 	"fkteams/tui"
 	"os"
 	"strings"

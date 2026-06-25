@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"fkteams/tools"
+	"fkteams/internal/app/tools"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
-	"fkteams/tools/mcp"
 )
 
 // workspacePath 返回工作区目录路径

@@ -5,8 +5,8 @@ import (
 
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/tools/ask"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tools/ask"
 
 	"fmt"
 	"os"

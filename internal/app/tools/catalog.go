@@ -2,8 +2,8 @@ package tools
 
 import (
 	"context"
+	"fkteams/internal/app/tools/mcp"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tools/mcp"
 )
 
 // ToolGroupInfo 描述可在自定义智能体中配置的工具组。

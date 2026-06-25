@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/tools/approval"
+	"fkteams/internal/app/tools/approval"
 )
 
 func TestValidatePathRejectsSiblingPrefix(t *testing.T) {
