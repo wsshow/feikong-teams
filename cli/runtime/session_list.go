@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"fkteams/internal/adapters/storage/file/history"
-	"fkteams/tui"
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fmt"
 	"os"
 	"path/filepath"

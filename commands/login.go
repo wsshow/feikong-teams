@@ -6,8 +6,8 @@ import (
 
 	"fkteams/internal/adapters/model/providers"
 	"fkteams/internal/adapters/model/providers/copilot"
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/config"
-	"fkteams/tui"
 
 	ucli "github.com/urfave/cli/v3"
 )

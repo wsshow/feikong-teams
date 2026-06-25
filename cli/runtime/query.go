@@ -14,6 +14,7 @@ import (
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	clireport "fkteams/internal/adapters/transport/cli/report"
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -23,7 +24,6 @@ import (
 	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/turn"
-	"fkteams/tui"
 
 	"github.com/pterm/pterm"
 )

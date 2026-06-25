@@ -6,7 +6,7 @@ import (
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 
-	"fkteams/tui"
+	"fkteams/internal/adapters/transport/cli/tui"
 
 	"strings"
 )

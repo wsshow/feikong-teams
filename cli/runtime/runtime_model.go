@@ -1,7 +1,7 @@
 package runtime
 
 import (
-	"fkteams/tui"
+	"fkteams/internal/adapters/transport/cli/tui"
 
 	"time"
 

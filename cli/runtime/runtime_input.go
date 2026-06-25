@@ -6,7 +6,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	appschedule "fkteams/internal/app/schedule"
 
-	"fkteams/tui"
+	"fkteams/internal/adapters/transport/cli/tui"
 
 	"fmt"
 	"os"

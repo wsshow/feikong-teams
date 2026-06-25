@@ -1,7 +1,7 @@
 package eventview
 
 import (
-	fktui "fkteams/tui"
+	fktui "fkteams/internal/adapters/transport/cli/tui"
 	"fmt"
 	"os"
 	"strings"

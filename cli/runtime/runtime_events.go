@@ -9,7 +9,7 @@ import (
 
 	"fkteams/events"
 
-	"fkteams/tui"
+	"fkteams/internal/adapters/transport/cli/tui"
 
 	"strings"
 

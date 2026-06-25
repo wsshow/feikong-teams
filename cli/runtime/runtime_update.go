@@ -5,7 +5,7 @@ import (
 
 	"errors"
 
-	"fkteams/tui"
+	"fkteams/internal/adapters/transport/cli/tui"
 
 	"fmt"
 

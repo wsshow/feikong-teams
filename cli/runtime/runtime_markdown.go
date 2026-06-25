@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/version"
-	"fkteams/tui"
 )
 
 func runtimeHelpMarkdown() string {

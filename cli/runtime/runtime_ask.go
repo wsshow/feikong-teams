@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/tools/ask"
-	"fkteams/tui"
 
 	tea "charm.land/bubbletea/v2"
 )

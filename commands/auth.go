@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/config"
-	"fkteams/tui"
 
 	ucli "github.com/urfave/cli/v3"
 )

@@ -191,6 +191,15 @@ func TestRootUpdatePackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootTUIPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "tui")); err == nil {
+		t.Fatal("root tui package exists; use internal/adapters/transport/cli/tui")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -285,6 +294,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 	if importPath == "fkteams/update" || strings.HasPrefix(importPath, "fkteams/update/") {
 		t.Errorf("%s imports removed root update package; use internal/adapters/transport/cli/update", rel)
+	}
+	if importPath == "fkteams/tui" || strings.HasPrefix(importPath, "fkteams/tui/") {
+		t.Errorf("%s imports removed root tui package; use internal/adapters/transport/cli/tui", rel)
 	}
 }
 

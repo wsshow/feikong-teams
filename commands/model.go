@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"fkteams/internal/adapters/model/providers"
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/config"
-	"fkteams/tui"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"

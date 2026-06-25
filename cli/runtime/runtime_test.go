@@ -3,10 +3,10 @@ package runtime
 import (
 	"context"
 	"fkteams/events"
+	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/tui"
 	"os"
 	"strings"
 	"testing"

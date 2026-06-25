@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	fktui "fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	domainmessage "fkteams/internal/domain/message"
-	fktui "fkteams/tui"
 	"fmt"
 
 	"strings"
