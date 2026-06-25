@@ -46,7 +46,7 @@ internal/domain/
   memory/                   #   MemoryEntry / Message / MemoryType 等长期记忆值对象
   schedule/                 #   Task / Status / HistoryEntry 等调度领域模型
   session/                  #   会话 ID 与 context 绑定
-                            #   领域层禁止依赖第三方库
+                            #   领域层禁止依赖框架/基础设施 SDK；稳定无状态小依赖可直接使用
 internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
   events/                   #   事件分发、Emitter、协议校验、友好错误归一化

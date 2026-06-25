@@ -1,95 +1,87 @@
 # 架构设计
 
-本文档定义当前主线目标架构。项目版本仍处于 `0.x` 阶段，不承诺内部包、接口和目录结构的向后兼容；重构优先级是长期清晰、稳定、可扩展，而不是保留历史调用方式。
+本文档定义当前主线架构。项目仍处于 `0.x` 阶段，内部包、接口和目录结构可以继续调整；调整目标不是“迁移越多越好”，而是让核心边界稳定、职责清晰、运行可靠，并为替换 runtime、模型 provider、存储、调度和工具实现留下明确入口。
 
-## 设计原则
+## 架构原则
 
-- 内核优先：所有入口只调用应用用例层，不直接拼装 runner、history、memory、approval、hooks 或 runtime。
-- 端口驱动：领域和用例只依赖接口，Eino、HTTP、CLI、文件系统、MCP、定时器等全部是 adapter。
-- 单向依赖：`domain -> ports -> app -> adapters/bootstrap` 方向不可反转。
-- 运行时可替换：Eino 只是默认 runtime adapter，不是核心设计的一部分。
-- 状态集中治理：session、history、checkpoint、memory、task queue、schedule result 都通过明确 store/repository 接口管理。
-- 事件协议稳定：运行时事件、用户通知、历史记录和传输事件分层转换，不在入口层重复拼事件。
-- 可破坏性调整：旧包可以删除、重命名、移动；只需要保证功能等价、数据可迁移和验证完整。
+- 核心用例优先：HTTP、CLI、消息通道、调度器等入口只做协议转换和用户交互，不直接拼装 runner、history、memory、approval、hooks 或 runtime。
+- 端口驱动：核心用例依赖接口和领域模型；Eino、HTTP、CLI、文件存储、MCP、Git、SSH、定时器等具体技术放在 adapter。
+- 单向依赖：`domain`、`ports`、`app`、`runtime` 不反向依赖 `adapters`；`bootstrap` 是组合根，负责把配置、adapter 和 service 接起来。
+- Runtime 可替换：Eino 是默认 runtime adapter，不是核心架构的一部分。其他核心只面向 `internal/ports/runtime`。
+- 稳定性优先：session、history、checkpoint、memory、task queue、schedule result 等状态必须通过明确 store/repository/service 管理，避免入口层散落写入。
+- 事件协议稳定：运行事实事件、用例事件管线和传输展示 DTO 分层转换，不在入口层重复拼装核心事件。
+- 不做形式主义隔离：成熟、无状态、值对象级别的小依赖可以直接使用，例如 `github.com/google/uuid`。需要隔离的是框架、协议、外部系统、IO、存储、网络客户端、有生命周期或需要替换的技术实现。
 
-## 目标目录
+## 目录结构
 
 ```text
 cmd/fkteams/
-  main.go
+  main.go                    # 命令入口
 
-internal/domain/
-  message/          # Message、ContentPart、ToolCall 等模型调用协议
-  event/            # RunEvent、Notification、Usage、ToolSpan 等事件领域模型
-  agent/            # AgentSpec、TeamSpec、PromptSpec、MemberSpec
-  tool/             # ToolSpec、ToolCall、ToolPolicy、ToolCategory
-  session/          # SessionID、TurnID、TurnInput、HistorySnapshot
-  memory/           # MemoryEntry、MemoryQuery、MemoryInjection
-  schedule/         # Task、Status、HistoryEntry、CronPolicy
-  approval/         # ApprovalRequest、Decision、Policy
+internal/domain/             # 领域模型和值对象
+  event/
+  history/
+  memory/
+  message/
+  schedule/
+  session/
 
-internal/ports/
-  runtime/          # Runtime、Runner、Model、Middleware、CheckpointStore
-  storage/          # SessionStore、HistoryStore、MemoryStore、TaskStore
-  memory/           # LLMClient 等长期记忆外部能力端口
-  tools/            # ToolRegistry、ToolFactory、MCPProvider
-  hooks/            # HookPoint、HookHandler、明确 payload 契约
-  scheduler/        # Scheduler、TaskExecutor、Clock
-  transport/        # EventPublisher、StreamHub、ChannelGateway
+internal/ports/              # 外部能力接口和核心契约
+  hooks/
+  memory/
+  runtime/
+  scheduler/
+  storage/
+  tools/
 
-internal/app/
-  config/           # TOML 配置加载、保存、热重载和示例生成
-  version/          # application version and build metadata
-  appstate/         # 应用实例运行时状态，持有记忆服务和进程级资源清理器
-  chat/             # StartTurn、RunTurn、QueueFollowUp、Steer、Stop
-  session/          # Create、Resume、Persist、Summarize
-  agent/            # ResolveAgent、BuildTeam、BuildRunner
-  memory/           # Search、Inject、Extract
-  schedule/         # AddTask、RunDueTask、CancelTask、TaskHistory
-  skill/            # Provider、Install、Remove、ListFiles、ReadFile
-  tools/            # ResolveToolGroups、ClassifyPolicy、CreateToolRuntime
-  lifecycle/        # App lifecycle and service orchestration
+internal/app/                # 应用用例层
+  agent/
+  appdata/
+  appstate/
+  chat/
+  config/
+  lifecycle/
+  memory/
+  schedule/
+  skill/
+  tools/
+  version/
 
-internal/runtime/
-  turn/             # runtime-independent turn executor
-  events/           # event dispatch, emitter, protocol validation and friendly error normalization
-  registry/         # runtime registry and default runtime selection
-  model/            # runtime-neutral ChatModel factory registry
-  env/              # FEIKONG_* runtime environment access
-  log/              # runtime logging facade and file rotation
-  mdiff/            # runtime-neutral multi-file diff and patch utilities
-  atomicfile/       # atomic file writes
-  pathguard/        # workspace path containment checks
-  typeutil/         # runtime type name helpers
-  hooks/            # HookBus 实现、context 绑定和扩展点调用
-  middleware/       # runtime-neutral middleware contracts
-  checkpoint/       # checkpoint implementations used by runtime ports
-  queue/            # steering/follow-up queue primitives
+internal/runtime/            # 运行时无关的执行内核和基础能力
+  atomicfile/
+  checkpoint/
+  env/
+  events/
+  hooks/
+  log/
+  mdiff/
+  model/
+  pathguard/
+  registry/
+  resources/
+  retry/
+  turn/
+  typeutil/
 
-internal/adapters/
-  runtime/eino/     # all CloudWeGo Eino dependencies
-  model/providers/  # model provider registry, detection, listing
-  model/memory/     # ChatModel -> memory LLMClient adapter
-  model/providers/copilot/
-  model/providers/providerkit/
-  transport/cli/commands/ # CLI commands, flags and application lifecycle wiring
-  transport/cli/    # CLI terminal runtime, rendering, export and self-update adapters
+internal/adapters/           # 技术实现和协议转换
+  model/
+  runtime/eino/
+  scheduler/filecron/
   storage/file/
   storage/memory/
-  transport/http/    # Gin HTTP server, router, handlers, middleware and origin policy
-  transport/channel/ # Discord / QQ / Weixin channel adapters and bridge
-  tools/builtin/
-    git/             # go-git backed Git tool adapter
-    scheduler/       # schedule_* tool adapter, delegates to app/schedule
-    ssh/             # SSH/SFTP tool adapter
+  tools/builtin/git/
+  tools/builtin/scheduler/
+  tools/builtin/ssh/
   tools/mcp/
-  scheduler/filecron/
+  transport/channel/
+  transport/cli/
+  transport/http/
 
-internal/bootstrap/
-  environment/      # init 命令的 uv/bun 等运行环境初始化器
-  runtimes/         # 默认 runtime engine 和 runtime provider 注册
-  tools/            # adapter 工具组和应用工具注册表连接
-  services/         # lifecycle.Service 组合层实现
+internal/bootstrap/          # 组合根
+  environment/
+  runtimes/
+  services/
+  tools/
 
 web/
 docs/
@@ -97,18 +89,18 @@ docs/
 
 ## 层级职责
 
-| 层级 | 职责 | 禁止 |
+| 层级 | 职责 | 边界 |
 | ---- | ---- | ---- |
-| `domain` | 纯业务模型和值对象 | 禁止 import adapters、app、config、第三方库、Eino、Gin、TUI、文件系统实现 |
-| `ports` | 外部能力接口和契约 | 禁止 import adapters、app、具体第三方 SDK |
-| `app` | 用例编排、事务边界、状态流转 | 禁止 import `agentcore`、具体 adapter 和终端展示库；只能依赖 `domain` 和 `ports` |
-| `runtime` | 与具体框架无关的执行内核组件 | 禁止 import `agentcore`、Eino、HTTP、CLI、server handler |
-| `adapters` | 技术实现和协议转换 | 可以依赖 `domain`、`ports`、第三方 SDK；不得被 domain/app 反向依赖 |
-| `bootstrap` | 组装配置、adapter、service | 是唯一允许主动连接所有层的 composition root |
+| `domain` | 业务模型、值对象、上下文中的领域标识 | 不依赖 app、adapter、配置、框架 SDK、传输 SDK；允许稳定无状态的小工具库 |
+| `ports` | runtime、storage、scheduler、tools、hooks 等接口契约 | 不依赖 app 和 adapter；不暴露具体 SDK 类型 |
+| `app` | 用例编排、事务边界、状态流转、策略选择 | 不 import adapter、Eino、Gin、pterm 等具体实现 |
+| `runtime` | 与 Eino 无关的执行内核、事件、hooks、checkpoint、模型注册表等 | 不依赖 adapter、HTTP/CLI handler 或 Eino |
+| `adapters` | Eino、模型 provider、HTTP、CLI、channel、文件存储、MCP、Git、SSH、调度器等实现 | 可以依赖 domain、ports 和第三方 SDK；不得被 app/domain 反向依赖 |
+| `bootstrap` | 初始化环境、注册 runtime/provider/tool/service | 唯一主动连接各层的 composition root |
 
 ## 核心用例中轴
 
-所有入口统一调用 `internal/app/chat.Service`。Web、CLI、消息通道、定时任务都不再直接调用 runner 或 engine。
+所有入口统一调用 `internal/app/chat.Service` 或对应应用服务。Web、CLI、消息通道、定时任务不直接调用 runner、engine 或具体 runtime。
 
 ```go
 type Service interface {
@@ -119,7 +111,7 @@ type Service interface {
 }
 ```
 
-`chat.Service` 统一负责：
+`chat.Service` 负责：
 
 - 加载和保存 session/history。
 - 注入长期记忆。
@@ -129,16 +121,16 @@ type Service interface {
 - 处理 follow-up 队列和 steering 队列。
 - 运行结束后提取记忆、更新 session metadata。
 
-入口层只负责 DTO 转换和用户交互：
+入口层只负责：
 
-- HTTP handler：JSON/SSE/WebSocket 转换。
+- HTTP handler：JSON、SSE、WebSocket DTO 转换。
 - CLI：终端输入、展示、快捷键。
-- Channel：平台消息转换、回复发送。
-- Scheduler：时间触发和结果存档。
+- Channel：平台消息转换和回复发送。
+- Scheduler：时间触发和结果归档。
 
-## Runtime 端口
+## Runtime 边界
 
-运行时接口必须足够小，不能暴露 Eino 概念。
+Runtime 端口必须足够小，不能暴露 Eino 概念。
 
 ```go
 type Runtime interface {
@@ -152,29 +144,11 @@ type Runner interface {
 }
 ```
 
-Runtime adapter 负责把目标协议转换到底层框架：
+`internal/adapters/runtime/eino` 是唯一允许 import `github.com/cloudwego/eino*` 的目录。其他 runtime 只要实现 `internal/ports/runtime` 即可接入。
 
-- Eino adapter 内部使用 ADK Agent、Runner、Middleware。
-- 其他 runtime 只要实现 ports/runtime 即可接入。
-- `internal/adapters/runtime/eino` 是唯一允许 import `github.com/cloudwego/eino*` 的目录。
+## Tool 边界
 
-## Agent 与 Tool 设计
-
-智能体目录不再创建实际 runtime agent，只声明规格：
-
-```go
-type AgentSpec struct {
-    Name        string
-    Description string
-    Prompt      PromptSpec
-    Model       ModelRef
-    Tools       []ToolGroupRef
-    Policies    []PolicyRef
-    Features    AgentFeatures
-}
-```
-
-工具系统改为注册表：
+工具系统通过注册表管理目录、工厂和策略：
 
 ```go
 type ToolRegistry interface {
@@ -184,26 +158,41 @@ type ToolRegistry interface {
 }
 ```
 
-工具不得反向调用应用执行层。定时任务工具只提交 schedule use case；真正执行任务由 `app/schedule` 调用 `app/chat`。调度运行结果由 `app/schedule` 使用领域事件收集为 Markdown，不能复用 CLI 或 Web 展示层。
+值得迁入 adapter 的工具实现：
 
-工具组目录信息和工厂必须通过同一个注册项进入 `internal/app/tools.ToolGroupRegistry`，避免目录、策略和运行时解析出现双来源。需要具体技术实现的工具组（如 `git_*`、`ssh_*`、`schedule_*`）由 `internal/bootstrap/tools` 连接 adapter 与 app 注册表，`internal/app/tools` 禁止 import `internal/adapters/*`。Git 工具的 go-git 依赖归属 `internal/adapters/tools/builtin/git`，SSH/SFTP 依赖归属 `internal/adapters/tools/builtin/ssh`，app 层只保留工具目录、策略和运行时无关的注册机制。MCP 动态工具通过 `internal/ports/tools.MCPProvider` 注入，具体 MCP client、协议初始化和工具桥接归属 `internal/adapters/tools/mcp`。
+- 依赖外部协议或 SDK，例如 MCP、Git、SSH/SFTP、HTTP 抓取、搜索 provider。
+- 依赖文件格式引擎或客户端生命周期，例如 Excel、文档读取、远程连接。
+- 需要配置、资源清理、连接池、缓存、替换 provider 或外部 IO。
+
+不值得迁移的内容：
+
+- 稳定、无状态、值对象级别的小依赖，例如 UUID 生成。
+- 迁移后只是换目录，没有减少耦合、没有清晰接口、没有替换收益的代码。
+- 为了“纯净”重写成熟库。
+
+当前已经明确隔离的工具实现：
+
+- `tools/mcp`：MCP client、缓存和 runtime tool provider 桥接位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。
+- `tools/scheduler`：`schedule_*` 工具位于 `internal/adapters/tools/builtin/scheduler`，只委托 `internal/app/schedule`；调度器实现位于 `internal/adapters/scheduler/filecron`。
+- `tools/git`：go-git 实现位于 `internal/adapters/tools/builtin/git`，由 `internal/bootstrap/tools` 注册。
+- `tools/ssh`：SSH/SFTP 实现位于 `internal/adapters/tools/builtin/ssh`，配置读取、连接创建和资源清理由 `internal/bootstrap/tools` 组合。
 
 ## 状态与存储
 
-状态能力按用途拆分：
+状态能力按用途拆分，不在入口层散落读写：
 
 - `SessionStore`：session metadata、title、status、timestamps。
 - `HistoryStore`：结构化消息、事件、摘要。
 - `CheckpointStore`：runtime checkpoint。
 - `MemoryStore`：长期记忆。
 - `TaskStore`：schedule task、result、history。
-- `StreamStore` 或 `StreamHub`：运行中事件流和队列快照。
+- `StreamHub`：运行中事件流和队列快照。
 
-文件系统只是 adapter；核心不直接拼路径。
+文件系统只是 adapter；核心不直接拼路径，也不依赖具体文件历史实现。
 
 ## Hooks
 
-Hooks 属于用例和运行时之间的稳定扩展边界：
+Hooks 是用例和运行时之间的稳定扩展边界：
 
 - before/after turn
 - before/after model request
@@ -212,77 +201,27 @@ Hooks 属于用例和运行时之间的稳定扩展边界：
 - before/after memory injection
 - before/after schedule execution
 
-hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回 `any`。`internal/runtime/hooks` 只负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用；旧顶层 `hooks` 包不再保留。
+hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回裸 `any`。`internal/runtime/hooks` 负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用。
 
 ## 事件分层
 
 事件分三层：
 
-1. `domain/event`：运行时和用例的事实事件。
+1. `internal/domain/event`：运行时和用例的事实事件。
 2. `app` event pipeline：补齐 session、turn、sequence、history metadata。
 3. `transport` event DTO：SSE、WebSocket、CLI、channel 展示格式。
 
-`internal/runtime/events` 负责事件构造、分发、协议校验和友好错误归一化，只依赖 `internal/domain/event`、`internal/domain/message`、运行时端口和 hooks。内部包必须直接使用该运行时事件内核，不得反向依赖根 `events` 门面。
+`internal/runtime/events` 负责事件构造、分发、协议校验和友好错误归一化，只依赖领域事件、领域消息、运行时端口和 hooks。历史记录保存 domain/app 事件，不保存入口层展示 DTO。
 
-根 `events` 包已移除，不再保留兼容门面。所有事件类型直接使用 `internal/domain/event`，事件构造、分发、协议校验和友好错误归一化直接使用 `internal/runtime/events`。CLI 事件展示位于 `internal/adapters/transport/cli/eventview`，不能放回根 `events/view`。
+## 当前重点
 
-历史记录只保存 domain/app 事件，不保存入口层展示 DTO。
+后续不再以“继续搬目录”为目标，而是围绕下面几条主线推进：
 
-## 当前历史包袱处理
-
-以下旧包不作为长期结构保留：
-
-- `agentcore`：已删除；类型和值对象归属 `internal/domain/*`，运行时能力归属 `internal/ports/runtime`，禁止重新引入旧门面包。
-- `engine`：已移除，实际执行内核迁入 `internal/runtime/turn`。
-- `runner`：已移除，Runner 工厂和缓存实现并入 `internal/app/agent`。
-- `events/chat`：已移除，turn input builder 实现并入 `internal/app/chat`。
-- `events`：root 包已移除；事件分发、Emitter、协议校验和友好错误归一化已迁入 `internal/runtime/events`，事件类型和值对象归属 `internal/domain/event`，禁止再导入根门面。
-- `events/view`：root 包已移除；CLI 事件渲染和 JSON 输出回调迁入 `internal/adapters/transport/cli/eventview`，直接使用 `internal/domain/event` 与 `internal/runtime/events`；后台调度结果收集已迁入 `internal/app/schedule`，内部用例层不再复用根展示包。
-- `events/log`：已迁移为 `internal/adapters/storage/file/history`，历史记录实现归属文件存储适配器。
-- `tools/*`：root 包已移除；工具注册、解析和策略标记迁入 `internal/app/tools`，需要具体外设或存储实现的工具由 adapter 提供并通过 `internal/bootstrap/tools` 注册，禁止再通过根包、`agentcore` 旧门面或 app 层反向 import adapter 获取 Tool/Interrupt/ContentPart。
-- `agents/*`：root 包已移除；内置智能体定义、注册表、AgentBuilder 和成员工具元信息迁入 `internal/app/agent/catalog`，继续直接使用 `internal/ports/runtime` 与领域类型；ChatModel 创建通过 `internal/runtime/model` 的运行时中立注册表完成，避免 app 层反向依赖具体 provider adapter。
-- `providers/*`：root 包已移除；模型提供者注册、检测、模型列表查询和 Copilot HTTP/OAuth 支撑迁入 `internal/adapters/model/providers`，Eino provider adapter 仍位于 `internal/adapters/runtime/eino/providers` 并通过 runtime port 暴露 ChatModel。
-- `memory/*`：root 包已移除；记忆值对象归属 `internal/domain/memory`，记忆检索、注入、提取、BM25 和 Markdown 持久化归属 `internal/app/memory`，模型到记忆 LLM 的转换归属 `internal/adapters/model/memory`，历史记录转记忆消息归属文件 history adapter。
-- `internal/testmodel`：模拟模型已直接使用 `internal/ports/runtime` 与 `internal/domain/message`，禁止再通过 `agentcore` 旧门面获取 ChatModel/Message/ToolInfo。
-- `channels/*`：root 包已移除；消息通道接口、Manager、Bridge 以及 Discord/QQ/微信适配器迁入 `internal/adapters/transport/channel`，直接使用 `internal/ports/runtime`、`internal/domain/message` 与 `internal/runtime/events`，禁止再通过根 `channels`、根 `events` 或 `agentcore` 旧门面中转。
-- `cli/*`：root 包已移除；CLI 会话、stdin 管道输入、查询执行和交互运行时迁入 `internal/adapters/transport/cli/runtime`，内部事件引用直接使用 `internal/runtime/events`，不再通过根 `cli` 或根 `events` 门面中转。
-- `commands/*`：root 包已移除；CLI 命令层迁入 `internal/adapters/transport/cli/commands`，只保留参数解析和应用生命周期连接，直接调用 `internal/adapters/transport/cli/runtime`、`internal/ports/runtime` 与 `internal/domain/message`，禁止再通过根 `commands`、`agentcore` 或根 `cli` 旧门面获取 Runner/Message/ToolCall/InterruptMetadata。
-- `commands/skill`：技能 provider、SkillHub 客户端、安装解压、本地技能文件管理已迁入 `internal/app/skill`；CLI 只保留参数解析和终端展示，HTTP handler 禁止反向依赖根 `commands/skill`。
-- `server/*`：root 包已移除；Gin HTTP 服务、router、handler、middleware 和 origin 策略迁入 `internal/adapters/transport/http`，HTTP/SSE/WebSocket 入口直接使用 `internal/ports/runtime`、`internal/domain/message`、`internal/app/chat` 与 `internal/runtime/events`，禁止再通过根 `server`、根 `events` 或 `agentcore` 旧门面中转。
-- `internal/adapters/runtime/eino`：Eino runtime adapter、middlewares 和 tools middlewares 已直接使用 `internal/ports/runtime`、`internal/domain/message`、`internal/domain/event` 与 `internal/runtime/checkpoint`，禁止再通过 `agentcore` 旧门面中转。
-- `tools/scheduler`：已拆成 `internal/domain/schedule`、`internal/ports/scheduler`、`internal/app/schedule`、`internal/adapters/scheduler/filecron` 和 `internal/adapters/tools/builtin/scheduler`；`schedule_*` 工具只在 `internal/bootstrap/tools` 注册，顶层旧包和 app 层 adapter import 不再保留。
-- `tools/git`：go-git 具体实现已迁入 `internal/adapters/tools/builtin/git`，由 `internal/bootstrap/tools` 注册到应用工具注册表；`internal/app/tools` 不再保留 Git SDK 实现，也禁止直接 import `github.com/go-git/go-git`。
-- `tools/ssh`：SSH/SFTP 具体实现已迁入 `internal/adapters/tools/builtin/ssh`，配置读取、连接创建和资源清理由 `internal/bootstrap/tools` 组合；`internal/app/tools` 不再直接 import `github.com/pkg/sftp` 或 `golang.org/x/crypto/ssh`。
-- `tools/mcp`：MCP 具体 SDK、client 初始化、缓存和 runtime tool provider 桥接已迁入 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`，不再 import `github.com/mark3labs/mcp-go` 或保留 `internal/app/tools/mcp` 实现包。
-- `session_attachment`：附件枚举使用 `internal/domain/history`，当前会话历史读取通过 `internal/ports/storage.SessionMessageReader` 注入；文件历史读取实现位于 `internal/adapters/storage/file/history`，app 工具不再读取 file-history 全局状态。
-- `common`：root 目录已移除；应用目录在 `internal/app/appdata`，会话上下文在 `internal/domain/session`，模型重试在 `internal/runtime/retry`，运行期资源清理在 `internal/runtime/resources`，输入历史在 `internal/adapters/storage/file/inputhistory`，原 `atomicfile`、`pathguard`、`typeutil` 已迁入 `internal/runtime/*` 明确基础包。
-- `domain/session`：会话 ID 生成已去除第三方 UUID 依赖，使用标准库生成 RFC 4122 UUID v4 字符串，保持 domain 层纯净。
-- `server/handler/taskstream`：已上移为 `internal/app/chat/taskstream`，server handler 只持有和转发用例层 stream。
-- `lifecycle`：root 包已移除；生命周期编排内核位于 `internal/app/lifecycle`，具体 memory/scheduler 后台服务实现位于 `internal/bootstrap/services`，避免 app 层直接依赖 adapter。
-- `appstate`：root 包已移除；应用实例运行时状态位于 `internal/app/appstate`，只暴露记忆检索、管理、提取和生命周期小接口，不再把文件历史 recorder 适配器泄漏到状态接口。
-- `bootstrap`：root 包已移除；运行环境初始化器迁入 `internal/bootstrap/environment`，默认 runtime 注册迁入 `internal/bootstrap/runtimes`，工具 adapter 注册迁入 `internal/bootstrap/tools`，组合层服务保留在 `internal/bootstrap/services`。
-- `fkenv`：root 包已移除；`FEIKONG_*` 环境变量读取迁入 `internal/runtime/env`，避免 internal 层继续依赖根目录工具门面。
-- `log`：root 包已移除；运行时日志 facade 和文件轮转迁入 `internal/runtime/log`，并只依赖 runtime env，不反向依赖 appdata。
-- `config`：root 包已移除；TOML 配置加载、保存、热重载和示例生成迁入 `internal/app/config`，入口和组合层通过内部应用配置包访问。
-- `mdiff`：root 包已移除；多文件 diff、unified patch 解析和应用能力迁入 `internal/runtime/mdiff`，作为运行时无关的基础能力供工具或后续 adapter 复用。
-- `utils`：root 包已移除；不再保留泛化工具包，通用能力必须按职责进入明确的 `internal/runtime/*` 基础包或具体用例包。
-- `report`：root 包已移除；CLI Markdown 报告导出 HTML 能力迁入 `internal/adapters/transport/cli/report`，作为入口展示适配器而非核心包。
-- `version`：root 包已移除；应用版本号和构建时间迁入 `internal/app/version`，构建脚本通过新的 internal 包路径注入 ldflags。
-- `update`：root 包已移除；自更新流程迁入 `internal/adapters/transport/cli/update`，CLI 子命令只连接该适配器，不把发布下载和终端进度逻辑暴露为根包。
-- `tui`：root 包已移除；终端 UI 组件、Markdown 渲染、选择器和运行时面板迁入 `internal/adapters/transport/cli/tui`，作为 CLI transport adapter 的私有展示能力。
-- `main.go`：根入口已移除；唯一命令入口位于 `cmd/fkteams/main.go`，Makefile、Dockerfile 和源码运行命令都指向 `./cmd/fkteams`。
-
-## 迁移顺序
-
-1. 建立 `internal/domain` 和 `internal/ports`，移动纯类型和接口。
-2. 建立 `internal/app/chat`，把 Web/CLI/channel/scheduler 重复执行循环合并。
-3. 建立 `internal/app/agent`，接管 agent spec、team spec、runner resolution。
-4. 建立 `internal/adapters/runtime/eino`，移动所有 Eino 依赖。
-5. 建立 storage adapters，替换 history/session/checkpoint/memory 的直接文件访问。
-6. 建立 tool registry，替换 `tools/tools.go` switch。
-7. 重构 scheduler：工具只创建计划，执行由 schedule use case 触发 chat service。（已完成）
-8. 收缩入口层：HTTP、CLI、channel 只保留协议转换。
-9. 删除旧 facade、旧全局变量和旧目录。
+- 继续收紧 Eino 隔离，确保核心 runtime、app、domain、ports 不出现 Eino 类型。
+- 完善 `app/chat` 中轴，让 HTTP、CLI、channel、scheduler 的执行路径持续收敛。
+- 梳理状态和存储接口，减少全局变量、散落文件访问和入口层状态拼装。
+- 完善 hooks payload、事件协议和 mock runtime 测试，提升可验证性。
+- 对工具迁移保持克制，只迁移真正带外部协议、IO、生命周期或替换价值的实现。
 
 ## 验证门禁
 
@@ -293,13 +232,12 @@ make check
 make native
 ```
 
-同时补充架构边界测试：
+同时维护架构边界测试：
 
-- `internal/domain` 不得 import `internal/app`、`internal/adapters`、第三方库或第三方 runtime SDK。
-- `internal/ports` 不得 import `internal/app`、`internal/adapters`。
-- `internal/app` 不得 import `internal/adapters`。
+- `internal/app` 不得 import `internal/adapters`、Eino、Gin、pterm。
+- `internal/ports` 不得 import `internal/app` 或 `internal/adapters`，也不得暴露具体 SDK 类型。
 - 只有 `internal/adapters/runtime/eino` 可以 import `github.com/cloudwego/eino*`。
-- `internal/adapters/transport/http`、`internal/adapters/transport/cli/commands`、`internal/adapters/transport/channel` 不得 import Eino runtime adapter；CLI 交互运行时只能位于 `internal/adapters/transport/cli/runtime`。
-- `tools` 不得 import `engine` 或 `app/chat`；工具只能通过端口提交用例请求。
+- HTTP、CLI、channel 入口不得绕过 app use case 直接调用 runtime adapter。
+- 工具不得反向调用 `app/chat` 或入口展示层；需要调用用例时通过明确 service/port。
 
 提交粒度按大模块切分，提交信息使用 Conventional Commits 中文说明。
