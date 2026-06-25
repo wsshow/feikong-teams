@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -18,6 +17,7 @@ import (
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/turn"
 
 	"github.com/gin-gonic/gin"

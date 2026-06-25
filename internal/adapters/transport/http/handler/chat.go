@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog/toolmeta"
@@ -12,6 +11,7 @@ import (
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fmt"
 	"log"
 	"path/filepath"

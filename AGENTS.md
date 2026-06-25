@@ -76,6 +76,7 @@ internal/adapters/scheduler/
 internal/adapters/tools/
   builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
 internal/adapters/transport/
+  http/                     #   Gin HTTP 服务、Router、Handler、Middleware 和 origin 策略
   cli/runtime/              #   CLI 会话、输入、查询执行和交互运行时编排
   cli/eventview/            #   CLI 事件渲染和 JSON 输出回调
   cli/tui/                  #   CLI 终端 UI 组件、Markdown 渲染和交互控件
@@ -101,11 +102,6 @@ internal/adapters/storage/
 internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
 internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册
 internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
-server/                     # HTTP 服务（Gin）
-  router/                   #   路由注册（Web 模式含内嵌前端，API 模式纯接口）
-  handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
-                            #   handler 使用 internal/ports/runtime、domain/message 与 app/chat，禁止依赖 agentcore 旧门面
-  middleware/               #   CORS / JWT 认证 / API Key 认证 / Body Limit
 events/                     # 事件协议与展示/历史
   types.go                  #   domain/event 事件类型别名和常量导出
   facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
@@ -166,6 +162,7 @@ web/                        # 内嵌前端（//go:embed）
 - 事件处理使用 `events/types.go` / `internal/domain/event` 中的类型常量，禁止使用字符串字面量
 - 新增事件类型/动作类型/通知类型必须先在 `internal/domain/event` 中定义常量，并由 `events/types.go` 导出别名
 - `internal/**` 发事件必须使用 `internal/runtime/events`；根 `events` 只作为外层入口兼容门面
+- HTTP handler、middleware、router 和 origin 策略位于 `internal/adapters/transport/http`，禁止恢复根 `server` 包
 - 运行时适配器发事件优先使用 `internal/runtime/events.Emitter` 和 `AgentStart` / `MessageDelta` / `ToolStart` 等构造函数
 - CLI 会话、查询执行和交互运行时位于 `internal/adapters/transport/cli/runtime`，禁止恢复根 `cli` 包
 - 流式事件的规范增量载荷使用 `Content`；不要在核心事件或历史存储中重复维护 `Delta`

@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"fkteams/server/handler"
+	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/web"
 	"log"
 	"net/http"

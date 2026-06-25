@@ -2,8 +2,8 @@ package commands
 
 import (
 	"context"
+	httpserver "fkteams/internal/adapters/transport/http"
 	"fkteams/internal/app/config"
-	"fkteams/server"
 
 	ucli "github.com/urfave/cli/v3"
 )
@@ -29,7 +29,7 @@ func serveCommand() *ucli.Command {
 			if err := config.Init(); err != nil {
 				return err
 			}
-			return server.RunServe(server.ServeOptions{
+			return httpserver.RunServe(httpserver.ServeOptions{
 				Host: cmd.String("host"),
 				Port: int(cmd.Int("port")),
 			})

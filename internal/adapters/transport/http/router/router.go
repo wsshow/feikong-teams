@@ -8,10 +8,10 @@ import (
 	"regexp"
 	"strings"
 
+	"fkteams/internal/adapters/transport/http/handler"
+	"fkteams/internal/adapters/transport/http/middleware"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/version"
-	"fkteams/server/handler"
-	"fkteams/server/middleware"
 	"fkteams/web"
 
 	"github.com/gin-gonic/gin"

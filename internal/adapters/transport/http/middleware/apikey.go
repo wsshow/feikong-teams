@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"crypto/hmac"
-	"fkteams/events"
 	"fkteams/internal/app/config"
+	"fkteams/internal/runtime/events"
 	"net/http"
 	"strings"
 

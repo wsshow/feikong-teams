@@ -4,7 +4,7 @@ package middleware
 import (
 	"net/http"
 
-	"fkteams/server/origin"
+	"fkteams/internal/adapters/transport/http/origin"
 
 	"github.com/gin-gonic/gin"
 )

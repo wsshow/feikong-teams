@@ -1,5 +1,5 @@
-// Package server 提供 Web 服务端模式的入口和 HTTP 服务管理
-package server
+// Package httpserver 提供 Web 服务端模式的入口和 HTTP 服务管理。
+package httpserver
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	_ "fkteams/internal/adapters/transport/channel/discord"
 	_ "fkteams/internal/adapters/transport/channel/qq"
 	_ "fkteams/internal/adapters/transport/channel/weixin"
+	"fkteams/internal/adapters/transport/http/handler"
+	"fkteams/internal/adapters/transport/http/router"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
 	"fkteams/internal/app/version"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	"fkteams/internal/runtime/log"
-	"fkteams/server/handler"
-	"fkteams/server/router"
 
 	"github.com/gin-gonic/gin"
 )

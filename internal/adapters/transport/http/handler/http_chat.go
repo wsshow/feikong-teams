@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"strings"
 
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

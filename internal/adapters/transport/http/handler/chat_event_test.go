@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/events"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 )
 
 func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {

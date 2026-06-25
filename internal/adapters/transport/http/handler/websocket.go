@@ -7,16 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/adapters/transport/http/origin"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/approval"
 	"fkteams/internal/app/tools/ask"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/turn"
-	"fkteams/server/origin"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
