@@ -9,10 +9,11 @@
 package taskstream
 
 import (
-	"fkteams/agentcore"
 	"fmt"
 	"sync"
 	"time"
+
+	domainmessage "fkteams/internal/domain/message"
 
 	"github.com/google/uuid"
 )
@@ -46,23 +47,23 @@ const (
 )
 
 type QueuedMessage struct {
-	ID          string                  `json:"id"`
-	Kind        QueueKind               `json:"kind"`
-	Text        string                  `json:"text,omitempty"`
-	Parts       []agentcore.ContentPart `json:"parts,omitempty"`
-	DisplayText string                  `json:"display_text,omitempty"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at,omitempty"`
+	ID          string                      `json:"id"`
+	Kind        QueueKind                   `json:"kind"`
+	Text        string                      `json:"text,omitempty"`
+	Parts       []domainmessage.ContentPart `json:"parts,omitempty"`
+	DisplayText string                      `json:"display_text,omitempty"`
+	CreatedAt   time.Time                   `json:"created_at"`
+	UpdatedAt   time.Time                   `json:"updated_at,omitempty"`
 }
 
-func (m QueuedMessage) Message() agentcore.Message {
-	msg := agentcore.Message{
-		Role:    agentcore.RoleUser,
+func (m QueuedMessage) Message() domainmessage.Message {
+	msg := domainmessage.Message{
+		Role:    domainmessage.RoleUser,
 		Content: m.Text,
 	}
 	if len(m.Parts) > 0 {
 		msg.Content = ""
-		msg.ContentParts = append([]agentcore.ContentPart(nil), m.Parts...)
+		msg.ContentParts = append([]domainmessage.ContentPart(nil), m.Parts...)
 	}
 	return msg
 }
@@ -333,7 +334,7 @@ func (s *Stream) queueSnapshotLocked() []QueuedMessage {
 	return queue
 }
 
-func (s *Stream) UpdateQueuedMessage(id, text string, parts []agentcore.ContentPart, displayText string) (QueuedMessage, bool) {
+func (s *Stream) UpdateQueuedMessage(id, text string, parts []domainmessage.ContentPart, displayText string) (QueuedMessage, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	queue, index, ok := s.findQueuedMessageLocked(id)
@@ -342,7 +343,7 @@ func (s *Stream) UpdateQueuedMessage(id, text string, parts []agentcore.ContentP
 	}
 	msg := (*queue)[index]
 	msg.Text = text
-	msg.Parts = append([]agentcore.ContentPart(nil), parts...)
+	msg.Parts = append([]domainmessage.ContentPart(nil), parts...)
 	msg.DisplayText = displayText
 	if msg.DisplayText == "" {
 		msg.DisplayText = msg.Text

@@ -1,9 +1,10 @@
 package taskstream
 
 import (
-	"fkteams/agentcore"
 	"testing"
 	"time"
+
+	domainmessage "fkteams/internal/domain/message"
 )
 
 func newTestStream() *Stream {
@@ -239,13 +240,13 @@ func TestQueuedMessageKindCanBeChangedBeforeConsumption(t *testing.T) {
 func TestQueuedMessageBuildsMultimodalUserMessage(t *testing.T) {
 	msg := QueuedMessage{
 		Text: "describe",
-		Parts: []agentcore.ContentPart{
-			{Type: agentcore.ContentPartText, Text: "describe"},
-			{Type: agentcore.ContentPartImageURL, URL: "https://example.com/a.png"},
+		Parts: []domainmessage.ContentPart{
+			{Type: domainmessage.ContentPartText, Text: "describe"},
+			{Type: domainmessage.ContentPartImageURL, URL: "https://example.com/a.png"},
 		},
 	}.Message()
 
-	if msg.Role != agentcore.RoleUser {
+	if msg.Role != domainmessage.RoleUser {
 		t.Fatalf("expected user role, got %s", msg.Role)
 	}
 	if msg.Content != "" {

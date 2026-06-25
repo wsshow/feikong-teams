@@ -33,6 +33,7 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   skill/                    #   技能安装、移除、搜索
 internal/app/               # 应用用例层，入口只调用这里
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
+    taskstream/             #   运行中任务事件流、队列、interrupt 状态管理
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
   schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
                             #   用例层禁止依赖 agentcore 旧门面
@@ -82,7 +83,6 @@ lifecycle/                  # 应用生命周期管理
 server/                     # HTTP 服务（Gin）
   router/                   #   路由注册（Web 模式含内嵌前端，API 模式纯接口）
   handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
-  handler/taskstream/       #   运行中任务事件流、HITL 输入、可管理 steering/follow-up 队列
   middleware/               #   CORS / JWT 认证 / API Key 认证 / Body Limit
 channels/                   # 消息通道桥接
   channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册

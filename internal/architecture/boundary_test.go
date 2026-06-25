@@ -432,6 +432,54 @@ func TestSchedulerBoundariesUseAppAndAdapters(t *testing.T) {
 	}
 }
 
+func TestTaskStreamLivesInChatUseCase(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	legacyDir := filepath.Join(root, "server", "handler", "taskstream")
+	if entries, err := os.ReadDir(legacyDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+				t.Errorf("server/handler/taskstream/%s exists; task stream state belongs under internal/app/chat/taskstream", entry.Name())
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "release", "node_modules", "web":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.Trim(spec.Path.Value, `"`) == "fkteams/server/handler/taskstream" {
+				t.Errorf("%s imports removed server/handler/taskstream package; use internal/app/chat/taskstream", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertNotImported(t *testing.T, rel, importPath string, forbidden []string) {
 	t.Helper()
 	for _, prefix := range forbidden {

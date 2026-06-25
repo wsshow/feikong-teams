@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/server/handler/taskstream"
+	"fkteams/internal/app/chat/taskstream"
 	"time"
 )
 

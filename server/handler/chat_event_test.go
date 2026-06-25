@@ -9,7 +9,7 @@ import (
 	"fkteams/agents/toolmeta"
 	"fkteams/events"
 	eventlog "fkteams/internal/adapters/storage/file/history"
-	"fkteams/server/handler/taskstream"
+	"fkteams/internal/app/chat/taskstream"
 	"fkteams/tools/ask"
 )
 

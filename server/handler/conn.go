@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"fkteams/server/handler/taskstream"
+	"fkteams/internal/app/chat/taskstream"
 	"sync"
 	"time"
 
