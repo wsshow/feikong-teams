@@ -1,8 +1,8 @@
 package eventview
 
 import (
-	"fkteams/agentcore"
 	"fkteams/events"
+	domainmessage "fkteams/internal/domain/message"
 	"strings"
 	"testing"
 )
@@ -84,9 +84,9 @@ func TestMarkdownCollectorCollectsMessagesToolsAndErrors(t *testing.T) {
 		{
 			Type:      EventToolStart,
 			AgentName: "assistant",
-			ToolCalls: []agentcore.ToolCall{{
+			ToolCalls: []domainmessage.ToolCall{{
 				ID: "tool-1",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "search",
 					Arguments: `{"query":"go"}`,
 				},
@@ -118,9 +118,9 @@ func TestMarkdownCollectorIgnoresNonOutputDeltaAndInternalTool(t *testing.T) {
 	if err := callback(Event{
 		Type:      EventToolStart,
 		AgentName: "assistant",
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []domainmessage.ToolCall{{
 			ID: "tool-1",
-			Function: agentcore.FunctionCall{
+			Function: domainmessage.FunctionCall{
 				Name:      "continue_output",
 				Arguments: "{}",
 			},

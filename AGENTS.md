@@ -99,6 +99,7 @@ events/                     # 事件协议与展示/历史
   emitter.go                #   Emitter + Agent/Turn/Message/Tool 事件构造函数
   protocol.go               #   工具调用身份协议校验与兼容辅助
   view/                     #   CLI 事件渲染、JSON 输出回调、后台 Markdown 收集
+                            #   展示层使用 domain/event 和 domain/message，禁止依赖 agentcore 旧门面
 config/                     # TOML 配置（atomic.Pointer 全局单例，支持热重载）
 providers/                  # runtime port 模型提供者注册、检测和模型列表获取
                             #   provider 工厂禁止再依赖 agentcore 旧门面

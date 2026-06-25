@@ -2,10 +2,10 @@ package eventview
 
 import (
 	"encoding/json"
-	"fkteams/agentcore"
 	"fkteams/agents/toolmeta"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	domainmessage "fkteams/internal/domain/message"
 	fktui "fkteams/tui"
 	"fmt"
 
@@ -170,14 +170,14 @@ func newPrintEvent() (func(Event), func()) {
 		return key, name
 	}
 
-	memberToolKey := func(event Event, tool agentcore.ToolCall, position int) string {
+	memberToolKey := func(event Event, tool domainmessage.ToolCall, position int) string {
 		if ref := events.ToolCallRefAt(event, tool, position); ref != "" {
 			return "ref:" + ref
 		}
 		return ""
 	}
 
-	regularToolKey := func(event Event, tool agentcore.ToolCall, position int) string {
+	regularToolKey := func(event Event, tool domainmessage.ToolCall, position int) string {
 		if ref := events.ToolCallRefAt(event, tool, position); ref != "" {
 			return "ref:" + ref
 		}
@@ -355,7 +355,7 @@ func newPrintEvent() (func(Event), func()) {
 		return false
 	}
 
-	registerAgentToolCall := func(tool agentcore.ToolCall) (string, string) {
+	registerAgentToolCall := func(tool domainmessage.ToolCall) (string, string) {
 		_, memberName, _ := agentToolKey(tool.Function.Name)
 		key := tool.ID
 		if tool.ID != "" {
@@ -367,7 +367,7 @@ func newPrintEvent() (func(Event), func()) {
 		return key, memberName
 	}
 
-	splitAgentToolCalls := func(toolCalls []agentcore.ToolCall) (agents, others []agentcore.ToolCall) {
+	splitAgentToolCalls := func(toolCalls []domainmessage.ToolCall) (agents, others []domainmessage.ToolCall) {
 		for _, tool := range toolCalls {
 			if isInternalToolName(tool.Function.Name) {
 				continue
@@ -412,7 +412,7 @@ func newPrintEvent() (func(Event), func()) {
 			case events.DeltaToolArgs:
 				if isMemberEvent(event) {
 					key, name := memberFromEvent(event)
-					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, agentcore.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_args", ToolKey: memberToolKey(event, domainmessage.ToolCall{}, 0), ToolName: event.ToolName, Content: event.Content, Append: true})
 					return
 				}
 				toolName := event.ToolName
@@ -439,7 +439,7 @@ func newPrintEvent() (func(Event), func()) {
 						return
 					}
 				}
-				key := regularToolKey(event, agentcore.ToolCall{}, 0)
+				key := regularToolKey(event, domainmessage.ToolCall{}, 0)
 				flow := ensureToolFlow(key, toolName)
 				if flow == nil {
 					return
@@ -521,7 +521,7 @@ func newPrintEvent() (func(Event), func()) {
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.Content != "" {
-					toolKey := memberToolKey(event, agentcore.ToolCall{}, 0)
+					toolKey := memberToolKey(event, domainmessage.ToolCall{}, 0)
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content})
 				}
 				return
@@ -552,7 +552,7 @@ func newPrintEvent() (func(Event), func()) {
 					return
 				}
 				if isErrorContent(event.Content) {
-					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content, ToolKey: memberToolKey(event, agentcore.ToolCall{}, 0), ToolName: toolName})
+					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "error", Content: event.Content, ToolKey: memberToolKey(event, domainmessage.ToolCall{}, 0), ToolName: toolName})
 				} else {
 					sendMemberPanel(fktui.MemberEvent{Key: key, Name: memberName, Type: "done"})
 				}
@@ -564,7 +564,7 @@ func newPrintEvent() (func(Event), func()) {
 				return
 			}
 			tryFlush()
-			key := regularToolKey(event, agentcore.ToolCall{}, 0)
+			key := regularToolKey(event, domainmessage.ToolCall{}, 0)
 			flow := ensureToolFlow(key, toolName)
 			if flow == nil {
 				return
@@ -592,7 +592,7 @@ func newPrintEvent() (func(Event), func()) {
 		case EventToolUpdate:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
-				toolKey := memberToolKey(event, agentcore.ToolCall{}, 0)
+				toolKey := memberToolKey(event, domainmessage.ToolCall{}, 0)
 				sendMemberPanel(fktui.MemberEvent{Key: key, Name: name, Type: "tool_result", ToolKey: toolKey, ToolName: event.ToolName, Content: event.Content, Append: true})
 				return
 			}
@@ -603,7 +603,7 @@ func newPrintEvent() (func(Event), func()) {
 			if finishMembersBeforeParentOutput(event) {
 				return
 			}
-			key := regularToolKey(event, agentcore.ToolCall{}, 0)
+			key := regularToolKey(event, domainmessage.ToolCall{}, 0)
 			flow := ensureToolFlow(key, event.ToolName)
 			if flow == nil {
 				return
