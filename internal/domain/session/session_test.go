@@ -22,4 +22,10 @@ func TestNewIDLooksLikeUUID(t *testing.T) {
 	if len(id) != 36 || strings.Count(id, "-") != 4 {
 		t.Fatalf("session id = %q, want UUID-like string", id)
 	}
+	if id[14] != '4' {
+		t.Fatalf("session id = %q, want UUID v4", id)
+	}
+	if !strings.ContainsAny(id[19:20], "89ab") {
+		t.Fatalf("session id = %q, want RFC 4122 variant", id)
+	}
 }

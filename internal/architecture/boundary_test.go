@@ -273,6 +273,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"fkteams/internal/app",
 			"fkteams/internal/adapters",
 			"fkteams/internal/adapters/runtime/eino",
+			"github.com/",
+			"golang.org/",
+			"google.golang.org/",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 		}
