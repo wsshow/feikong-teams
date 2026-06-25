@@ -200,6 +200,15 @@ func TestRootTUIPackageIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootEventsPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "events")); err == nil {
+		t.Fatal("root events package exists; use internal/domain/event and internal/runtime/events")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func TestRootEventsViewPackageIsRemoved(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	if _, err := os.Stat(filepath.Join(root, "events", "view")); err == nil {
@@ -310,8 +319,8 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	if importPath == "fkteams/log" {
 		t.Errorf("%s imports removed root log package; use internal/runtime/log", rel)
 	}
-	if strings.HasPrefix(rel, "internal/") && (importPath == "fkteams/events" || strings.HasPrefix(importPath, "fkteams/events/")) {
-		t.Errorf("%s imports root events package; use internal/domain/event or internal/runtime/events inside internal packages", rel)
+	if importPath == "fkteams/events" || strings.HasPrefix(importPath, "fkteams/events/") {
+		t.Errorf("%s imports removed root events package; use internal/domain/event or internal/runtime/events", rel)
 	}
 	if importPath == "fkteams/memory" {
 		t.Errorf("%s imports removed root memory package; use internal/domain/memory or internal/app/memory", rel)
@@ -547,31 +556,6 @@ func TestHooksUseInternalPackages(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestRootEventsUseDomainTypes(t *testing.T) {
-	root := filepath.Clean(filepath.Join("..", ".."))
-	eventsDir := filepath.Join(root, "events")
-	entries, err := os.ReadDir(eventsDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
-			continue
-		}
-		path := filepath.Join(eventsDir, entry.Name())
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rel := filepath.ToSlash(filepath.Join("events", entry.Name()))
-		for _, spec := range file.Imports {
-			if strings.Trim(spec.Path.Value, `"`) == "fkteams/agentcore" {
-				t.Errorf("%s imports agentcore; root events must use internal/domain/event and internal/domain/message", rel)
-			}
-		}
 	}
 }
 

@@ -98,10 +98,6 @@ internal/adapters/storage/
 internal/bootstrap/environment/ # init 命令运行环境初始化器（uv / bun）
 internal/bootstrap/runtimes/ #  默认 runtime engine 和 provider 注册
 internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
-events/                     # 事件协议与展示/历史
-  types.go                  #   domain/event 事件类型别名和常量导出
-  facade.go                 #   外层入口兼容门面，转发 internal/runtime/events
-                            #   内部包必须使用 internal/runtime/events，根 events 只保留外层门面
 web/                        # 内嵌前端（//go:embed）
 ```
 
@@ -119,7 +115,7 @@ web/                        # 内嵌前端（//go:embed）
 4. **用 `any` 替代 `interface{}`**
 5. **工具函数不返回 error**：将错误信息放入响应的 `ErrorMessage` 字段并返回 nil
 6. **初始化函数必须返回 error**，不使用 `log.Fatal`
-7. **禁止事件类型的字符串字面量**：始终使用 `events/types.go`（底层为 `internal/domain/event`）中的类型常量
+7. **禁止事件类型的字符串字面量**：始终使用 `internal/domain/event` 中的类型常量
 
 ## 验证与交付
 
@@ -155,9 +151,9 @@ web/                        # 内嵌前端（//go:embed）
 
 ### 事件
 
-- 事件处理使用 `events/types.go` / `internal/domain/event` 中的类型常量，禁止使用字符串字面量
-- 新增事件类型/动作类型/通知类型必须先在 `internal/domain/event` 中定义常量，并由 `events/types.go` 导出别名
-- `internal/**` 发事件必须使用 `internal/runtime/events`；根 `events` 只作为外层入口兼容门面
+- 事件处理使用 `internal/domain/event` 中的类型常量，禁止使用字符串字面量
+- 新增事件类型/动作类型/通知类型必须先在 `internal/domain/event` 中定义常量
+- 发事件必须使用 `internal/runtime/events`；禁止恢复根 `events` 门面
 - HTTP handler、middleware、router 和 origin 策略位于 `internal/adapters/transport/http`，禁止恢复根 `server` 包
 - 运行时适配器发事件优先使用 `internal/runtime/events.Emitter` 和 `AgentStart` / `MessageDelta` / `ToolStart` 等构造函数
 - CLI 会话、查询执行和交互运行时位于 `internal/adapters/transport/cli/runtime`，禁止恢复根 `cli` 包
