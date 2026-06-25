@@ -75,6 +75,7 @@ internal/adapters/scheduler/
 internal/adapters/tools/
   builtin/git/              #   go-git backed git_* 工具适配器
   builtin/scheduler/        #   schedule_* 工具适配器，只委托 app/schedule
+  builtin/ssh/              #   SSH/SFTP backed ssh_* 工具适配器
   mcp/                      #   MCP client、缓存和 runtime tool provider 桥接
 internal/adapters/transport/
   cli/commands/             #   CLI 命令定义（urfave/cli/v3），参数解析和生命周期连接
@@ -146,6 +147,7 @@ web/                        # 内嵌前端（//go:embed）
 - 新工具组必须通过 `internal/app/tools.ToolGroupRegistry` 注册，禁止在 `internal/app/tools/tools.go` 中增加 switch 分支
 - 依赖具体存储、调度器或第三方 SDK 的工具实现属于 `internal/adapters/tools`，通过 `internal/bootstrap/tools` 连接到应用工具注册表；`internal/app/tools` 禁止反向 import adapter
 - go-git 具体实现只能放在 `internal/adapters/tools/builtin/git`；`internal/app/tools` 禁止 import `github.com/go-git/go-git`
+- SSH/SFTP 具体实现只能放在 `internal/adapters/tools/builtin/ssh`；`internal/app/tools` 禁止 import `github.com/pkg/sftp` 和 `golang.org/x/crypto/ssh`
 - MCP 动态工具只能通过 `internal/ports/tools.MCPProvider` 注入，禁止在 `internal/app/tools` 中直接 import `github.com/mark3labs/mcp-go`
 - 工具必须通过 `internal/app/tools/metadata.go` 的 `ClassifyTools()` 标记元数据（只读/破坏性）
 

@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"fkteams/internal/app/appdata"
-	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/app/tools/command"
 	"fkteams/internal/app/tools/doc"
@@ -15,7 +14,6 @@ import (
 	"fkteams/internal/app/tools/script/bun"
 	"fkteams/internal/app/tools/script/uv"
 	"fkteams/internal/app/tools/search"
-	"fkteams/internal/app/tools/ssh"
 	"fkteams/internal/app/tools/todo"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
@@ -167,14 +165,6 @@ func builtinToolGroups() []ToolGroupRegistration {
 			IncludedTools: []string{"todo_create", "todo_update", "todo_list"},
 		}, Factory: todoToolGroup},
 		{Info: ToolGroupInfo{
-			Name:          "ssh",
-			DisplayName:   "SSH",
-			Description:   "连接远程服务器执行命令、上传下载文件和查看目录，需要先配置 SSH 连接信息。",
-			Category:      "运维",
-			Builtin:       true,
-			IncludedTools: []string{"ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir"},
-		}, Factory: sshToolGroup},
-		{Info: ToolGroupInfo{
 			Name:          "command",
 			DisplayName:   "命令执行",
 			Description:   "在工作区运行 shell 命令，危险操作会进入安全审批流程。",
@@ -261,27 +251,6 @@ func todoToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 		return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 	}
 	return todoTools.GetTools()
-}
-
-func sshToolGroup(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
-	sshCfg := config.Get().Agents.SSHVisitor
-	host := sshCfg.Host
-	username := sshCfg.Username
-	password := sshCfg.Password
-	if host == "" || username == "" || password == "" {
-		return nil, fmt.Errorf("SSH 连接信息未配置，请在配置文件 [agents.ssh_visitor] 中设置 host, username, password")
-	}
-	sshTools, err := ssh.NewSSHTools(host, username, password)
-	if err != nil {
-		return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
-	}
-	if cleaner != nil {
-		cleaner.Add(func() error {
-			sshTools.Close()
-			return nil
-		})
-	}
-	return sshTools.GetTools()
 }
 
 func commandToolGroup(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {

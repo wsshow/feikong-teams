@@ -53,6 +53,23 @@ func TestBootstrapRegistersGitToolGroup(t *testing.T) {
 	}
 }
 
+func TestBootstrapRegistersSSHToolGroup(t *testing.T) {
+	if err := RegisterDefaults(); err != nil {
+		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
+	}
+	infos := apptools.BuiltinToolInfos()
+	for _, info := range infos {
+		if info.Name != "ssh" {
+			continue
+		}
+		if info.DisplayName == "" || info.Category == "" || len(info.IncludedTools) == 0 {
+			t.Fatalf("ssh tool info is incomplete: %#v", info)
+		}
+		return
+	}
+	t.Fatal("ssh tool group is not registered")
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

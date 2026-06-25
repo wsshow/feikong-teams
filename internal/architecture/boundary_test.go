@@ -296,9 +296,11 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"fkteams/internal/adapters/runtime/eino",
 			"github.com/go-git/go-git",
 			"github.com/mark3labs/mcp-go",
+			"github.com/pkg/sftp",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 			"github.com/pterm/pterm",
+			"golang.org/x/crypto/ssh",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
 	case strings.HasPrefix(rel, "internal/app/"):
@@ -768,6 +770,52 @@ func TestGitToolsLiveInAdapter(t *testing.T) {
 			importPath := strings.Trim(spec.Path.Value, `"`)
 			if strings.HasPrefix(importPath, "github.com/go-git/go-git") {
 				t.Errorf("%s imports go-git SDK; use internal/adapters/tools/builtin/git and bootstrap registration", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSSHToolsLiveInAdapter(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	legacyDir := filepath.Join(root, "internal", "app", "tools", "ssh")
+	if entries, err := os.ReadDir(legacyDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+				t.Errorf("internal/app/tools/ssh/%s exists; SSH/SFTP implementation belongs under internal/adapters/tools/builtin/ssh", entry.Name())
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	err := filepath.WalkDir(filepath.Join(root, "internal", "app"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			importPath := strings.Trim(spec.Path.Value, `"`)
+			if strings.HasPrefix(importPath, "github.com/pkg/sftp") ||
+				strings.HasPrefix(importPath, "golang.org/x/crypto/ssh") {
+				t.Errorf("%s imports SSH/SFTP SDK; use internal/adapters/tools/builtin/ssh and bootstrap registration", rel)
 			}
 		}
 		return nil
