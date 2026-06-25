@@ -2,12 +2,13 @@ package update
 
 import (
 	"bufio"
-	"fkteams/version"
 	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
 	"unicode"
+
+	"fkteams/internal/app/version"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/pterm/pterm"

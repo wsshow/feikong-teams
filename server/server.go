@@ -3,6 +3,10 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"time"
+
 	"fkteams/channels"
 	_ "fkteams/channels/discord"
 	_ "fkteams/channels/qq"
@@ -10,14 +14,11 @@ import (
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
+	"fkteams/internal/app/version"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	"fkteams/internal/runtime/log"
 	"fkteams/server/handler"
 	"fkteams/server/router"
-	"fkteams/version"
-	"fmt"
-	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )

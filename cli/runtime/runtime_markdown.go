@@ -1,18 +1,16 @@
 package runtime
 
 import (
-	"fkteams/internal/app/agent/catalog"
-	"fkteams/internal/app/appstate"
-
-	"fkteams/internal/app/config"
-
-	"fkteams/tui"
-	"fkteams/version"
 	"fmt"
 	"os"
 	"path/filepath"
-
 	"strings"
+
+	"fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/appstate"
+	"fkteams/internal/app/config"
+	"fkteams/internal/app/version"
+	"fkteams/tui"
 )
 
 func runtimeHelpMarkdown() string {

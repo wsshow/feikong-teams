@@ -34,6 +34,7 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
                             #   CLI 命令层使用 internal/ports/runtime 和 domain/message
 internal/app/               # 应用用例层，入口只调用这里
   config/                   #   TOML 配置加载、保存、热重载和示例生成
+  version/                  #   应用版本和构建时间元数据
   appdata/                  #   应用数据目录、workspace/session/share/runtime 路径
   appstate/                 #   应用实例运行时状态（记忆服务 / 资源清理器）
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配

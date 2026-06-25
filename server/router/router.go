@@ -2,16 +2,17 @@
 package router
 
 import (
-	"fkteams/internal/app/appstate"
-	"fkteams/server/handler"
-	"fkteams/server/middleware"
-	"fkteams/version"
-	"fkteams/web"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"regexp"
 	"strings"
+
+	"fkteams/internal/app/appstate"
+	"fkteams/internal/app/version"
+	"fkteams/server/handler"
+	"fkteams/server/middleware"
+	"fkteams/web"
 
 	"github.com/gin-gonic/gin"
 )

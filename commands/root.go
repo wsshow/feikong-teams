@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"fkteams/version"
+	"fkteams/internal/app/version"
 
 	ucli "github.com/urfave/cli/v3"
 )

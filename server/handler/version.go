@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/version"
+	"fkteams/internal/app/version"
 
 	"github.com/gin-gonic/gin"
 )
