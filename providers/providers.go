@@ -5,7 +5,7 @@ package providers
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"strings"
 
@@ -38,7 +38,7 @@ type Config struct {
 }
 
 // Factory 模型创建函数类型
-type Factory func(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error)
+type Factory func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error)
 
 var factories = map[Type]Factory{}
 
@@ -48,7 +48,7 @@ func Register(t Type, f Factory) {
 }
 
 // NewChatModel 根据配置创建聊天模型
-func NewChatModel(ctx context.Context, cfg *Config) (agentcore.ChatModel, error) {
+func NewChatModel(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
 	t := cfg.Provider
 	if t == "" {
 		t = Detect(cfg.BaseURL, cfg.Model)

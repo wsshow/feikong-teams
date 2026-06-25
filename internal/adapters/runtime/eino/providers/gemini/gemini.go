@@ -6,13 +6,13 @@ import (
 	geminiModel "github.com/cloudwego/eino-ext/components/model/gemini"
 	"google.golang.org/genai"
 
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/providers/providerkit"
 )
 
 // New 创建 Google Gemini 的聊天模型
-func New(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
+func New(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
 	clientCfg := &genai.ClientConfig{
 		APIKey:     cfg.APIKey,
 		Backend:    genai.BackendGeminiAPI,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/testmodel"
 	"fkteams/providers/providerkit"
 )
@@ -43,7 +43,7 @@ func TestNewChatModelUsesFactoryAndAutoDetection(t *testing.T) {
 	restoreProvidersGlobals(t)
 	model := testmodel.New(testmodel.AssistantMessage("ok"))
 	var captured *providerkit.Config
-	Register(DeepSeek, func(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
+	Register(DeepSeek, func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
 		captured = cfg
 		return model, nil
 	})
@@ -78,7 +78,7 @@ func TestNewChatModelReportsUnknownAndFactoryErrors(t *testing.T) {
 		t.Fatalf("unknown provider error = %v", err)
 	}
 
-	Register(OpenAI, func(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
+	Register(OpenAI, func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
 		return nil, fmt.Errorf("factory failed")
 	})
 	if _, err := NewChatModel(context.Background(), &Config{Provider: OpenAI}); err == nil || !strings.Contains(err.Error(), "factory failed") {

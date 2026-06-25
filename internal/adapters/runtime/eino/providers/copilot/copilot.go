@@ -2,8 +2,8 @@ package copilot
 
 import (
 	"context"
-	"fkteams/agentcore"
 	einoruntime "fkteams/internal/adapters/runtime/eino"
+	runtimeport "fkteams/internal/ports/runtime"
 	rootcopilot "fkteams/providers/copilot"
 	"fkteams/providers/providerkit"
 
@@ -11,7 +11,7 @@ import (
 )
 
 // New 创建 Copilot 聊天模型（OpenAI 兼容）
-func New(ctx context.Context, cfg *providerkit.Config) (agentcore.ChatModel, error) {
+func New(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
 	tm := rootcopilot.GetTokenManager()
 
 	// 确保有有效 token
