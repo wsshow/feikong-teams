@@ -98,7 +98,7 @@ docs/
 | ---- | ---- | ---- |
 | `domain` | 纯业务模型和值对象 | 禁止 import adapters、app、config、Eino、Gin、TUI、文件系统实现 |
 | `ports` | 外部能力接口和契约 | 禁止 import adapters、app、具体第三方 SDK |
-| `app` | 用例编排、事务边界、状态流转 | 禁止 import `agentcore` 和具体 adapter；只能依赖 `domain` 和 `ports` |
+| `app` | 用例编排、事务边界、状态流转 | 禁止 import `agentcore`、具体 adapter 和终端展示库；只能依赖 `domain` 和 `ports` |
 | `runtime` | 与具体框架无关的执行内核组件 | 禁止 import `agentcore`、Eino、HTTP、CLI、server handler |
 | `adapters` | 技术实现和协议转换 | 可以依赖 `domain`、`ports`、第三方 SDK；不得被 domain/app 反向依赖 |
 | `bootstrap` | 组装配置、adapter、service | 是唯一允许主动连接所有层的 composition root |

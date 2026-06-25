@@ -10,9 +10,8 @@ import (
 	"fkteams/internal/app/agent/catalog/visitor"
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
+	"log"
 	"sync"
-
-	"github.com/pterm/pterm"
 )
 
 // AgentInfo 智能体信息
@@ -75,7 +74,7 @@ func buildRegistry() {
 	for _, c := range creators {
 		agent, err := c.creator(ctx)
 		if err != nil {
-			pterm.Warning.Printfln("初始化智能体 %s 失败: %v", c.name, err)
+			log.Printf("[agent] 初始化智能体 %s 失败: %v", c.name, err)
 			continue
 		}
 		creator := c.creator
@@ -110,7 +109,7 @@ func loadCustomAgents(ctx context.Context) {
 		}
 
 		if existingNames[agentCfg.Name] {
-			pterm.Warning.Printfln("自定义智能体 \"%s\" 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
+			log.Printf("[agent] 自定义智能体 %q 与已有智能体名称重复，不建议使用相同名称", agentCfg.Name)
 		}
 
 		mc := cfg.ResolveModel(agentCfg.Model)
@@ -133,7 +132,7 @@ func loadCustomAgents(ctx context.Context) {
 			ToolNames:    agentCfg.Tools,
 		})
 		if err != nil {
-			pterm.Warning.Printfln("初始化自定义智能体 \"%s\" 失败: %v", agentCfg.Name, err)
+			log.Printf("[agent] 初始化自定义智能体 %q 失败: %v", agentCfg.Name, err)
 			continue
 		}
 

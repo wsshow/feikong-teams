@@ -294,6 +294,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"github.com/mark3labs/mcp-go",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
+			"github.com/pterm/pterm",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
 	case strings.HasPrefix(rel, "internal/app/"):
@@ -303,6 +304,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"fkteams/internal/adapters/runtime/eino",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
+			"github.com/pterm/pterm",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
 	case strings.HasPrefix(rel, "internal/runtime/"):

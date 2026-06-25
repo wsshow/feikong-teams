@@ -41,6 +41,7 @@ internal/app/               # 应用用例层，入口只调用这里
   skill/                    #   技能 provider、安装、移除、搜索结果和本地文件管理
   lifecycle/                #   Application 生命周期编排内核
                             #   用例层禁止依赖 agentcore 旧门面
+                            #   用例层禁止依赖 pterm 等终端展示库
 internal/domain/
   memory/                   #   MemoryEntry / Message / MemoryType 等长期记忆值对象
   schedule/                 #   Task / Status / HistoryEntry 等调度领域模型
