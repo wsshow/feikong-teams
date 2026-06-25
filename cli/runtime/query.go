@@ -13,6 +13,7 @@ import (
 
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	clireport "fkteams/internal/adapters/transport/cli/report"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -22,7 +23,6 @@ import (
 	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/turn"
-	"fkteams/report"
 	"fkteams/tui"
 
 	"github.com/pterm/pterm"
@@ -458,7 +458,7 @@ func SaveChatHistoryToHTML() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("保存聊天历史到 Markdown 失败: %w", err)
 	}
-	htmlFilePath, err := report.ConvertMarkdownFileToNiceHTMLFile(filePath)
+	htmlFilePath, err := clireport.ConvertMarkdownFileToNiceHTMLFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("转换聊天历史到 HTML 失败: %w", err)
 	}
