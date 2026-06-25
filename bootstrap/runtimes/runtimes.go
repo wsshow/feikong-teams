@@ -1,10 +1,10 @@
 package runtimes
 
 import (
-	einoengine "fkteams/agentcore/eino/engine"
 	agentruntime "fkteams/agentcore/runtime"
+	einoengine "fkteams/internal/adapters/runtime/eino/engine"
 
-	_ "fkteams/agentcore/eino/providers/register"
+	_ "fkteams/internal/adapters/runtime/eino/providers/register"
 )
 
 func init() {

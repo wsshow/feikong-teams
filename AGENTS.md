@@ -31,35 +31,31 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   chat.go, web.go, serve.go #   聊天 / Web 服务 / API 服务
   session.go, agent.go      #   会话和智能体管理
   skill/                    #   技能安装、移除、搜索
-engine/                     # 统一执行引擎
-  session.go                #   NewSession() — 面向入口层的会话执行接口
-                            #   （WithText / WithMessage / WithInput / OnEvent / WithHistory / Run）
-  config.go                 #   runConfig — 包内执行配置，集中管理 context 装配和回调
-                            #   （OnStart → OnInterrupt → OnFinish），各入口通过 Session 装配
-  run.go                    #   core.run() — 装配 context、默认 HITL handler 后调用 runLoop
-  loop.go                   #   runLoop() — 将 engine.TurnInput 和 RunOptions 委托给 Runner
-  interrupt.go              #   HITL 中断处理器（FixedDecisionHandler / ChannelHandler / InfoHandler）
-agentcore/                  # 运行时无关核心接口
-  types.go                  #   Message / ToolCall / Event / RunOptions / Runner 等协议类型
-  agent.go                  #   Agent / Engine 抽象和 ChatAgentConfig / RunnerConfig
+internal/app/               # 应用用例层，入口只调用这里
+  chat/                     #   RunTurn / 输入构建 / 入口上下文装配
+  agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
+  schedule/                 #   定时任务执行用例，调度任务通过 chat service 执行
+internal/runtime/           # 运行时无关内核
+  turn/                     #   回合执行内核、HITL handler、hooks/context 装配
+  checkpoint/               #   checkpoint 存储实现
+internal/adapters/runtime/
+  eino/                     # CloudWeGo Eino ADK 适配层，唯一允许 import Eino 的目录
+    runner.go               #   ADK AgentEvent -> events 协议转换，HITL resume 适配
+    engine/engine.go        #   runtime.Engine 的 Eino 实现
+    middlewares/            #   autocontinue / summary / skills / dispatch / inject / fkfs
+    middlewares/tools/      #   warperror / trimresult / patch / destructiveguard
+    providers/              #   OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
+agentcore/                  # 过渡期核心类型导出层，最终收缩到 internal/domain 与 internal/ports
+  types.go                  #   Message / ToolCall / Event / RunOptions / Runner 等协议类型别名
+  agent.go                  #   Agent / Engine 抽象和 ChatAgentConfig / RunnerConfig 别名
   steering.go               #   SteeringSource context 能力，供运行时在模型调用边界消费转向消息
-  model.go, tool.go         #   ChatModel / Tool 抽象
-  runtime/runtime.go        #   默认 runtime engine（当前为 Eino）注册和获取
-  eino/                     #   CloudWeGo Eino ADK 适配层
-    runner.go               #     ADK AgentEvent -> events 协议转换，HITL resume 适配
-    engine/engine.go        #     agentcore.Engine 的 Eino 实现
-    middlewares/            #     autocontinue / summary / skills / dispatch / inject / fkfs
-    middlewares/tools/      #     warperror / trimresult / patch / destructiveguard
-    providers/              #     OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
+  model.go, tool.go         #   ChatModel / Tool 抽象别名
+  runtime/runtime.go        #   默认 runtime engine 注册和获取
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
   common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）
   common/common.go          #   NewChatModel / MaxIterations
   toolmeta/                 #   成员智能体工具前缀、显示名和分类注册
-runner/                     # Runner 工厂 — 根据 mode 创建不同 Runner
-  runner.go                 #   CreateTeamRunner / CreateDeepAgentsRunner /
-                            #   CreateLoopAgentRunner / CreateCustomRunner / CreateBackgroundTaskRunner
-  cache.go                  #   Runner 缓存和 mode/agentName 解析
 tools/                      # 工具系统
   tools.go                  #   GetToolsByName() — 按名称返回工具列表
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具

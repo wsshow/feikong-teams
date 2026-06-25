@@ -52,7 +52,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 		forbidden := []string{
 			"fkteams/internal/app",
 			"fkteams/internal/adapters",
-			"fkteams/agentcore/eino",
+			"fkteams/internal/adapters/runtime/eino",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 		}
@@ -61,7 +61,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 		forbidden := []string{
 			"fkteams/internal/app",
 			"fkteams/internal/adapters",
-			"fkteams/agentcore/eino",
+			"fkteams/internal/adapters/runtime/eino",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 		}
@@ -69,7 +69,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	case strings.HasPrefix(rel, "internal/app/"):
 		forbidden := []string{
 			"fkteams/internal/adapters",
-			"fkteams/agentcore/eino",
+			"fkteams/internal/adapters/runtime/eino",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
 		}
