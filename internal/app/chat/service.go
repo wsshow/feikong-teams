@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"fkteams/engine"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/turn"
 )
 
 // EventHandler 处理一次对话运行期间产生的领域事件。
@@ -54,26 +54,26 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 		return nil, fmt.Errorf("chat turn session ID is empty")
 	}
 
-	session := engine.NewSession(req.Runner, req.SessionID).
+	session := turn.NewSession(req.Runner, req.SessionID).
 		WithInput(req.Input)
 	if req.RunID != "" {
 		session.WithRunID(req.RunID)
 	}
 	if req.EventHandler != nil {
-		session.OnEvent(engine.EventHandler(req.EventHandler))
+		session.OnEvent(turn.EventHandler(req.EventHandler))
 	}
 	if req.History != nil {
 		session.WithHistory(req.History)
 	}
 	if req.InterruptHandler != nil {
-		session.OnInterrupt(engine.InterruptHandler(req.InterruptHandler))
+		session.OnInterrupt(turn.InterruptHandler(req.InterruptHandler))
 	}
 	if req.NonInteractive {
 		session.NonInteractive()
 	}
 	for _, hook := range req.ContextHooks {
 		if hook != nil {
-			session.WithContext(engine.ContextHook(hook))
+			session.WithContext(turn.ContextHook(hook))
 		}
 	}
 	if req.OnFinish != nil {

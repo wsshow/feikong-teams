@@ -77,7 +77,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 	}
 }
 
-func TestEngineSessionCreationStaysInsideChatUseCase(t *testing.T) {
+func TestTurnSessionCreationStaysInsideChatUseCase(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	allowed := map[string]bool{
 		"internal/app/chat/service.go": true,
@@ -88,7 +88,11 @@ func TestEngineSessionCreationStaysInsideChatUseCase(t *testing.T) {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", "release", "node_modules", "web", "engine":
+			case ".git", "release", "node_modules", "web":
+				return filepath.SkipDir
+			}
+			if filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "engine")) ||
+				filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "internal", "runtime", "turn")) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -108,8 +112,9 @@ func TestEngineSessionCreationStaysInsideChatUseCase(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if strings.Contains(string(content), "engine.NewSession") {
-			t.Errorf("%s creates engine session directly; use internal/app/chat.Service", rel)
+		text := string(content)
+		if strings.Contains(text, "engine.NewSession") || strings.Contains(text, "turn.NewSession") {
+			t.Errorf("%s creates turn session directly; use internal/app/chat.Service", rel)
 		}
 		return nil
 	})

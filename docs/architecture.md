@@ -46,7 +46,7 @@ internal/app/
   lifecycle/        # App lifecycle and service orchestration
 
 internal/runtime/
-  engine/           # runtime-independent turn executor
+  turn/             # runtime-independent turn executor
   middleware/       # runtime-neutral middleware contracts
   checkpoint/       # checkpoint implementations used by runtime ports
   queue/            # steering/follow-up queue primitives
@@ -211,7 +211,7 @@ hook payload 使用明确结构体，不在业务代码里散落 `any` 和字符
 以下旧包不作为长期结构保留：
 
 - `agentcore`：拆到 `internal/domain/*` 和 `internal/ports/runtime`。
-- `engine`：重建为 `internal/runtime/engine`，只保留运行时无关执行内核。
+- `engine`：退化为兼容门面，实际执行内核迁入 `internal/runtime/turn`。
 - `runner`：并入 `internal/app/agent`，不再作为全局工厂包。
 - `events/chat`：并入 `internal/app/chat` 的 turn input builder。
 - `events/log`：迁移为 `internal/adapters/storage/file/history` 和 domain history model。
