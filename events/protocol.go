@@ -1,21 +1,22 @@
 package events
 
 import (
-	"fkteams/agentcore"
 	"fmt"
+
+	"fkteams/internal/domain/message"
 )
 
-func ToolCallsFromEvent(event Event) []agentcore.ToolCall {
+func ToolCallsFromEvent(event Event) []message.ToolCall {
 	if event.ToolCall == nil {
 		return event.ToolCalls
 	}
-	toolCalls := make([]agentcore.ToolCall, 0, len(event.ToolCalls)+1)
+	toolCalls := make([]message.ToolCall, 0, len(event.ToolCalls)+1)
 	toolCalls = append(toolCalls, *event.ToolCall)
 	toolCalls = append(toolCalls, event.ToolCalls...)
 	return toolCalls
 }
 
-func ToolCallRefAt(event Event, tool agentcore.ToolCall, position int) string {
+func ToolCallRefAt(event Event, tool message.ToolCall, position int) string {
 	if tool.Index != nil && event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[*tool.Index]; ref != "" {
 			return ref
@@ -49,7 +50,7 @@ func ValidateEventContract(event Event) error {
 			}
 		}
 	case EventMessageEnd:
-		if event.Role == agentcore.RoleTool && (event.ToolCallRef == "" || event.ToolCallID == "") {
+		if event.Role == message.RoleTool && (event.ToolCallRef == "" || event.ToolCallID == "") {
 			return fmt.Errorf("tool message_end missing stable tool identity")
 		}
 		for i, tool := range event.ToolCalls {

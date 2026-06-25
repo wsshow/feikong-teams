@@ -3,7 +3,6 @@ package events
 import (
 	"context"
 	"errors"
-	"fkteams/agentcore"
 	"fkteams/internal/runtime/hooks"
 	"testing"
 	"time"
@@ -133,7 +132,7 @@ func TestDispatchAdapterAndNonInteractiveContext(t *testing.T) {
 		return nil
 	})
 	sink := Dispatch(ctx)
-	if err := sink(agentcore.Event{Type: EventMessageDelta, Content: "hello"}); err != nil {
+	if err := sink(Event{Type: EventMessageDelta, Content: "hello"}); err != nil {
 		t.Fatalf("dispatch sink: %v", err)
 	}
 	if got.Content != "hello" || got.EventID == "" {

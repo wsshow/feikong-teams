@@ -280,6 +280,31 @@ func TestHooksUseInternalPackages(t *testing.T) {
 	}
 }
 
+func TestRootEventsUseDomainTypes(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	eventsDir := filepath.Join(root, "events")
+	entries, err := os.ReadDir(eventsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		path := filepath.Join(eventsDir, entry.Name())
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel := filepath.ToSlash(filepath.Join("events", entry.Name()))
+		for _, spec := range file.Imports {
+			if strings.Trim(spec.Path.Value, `"`) == "fkteams/agentcore" {
+				t.Errorf("%s imports agentcore; root events must use internal/domain/event and internal/domain/message", rel)
+			}
+		}
+	}
+}
+
 func assertNotImported(t *testing.T, rel, importPath string, forbidden []string) {
 	t.Helper()
 	for _, prefix := range forbidden {

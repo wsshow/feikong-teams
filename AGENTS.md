@@ -77,7 +77,7 @@ channels/                   # 消息通道桥接
   channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册
   bridge.go                 #   Bridge — 连接通道和引擎，goroutine 串行处理会话消息
 events/                     # 事件协议与展示/历史
-  types.go                  #   agentcore 事件类型别名和常量导出
+  types.go                  #   domain/event 事件类型别名和常量导出
   event.go                  #   context 事件回调、NormalizeEvent、DispatchEvent
   emitter.go                #   Emitter + Agent/Turn/Message/Tool 事件构造函数
   protocol.go               #   工具调用身份协议校验与兼容辅助
@@ -112,7 +112,7 @@ bootstrap/                  # 应用目录初始化
 4. **用 `any` 替代 `interface{}`**
 5. **工具函数不返回 error**：将错误信息放入响应的 `ErrorMessage` 字段并返回 nil
 6. **初始化函数必须返回 error**，不使用 `log.Fatal`
-7. **禁止事件类型的字符串字面量**：始终使用 `events/types.go`（底层为 `agentcore/types.go`）中的类型常量
+7. **禁止事件类型的字符串字面量**：始终使用 `events/types.go`（底层为 `internal/domain/event`）中的类型常量
 
 ## 验证与交付
 
@@ -148,8 +148,8 @@ bootstrap/                  # 应用目录初始化
 
 ### 事件
 
-- 事件处理使用 `events/types.go` / `agentcore/types.go` 中的类型常量，禁止使用字符串字面量
-- 新增事件类型/动作类型/通知类型必须先在 `agentcore/types.go` 中定义常量，并由 `events/types.go` 导出别名
+- 事件处理使用 `events/types.go` / `internal/domain/event` 中的类型常量，禁止使用字符串字面量
+- 新增事件类型/动作类型/通知类型必须先在 `internal/domain/event` 中定义常量，并由 `events/types.go` 导出别名
 - 运行时适配器发事件优先使用 `events.Emitter` 和 `events.AgentStart` / `events.MessageDelta` / `events.ToolStart` 等构造函数
 - 流式事件的规范增量载荷使用 `Content`；不要在核心事件或历史存储中重复维护 `Delta`
 - 工具调用事件必须通过 `tool_call_ref` 保持 `message_delta(tool_args)`、`message_end.tool_calls[]`、`tool_start/update/end` 的稳定关联

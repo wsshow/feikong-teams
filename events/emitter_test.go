@@ -4,22 +4,22 @@ import (
 	"errors"
 	"testing"
 
-	"fkteams/agentcore"
+	"fkteams/internal/domain/message"
 )
 
 func TestEmitterFillsRunTurnNormalizesAndSends(t *testing.T) {
-	var got []agentcore.Event
-	emitter := NewEmitter("run_1", "turn_1", func(event agentcore.Event) error {
+	var got []Event
+	emitter := NewEmitter("run_1", "turn_1", func(event Event) error {
 		got = append(got, event)
 		return nil
 	})
 
 	event := MessageDelta(MessageEvent{
 		MessageID: "msg_1",
-		Role:      agentcore.RoleAssistant,
+		Role:      message.RoleAssistant,
 		AgentName: "coder",
 		RunPath:   "root/coder",
-		DeltaKind: agentcore.DeltaOutput,
+		DeltaKind: DeltaOutput,
 	}, "hello")
 	if err := emitter.Emit(event); err != nil {
 		t.Fatalf("emit message delta: %v", err)
@@ -68,16 +68,16 @@ func TestEmitterUsesNoopSinkAndValidatesContract(t *testing.T) {
 
 func TestEventConstructors(t *testing.T) {
 	toolIndex := 3
-	toolCall := &agentcore.ToolCall{
+	toolCall := &message.ToolCall{
 		ID:    "call_1",
 		Index: &toolIndex,
-		Function: agentcore.FunctionCall{
+		Function: message.FunctionCall{
 			Name:      "search",
 			Arguments: `{"query":"go"}`,
 		},
 	}
 
-	constructors := []agentcore.Event{
+	constructors := []Event{
 		AgentStart("run_1"),
 		AgentEnd("run_1"),
 		AgentError("run_1", errors.New("boom")),
@@ -85,7 +85,7 @@ func TestEventConstructors(t *testing.T) {
 		TurnEnd("run_1", "turn_1"),
 		MessageStart(MessageEvent{
 			MessageID:   "msg_1",
-			Role:        agentcore.RoleAssistant,
+			Role:        message.RoleAssistant,
 			AgentName:   "coder",
 			RunPath:     "root/coder",
 			Content:     "start",
@@ -95,18 +95,18 @@ func TestEventConstructors(t *testing.T) {
 		}),
 		MessageDelta(MessageEvent{
 			MessageID:   "msg_1",
-			Role:        agentcore.RoleAssistant,
-			DeltaKind:   agentcore.DeltaToolArgs,
+			Role:        message.RoleAssistant,
+			DeltaKind:   DeltaToolArgs,
 			ToolCallID:  "call_1",
 			ToolCallRef: "ref_1",
 			ToolName:    "search",
 		}, `{"query":"go"}`),
 		MessageEnd(MessageEvent{
 			MessageID:        "msg_1",
-			Role:             agentcore.RoleAssistant,
+			Role:             message.RoleAssistant,
 			Content:          "done",
 			ReasoningContent: "reason",
-			ToolCalls:        []agentcore.ToolCall{*toolCall},
+			ToolCalls:        []message.ToolCall{*toolCall},
 			ToolCallRefs:     map[int]string{toolIndex: "ref_1"},
 		}),
 		ToolStart(ToolEvent{
@@ -131,12 +131,12 @@ func TestEventConstructors(t *testing.T) {
 			ToolName:    "search",
 			ToolResult:  "result",
 		}),
-		Action("coder", "root/coder", agentcore.ActionInterrupted, "paused"),
+		Action("coder", "root/coder", ActionInterrupted, "paused"),
 		Error("coder", "root/coder", errors.New("failed")),
 		Usage("coder", "root/coder", 1, 2, 3),
 	}
 
-	wantTypes := []agentcore.EventType{
+	wantTypes := []EventType{
 		EventAgentStart,
 		EventAgentEnd,
 		EventAgentEnd,
@@ -164,7 +164,7 @@ func TestEventConstructors(t *testing.T) {
 	if constructors[8].Content != constructors[8].ToolArgs {
 		t.Fatalf("ToolStart content should default to args: %#v", constructors[8])
 	}
-	if constructors[9].DeltaKind != agentcore.DeltaToolResult {
+	if constructors[9].DeltaKind != DeltaToolResult {
 		t.Fatalf("ToolUpdate delta kind = %q", constructors[9].DeltaKind)
 	}
 	if constructors[10].Content != "result" || constructors[10].ToolResult != "result" {
@@ -176,22 +176,22 @@ func TestEventConstructors(t *testing.T) {
 }
 
 func TestUserMessagePairTurnIDAndFirstNonEmpty(t *testing.T) {
-	message := agentcore.Message{
-		Role: agentcore.RoleUser,
-		ContentParts: []agentcore.ContentPart{
-			{Type: agentcore.ContentPartText, Text: "hello"},
-			{Type: agentcore.ContentPartImageURL, URL: "https://example.com/a.png"},
-			{Type: agentcore.ContentPartText, Text: "world"},
+	msg := message.Message{
+		Role: message.RoleUser,
+		ContentParts: []message.ContentPart{
+			{Type: message.ContentPartText, Text: "hello"},
+			{Type: message.ContentPartImageURL, URL: "https://example.com/a.png"},
+			{Type: message.ContentPartText, Text: "world"},
 		},
 	}
-	start, end := UserMessagePair("run_1", "turn_1", "msg_1", message)
+	start, end := UserMessagePair("run_1", "turn_1", "msg_1", msg)
 	if start.Type != EventMessageStart || end.Type != EventMessageEnd {
 		t.Fatalf("pair types = %q/%q", start.Type, end.Type)
 	}
 	if start.RunID != "run_1" || start.TurnID != "turn_1" || start.Content != "hello world" {
 		t.Fatalf("start event = %#v", start)
 	}
-	if end.Message == nil || end.Message.Role != agentcore.RoleUser {
+	if end.Message == nil || end.Message.Role != message.RoleUser {
 		t.Fatalf("end message = %#v", end.Message)
 	}
 	if TurnID("run_1", 7) != "run_1:turn:7" {

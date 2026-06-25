@@ -3,7 +3,7 @@ package events
 
 import (
 	"context"
-	"fkteams/agentcore"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
 	"fmt"
 	"strings"
@@ -74,8 +74,8 @@ func DispatchEvent(ctx context.Context, event Event) error {
 }
 
 // Dispatch 将 context 适配为 EventSink。
-func Dispatch(ctx context.Context) agentcore.EventSink {
-	return func(event agentcore.Event) error {
+func Dispatch(ctx context.Context) runtimeport.EventSink {
+	return func(event Event) error {
 		return DispatchEvent(ctx, event)
 	}
 }

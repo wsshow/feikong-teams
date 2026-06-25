@@ -1,20 +1,22 @@
 package events
 
 import (
-	"fkteams/agentcore"
 	"fmt"
+
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 type Emitter struct {
 	runID     string
 	turnID    string
-	sink      agentcore.EventSink
-	lastEvent agentcore.Event
+	sink      runtimeport.EventSink
+	lastEvent Event
 }
 
-func NewEmitter(runID, turnID string, sink agentcore.EventSink) *Emitter {
+func NewEmitter(runID, turnID string, sink runtimeport.EventSink) *Emitter {
 	if sink == nil {
-		sink = agentcore.NoopEventSink
+		sink = runtimeport.NoopEventSink
 	}
 	return &Emitter{
 		runID:  runID,
@@ -23,7 +25,7 @@ func NewEmitter(runID, turnID string, sink agentcore.EventSink) *Emitter {
 	}
 }
 
-func (e *Emitter) Emit(event agentcore.Event) error {
+func (e *Emitter) Emit(event Event) error {
 	event.RunID = firstNonEmpty(event.RunID, e.runID)
 	event.TurnID = firstNonEmpty(event.TurnID, e.turnID)
 	e.lastEvent = NormalizeEvent(event)
@@ -33,22 +35,22 @@ func (e *Emitter) Emit(event agentcore.Event) error {
 	return e.sink(e.lastEvent)
 }
 
-func (e *Emitter) LastEvent() agentcore.Event {
+func (e *Emitter) LastEvent() Event {
 	if e == nil {
-		return agentcore.Event{}
+		return Event{}
 	}
 	return e.lastEvent
 }
 
-func AgentStart(runID string) agentcore.Event {
-	return agentcore.Event{Type: agentcore.EventAgentStart, RunID: runID}
+func AgentStart(runID string) Event {
+	return Event{Type: EventAgentStart, RunID: runID}
 }
 
-func AgentEnd(runID string) agentcore.Event {
-	return agentcore.Event{Type: agentcore.EventAgentEnd, RunID: runID}
+func AgentEnd(runID string) Event {
+	return Event{Type: EventAgentEnd, RunID: runID}
 }
 
-func AgentError(runID string, err error) agentcore.Event {
+func AgentError(runID string, err error) Event {
 	event := AgentEnd(runID)
 	if err != nil {
 		event.Error = err.Error()
@@ -56,33 +58,33 @@ func AgentError(runID string, err error) agentcore.Event {
 	return event
 }
 
-func TurnStart(runID, turnID string) agentcore.Event {
-	return agentcore.Event{Type: agentcore.EventTurnStart, RunID: runID, TurnID: turnID}
+func TurnStart(runID, turnID string) Event {
+	return Event{Type: EventTurnStart, RunID: runID, TurnID: turnID}
 }
 
-func TurnEnd(runID, turnID string) agentcore.Event {
-	return agentcore.Event{Type: agentcore.EventTurnEnd, RunID: runID, TurnID: turnID}
+func TurnEnd(runID, turnID string) Event {
+	return Event{Type: EventTurnEnd, RunID: runID, TurnID: turnID}
 }
 
 type MessageEvent struct {
 	MessageID        string
-	Role             agentcore.MessageRole
+	Role             message.Role
 	AgentName        string
 	RunPath          string
 	Content          string
-	DeltaKind        agentcore.DeltaKind
-	Message          *agentcore.Message
+	DeltaKind        DeltaKind
+	Message          *message.Message
 	ToolCallID       string
 	ToolCallRef      string
 	ToolName         string
-	ToolCalls        []agentcore.ToolCall
+	ToolCalls        []message.ToolCall
 	ToolCallRefs     map[int]string
 	ReasoningContent string
 }
 
-func MessageStart(meta MessageEvent) agentcore.Event {
-	return agentcore.Event{
-		Type:        agentcore.EventMessageStart,
+func MessageStart(meta MessageEvent) Event {
+	return Event{
+		Type:        EventMessageStart,
 		MessageID:   meta.MessageID,
 		Role:        meta.Role,
 		AgentName:   meta.AgentName,
@@ -95,9 +97,9 @@ func MessageStart(meta MessageEvent) agentcore.Event {
 	}
 }
 
-func MessageDelta(meta MessageEvent, delta string) agentcore.Event {
-	return agentcore.Event{
-		Type:        agentcore.EventMessageDelta,
+func MessageDelta(meta MessageEvent, delta string) Event {
+	return Event{
+		Type:        EventMessageDelta,
 		MessageID:   meta.MessageID,
 		Role:        meta.Role,
 		AgentName:   meta.AgentName,
@@ -110,9 +112,9 @@ func MessageDelta(meta MessageEvent, delta string) agentcore.Event {
 	}
 }
 
-func MessageEnd(meta MessageEvent) agentcore.Event {
-	return agentcore.Event{
-		Type:             agentcore.EventMessageEnd,
+func MessageEnd(meta MessageEvent) Event {
+	return Event{
+		Type:             EventMessageEnd,
 		MessageID:        meta.MessageID,
 		Role:             meta.Role,
 		AgentName:        meta.AgentName,
@@ -137,14 +139,14 @@ type ToolEvent struct {
 	ToolArgs      string
 	ToolResult    string
 	Content       string
-	ToolCall      *agentcore.ToolCall
+	ToolCall      *message.ToolCall
 	ToolCallIndex *int
 }
 
-func ToolStart(meta ToolEvent) agentcore.Event {
+func ToolStart(meta ToolEvent) Event {
 	content := firstNonEmpty(meta.Content, meta.ToolArgs)
-	return agentcore.Event{
-		Type:          agentcore.EventToolStart,
+	return Event{
+		Type:          EventToolStart,
 		AgentName:     meta.AgentName,
 		RunPath:       meta.RunPath,
 		ToolCallID:    meta.ToolCallID,
@@ -157,23 +159,23 @@ func ToolStart(meta ToolEvent) agentcore.Event {
 	}
 }
 
-func ToolUpdate(meta ToolEvent) agentcore.Event {
-	return agentcore.Event{
-		Type:        agentcore.EventToolUpdate,
+func ToolUpdate(meta ToolEvent) Event {
+	return Event{
+		Type:        EventToolUpdate,
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
 		ToolCallID:  meta.ToolCallID,
 		ToolCallRef: meta.ToolCallRef,
 		ToolName:    meta.ToolName,
 		Content:     meta.Content,
-		DeltaKind:   agentcore.DeltaToolResult,
+		DeltaKind:   DeltaToolResult,
 	}
 }
 
-func ToolEnd(meta ToolEvent) agentcore.Event {
+func ToolEnd(meta ToolEvent) Event {
 	content := firstNonEmpty(meta.Content, meta.ToolResult)
-	return agentcore.Event{
-		Type:        agentcore.EventToolEnd,
+	return Event{
+		Type:        EventToolEnd,
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
 		ToolCallID:  meta.ToolCallID,
@@ -184,9 +186,9 @@ func ToolEnd(meta ToolEvent) agentcore.Event {
 	}
 }
 
-func Action(agentName, runPath string, actionType agentcore.ActionType, content string) agentcore.Event {
-	return agentcore.Event{
-		Type:       agentcore.EventAction,
+func Action(agentName, runPath string, actionType ActionType, content string) Event {
+	return Event{
+		Type:       EventAction,
 		AgentName:  agentName,
 		RunPath:    runPath,
 		ActionType: actionType,
@@ -194,9 +196,9 @@ func Action(agentName, runPath string, actionType agentcore.ActionType, content 
 	}
 }
 
-func Error(agentName, runPath string, err error) agentcore.Event {
-	event := agentcore.Event{
-		Type:      agentcore.EventError,
+func Error(agentName, runPath string, err error) Event {
+	event := Event{
+		Type:      EventError,
 		AgentName: agentName,
 		RunPath:   runPath,
 	}
@@ -206,9 +208,9 @@ func Error(agentName, runPath string, err error) agentcore.Event {
 	return event
 }
 
-func Usage(agentName, runPath string, promptTokens, completionTokens, totalTokens int) agentcore.Event {
-	return agentcore.Event{
-		Type:             agentcore.EventUsage,
+func Usage(agentName, runPath string, promptTokens, completionTokens, totalTokens int) Event {
+	return Event{
+		Type:             EventUsage,
 		AgentName:        agentName,
 		RunPath:          runPath,
 		PromptTokens:     promptTokens,
@@ -217,13 +219,13 @@ func Usage(agentName, runPath string, promptTokens, completionTokens, totalToken
 	}
 }
 
-func UserMessagePair(runID, turnID, messageID string, message agentcore.Message) (agentcore.Event, agentcore.Event) {
-	content := message.DisplayText()
+func UserMessagePair(runID, turnID, messageID string, msg message.Message) (Event, Event) {
+	content := msg.DisplayText()
 	meta := MessageEvent{
 		MessageID: messageID,
-		Role:      agentcore.RoleUser,
+		Role:      message.RoleUser,
 		Content:   content,
-		Message:   &message,
+		Message:   &msg,
 	}
 	start := MessageStart(meta)
 	end := MessageEnd(meta)

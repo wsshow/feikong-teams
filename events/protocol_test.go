@@ -1,7 +1,7 @@
 package events
 
 import (
-	"fkteams/agentcore"
+	"fkteams/internal/domain/message"
 	"testing"
 )
 
@@ -9,17 +9,17 @@ func TestToolCallRefAtUsesIndexThenPositionAndDoesNotSpreadTopLevelRef(t *testin
 	firstIndex := 2
 	event := Event{
 		ToolCallRef: "top-level-ref",
-		ToolCalls: []agentcore.ToolCall{
+		ToolCalls: []message.ToolCall{
 			{
 				ID:    "call_1",
 				Index: &firstIndex,
-				Function: agentcore.FunctionCall{
+				Function: message.FunctionCall{
 					Name: "first",
 				},
 			},
 			{
 				ID: "call_2",
-				Function: agentcore.FunctionCall{
+				Function: message.FunctionCall{
 					Name: "second",
 				},
 			},
@@ -44,17 +44,17 @@ func TestToolCallRefAtUsesIndexThenPositionAndDoesNotSpreadTopLevelRef(t *testin
 }
 
 func TestToolCallsFromEventPrependsSingleToolCall(t *testing.T) {
-	single := agentcore.ToolCall{
+	single := message.ToolCall{
 		ID: "call_1",
-		Function: agentcore.FunctionCall{
+		Function: message.FunctionCall{
 			Name: "first",
 		},
 	}
 	event := Event{
 		ToolCall: &single,
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID: "call_2",
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name: "second",
 			},
 		}},
@@ -93,9 +93,9 @@ func TestValidateEventContractRequiresStableToolIdentity(t *testing.T) {
 func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID: "call_1",
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name: "search",
 			},
 		}},
@@ -105,9 +105,9 @@ func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID: "call_1",
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name: "search",
 			},
 		}},
@@ -123,7 +123,7 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 		{Type: EventToolEnd, ToolCallRef: "ref_1"},
 		{Type: EventMessageDelta, DeltaKind: DeltaToolArgs, ToolCallID: "call_1"},
 		{Type: EventMessageDelta, DeltaKind: DeltaToolResult, ToolCallRef: "ref_1"},
-		{Type: EventMessageEnd, Role: agentcore.RoleTool, ToolCallID: "call_1"},
+		{Type: EventMessageEnd, Role: message.RoleTool, ToolCallID: "call_1"},
 	}
 	for i, event := range invalidEvents {
 		if err := ValidateEventContract(event); err == nil {
@@ -136,7 +136,7 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 		{Type: EventToolEnd, ToolCallID: "call_1", ToolCallRef: "ref_1"},
 		{Type: EventMessageDelta, DeltaKind: DeltaToolArgs, ToolCallID: "call_1", ToolCallRef: "ref_1"},
 		{Type: EventMessageDelta, DeltaKind: DeltaToolResult, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageEnd, Role: agentcore.RoleTool, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventMessageEnd, Role: message.RoleTool, ToolCallID: "call_1", ToolCallRef: "ref_1"},
 		{Type: EventMessageDelta, DeltaKind: DeltaOutput},
 	}
 	for i, event := range validEvents {
@@ -149,8 +149,8 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T) {
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
-		ToolCalls: []agentcore.ToolCall{{
-			Function: agentcore.FunctionCall{Name: "continue_output"},
+		ToolCalls: []message.ToolCall{{
+			Function: message.FunctionCall{Name: "continue_output"},
 		}},
 	}); err != nil {
 		t.Fatalf("internal tool call should be skipped: %v", err)
@@ -158,8 +158,8 @@ func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T)
 
 	if err := ValidateEventContract(Event{
 		Type: EventMessageEnd,
-		ToolCalls: []agentcore.ToolCall{{
-			Function: agentcore.FunctionCall{Name: "search"},
+		ToolCalls: []message.ToolCall{{
+			Function: message.FunctionCall{Name: "search"},
 		}},
 		ToolCallRefs: map[int]string{0: "ref_1"},
 	}); err == nil {

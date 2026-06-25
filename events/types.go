@@ -1,63 +1,63 @@
 package events
 
-import "fkteams/agentcore"
+import domainevent "fkteams/internal/domain/event"
 
-type EventType = agentcore.EventType
-
-const (
-	EventAgentStart   = agentcore.EventAgentStart
-	EventAgentEnd     = agentcore.EventAgentEnd
-	EventTurnStart    = agentcore.EventTurnStart
-	EventTurnEnd      = agentcore.EventTurnEnd
-	EventMessageStart = agentcore.EventMessageStart
-	EventMessageDelta = agentcore.EventMessageDelta
-	EventMessageEnd   = agentcore.EventMessageEnd
-	EventToolStart    = agentcore.EventToolStart
-	EventToolUpdate   = agentcore.EventToolUpdate
-	EventToolEnd      = agentcore.EventToolEnd
-	EventAction       = agentcore.EventAction
-	EventUsage        = agentcore.EventUsage
-	EventError        = agentcore.EventError
-	EventMemberUpdate = agentcore.EventMemberUpdate
-)
-
-type DeltaKind = agentcore.DeltaKind
+type EventType = domainevent.Type
 
 const (
-	DeltaOutput     = agentcore.DeltaOutput
-	DeltaReasoning  = agentcore.DeltaReasoning
-	DeltaToolArgs   = agentcore.DeltaToolArgs
-	DeltaToolResult = agentcore.DeltaToolResult
+	EventAgentStart   = domainevent.TypeAgentStart
+	EventAgentEnd     = domainevent.TypeAgentEnd
+	EventTurnStart    = domainevent.TypeTurnStart
+	EventTurnEnd      = domainevent.TypeTurnEnd
+	EventMessageStart = domainevent.TypeMessageStart
+	EventMessageDelta = domainevent.TypeMessageDelta
+	EventMessageEnd   = domainevent.TypeMessageEnd
+	EventToolStart    = domainevent.TypeToolStart
+	EventToolUpdate   = domainevent.TypeToolUpdate
+	EventToolEnd      = domainevent.TypeToolEnd
+	EventAction       = domainevent.TypeAction
+	EventUsage        = domainevent.TypeUsage
+	EventError        = domainevent.TypeError
+	EventMemberUpdate = domainevent.TypeMemberUpdate
 )
 
-type ActionType = agentcore.ActionType
+type DeltaKind = domainevent.DeltaKind
 
 const (
-	ActionTransfer             = agentcore.ActionTransfer
-	ActionInterrupted          = agentcore.ActionInterrupted
-	ActionExit                 = agentcore.ActionExit
-	ActionAskQuestions         = agentcore.ActionAskQuestions
-	ActionAskResponse          = agentcore.ActionAskResponse
-	ActionApprovalRequired     = agentcore.ActionApprovalRequired
-	ActionApprovalDecision     = agentcore.ActionApprovalDecision
-	ActionContextCompressStart = agentcore.ActionContextCompressStart
-	ActionContextCompress      = agentcore.ActionContextCompress
+	DeltaOutput     = domainevent.DeltaOutput
+	DeltaReasoning  = domainevent.DeltaReasoning
+	DeltaToolArgs   = domainevent.DeltaToolArgs
+	DeltaToolResult = domainevent.DeltaToolResult
 )
 
-type NotifyType = agentcore.NotifyType
+type ActionType = domainevent.ActionType
 
 const (
-	NotifyProcessingStart  = agentcore.NotifyProcessingStart
-	NotifyProcessingEnd    = agentcore.NotifyProcessingEnd
-	NotifyUserMessage      = agentcore.NotifyUserMessage
-	NotifyQueueUpdated     = agentcore.NotifyQueueUpdated
-	NotifyCancelled        = agentcore.NotifyCancelled
-	NotifyError            = agentcore.NotifyError
-	NotifyAskQuestions     = agentcore.NotifyAskQuestions
-	NotifyApprovalRequired = agentcore.NotifyApprovalRequired
-	NotifyConnected        = agentcore.NotifyConnected
-	NotifyPong             = agentcore.NotifyPong
-	NotifyInvalidAPIKey    = agentcore.NotifyInvalidAPIKey
+	ActionTransfer             = domainevent.ActionTransfer
+	ActionInterrupted          = domainevent.ActionInterrupted
+	ActionExit                 = domainevent.ActionExit
+	ActionAskQuestions         = domainevent.ActionAskQuestions
+	ActionAskResponse          = domainevent.ActionAskResponse
+	ActionApprovalRequired     = domainevent.ActionApprovalRequired
+	ActionApprovalDecision     = domainevent.ActionApprovalDecision
+	ActionContextCompressStart = domainevent.ActionContextCompressStart
+	ActionContextCompress      = domainevent.ActionContextCompress
 )
 
-type Event = agentcore.Event
+type NotifyType = domainevent.NotifyType
+
+const (
+	NotifyProcessingStart  = domainevent.NotifyProcessingStart
+	NotifyProcessingEnd    = domainevent.NotifyProcessingEnd
+	NotifyUserMessage      = domainevent.NotifyUserMessage
+	NotifyQueueUpdated     = domainevent.NotifyQueueUpdated
+	NotifyCancelled        = domainevent.NotifyCancelled
+	NotifyError            = domainevent.NotifyError
+	NotifyAskQuestions     = domainevent.NotifyAskQuestions
+	NotifyApprovalRequired = domainevent.NotifyApprovalRequired
+	NotifyConnected        = domainevent.NotifyConnected
+	NotifyPong             = domainevent.NotifyPong
+	NotifyInvalidAPIKey    = domainevent.NotifyInvalidAPIKey
+)
+
+type Event = domainevent.Event
