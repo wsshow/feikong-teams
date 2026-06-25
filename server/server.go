@@ -3,12 +3,12 @@ package server
 
 import (
 	"context"
-	"fkteams/appstate"
 	"fkteams/channels"
 	_ "fkteams/channels/discord"
 	_ "fkteams/channels/qq"
 	_ "fkteams/channels/weixin"
 	"fkteams/config"
+	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/lifecycle"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	"fkteams/log"

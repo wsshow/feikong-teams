@@ -1,10 +1,10 @@
 package cli
 
 import (
-	"fkteams/appstate"
 	cliruntime "fkteams/cli/runtime"
 	"fkteams/events"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appstate"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 )
@@ -52,7 +52,7 @@ func BuildTurnInput(input string) domainmessage.TurnInput {
 	return cliruntime.BuildTurnInput(input)
 }
 
-func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) domainmessage.TurnInput {
+func BuildTurnInputWithMemory(input string, manager appstate.MemorySearcher) domainmessage.TurnInput {
 	return cliruntime.BuildTurnInputWithMemory(input, manager)
 }
 

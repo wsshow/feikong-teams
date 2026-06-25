@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 
-	"fkteams/appstate"
 	"fkteams/config"
-	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appstate"
 	"fkteams/memory"
 
 	"github.com/gin-gonic/gin"
@@ -230,11 +230,10 @@ type handlerFakeMemory struct {
 }
 
 func (m *handlerFakeMemory) Search(string, int) []memory.MemoryEntry { return nil }
-func (m *handlerFakeMemory) ExtractFromRecorder(*eventlog.HistoryRecorder, string) {
+func (m *handlerFakeMemory) ExtractAndStore(context.Context, []memory.Message, string) {
 }
-func (m *handlerFakeMemory) FlushFromRecorder(*eventlog.HistoryRecorder, string) {
-}
-func (m *handlerFakeMemory) List() []memory.MemoryEntry { return m.entries }
+func (m *handlerFakeMemory) FlushExtract(context.Context, []memory.Message, string) {}
+func (m *handlerFakeMemory) List() []memory.MemoryEntry                             { return m.entries }
 func (m *handlerFakeMemory) Delete(summary string) int {
 	m.deleteCalls++
 	return m.deleted[summary]

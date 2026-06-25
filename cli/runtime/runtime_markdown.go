@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"fkteams/agents"
-	"fkteams/appstate"
+	"fkteams/internal/app/appstate"
 
 	"fkteams/config"
 

@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/log"
+	"fkteams/memory"
 	"fkteams/tools/approval"
 	"path/filepath"
 	"strings"
@@ -286,9 +287,7 @@ func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
 				status = "error"
 			}
 			saveChannelSessionMetadata(sessionID, combinedInput, status)
-			if manager := b.memoryManager(); manager != nil {
-				manager.ExtractFromRecorder(recorder, sessionID)
-			}
+			extractChannelMemory(b.memoryManager(), recorder, sessionID)
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
 			}
@@ -304,6 +303,21 @@ func (b *Bridge) memoryManager() appstate.MemoryManager {
 		return nil
 	}
 	return b.state.Memory()
+}
+
+func extractChannelMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
+	if manager == nil || recorder == nil {
+		return
+	}
+	messages := memory.ConvertRecorderMessages(recorder)
+	if len(messages) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		manager.ExtractAndStore(ctx, messages, sessionID)
+	}()
 }
 
 // saveChannelSessionMetadata 保存通道会话的元数据

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"fkteams/agents"
-	"fkteams/appstate"
+	"fkteams/internal/app/appstate"
 
 	"fkteams/internal/adapters/storage/file/history"
 	appschedule "fkteams/internal/app/schedule"

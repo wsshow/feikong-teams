@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"

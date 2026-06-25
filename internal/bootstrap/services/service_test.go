@@ -1,7 +1,7 @@
 package services
 
 import (
-	"fkteams/appstate"
+	"fkteams/internal/app/appstate"
 	"testing"
 )
 

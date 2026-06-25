@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/appstate"
+	"fkteams/internal/app/appstate"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

@@ -11,15 +11,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/turn"
+	"fkteams/memory"
 	"fkteams/report"
 	"fkteams/tools/approval"
 	"fkteams/tools/ask"
@@ -276,7 +277,7 @@ func BuildTurnInput(input string) domainmessage.TurnInput {
 }
 
 // BuildTurnInputWithMemory 构建包含显式长期记忆依赖的一轮输入。
-func BuildTurnInputWithMemory(input string, manager appstate.MemoryManager) domainmessage.TurnInput {
+func BuildTurnInputWithMemory(input string, manager appstate.MemorySearcher) domainmessage.TurnInput {
 	recorder := getCliRecorder()
 	return appchat.BuildTurnInputWithMemory(recorder, input, manager)
 }
@@ -377,9 +378,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		e.view.Flush()
 	}
 
-	if e.memory != nil {
-		e.memory.ExtractFromRecorder(recorder, activeSessionID)
-	}
+	extractSessionMemory(e.memory, recorder, activeSessionID)
 
 	elapsed := time.Since(startTime).Round(time.Millisecond)
 	e.view.Done(elapsed)
@@ -478,7 +477,35 @@ func FlushSessionMemoryWithManager(manager appstate.MemoryManager) {
 		return
 	}
 	recorder := getCliRecorder()
-	manager.FlushFromRecorder(recorder, activeSessionID)
+	flushSessionMemory(manager, recorder, activeSessionID)
+}
+
+func extractSessionMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
+	if manager == nil || recorder == nil {
+		return
+	}
+	messages := memory.ConvertRecorderMessages(recorder)
+	if len(messages) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		manager.ExtractAndStore(ctx, messages, sessionID)
+	}()
+}
+
+func flushSessionMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
+	if manager == nil || recorder == nil {
+		return
+	}
+	messages := memory.ConvertRecorderMessages(recorder)
+	if len(messages) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	manager.FlushExtract(ctx, messages, sessionID)
 }
 
 // SaveCLISessionHistory 保存 CLI 模式的可恢复会话历史。

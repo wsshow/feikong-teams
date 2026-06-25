@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -421,9 +421,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			"message":    "处理完成",
 		})
 		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
-		if manager != nil {
-			manager.ExtractFromRecorder(recorder, sessionID)
-		}
+		extractChatMemory(manager, recorder, sessionID)
 		return
 	}
 }

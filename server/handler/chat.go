@@ -3,14 +3,15 @@ package handler
 import (
 	"context"
 	"fkteams/agents/toolmeta"
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/memory"
 	"fkteams/tools/ask"
 	"fmt"
 	"log"
@@ -236,9 +237,22 @@ func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string,
 	recorder.FinalizeCurrent()
 	saveHistory(recorder, chatHistoryPath(sessionID), sessionID)
 	ensureSessionMetadataWithStatus(sessionID, userInput, "completed")
-	if manager != nil {
-		manager.ExtractFromRecorder(recorder, sessionID)
+	extractChatMemory(manager, recorder, sessionID)
+}
+
+func extractChatMemory(manager appstate.MemoryManager, recorder *eventlog.HistoryRecorder, sessionID string) {
+	if manager == nil || recorder == nil {
+		return
 	}
+	messages := memory.ConvertRecorderMessages(recorder)
+	if len(messages) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		manager.ExtractAndStore(ctx, messages, sessionID)
+	}()
 }
 
 func finishCancelledChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {

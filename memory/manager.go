@@ -323,30 +323,6 @@ func ConvertRecorderMessages(recorder *eventlog.HistoryRecorder) []Message {
 	return msgs
 }
 
-// ExtractFromRecorder 异步从 HistoryRecorder 提取记忆
-func (m *Manager) ExtractFromRecorder(recorder *eventlog.HistoryRecorder, sessionID string) {
-	msgs := ConvertRecorderMessages(recorder)
-	if len(msgs) == 0 {
-		return
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		m.ExtractAndStore(ctx, msgs, sessionID)
-	}()
-}
-
-// FlushFromRecorder 退出前强制从 HistoryRecorder 提取剩余记忆
-func (m *Manager) FlushFromRecorder(recorder *eventlog.HistoryRecorder, sessionID string) {
-	msgs := ConvertRecorderMessages(recorder)
-	if len(msgs) == 0 {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	m.FlushExtract(ctx, msgs, sessionID)
-}
-
 // shouldExtract 智能判断是否需要触发 LLM 提取
 func (m *Manager) shouldExtract(newMessages []Message, lastTime time.Time) bool {
 	// 冷却期内不提取

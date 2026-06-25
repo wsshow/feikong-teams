@@ -2,9 +2,9 @@ package runtime
 
 import (
 	"context"
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appstate"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"log"

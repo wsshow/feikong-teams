@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	domainmessage "fkteams/internal/domain/message"
@@ -411,9 +411,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			"message":    "处理完成",
 		})
 		ensureSessionMetadataWithStatus(sessionID, currentDisplayText, "completed")
-		if manager != nil {
-			manager.ExtractFromRecorder(recorder, sessionID)
-		}
+		extractChatMemory(manager, recorder, sessionID)
 		return
 	}
 }

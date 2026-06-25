@@ -2,7 +2,6 @@ package appstate
 
 import (
 	"context"
-	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/runtime/resources"
 	"fkteams/log"
 	"fkteams/memory"
@@ -13,13 +12,33 @@ type contextKey struct{}
 
 // MemoryManager 描述运行时需要的长期记忆能力。
 type MemoryManager interface {
+	MemorySearcher
+	MemoryCatalog
+	MemoryExtractor
+	MemoryLifecycle
+}
+
+// MemorySearcher 提供模型上下文注入需要的记忆检索能力。
+type MemorySearcher interface {
 	Search(query string, topK int) []memory.MemoryEntry
-	ExtractFromRecorder(recorder *eventlog.HistoryRecorder, sessionID string)
-	FlushFromRecorder(recorder *eventlog.HistoryRecorder, sessionID string)
+}
+
+// MemoryCatalog 提供管理端需要的记忆维护能力。
+type MemoryCatalog interface {
 	List() []memory.MemoryEntry
 	Delete(summary string) int
 	Count() int
 	Clear()
+}
+
+// MemoryExtractor 提供对话结束后的记忆提取能力。
+type MemoryExtractor interface {
+	ExtractAndStore(ctx context.Context, messages []memory.Message, sessionID string)
+	FlushExtract(ctx context.Context, messages []memory.Message, sessionID string)
+}
+
+// MemoryLifecycle 提供记忆服务生命周期能力。
+type MemoryLifecycle interface {
 	ResetLLM(llm memory.LLMClient)
 	Wait()
 }

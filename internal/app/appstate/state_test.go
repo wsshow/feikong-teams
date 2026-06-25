@@ -1,8 +1,8 @@
 package appstate
 
 import (
+	"context"
 	"errors"
-	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/memory"
 	"testing"
 )
@@ -43,12 +43,12 @@ func TestStateRunProcessCleanupExecutesAndClearsCallbacks(t *testing.T) {
 type fakeMemoryManager struct{}
 
 func (m *fakeMemoryManager) Search(string, int) []memory.MemoryEntry { return nil }
-func (m *fakeMemoryManager) ExtractFromRecorder(*eventlog.HistoryRecorder, string) {
+func (m *fakeMemoryManager) ExtractAndStore(context.Context, []memory.Message, string) {
 }
-func (m *fakeMemoryManager) FlushFromRecorder(*eventlog.HistoryRecorder, string) {}
-func (m *fakeMemoryManager) List() []memory.MemoryEntry                          { return nil }
-func (m *fakeMemoryManager) Delete(string) int                                   { return 0 }
-func (m *fakeMemoryManager) Count() int                                          { return 0 }
-func (m *fakeMemoryManager) Clear()                                              {}
-func (m *fakeMemoryManager) ResetLLM(memory.LLMClient)                           {}
-func (m *fakeMemoryManager) Wait()                                               {}
+func (m *fakeMemoryManager) FlushExtract(context.Context, []memory.Message, string) {}
+func (m *fakeMemoryManager) List() []memory.MemoryEntry                             { return nil }
+func (m *fakeMemoryManager) Delete(string) int                                      { return 0 }
+func (m *fakeMemoryManager) Count() int                                             { return 0 }
+func (m *fakeMemoryManager) Clear()                                                 {}
+func (m *fakeMemoryManager) ResetLLM(memory.LLMClient)                              {}
+func (m *fakeMemoryManager) Wait()                                                  {}

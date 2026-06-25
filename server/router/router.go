@@ -2,7 +2,7 @@
 package router
 
 import (
-	"fkteams/appstate"
+	"fkteams/internal/app/appstate"
 	"fkteams/server/handler"
 	"fkteams/server/middleware"
 	"fkteams/version"

@@ -3,9 +3,9 @@ package handler
 import (
 	"fkteams/agents"
 	agentcommon "fkteams/agents/common"
-	"fkteams/appstate"
 	"fkteams/channels"
 	"fkteams/config"
+	"fkteams/internal/app/appstate"
 	"fkteams/log"
 	"fkteams/memory"
 	"fkteams/tools"

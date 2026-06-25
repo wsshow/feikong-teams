@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fkteams/agents/common"
-	"fkteams/appstate"
+	"fkteams/internal/app/appstate"
 	"fkteams/log"
 	"fkteams/memory"
 )
