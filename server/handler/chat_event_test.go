@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/agentcore"
 	"fkteams/agents/toolmeta"
 	"fkteams/events"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/ask"
 )
 
@@ -23,7 +24,7 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 		CreatedAt:        time.Unix(100, 0).UTC(),
 		MessageID:        "msg_member_1",
 		AgentName:        "event_flow_member",
-		Role:             agentcore.RoleAssistant,
+		Role:             message.RoleAssistant,
 		DeltaKind:        events.DeltaToolArgs,
 		Content:          `{"request":`,
 		ToolCallID:       "tool-call-1",
@@ -36,11 +37,11 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 		MemberOrder:      &toolIndex,
 		ParentToolCallID: "member-call-1",
 		ParentToolName:   "ask_fkagent_parent_member",
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []message.ToolCall{{
 			ID:    "tool-call-1",
 			Index: &toolIndex,
 			Type:  "function",
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name:      toolName,
 				Arguments: `{"request":"hello"}`,
 			},
@@ -91,7 +92,7 @@ func TestConvertEventToMapOmitsStreamMetadataForNonDeltaEvents(t *testing.T) {
 		Type:      events.EventMessageEnd,
 		Sequence:  7,
 		MessageID: "msg_1",
-		Role:      agentcore.RoleAssistant,
+		Role:      message.RoleAssistant,
 		Content:   "done",
 	})
 
@@ -108,7 +109,7 @@ func TestConvertEventToMapKeepsRunAndTurnID(t *testing.T) {
 		Type:   events.EventMessageStart,
 		RunID:  "run-1",
 		TurnID: "run-1:turn:1",
-		Role:   agentcore.RoleAssistant,
+		Role:   message.RoleAssistant,
 	})
 
 	requireMapValue(t, got, "run_id", "run-1")
@@ -140,11 +141,11 @@ func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) 
 		ToolCallRef:   "ref-tool-call-1",
 		ToolName:      "single_tool",
 		ToolCallIndex: &toolIndex,
-		ToolCall: &agentcore.ToolCall{
+		ToolCall: &message.ToolCall{
 			ID:    "tool-call-1",
 			Index: &toolIndex,
 			Type:  "function",
-			Function: agentcore.FunctionCall{
+			Function: message.FunctionCall{
 				Name:      "single_tool",
 				Arguments: `{"ok":true}`,
 			},
@@ -167,9 +168,9 @@ func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) 
 func TestConvertEventToMapDoesNotExposeSingularToolCallForMultipleCalls(t *testing.T) {
 	got := convertEventToMap(events.Event{
 		Type: events.EventMessageEnd,
-		ToolCalls: []agentcore.ToolCall{
-			{ID: "tool-call-1", Function: agentcore.FunctionCall{Name: "first_tool"}},
-			{ID: "tool-call-2", Function: agentcore.FunctionCall{Name: "second_tool"}},
+		ToolCalls: []message.ToolCall{
+			{ID: "tool-call-1", Function: message.FunctionCall{Name: "first_tool"}},
+			{ID: "tool-call-2", Function: message.FunctionCall{Name: "second_tool"}},
 		},
 	})
 
@@ -185,9 +186,9 @@ func TestConvertEventToMapDoesNotExposeSingularToolCallForMultipleCalls(t *testi
 func TestConvertEventToMapUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.T) {
 	got := convertEventToMap(events.Event{
 		Type: events.EventMessageEnd,
-		ToolCalls: []agentcore.ToolCall{
-			{ID: "tool-call-1", Function: agentcore.FunctionCall{Name: "first_tool"}},
-			{ID: "tool-call-2", Function: agentcore.FunctionCall{Name: "second_tool"}},
+		ToolCalls: []message.ToolCall{
+			{ID: "tool-call-1", Function: message.FunctionCall{Name: "first_tool"}},
+			{ID: "tool-call-2", Function: message.FunctionCall{Name: "second_tool"}},
 		},
 		ToolCallRefs: map[int]string{
 			0: "tool_call:tool-call-1",
@@ -204,7 +205,7 @@ func TestConvertEventToMapUsesPositionToolRefsWhenToolCallIndexMissing(t *testin
 }
 
 func TestAskInterruptIDPrefersRootCause(t *testing.T) {
-	got := askInterruptID([]agentcore.Interrupt{
+	got := askInterruptID([]runtimeport.Interrupt{
 		{ID: "wrapper"},
 		{ID: "root", IsRootCause: true, Info: &ask.AskInfo{Question: "choose"}},
 	})
@@ -215,7 +216,7 @@ func TestAskInterruptIDPrefersRootCause(t *testing.T) {
 
 func TestExtractAskInterruptUsesAskRootCauseMetadata(t *testing.T) {
 	order := 2
-	got := extractAskInterrupt([]agentcore.Interrupt{
+	got := extractAskInterrupt([]runtimeport.Interrupt{
 		{ID: "wrapper", IsRootCause: true, Info: "approval"},
 		{
 			ID:             "ask-root",
@@ -261,7 +262,7 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 				Options:     []string{"A", "B"},
 				MultiSelect: true,
 			},
-			Metadata: agentcore.InterruptMetadata{
+			Metadata: runtimeport.InterruptMetadata{
 				MemberCallID:   "member-call-1",
 				MemberToolName: "ask_fkagent_member",
 				MemberName:     "Member",

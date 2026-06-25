@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"fkteams/agentcore"
 	"fkteams/fkenv"
 	"fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/domain/message"
 
 	"github.com/gin-gonic/gin"
 )
@@ -122,7 +122,7 @@ func writeShareableSession(t *testing.T, sessionID, title string) {
 		t.Fatalf("save metadata: %v", err)
 	}
 	recorder := eventlog.NewHistoryRecorder()
-	recorder.RecordUserMessage(agentcore.Message{Role: agentcore.RoleUser, Content: "hello"})
+	recorder.RecordUserMessage(message.Message{Role: message.RoleUser, Content: "hello"})
 	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.HistoryFileName)); err != nil {
 		t.Fatalf("save history: %v", err)
 	}

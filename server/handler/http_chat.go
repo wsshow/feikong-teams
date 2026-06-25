@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"strings"
 
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
 	appchat "fkteams/internal/app/chat"
 	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -82,7 +82,7 @@ func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -103,7 +103,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 			return err
 		}),
 		appchat.WithHistory(recorder),
-		appchat.OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
@@ -129,7 +129,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r agentcore.Runner, r
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
@@ -146,7 +146,7 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r agentcore.Runner, rec
 			return nil
 		}),
 		appchat.WithHistory(recorder),
-		appchat.OnFinish(func(ctx context.Context, _ *agentcore.RunResult, err error) {
+		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
 				finishErrorChat(recorder, sessionID, userDisplayText, err)

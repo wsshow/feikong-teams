@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/agents/toolmeta"
 	"fkteams/appstate"
 	"fkteams/events"
@@ -11,6 +10,7 @@ import (
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/ask"
 	"fmt"
 	"log"
@@ -30,7 +30,7 @@ func ClearRunnerCache() {
 }
 
 // resolveRunner 按 agentName 或 mode 获取 runner
-func resolveRunner(ctx context.Context, mode, agentName string) (agentcore.Runner, error) {
+func resolveRunner(ctx context.Context, mode, agentName string) (runtimeport.Runner, error) {
 	return globalRunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
 }
 
@@ -63,16 +63,16 @@ func attachTurnMeta(data map[string]any, runID string) map[string]any {
 	return data
 }
 
-func attachContentParts(data map[string]any, parts []agentcore.ContentPart) map[string]any {
+func attachContentParts(data map[string]any, parts []domainmessage.ContentPart) map[string]any {
 	if len(parts) > 0 {
-		data["content_parts"] = append([]agentcore.ContentPart(nil), parts...)
+		data["content_parts"] = append([]domainmessage.ContentPart(nil), parts...)
 	}
 	return data
 }
 
-func messageContentParts(message agentcore.Message) []agentcore.ContentPart {
+func messageContentParts(message domainmessage.Message) []domainmessage.ContentPart {
 	if len(message.ContentParts) > 0 {
-		return append([]agentcore.ContentPart(nil), message.ContentParts...)
+		return append([]domainmessage.ContentPart(nil), message.ContentParts...)
 	}
 	return nil
 }
@@ -178,14 +178,14 @@ func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, qu
 	}, runID))
 }
 
-func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string) agentcore.SteeringSource {
-	return func(context.Context) ([]agentcore.Message, error) {
+func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string) runtimeport.SteeringSource {
+	return func(context.Context) ([]domainmessage.Message, error) {
 		queued := stream.TakeSteeringMessages(1)
 		if len(queued) == 0 {
 			return nil, nil
 		}
 		publishQueueUpdated(stream, sessionID)
-		messages := make([]agentcore.Message, 0, len(queued))
+		messages := make([]domainmessage.Message, 0, len(queued))
 		for _, msg := range queued {
 			message := msg.Message()
 			recorder.RecordUserMessage(message)
@@ -320,7 +320,7 @@ func isConnectionClosed(ctx context.Context, err error) bool {
 		strings.Contains(msg, "connection reset")
 }
 
-func extractInterruptMessage(interrupts []agentcore.Interrupt) string {
+func extractInterruptMessage(interrupts []runtimeport.Interrupt) string {
 	var infos []string
 	for _, ic := range interrupts {
 		if ic.IsRootCause && ic.Info != nil {
@@ -375,7 +375,7 @@ func askResponseText(result map[string]any) string {
 }
 
 // extractAskInfo 从中断上下文中提取 ask_questions 信息
-func extractAskInfo(interrupts []agentcore.Interrupt) *ask.AskInfo {
+func extractAskInfo(interrupts []runtimeport.Interrupt) *ask.AskInfo {
 	if interrupt := extractAskInterrupt(interrupts); interrupt != nil {
 		return interrupt.Info
 	}
@@ -388,7 +388,7 @@ type askInterrupt struct {
 	Event events.Event
 }
 
-func extractAskInterrupt(interrupts []agentcore.Interrupt) *askInterrupt {
+func extractAskInterrupt(interrupts []runtimeport.Interrupt) *askInterrupt {
 	for _, ic := range interrupts {
 		if !ic.IsRootCause {
 			continue
@@ -406,7 +406,7 @@ func extractAskInterrupt(interrupts []agentcore.Interrupt) *askInterrupt {
 	return nil
 }
 
-func askInterruptID(interrupts []agentcore.Interrupt) string {
+func askInterruptID(interrupts []runtimeport.Interrupt) string {
 	if interrupt := extractAskInterrupt(interrupts); interrupt != nil && interrupt.ID != "" {
 		return interrupt.ID
 	}
@@ -418,7 +418,7 @@ func askInterruptID(interrupts []agentcore.Interrupt) string {
 	return ""
 }
 
-func interruptMemberEvent(interrupts []agentcore.Interrupt) events.Event {
+func interruptMemberEvent(interrupts []runtimeport.Interrupt) events.Event {
 	for _, ic := range interrupts {
 		if ic.MemberCallID == "" {
 			continue
@@ -428,7 +428,7 @@ func interruptMemberEvent(interrupts []agentcore.Interrupt) events.Event {
 	return events.Event{}
 }
 
-func memberEventFromInterrupt(ic agentcore.Interrupt) events.Event {
+func memberEventFromInterrupt(ic runtimeport.Interrupt) events.Event {
 	if ic.MemberCallID == "" {
 		return events.Event{}
 	}
@@ -442,7 +442,7 @@ func memberEventFromInterrupt(ic agentcore.Interrupt) events.Event {
 	}
 }
 
-func memberEventFromMetadata(metadata agentcore.InterruptMetadata) events.Event {
+func memberEventFromMetadata(metadata runtimeport.InterruptMetadata) events.Event {
 	if metadata.MemberCallID == "" {
 		return events.Event{}
 	}
@@ -716,8 +716,8 @@ type ContentPart struct {
 }
 
 // convertContentParts 将前端传入的多模态内容转换为核心内容部分
-func convertContentParts(parts []ContentPart) []agentcore.ContentPart {
-	result := make([]agentcore.ContentPart, 0, len(parts))
+func convertContentParts(parts []ContentPart) []domainmessage.ContentPart {
+	result := make([]domainmessage.ContentPart, 0, len(parts))
 	for _, p := range parts {
 		switch p.Type {
 		case "text":

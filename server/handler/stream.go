@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
@@ -333,7 +332,7 @@ func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream 
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r agentcore.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
+func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -370,7 +369,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				return ask.WithRuntimeHandler(ctx, buildMemberAskRuntimeHandler(stream, recorder, sessionID))
 			}),
 			appchat.WithContext(func(ctx context.Context) context.Context {
-				return agentcore.WithSteeringSource(ctx, steeringSource)
+				return runtimeport.WithSteeringSource(ctx, steeringSource)
 			},
 			),
 		)
@@ -672,7 +671,7 @@ func StreamEventsHandler() gin.HandlerFunc {
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
 func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) turn.InterruptHandler {
 	channelHandler := turn.ChannelHandler(stream.InterruptCh())
-	return func(ctx context.Context, interrupts []agentcore.Interrupt) (map[string]any, error) {
+	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
 			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)

@@ -90,6 +90,7 @@ lifecycle/                  # 应用生命周期管理
 server/                     # HTTP 服务（Gin）
   router/                   #   路由注册（Web 模式含内嵌前端，API 模式纯接口）
   handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
+                            #   handler 使用 internal/ports/runtime、domain/message 与 app/chat，禁止依赖 agentcore 旧门面
   middleware/               #   CORS / JWT 认证 / API Key 认证 / Body Limit
 channels/                   # 消息通道桥接
   channel.go                #   Channel 接口 + Manager 管理器 + Factory 工厂注册
