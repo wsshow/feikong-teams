@@ -68,11 +68,7 @@ internal/adapters/runtime/
     providers/              #   OpenAI / DeepSeek / Claude / Ollama / Ark / Gemini / Qwen / OpenRouter / Copilot
 internal/adapters/storage/
   file/history/             #   HistoryRecorder、会话 metadata、历史文件读写
-agentcore/                  # 过渡期核心类型导出层，最终收缩到 internal/domain 与 internal/ports
-  types.go                  #   Message / ToolCall / Event / RunOptions / Runner 等协议类型别名
-  agent.go                  #   Agent / Engine 抽象和 ChatAgentConfig / RunnerConfig 别名
-  steering.go               #   SteeringSource context 能力，供运行时在模型调用边界消费转向消息
-  model.go, tool.go         #   ChatModel / Tool 抽象别名
+                            #   agentcore 旧门面已删除，禁止恢复；直接使用 internal/domain 与 internal/ports/runtime
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
   common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）

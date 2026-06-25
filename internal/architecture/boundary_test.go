@@ -47,6 +47,15 @@ func TestInternalLayerBoundaries(t *testing.T) {
 	}
 }
 
+func TestAgentcoreFacadeIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "agentcore")); err == nil {
+		t.Fatal("agentcore facade directory exists; use internal/domain/* and internal/ports/runtime directly")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
