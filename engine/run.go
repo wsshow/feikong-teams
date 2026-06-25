@@ -70,30 +70,11 @@ func (cfg runConfig) prepareHistoryContext(ctx context.Context, input agentcore.
 }
 
 func (cfg runConfig) invokeBeforeRun(ctx context.Context) (agentcore.TurnInput, error) {
-	input := cfg.Input
-	result, err := cfg.hookBus().Invoke(ctx, hooks.Invocation{
-		HookPoint: hooks.HookBeforeRun,
-		Payload:   hooks.BeforeRunPayload{Input: input},
-	})
-	if err != nil {
-		return input, err
-	}
-	if payload, ok := result.Payload.(hooks.BeforeRunPayload); ok {
-		input = payload.Input
-	}
-	return input, nil
+	return cfg.hookBus().InvokeBeforeRun(ctx, cfg.Input)
 }
 
 func (cfg runConfig) invokeAfterRun(ctx context.Context, input agentcore.TurnInput, result *agentcore.RunResult, runErr error) error {
-	_, err := cfg.hookBus().Invoke(ctx, hooks.Invocation{
-		HookPoint: hooks.HookAfterRun,
-		Payload: hooks.AfterRunPayload{
-			Input:  input,
-			Result: result,
-			Error:  runErr,
-		},
-	})
-	return err
+	return cfg.hookBus().InvokeAfterRun(ctx, input, result, runErr)
 }
 
 func (cfg runConfig) hookBus() *hooks.Bus {

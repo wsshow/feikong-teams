@@ -178,26 +178,11 @@ func buildDynamicContext() string {
 
 func invokeBeforeModelRequest(ctx context.Context, input []*schema.Message) ([]*schema.Message, error) {
 	messages := einoruntime.AdaptMessagesFromRunner(input)
-	result, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
-		HookPoint: hooks.HookBeforeModelRequest,
-		Payload:   hooks.BeforeModelRequestPayload{Messages: messages},
-	})
+	messages, err := hooks.FromContext(ctx).InvokeBeforeModelRequest(ctx, messages)
 	if err != nil {
 		return input, err
 	}
-	if result.Action == hooks.ActionReject {
-		if result.Message != "" {
-			return input, fmt.Errorf("model request rejected by hook: %s", result.Message)
-		}
-		return input, fmt.Errorf("model request rejected by hook")
-	}
-	if result.Action == hooks.ActionSkip {
-		return input, fmt.Errorf("model request skipped by hook")
-	}
-	if payload, ok := result.Payload.(hooks.BeforeModelRequestPayload); ok {
-		return einoruntime.AdaptMessagesForRunner(payload.Messages), nil
-	}
-	return input, nil
+	return einoruntime.AdaptMessagesForRunner(messages), nil
 }
 
 func invokeAfterModelResponse(ctx context.Context, output *schema.Message, modelErr error) error {
@@ -205,12 +190,8 @@ func invokeAfterModelResponse(ctx context.Context, output *schema.Message, model
 	if output != nil {
 		message = einoruntime.AdaptMessageFromRunner(output)
 	}
-	_, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
-		HookPoint: hooks.HookAfterModelResponse,
-		Payload: hooks.AfterModelResponsePayload{
-			Message: message,
-			Error:   modelErr,
-		},
+	return hooks.FromContext(ctx).InvokeAfterModelResponse(ctx, hooks.AfterModelResponsePayload{
+		Message: message,
+		Error:   modelErr,
 	})
-	return err
 }

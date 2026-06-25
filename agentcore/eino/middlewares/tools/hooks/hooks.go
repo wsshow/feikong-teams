@@ -3,7 +3,6 @@ package hooks
 
 import (
 	"context"
-	"fmt"
 
 	"fkteams/agentcore"
 	einoruntime "fkteams/agentcore/eino"
@@ -50,31 +49,17 @@ func invokeBeforeTool(ctx context.Context, input *compose.ToolInput) error {
 	if input == nil {
 		return nil
 	}
-	result, err := projecthooks.FromContext(ctx).Invoke(ctx, projecthooks.Invocation{
-		HookPoint: projecthooks.HookBeforeToolCall,
-		Payload: projecthooks.BeforeToolCallPayload{
-			ToolName: input.Name,
-			Args:     input.Arguments,
-			Meta: map[string]any{
-				"call_id": input.CallID,
-			},
+	payload, err := projecthooks.FromContext(ctx).InvokeBeforeToolCall(ctx, projecthooks.BeforeToolCallPayload{
+		ToolName: input.Name,
+		Args:     input.Arguments,
+		Meta: map[string]any{
+			"call_id": input.CallID,
 		},
 	})
 	if err != nil {
 		return err
 	}
-	if result.Action == projecthooks.ActionReject {
-		if result.Message != "" {
-			return fmt.Errorf("tool call rejected by hook: %s", result.Message)
-		}
-		return fmt.Errorf("tool call rejected by hook")
-	}
-	if result.Action == projecthooks.ActionSkip {
-		return fmt.Errorf("tool call skipped by hook")
-	}
-	if payload, ok := result.Payload.(projecthooks.BeforeToolCallPayload); ok {
-		input.Arguments = payload.Args
-	}
+	input.Arguments = payload.Args
 	return nil
 }
 
@@ -82,17 +67,13 @@ func invokeAfterTool(ctx context.Context, input *compose.ToolInput, output strin
 	if input == nil {
 		return nil
 	}
-	_, err := projecthooks.FromContext(ctx).Invoke(ctx, projecthooks.Invocation{
-		HookPoint: projecthooks.HookAfterToolCall,
-		Payload: projecthooks.AfterToolCallPayload{
-			ToolName: input.Name,
-			Args:     input.Arguments,
-			Result:   output,
-			Error:    toolErr,
-			Meta: map[string]any{
-				"call_id": input.CallID,
-			},
+	return projecthooks.FromContext(ctx).InvokeAfterToolCall(ctx, projecthooks.AfterToolCallPayload{
+		ToolName: input.Name,
+		Args:     input.Arguments,
+		Result:   output,
+		Error:    toolErr,
+		Meta: map[string]any{
+			"call_id": input.CallID,
 		},
 	})
-	return err
 }

@@ -35,5 +35,6 @@
 - 会话运行必须经过 `engine.Session`，由 `runConfig` 统一装配 context、历史记录、HITL 处理器和 hooks。
 - `Session.OnInterrupt` 未设置时使用固定拒绝决策，避免无处理器时卡住。
 - hooks 默认带超时、panic recover 和错误策略；前置 hooks 默认失败即停止，后置和事件 hooks 默认告警后继续。
+- 业务代码优先使用 `hooks.Bus` 的类型化方法触发扩展点，例如 `InvokeBeforeRun`、`InvokeEvent`、`InvokeBeforeToolCall` 和 `InvokeBeforeModelRequest`；只有新增扩展点时才直接构造底层 `Invocation`。
 - 所有运行时事件必须转换为 `agentcore.Event`，事件类型使用 `agentcore/types.go` 和 `events/types.go` 中的常量。
 - checkpoint、history、memory 等状态能力通过接口传入，不允许运行时适配层直接耦合入口层存储实现。

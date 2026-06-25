@@ -60,17 +60,11 @@ func IsMemberEvent(event Event) bool {
 // DispatchEvent 标准化事件并发送到 context 回调。
 func DispatchEvent(ctx context.Context, event Event) error {
 	event = NormalizeEvent(event)
-	result, err := hooks.FromContext(ctx).Invoke(ctx, hooks.Invocation{
-		HookPoint: hooks.HookOnEvent,
-		Payload:   hooks.EventPayload{Event: event},
-	})
+	event, emit, err := hooks.FromContext(ctx).InvokeEvent(ctx, event)
 	if err != nil {
 		return err
 	}
-	if payload, ok := result.Payload.(hooks.EventPayload); ok {
-		event = payload.Event
-	}
-	if result.Action == hooks.ActionSkip || result.Action == hooks.ActionReject {
+	if !emit {
 		return nil
 	}
 	if cb := getCallback(ctx); cb != nil {
