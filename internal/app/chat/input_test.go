@@ -1,8 +1,8 @@
 package chat
 
 import (
-	"fkteams/agentcore"
 	"fkteams/events/log"
+	domainmessage "fkteams/internal/domain/message"
 	"fkteams/memory"
 	"strings"
 	"testing"
@@ -37,7 +37,7 @@ func TestBuildTurnInputWithMemoryInjectsMemoryContext(t *testing.T) {
 	if manager.query != "hello" || manager.topK != 5 {
 		t.Fatalf("search query = %q/%d, want hello/5", manager.query, manager.topK)
 	}
-	if len(input.Context) == 0 || input.Context[0].Role != agentcore.RoleSystem {
+	if len(input.Context) == 0 || input.Context[0].Role != domainmessage.RoleSystem {
 		t.Fatalf("context = %#v, want memory system message", input.Context)
 	}
 	if !strings.Contains(input.Context[0].Content, "用户偏好中文回复") {
@@ -47,7 +47,7 @@ func TestBuildTurnInputWithMemoryInjectsMemoryContext(t *testing.T) {
 
 func TestBuildMultimodalTurnInputReturnsDisplayText(t *testing.T) {
 	recorder := eventlog.NewHistoryRecorder()
-	parts := []agentcore.ContentPart{TextPart("describe this")}
+	parts := []domainmessage.ContentPart{TextPart("describe this")}
 
 	input := BuildMultimodalTurnInput(recorder, "describe this", parts)
 
@@ -82,12 +82,12 @@ func (m *testMemoryManager) Wait()                                              
 
 func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 	recorder := eventlog.NewHistoryRecorder()
-	parts := []agentcore.ContentPart{
+	parts := []domainmessage.ContentPart{
 		TextPart("describe this"),
 		ImageURLPart("https://example.com/a.png", "high"),
 	}
-	recorder.RecordUserMessage(agentcore.Message{
-		Role:         agentcore.RoleUser,
+	recorder.RecordUserMessage(domainmessage.Message{
+		Role:         domainmessage.RoleUser,
 		ContentParts: parts,
 	})
 
@@ -96,7 +96,7 @@ func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 		t.Fatal("expected history context")
 	}
 	historyMessage := input.Context[0]
-	if historyMessage.Role != agentcore.RoleUser {
+	if historyMessage.Role != domainmessage.RoleUser {
 		t.Fatalf("history role = %q, want user", historyMessage.Role)
 	}
 	if len(historyMessage.ContentParts) != 0 {
@@ -128,8 +128,8 @@ func TestAgentMessageToSchemaMessagesIncludesCancellationNotice(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages))
 	}
-	if messages[0].Role != agentcore.RoleAssistant {
-		t.Fatalf("role = %q, want %q", messages[0].Role, agentcore.RoleAssistant)
+	if messages[0].Role != domainmessage.RoleAssistant {
+		t.Fatalf("role = %q, want %q", messages[0].Role, domainmessage.RoleAssistant)
 	}
 	if !strings.Contains(messages[0].Content, "用户刚才取消了上一轮任务") {
 		t.Fatalf("content = %q, want cancellation notice", messages[0].Content)
@@ -149,8 +149,8 @@ func TestAgentMessageToSchemaMessagesMarksCancelledAssistantOutput(t *testing.T)
 	if len(messages) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages))
 	}
-	if messages[0].Role != agentcore.RoleAssistant {
-		t.Fatalf("role = %q, want %q", messages[0].Role, agentcore.RoleAssistant)
+	if messages[0].Role != domainmessage.RoleAssistant {
+		t.Fatalf("role = %q, want %q", messages[0].Role, domainmessage.RoleAssistant)
 	}
 	if !strings.Contains(messages[0].Content, "[用户取消]") {
 		t.Fatalf("content = %q, want cancellation marker", messages[0].Content)

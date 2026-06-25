@@ -35,6 +35,7 @@ internal/app/               # 应用用例层，入口只调用这里
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
   schedule/                 #   定时任务执行用例，调度任务通过 chat service 执行
+                            #   用例层禁止依赖 agentcore 旧门面
 internal/runtime/           # 运行时无关内核
   turn/                     #   回合执行内核、HITL handler、hooks/context 装配
   registry/                 #   runtime engine 注册表和默认 runtime 选择

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events/log"
 	"fkteams/fkenv"
@@ -21,19 +20,19 @@ func BuildTurnInput(recorder *eventlog.HistoryRecorder, userInput string) domain
 
 // BuildTurnInputWithMemory 构建一轮输入并按需注入长期记忆。
 func BuildTurnInputWithMemory(recorder *eventlog.HistoryRecorder, userInput string, manager appstate.MemoryManager) domainmessage.TurnInput {
-	var contextMessages []agentcore.Message
+	var contextMessages []domainmessage.Message
 
 	// 注入长期记忆
 	if manager != nil {
 		memories := manager.Search(userInput, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			contextMessages = append(contextMessages, agentcore.Message{Role: agentcore.RoleSystem, Content: memCtx})
+			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memCtx})
 		}
 	}
 
 	// 对话历史
 	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
-	message := agentcore.Message{Role: agentcore.RoleUser, Content: userInput}
+	message := domainmessage.Message{Role: domainmessage.RoleUser, Content: userInput}
 
 	if debugContextEnabled() {
 		logMessages("BuildTurnInput", append(contextMessages, message))
@@ -45,26 +44,26 @@ func BuildTurnInputWithMemory(recorder *eventlog.HistoryRecorder, userInput stri
 }
 
 // BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
-func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []agentcore.ContentPart) domainmessage.TurnInput {
+func BuildMultimodalTurnInput(recorder *eventlog.HistoryRecorder, textContent string, parts []domainmessage.ContentPart) domainmessage.TurnInput {
 	return BuildMultimodalTurnInputWithMemory(recorder, textContent, parts, nil)
 }
 
 // BuildMultimodalTurnInputWithMemory 构建多模态输入并按需注入长期记忆。
-func BuildMultimodalTurnInputWithMemory(recorder *eventlog.HistoryRecorder, textContent string, parts []agentcore.ContentPart, manager appstate.MemoryManager) domainmessage.TurnInput {
-	var contextMessages []agentcore.Message
+func BuildMultimodalTurnInputWithMemory(recorder *eventlog.HistoryRecorder, textContent string, parts []domainmessage.ContentPart, manager appstate.MemoryManager) domainmessage.TurnInput {
+	var contextMessages []domainmessage.Message
 
 	// 注入长期记忆（使用文本部分进行搜索）
 	if manager != nil {
 		memories := manager.Search(textContent, 5)
 		if memCtx := memory.BuildMemoryContext(memories); memCtx != "" {
-			contextMessages = append(contextMessages, agentcore.Message{Role: agentcore.RoleSystem, Content: memCtx})
+			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memCtx})
 		}
 	}
 
 	// 对话历史
 	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
-	message := agentcore.Message{
-		Role:         agentcore.RoleUser,
+	message := domainmessage.Message{
+		Role:         domainmessage.RoleUser,
 		ContentParts: parts,
 	}
 
@@ -78,64 +77,64 @@ func BuildMultimodalTurnInputWithMemory(recorder *eventlog.HistoryRecorder, text
 }
 
 // TextPart 创建文本内容部分
-func TextPart(text string) agentcore.ContentPart {
-	return agentcore.ContentPart{
-		Type: agentcore.ContentPartText,
+func TextPart(text string) domainmessage.ContentPart {
+	return domainmessage.ContentPart{
+		Type: domainmessage.ContentPartText,
 		Text: text,
 	}
 }
 
 // ImageURLPart 创建图片 URL 内容部分
-func ImageURLPart(url string, detail ...string) agentcore.ContentPart {
+func ImageURLPart(url string, detail ...string) domainmessage.ContentPart {
 	d := "auto"
 	if len(detail) > 0 {
 		d = detail[0]
 	}
-	return agentcore.ContentPart{
-		Type:   agentcore.ContentPartImageURL,
+	return domainmessage.ContentPart{
+		Type:   domainmessage.ContentPartImageURL,
 		URL:    url,
 		Detail: d,
 	}
 }
 
 // ImageBase64Part 创建 Base64 编码图片内容部分
-func ImageBase64Part(base64Data, mimeType string) agentcore.ContentPart {
-	return agentcore.ContentPart{
-		Type:       agentcore.ContentPartImageURL,
+func ImageBase64Part(base64Data, mimeType string) domainmessage.ContentPart {
+	return domainmessage.ContentPart{
+		Type:       domainmessage.ContentPartImageURL,
 		Base64Data: base64Data,
 		MIMEType:   mimeType,
 	}
 }
 
 // AudioURLPart 创建音频 URL 内容部分
-func AudioURLPart(url string) agentcore.ContentPart {
-	return agentcore.ContentPart{
-		Type: agentcore.ContentPartAudioURL,
+func AudioURLPart(url string) domainmessage.ContentPart {
+	return domainmessage.ContentPart{
+		Type: domainmessage.ContentPartAudioURL,
 		URL:  url,
 	}
 }
 
 // VideoURLPart 创建视频 URL 内容部分
-func VideoURLPart(url string) agentcore.ContentPart {
-	return agentcore.ContentPart{
-		Type: agentcore.ContentPartVideoURL,
+func VideoURLPart(url string) domainmessage.ContentPart {
+	return domainmessage.ContentPart{
+		Type: domainmessage.ContentPartVideoURL,
 		URL:  url,
 	}
 }
 
 // FileURLPart 创建文件 URL 内容部分
-func FileURLPart(url string) agentcore.ContentPart {
-	return agentcore.ContentPart{
-		Type: agentcore.ContentPartFileURL,
+func FileURLPart(url string) domainmessage.ContentPart {
+	return domainmessage.ContentPart{
+		Type: domainmessage.ContentPartFileURL,
 		URL:  url,
 	}
 }
 
 // ExtractTextFromParts 从多模态内容中提取纯文本
-func ExtractTextFromParts(parts []agentcore.ContentPart) string {
+func ExtractTextFromParts(parts []domainmessage.ContentPart) string {
 	var texts []string
 	for _, p := range parts {
-		if p.Type == agentcore.ContentPartText && p.Text != "" {
+		if p.Type == domainmessage.ContentPartText && p.Text != "" {
 			texts = append(texts, p.Text)
 		}
 	}
@@ -143,14 +142,14 @@ func ExtractTextFromParts(parts []agentcore.ContentPart) string {
 }
 
 // buildHistoryMessages 构建结构化历史消息列表
-func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []agentcore.Message {
+func buildHistoryMessages(recorder *eventlog.HistoryRecorder) []domainmessage.Message {
 	agentMessages := recorder.GetMessages()
 	summaryText, summarizedCount := recorder.GetSummary()
 
-	var messages []agentcore.Message
+	var messages []domainmessage.Message
 
 	if summaryText != "" && summarizedCount > 0 {
-		messages = append(messages, agentcore.Message{Role: agentcore.RoleSystem, Content: "## 对话历史摘要\n" + summaryText + "\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。"})
+		messages = append(messages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: "## 对话历史摘要\n" + summaryText + "\n\n以上对话均已处理完毕，请仅回答用户当前的最新问题。"})
 
 		// 摘要未覆盖的最近记录
 		for i, msg := range agentMessages[summarizedCount:] {
@@ -171,7 +170,7 @@ func debugContextEnabled() bool {
 }
 
 // logMessages 打印消息列表摘要
-func logMessages(tag string, msgs []agentcore.Message) {
+func logMessages(tag string, msgs []domainmessage.Message) {
 	totalChars := 0
 	for _, m := range msgs {
 		totalChars += len(m.Content)
@@ -196,7 +195,7 @@ func logMessages(tag string, msgs []agentcore.Message) {
 			}
 			continue
 		}
-		if m.Role == agentcore.RoleTool {
+		if m.Role == domainmessage.RoleTool {
 			log.Debugf("  [%d] %-10s | %s%s", i+1, "tool_result", preview, extra)
 			continue
 		}
@@ -226,10 +225,10 @@ func truncatePreview(s string, n int) string {
 
 // agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
-func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []agentcore.Message {
+func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []domainmessage.Message {
 	if msg.AgentName == "用户" {
 		var text strings.Builder
-		var parts []agentcore.ContentPart
+		var parts []domainmessage.ContentPart
 		for _, event := range msg.Events {
 			if event.Type != eventlog.MsgTypeText {
 				continue
@@ -246,10 +245,10 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []a
 			}
 			content += notice
 		}
-		return []agentcore.Message{{Role: agentcore.RoleUser, Content: content}}
+		return []domainmessage.Message{{Role: domainmessage.RoleUser, Content: content}}
 	}
 
-	var messages []agentcore.Message
+	var messages []domainmessage.Message
 	var textBuf strings.Builder
 	var reasoningBuf strings.Builder
 
@@ -261,7 +260,7 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []a
 		if content == "" && reasoning == "" {
 			return
 		}
-		m := agentcore.Message{Role: agentcore.RoleAssistant, Content: content}
+		m := domainmessage.Message{Role: domainmessage.RoleAssistant, Content: content}
 		m.Name = msg.AgentName
 		if reasoning != "" {
 			m.ReasoningContent = reasoning
@@ -284,16 +283,16 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []a
 			}
 			flushText()
 			// AssistantMessage 携带 ToolCall
-			messages = append(messages, agentcore.Message{Role: agentcore.RoleAssistant, ToolCalls: []agentcore.ToolCall{{
+			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				ID:   tc.ID,
 				Type: "function",
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      tc.Name,
 					Arguments: tc.Arguments,
 				},
 			}}})
 			// ToolMessage 携带结果
-			messages = append(messages, agentcore.Message{Role: agentcore.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
+			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
 
 		case eventlog.MsgTypeAction:
 			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
@@ -312,11 +311,11 @@ func agentMessageToCoreMessages(msg eventlog.AgentMessage, messageIndex int) []a
 	return messages
 }
 
-func omittedContentPartsNotice(parts []agentcore.ContentPart, refs []eventlog.AttachmentRef) string {
-	counts := map[agentcore.ContentPartType]int{}
+func omittedContentPartsNotice(parts []domainmessage.ContentPart, refs []eventlog.AttachmentRef) string {
+	counts := map[domainmessage.ContentPartType]int{}
 	total := 0
 	for _, part := range parts {
-		if part.Type == agentcore.ContentPartText || part.Type == "" {
+		if part.Type == domainmessage.ContentPartText || part.Type == "" {
 			continue
 		}
 		counts[part.Type]++
@@ -326,16 +325,16 @@ func omittedContentPartsNotice(parts []agentcore.ContentPart, refs []eventlog.At
 		return ""
 	}
 	var labels []string
-	if n := counts[agentcore.ContentPartImageURL]; n > 0 {
+	if n := counts[domainmessage.ContentPartImageURL]; n > 0 {
 		labels = append(labels, fmt.Sprintf("%d 张图片", n))
 	}
-	if n := counts[agentcore.ContentPartAudioURL]; n > 0 {
+	if n := counts[domainmessage.ContentPartAudioURL]; n > 0 {
 		labels = append(labels, fmt.Sprintf("%d 段音频", n))
 	}
-	if n := counts[agentcore.ContentPartVideoURL]; n > 0 {
+	if n := counts[domainmessage.ContentPartVideoURL]; n > 0 {
 		labels = append(labels, fmt.Sprintf("%d 段视频", n))
 	}
-	if n := counts[agentcore.ContentPartFileURL]; n > 0 {
+	if n := counts[domainmessage.ContentPartFileURL]; n > 0 {
 		labels = append(labels, fmt.Sprintf("%d 个文件", n))
 	}
 	if len(labels) == 0 {

@@ -3,10 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
-	"fkteams/agentcore"
 	"fkteams/agents/custom"
 	"fkteams/agents/toolmeta"
 	"fkteams/config"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	runtimeregistry "fkteams/internal/runtime/registry"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 	engine := &runnerTestEngine{}
 	restoreRuntime(t, "runner-test-build-tools", engine)
 
-	agents := []agentcore.Agent{
+	agents := []runtimeport.Agent{
 		runnerTestAgent{name: "成员 A"},
 		runnerTestAgent{name: "成员 A"},
 	}
@@ -121,7 +122,7 @@ func TestCustomModeratorPromptUsesDefaultAndAppendsToolSection(t *testing.T) {
 	}
 }
 
-func restoreRuntime(t *testing.T, name string, engine agentcore.Engine) {
+func restoreRuntime(t *testing.T, name string, engine runtimeport.Engine) {
 	t.Helper()
 	original := runtimeregistry.DefaultName()
 	runtimeregistry.Register(name, engine)
@@ -144,42 +145,42 @@ func (a runnerTestAgent) Description() string { return a.name + " description" }
 
 type runnerTestRunner struct{}
 
-func (runnerTestRunner) Run(context.Context, agentcore.TurnInput, agentcore.RunOptions) (*agentcore.RunResult, error) {
-	return &agentcore.RunResult{}, nil
+func (runnerTestRunner) Run(context.Context, domainmessage.TurnInput, runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+	return &runtimeport.RunResult{}, nil
 }
 
 type runnerTestTool struct {
 	name string
 }
 
-func (t runnerTestTool) Info(context.Context) (*agentcore.ToolInfo, error) {
-	return &agentcore.ToolInfo{Name: t.name}, nil
+func (t runnerTestTool) Info(context.Context) (*runtimeport.ToolInfo, error) {
+	return &runtimeport.ToolInfo{Name: t.name}, nil
 }
 
-func (t runnerTestTool) Invoke(context.Context, agentcore.ToolInvocation) (*agentcore.ToolResult, error) {
-	return &agentcore.ToolResult{}, nil
+func (t runnerTestTool) Invoke(context.Context, runtimeport.ToolInvocation) (*runtimeport.ToolResult, error) {
+	return &runtimeport.ToolResult{}, nil
 }
 
 type runnerTestEngine struct {
-	runner    agentcore.Runner
-	runnerCfg agentcore.RunnerConfig
+	runner    runtimeport.Runner
+	runnerCfg runtimeport.RunnerConfig
 	runnerErr error
 	toolNames []string
 }
 
-func (e *runnerTestEngine) NewChatModelAgent(context.Context, *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
+func (e *runnerTestEngine) NewChatModelAgent(context.Context, *runtimeport.ChatAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (e *runnerTestEngine) NewLoopAgent(context.Context, *agentcore.LoopAgentConfig) (agentcore.Agent, error) {
+func (e *runnerTestEngine) NewLoopAgent(context.Context, *runtimeport.LoopAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (e *runnerTestEngine) NewDeepAgent(context.Context, *agentcore.DeepAgentConfig) (agentcore.Agent, error) {
+func (e *runnerTestEngine) NewDeepAgent(context.Context, *runtimeport.DeepAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
 }
 
-func (e *runnerTestEngine) NewRunner(_ context.Context, cfg agentcore.RunnerConfig) (agentcore.Runner, error) {
+func (e *runnerTestEngine) NewRunner(_ context.Context, cfg runtimeport.RunnerConfig) (runtimeport.Runner, error) {
 	e.runnerCfg = cfg
 	if e.runnerErr != nil {
 		return nil, e.runnerErr
@@ -190,8 +191,8 @@ func (e *runnerTestEngine) NewRunner(_ context.Context, cfg agentcore.RunnerConf
 	return e.runner, nil
 }
 
-func (e *runnerTestEngine) NewAgentTools(_ context.Context, subAgents []agentcore.Agent, cfg agentcore.AgentToolConfig) ([]agentcore.Tool, error) {
-	tools := make([]agentcore.Tool, 0, len(subAgents))
+func (e *runnerTestEngine) NewAgentTools(_ context.Context, subAgents []runtimeport.Agent, cfg runtimeport.AgentToolConfig) ([]runtimeport.Tool, error) {
+	tools := make([]runtimeport.Tool, 0, len(subAgents))
 	for i, agent := range subAgents {
 		name := cfg.ToolName(agent.Name(), i)
 		e.toolNames = append(e.toolNames, name)

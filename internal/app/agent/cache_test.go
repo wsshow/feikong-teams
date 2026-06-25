@@ -3,7 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"sync"
 	"testing"
 )
@@ -12,14 +13,14 @@ type cacheRunnerStub struct {
 	_ byte
 }
 
-func (cacheRunnerStub) Run(context.Context, agentcore.TurnInput, agentcore.RunOptions) (*agentcore.RunResult, error) {
-	return &agentcore.RunResult{}, nil
+func (cacheRunnerStub) Run(context.Context, domainmessage.TurnInput, runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+	return &runtimeport.RunResult{}, nil
 }
 
 func TestCacheGetOrCreateReusesRunner(t *testing.T) {
 	cache := NewCache()
 	calls := 0
-	factory := func() (agentcore.Runner, error) {
+	factory := func() (runtimeport.Runner, error) {
 		calls++
 		return &cacheRunnerStub{}, nil
 	}
@@ -43,7 +44,7 @@ func TestCacheGetOrCreateReusesRunner(t *testing.T) {
 
 func TestCacheClearRebuildsRunner(t *testing.T) {
 	cache := NewCache()
-	factory := func() (agentcore.Runner, error) {
+	factory := func() (runtimeport.Runner, error) {
 		return &cacheRunnerStub{}, nil
 	}
 
@@ -65,7 +66,7 @@ func TestCacheClearRebuildsRunner(t *testing.T) {
 func TestCacheGetOrCreateDoesNotCacheErrors(t *testing.T) {
 	cache := NewCache()
 	calls := 0
-	factory := func() (agentcore.Runner, error) {
+	factory := func() (runtimeport.Runner, error) {
 		calls++
 		if calls == 1 {
 			return nil, errors.New("temporary")
@@ -89,14 +90,14 @@ func TestCacheGetOrCreateRunsSingleFactoryConcurrently(t *testing.T) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	calls := 0
-	factory := func() (agentcore.Runner, error) {
+	factory := func() (runtimeport.Runner, error) {
 		calls++
 		<-start
 		return &cacheRunnerStub{}, nil
 	}
 
 	const workers = 5
-	results := make(chan agentcore.Runner, workers)
+	results := make(chan runtimeport.Runner, workers)
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
@@ -113,7 +114,7 @@ func TestCacheGetOrCreateRunsSingleFactoryConcurrently(t *testing.T) {
 	wg.Wait()
 	close(results)
 
-	var first agentcore.Runner
+	var first runtimeport.Runner
 	for r := range results {
 		if first == nil {
 			first = r
