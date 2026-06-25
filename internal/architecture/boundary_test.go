@@ -56,6 +56,18 @@ func TestAgentcoreFacadeIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootMainPackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "main.go")); err == nil {
+		t.Fatal("root main.go exists; command entrypoint belongs under cmd/fkteams")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "cmd", "fkteams", "main.go")); err != nil {
+		t.Fatalf("cmd/fkteams/main.go is required: %v", err)
+	}
+}
+
 func TestRootLifecyclePackageIsRemoved(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	if _, err := os.Stat(filepath.Join(root, "lifecycle")); err == nil {

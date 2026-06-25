@@ -57,7 +57,10 @@ fkteams -m group
 ### 从源码编译运行
 
 ```bash
-make build
+make native
+
+# 也可以直接从源码启动
+go run ./cmd/fkteams web
 
 # Web界面模式
 ./release/fkteams_darwin_arm64 web

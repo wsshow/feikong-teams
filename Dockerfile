@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X 'fkteams/internal/app/version.version=$(cat VERSION 2>/dev/null || echo dev)'" \
-    -o fkteams ./main.go
+    -o fkteams ./cmd/fkteams
 
 # ---- 运行阶段 ----
 FROM alpine:3.21

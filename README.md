@@ -157,6 +157,9 @@ git clone https://github.com/wsshow/feikong-teams.git
 cd feikong-teams
 make native
 
+# 源码直接运行
+go run ./cmd/fkteams web
+
 # 或指定平台 / 构建预设平台
 make build t=linux:amd64
 make all

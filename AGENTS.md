@@ -8,9 +8,9 @@
 # 开发
 go build ./...                          # 编译检查
 go vet ./...                            # 静态检查
-go run .                                # 启动 CLI 聊天
-go run . web                            # 启动 Web 服务（默认 :23456）
-go run . serve                          # 启动纯 API 服务
+go run ./cmd/fkteams                    # 启动 CLI 聊天
+go run ./cmd/fkteams web                # 启动 Web 服务（默认 :23456）
+go run ./cmd/fkteams serve              # 启动纯 API 服务
 
 # 构建
 make native                             # 当前平台 -> release/fkteams_<goos>_<goarch>
@@ -19,13 +19,13 @@ make build t=linux:amd64                # 指定平台
 make clean                              # 清理 release/
 
 # 生成配置示例
-go run . generate config
+go run ./cmd/fkteams generate config
 ```
 
 ## 项目架构
 
 ```
-main.go                     # 入口，调用 internal/adapters/transport/cli/commands.Root().Run()
+cmd/fkteams/main.go         # 入口，调用 internal/adapters/transport/cli/commands.Root().Run()
 internal/app/               # 应用用例层，入口只调用这里
   config/                   #   TOML 配置加载、保存、热重载和示例生成
   version/                  #   应用版本和构建时间元数据

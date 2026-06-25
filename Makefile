@@ -34,7 +34,7 @@ build:
 		if [ "$${os}" = "windows" ]; then suffix=".exe"; fi; \
 		output_name="./release/${Name}_$${os}_$${arch}$${suffix}"; \
 		echo "正在编译: $${os}/$${arch}..."; \
-		env CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} go build -trimpath $(LDFlags) -o $${output_name} ./main.go || exit $$?;\
+		env CGO_ENABLED=0 GOOS=$${os} GOARCH=$${arch} go build -trimpath $(LDFlags) -o $${output_name} ./cmd/fkteams || exit $$?;\
 		echo "编译完成: $${output_name}";\
 	)
 
