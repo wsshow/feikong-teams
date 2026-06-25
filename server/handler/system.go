@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fkteams/lifecycle"
+	"fkteams/internal/app/lifecycle"
 
 	"github.com/gin-gonic/gin"
 )

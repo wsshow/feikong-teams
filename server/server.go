@@ -9,7 +9,8 @@ import (
 	_ "fkteams/channels/qq"
 	_ "fkteams/channels/weixin"
 	"fkteams/config"
-	"fkteams/lifecycle"
+	"fkteams/internal/app/lifecycle"
+	bootstrapservices "fkteams/internal/bootstrap/services"
 	"fkteams/log"
 	"fkteams/server/handler"
 	"fkteams/server/router"
@@ -128,10 +129,10 @@ func run(mode serverMode, opts *ServeOptions) error {
 	lifecycle.SetShutdownFunc(func() { app.Shutdown() })
 
 	if appCfg.MemoryEnabled {
-		app.RegisterService(lifecycle.NewMemoryService(appCfg.WorkspaceDir, state))
+		app.RegisterService(bootstrapservices.NewMemoryService(appCfg.WorkspaceDir, state))
 	}
 	if appCfg.SchedulerEnabled {
-		app.RegisterService(lifecycle.NewSchedulerService(appCfg.SchedulerDir))
+		app.RegisterService(bootstrapservices.NewSchedulerService(appCfg.SchedulerDir))
 	}
 
 	host := "127.0.0.1"

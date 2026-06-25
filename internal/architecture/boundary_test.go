@@ -56,6 +56,15 @@ func TestAgentcoreFacadeIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRootLifecyclePackageIsRemoved(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "lifecycle")); err == nil {
+		t.Fatal("root lifecycle package exists; use internal/app/lifecycle and internal/bootstrap/services")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 func assertBoundary(t *testing.T, rel, importPath string) {
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
@@ -94,6 +103,9 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"github.com/gin-gonic/gin",
 		}
 		assertNotImported(t, rel, importPath, forbidden)
+	}
+	if importPath == "fkteams/lifecycle" {
+		t.Errorf("%s imports removed root lifecycle package; use internal/app/lifecycle", rel)
 	}
 }
 

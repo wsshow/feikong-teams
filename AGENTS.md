@@ -38,6 +38,7 @@ internal/app/               # 应用用例层，入口只调用这里
     taskstream/             #   运行中任务事件流、队列、interrupt 状态管理
   agent/                    #   Runner 工厂、团队组装和 mode/agentName 解析
   schedule/                 #   定时任务用例入口，工具/HTTP/CLI 只调用这里
+  lifecycle/                #   Application 生命周期编排内核
                             #   用例层禁止依赖 agentcore 旧门面
 internal/domain/
   schedule/                 #   Task / Status / HistoryEntry 等调度领域模型
@@ -69,6 +70,7 @@ internal/adapters/runtime/
 internal/adapters/storage/
   file/history/             #   HistoryRecorder、会话 metadata、历史文件读写
                             #   agentcore 旧门面已删除，禁止恢复；直接使用 internal/domain 与 internal/ports/runtime
+internal/bootstrap/services/ #  组合层后台服务实现（memory / scheduler）
 agents/                     # 智能体系统
   registry.go               #   AgentInfo 注册表，延迟加载，按配置启用基础/可选/自定义智能体
   common/builder.go         #   AgentBuilder 构建器（WithTools / WithToolNames / WithSummary / WithSkills / Build）
@@ -81,9 +83,6 @@ tools/                      # 工具系统
   metadata.go               #   ClassifyTools() — 标记只读/破坏性工具
                             #   定时任务工具适配器位于 internal/adapters/tools/builtin/scheduler
                             #   工具层使用 internal/ports/runtime，禁止再依赖 agentcore 旧门面
-lifecycle/                  # 应用生命周期管理
-  lifecycle.go              #   Application — Init → Setup → Start → Ready → [wait] → Stop → Cleanup
-                            #   Service 接口，服务按序启动、逆序停止（LIFO）
 server/                     # HTTP 服务（Gin）
   router/                   #   路由注册（Web 模式含内嵌前端，API 模式纯接口）
   handler/                  #   请求处理器（chat / websocket / stream / files / sessions / memory / config）
@@ -162,7 +161,7 @@ bootstrap/                  # 应用目录初始化
 
 ### 生命周期
 
-- 新的后台服务实现 `lifecycle.Service` 接口（`Name() / Start() / Stop()`）
+- 新的后台服务实现 `internal/app/lifecycle.Service` 接口（`Name() / Start() / Stop()`），具体组合层服务放在 `internal/bootstrap/services`
 - 服务按注册顺序启动，逆序（LIFO）停止
 
 ### 事件

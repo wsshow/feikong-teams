@@ -1,4 +1,4 @@
-package lifecycle
+package services
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"fkteams/memory"
 )
 
-// MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理
+// MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理。
 type MemoryService struct {
 	workspaceDir string
 	state        *appstate.State

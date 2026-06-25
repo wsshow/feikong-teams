@@ -7,8 +7,9 @@ import (
 	"fkteams/config"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/lifecycle"
+	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/lifecycle"
 	"fmt"
 	"log"
 	"syscall"
@@ -72,13 +73,13 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 	})
 
 	if cfg.MemoryEnabled {
-		app.RegisterService(lifecycle.NewMemoryService(cfg.WorkspaceDir, state))
+		app.RegisterService(bootstrapservices.NewMemoryService(cfg.WorkspaceDir, state))
 		if query != "" {
 			pterm.Info.Println("全局长期记忆已启用")
 		}
 	}
 	if cfg.SchedulerEnabled {
-		app.RegisterService(lifecycle.NewSchedulerService(cfg.SchedulerDir))
+		app.RegisterService(bootstrapservices.NewSchedulerService(cfg.SchedulerDir))
 	}
 
 	var session *cli.Session

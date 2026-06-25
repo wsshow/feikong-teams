@@ -12,8 +12,8 @@ import (
 	"fkteams/events/view"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/lifecycle"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/lifecycle"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"

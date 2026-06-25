@@ -3,7 +3,6 @@ package lifecycle
 import (
 	"context"
 	"errors"
-	"fkteams/appstate"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,18 +232,6 @@ func TestApplicationAccessorsAndShutdownBuffer(t *testing.T) {
 	case sig := <-app.ExitCh():
 		t.Fatalf("Shutdown should not block or enqueue duplicate signal, got %v", sig)
 	default:
-	}
-}
-
-func TestServiceConstructors(t *testing.T) {
-	state := appstate.New()
-	memoryService := NewMemoryService("/tmp/work", state)
-	if memoryService.Name() != "memory" || memoryService.workspaceDir != "/tmp/work" || memoryService.state != state {
-		t.Fatalf("memory service = %#v", memoryService)
-	}
-	schedulerService := NewSchedulerService("/tmp/scheduler")
-	if schedulerService.Name() != "scheduler" || schedulerService.schedulerDir != "/tmp/scheduler" {
-		t.Fatalf("scheduler service = %#v", schedulerService)
 	}
 }
 
