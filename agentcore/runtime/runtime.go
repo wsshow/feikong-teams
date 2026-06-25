@@ -2,12 +2,10 @@ package runtime
 
 import (
 	"fkteams/agentcore"
-	einoengine "fkteams/agentcore/eino/engine"
 	toolmcp "fkteams/tools/mcp"
 	"fmt"
+	"sort"
 	"sync"
-
-	_ "fkteams/agentcore/eino/providers/register"
 )
 
 const DefaultRuntimeName = "eino"
@@ -19,10 +17,6 @@ var registry = struct {
 }{
 	defaultName: DefaultRuntimeName,
 	engines:     make(map[string]agentcore.Engine),
-}
-
-func init() {
-	Register(DefaultRuntimeName, einoengine.NewEngine())
 }
 
 func Engine() agentcore.Engine {
@@ -73,4 +67,15 @@ func EngineByName(name string) (agentcore.Engine, error) {
 		return nil, fmt.Errorf("runtime %s is not registered", name)
 	}
 	return engine, nil
+}
+
+func RegisteredNames() []string {
+	registry.RLock()
+	defer registry.RUnlock()
+	names := make([]string, 0, len(registry.engines))
+	for name := range registry.engines {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

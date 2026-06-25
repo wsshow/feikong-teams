@@ -29,6 +29,30 @@ func NewEngine() *Engine {
 	return &Engine{}
 }
 
+func (e *Engine) RuntimeInfo() agentcore.RuntimeInfo {
+	return agentcore.RuntimeInfo{
+		Name:        "eino",
+		Description: "CloudWeGo Eino ADK runtime adapter",
+		Capabilities: []string{
+			"chat_agent",
+			"loop_agent",
+			"deep_agent",
+			"agent_tools",
+			"streaming_runner",
+			"agent_middlewares",
+			"tool_middlewares",
+			"mcp_tools",
+		},
+	}
+}
+
+func (e *Engine) CheckHealth(ctx context.Context) agentcore.RuntimeHealth {
+	return agentcore.RuntimeHealth{
+		Name:  e.RuntimeInfo().Name,
+		Ready: ctx.Err() == nil,
+	}
+}
+
 func (e *Engine) NewChatModelAgent(ctx context.Context, cfg *agentcore.ChatAgentConfig) (agentcore.Agent, error) {
 	return einoruntime.NewChatModelAgent(ctx, cfg)
 }

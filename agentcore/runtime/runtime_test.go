@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"fkteams/agentcore"
@@ -10,9 +11,9 @@ import (
 func TestRegisterAndUseRuntime(t *testing.T) {
 	original := DefaultName()
 	t.Cleanup(func() {
-		if err := Use(original); err != nil {
-			t.Fatalf("restore runtime: %v", err)
-		}
+		registry.Lock()
+		registry.defaultName = original
+		registry.Unlock()
 	})
 
 	engine := testEngine{}
@@ -28,9 +29,25 @@ func TestRegisterAndUseRuntime(t *testing.T) {
 	}
 }
 
+func TestEngineByNameRequiresExplicitRegistration(t *testing.T) {
+	if _, err := EngineByName("missing-runtime"); err == nil {
+		t.Fatal("expected missing runtime error")
+	}
+}
+
 func TestUseUnknownRuntimeReturnsError(t *testing.T) {
 	if err := Use("missing-runtime"); err == nil {
 		t.Fatal("expected error for missing runtime")
+	}
+}
+
+func TestRegisteredNamesAreSorted(t *testing.T) {
+	Register("z-runtime", testEngine{})
+	Register("a-runtime", testEngine{})
+
+	names := RegisteredNames()
+	if !sort.StringsAreSorted(names) {
+		t.Fatalf("registered names are not sorted: %v", names)
 	}
 }
 

@@ -17,7 +17,7 @@ func TestEinoImportsStayInsideAdapter(t *testing.T) {
 	einoPrefix := "github.com/cloudwego/" + "eino"
 	localAdapterPrefix := "fkteams/agentcore/eino"
 	localAdapterConsumers := []string{
-		filepath.ToSlash(filepath.Join("agentcore", "runtime")) + "/",
+		filepath.ToSlash(filepath.Join("bootstrap", "runtimes")) + "/",
 	}
 
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {

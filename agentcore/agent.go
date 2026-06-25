@@ -110,6 +110,23 @@ type Engine interface {
 	NewAgentTools(ctx context.Context, subAgents []Agent, cfg AgentToolConfig) ([]Tool, error)
 }
 
+type RuntimeInfo struct {
+	Name         string
+	Description  string
+	Capabilities []string
+}
+
+type RuntimeHealth struct {
+	Name    string
+	Ready   bool
+	Message string
+}
+
+type RuntimeInspector interface {
+	RuntimeInfo() RuntimeInfo
+	CheckHealth(ctx context.Context) RuntimeHealth
+}
+
 type ModelDecorator interface {
 	DecorateChatModel(ctx context.Context, model ChatModel) (ChatModel, error)
 }
