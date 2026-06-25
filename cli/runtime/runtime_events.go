@@ -3,7 +3,7 @@ package runtime
 import (
 	"encoding/json"
 
-	"fkteams/agentcore"
+	domainmessage "fkteams/internal/domain/message"
 
 	"fkteams/agents/toolmeta"
 
@@ -313,11 +313,11 @@ func runtimeLikelyPendingAgentToolArgs(event events.Event) bool {
 	return event.ToolCallID != "" || event.ToolCallRef != ""
 }
 
-func runtimeAgentToolCallAliases(tool agentcore.ToolCall) []string {
+func runtimeAgentToolCallAliases(tool domainmessage.ToolCall) []string {
 	return compactRuntimeAliases([]string{tool.ID})
 }
 
-func runtimeAgentToolCallKey(tool agentcore.ToolCall) string {
+func runtimeAgentToolCallKey(tool domainmessage.ToolCall) string {
 	return tool.ID
 }
 

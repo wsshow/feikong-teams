@@ -3,9 +3,9 @@ package runtime
 import (
 	"context"
 
-	"fkteams/agentcore"
 	"fkteams/agents"
 	appagent "fkteams/internal/app/agent"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/ask"
 
 	"fmt"
@@ -31,14 +31,14 @@ const (
 type Runtime struct {
 	ctx         context.Context
 	session     *Session
-	runner      agentcore.Runner
+	runner      runtimeport.Runner
 	executor    *QueryExecutor
 	askBroker   *runtimeAskBroker
 	exitSignals chan os.Signal
 	program     *tea.Program
 }
 
-func NewRuntime(ctx context.Context, session *Session, r agentcore.Runner, exitSignals chan os.Signal) *Runtime {
+func NewRuntime(ctx context.Context, session *Session, r runtimeport.Runner, exitSignals chan os.Signal) *Runtime {
 	executor := NewQueryExecutor(r, session.queryState)
 	executor.SetMemoryManager(session.memory)
 	return &Runtime{

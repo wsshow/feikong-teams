@@ -3,11 +3,11 @@ package commands
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/cli"
 	"fkteams/config"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/lifecycle"
 	"fmt"
 	"log"
@@ -58,7 +58,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 		return nil
 	})
 
-	var r agentcore.Runner
+	var r runtimeport.Runner
 	app.OnSetup(func(ctx context.Context) error {
 		var err error
 		r, err = createModeRunner(ctx, currentMode)
@@ -134,7 +134,7 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 }
 
 // createModeRunner 根据工作模式创建对应的 Runner
-func createModeRunner(ctx context.Context, mode cli.WorkMode) (agentcore.Runner, error) {
+func createModeRunner(ctx context.Context, mode cli.WorkMode) (runtimeport.Runner, error) {
 	switch mode {
 	case cli.ModeTeam:
 		return appagent.CreateTeamRunner(ctx)

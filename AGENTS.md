@@ -31,6 +31,7 @@ commands/                   # CLI 命令定义（urfave/cli/v3）
   chat.go, web.go, serve.go #   聊天 / Web 服务 / API 服务
   session.go, agent.go      #   会话和智能体管理
   skill/                    #   技能安装、移除、搜索
+                            #   CLI 命令层使用 internal/ports/runtime 和 domain/message
 internal/app/               # 应用用例层，入口只调用这里
   appdata/                  #   应用数据目录、workspace/session/share/runtime 路径
   chat/                     #   RunTurn / 输入构建 / 入口上下文装配
@@ -113,6 +114,7 @@ fkenv/                      # 环境变量读取
 log/                        # 日志配置（lumberjack 轮转）
 tui/                        # 终端 UI 组件与 Markdown 渲染
 cli/                        # CLI 交互循环
+                            #   CLI runtime 使用 internal/ports/runtime 和 domain/message，禁止依赖 agentcore 旧门面
 mdiff/                      # 文件差异/补丁
 bootstrap/                  # 应用目录初始化
 ```

@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	cliruntime "fkteams/cli/runtime"
 	"fkteams/events"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 )
 
 type ModeRunnerCreator = cliruntime.ModeRunnerCreator
@@ -28,7 +28,7 @@ func NewQueryState() *QueryState {
 	return cliruntime.NewQueryState()
 }
 
-func NewQueryExecutor(runner agentcore.Runner, state *QueryState) *QueryExecutor {
+func NewQueryExecutor(runner runtimeport.Runner, state *QueryState) *QueryExecutor {
 	return cliruntime.NewQueryExecutor(runner, state)
 }
 

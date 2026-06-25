@@ -2,10 +2,10 @@ package runtime
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"log"
 	"os"
@@ -16,7 +16,7 @@ import (
 )
 
 // ModeRunnerCreator 模式运行器创建回调
-type ModeRunnerCreator func(ctx context.Context, mode WorkMode) (agentcore.Runner, error)
+type ModeRunnerCreator func(ctx context.Context, mode WorkMode) (runtimeport.Runner, error)
 
 // Session 交互会话，封装 CLI 交互的全部状态
 type Session struct {
@@ -72,7 +72,7 @@ func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
 }
 
 // HandleDirect 非交互模式：执行单次查询后退出
-func (s *Session) HandleDirect(ctx context.Context, r agentcore.Runner, exitSignals chan os.Signal, query string) {
+func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSignals chan os.Signal, query string) {
 	s.InputHistory = append(s.InputHistory, query)
 
 	if resumeSessionID != "" {
@@ -109,7 +109,7 @@ func (s *Session) HandleDirect(ctx context.Context, r agentcore.Runner, exitSign
 }
 
 // HandleInteractive 交互模式：启动 REPL 循环
-func (s *Session) HandleInteractive(ctx context.Context, r agentcore.Runner, exitSignals chan os.Signal) {
+func (s *Session) HandleInteractive(ctx context.Context, r runtimeport.Runner, exitSignals chan os.Signal) {
 	if resumeSessionID != "" {
 		activeSessionID = resumeSessionID
 	} else {

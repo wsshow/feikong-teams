@@ -6,13 +6,13 @@ import (
 	"log"
 	"syscall"
 
-	"fkteams/agentcore"
 	"fkteams/agents"
 	"fkteams/cli"
 	"fkteams/config"
 	"fkteams/events/view"
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
 	appagent "fkteams/internal/app/agent"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/lifecycle"
 
 	"github.com/pterm/pterm"
@@ -138,7 +138,7 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		return nil
 	})
 
-	var agentRunner agentcore.Runner
+	var agentRunner runtimeport.Runner
 	app.OnSetup(func(ctx context.Context) error {
 		var err error
 		agent, err := agentInfo.Creator(ctx)

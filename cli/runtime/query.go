@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"fkteams/agentcore"
 	"fkteams/appstate"
 	"fkteams/events"
 	"fkteams/internal/adapters/storage/file/history"
@@ -91,18 +90,18 @@ func (s *QueryState) Cancel() bool {
 // QueryExecutor 查询执行器
 type QueryExecutor struct {
 	state         *QueryState
-	runner        agentcore.Runner
+	runner        runtimeport.Runner
 	autoReject    bool
 	approveStores []string // 自动批准的 store 列表
 	view          QueryView
 	askRuntime    ask.RuntimeHandler
 	steeringMu    sync.Mutex
-	steering      []agentcore.Message
+	steering      []domainmessage.Message
 	memory        appstate.MemoryManager
 }
 
 // NewQueryExecutor 创建查询执行器
-func NewQueryExecutor(runner agentcore.Runner, state *QueryState) *QueryExecutor {
+func NewQueryExecutor(runner runtimeport.Runner, state *QueryState) *QueryExecutor {
 	return &QueryExecutor{
 		state:  state,
 		runner: runner,
@@ -128,7 +127,7 @@ func (e *QueryExecutor) SetApproveStores(s string) {
 }
 
 // SetRunner 设置 runner
-func (e *QueryExecutor) SetRunner(runner agentcore.Runner) {
+func (e *QueryExecutor) SetRunner(runner runtimeport.Runner) {
 	e.runner = runner
 }
 
@@ -160,19 +159,19 @@ func (e *QueryExecutor) QueueSteering(input string) bool {
 	}
 	e.steeringMu.Lock()
 	defer e.steeringMu.Unlock()
-	e.steering = append(e.steering, agentcore.Message{Role: agentcore.RoleUser, Content: input})
+	e.steering = append(e.steering, domainmessage.Message{Role: domainmessage.RoleUser, Content: input})
 	return true
 }
 
-func (e *QueryExecutor) SteeringQueueSnapshot() []agentcore.Message {
+func (e *QueryExecutor) SteeringQueueSnapshot() []domainmessage.Message {
 	e.steeringMu.Lock()
 	defer e.steeringMu.Unlock()
-	messages := make([]agentcore.Message, len(e.steering))
+	messages := make([]domainmessage.Message, len(e.steering))
 	copy(messages, e.steering)
 	return messages
 }
 
-func (e *QueryExecutor) takeSteeringMessages(limit int) []agentcore.Message {
+func (e *QueryExecutor) takeSteeringMessages(limit int) []domainmessage.Message {
 	e.steeringMu.Lock()
 	defer e.steeringMu.Unlock()
 	if len(e.steering) == 0 {
@@ -181,20 +180,20 @@ func (e *QueryExecutor) takeSteeringMessages(limit int) []agentcore.Message {
 	if limit <= 0 || limit > len(e.steering) {
 		limit = len(e.steering)
 	}
-	messages := make([]agentcore.Message, limit)
+	messages := make([]domainmessage.Message, limit)
 	copy(messages, e.steering[:limit])
 	e.steering = e.steering[limit:]
 	return messages
 }
 
-func (e *QueryExecutor) drainSteeringMessages() []agentcore.Message {
+func (e *QueryExecutor) drainSteeringMessages() []domainmessage.Message {
 	return e.takeSteeringMessages(0)
 }
 
-func (e *QueryExecutor) drainSteeringMessage() (agentcore.Message, bool) {
+func (e *QueryExecutor) drainSteeringMessage() (domainmessage.Message, bool) {
 	messages := e.drainSteeringMessages()
 	if len(messages) == 0 {
-		return agentcore.Message{}, false
+		return domainmessage.Message{}, false
 	}
 	return mergeSteeringMessages(messages), true
 }
@@ -207,7 +206,7 @@ func (e *QueryExecutor) DrainSteeringText() string {
 	return strings.TrimSpace(mergeSteeringMessages(messages).DisplayText())
 }
 
-func mergeSteeringMessages(messages []agentcore.Message) agentcore.Message {
+func mergeSteeringMessages(messages []domainmessage.Message) domainmessage.Message {
 	if len(messages) == 1 {
 		return messages[0]
 	}
@@ -222,7 +221,7 @@ func mergeSteeringMessages(messages []agentcore.Message) agentcore.Message {
 		}
 		fmt.Fprintf(&sb, "%d. %s", i+1, text)
 	}
-	return agentcore.Message{Role: agentcore.RoleUser, Content: sb.String()}
+	return domainmessage.Message{Role: domainmessage.RoleUser, Content: sb.String()}
 }
 
 // CLI 模式会话常量
@@ -321,7 +320,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	startTime := time.Now()
 	currentInput := turnInput
-	steeringSource := func(context.Context) ([]agentcore.Message, error) {
+	steeringSource := func(context.Context) ([]domainmessage.Message, error) {
 		message, ok := e.drainSteeringMessage()
 		if !ok {
 			return nil, nil
@@ -334,7 +333,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}); err != nil {
 			return nil, err
 		}
-		return []agentcore.Message{message}, nil
+		return []domainmessage.Message{message}, nil
 	}
 	for {
 		_, err := appchat.NewService().RunTurn(queryCtx, appchat.TurnRequest{
@@ -349,7 +348,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			appchat.OnInterrupt(runtimeport.InterruptHandler(handler)),
 			appchat.WithContext(approval.RegistryContext(approvalReg)),
 			appchat.WithContext(func(ctx context.Context) context.Context {
-				return agentcore.WithSteeringSource(ctx, steeringSource)
+				return runtimeport.WithSteeringSource(ctx, steeringSource)
 			}),
 			appchat.WithContext(func(ctx context.Context) context.Context {
 				return ask.WithRuntimeHandler(ctx, e.askRuntime)

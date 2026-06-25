@@ -2,8 +2,9 @@ package runtime
 
 import (
 	"context"
-	"fkteams/agentcore"
 	"fkteams/events"
+	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/tools/ask"
 	"fkteams/tui"
 	"os"
@@ -166,7 +167,7 @@ func TestRuntimeAskBrokerRoutesResponsesByAskID(t *testing.T) {
 		resp, _ := broker.Handle(ctx, ask.RuntimeRequest{
 			ID:       "ask-1",
 			Info:     &ask.AskInfo{Question: "First?"},
-			Metadata: agentcore.InterruptMetadata{MemberCallID: "member-1"},
+			Metadata: runtimeport.InterruptMetadata{MemberCallID: "member-1"},
 		})
 		firstDone <- resp
 	}()
@@ -174,7 +175,7 @@ func TestRuntimeAskBrokerRoutesResponsesByAskID(t *testing.T) {
 		resp, _ := broker.Handle(ctx, ask.RuntimeRequest{
 			ID:       "ask-2",
 			Info:     &ask.AskInfo{Question: "Second?"},
-			Metadata: agentcore.InterruptMetadata{MemberCallID: "member-2"},
+			Metadata: runtimeport.InterruptMetadata{MemberCallID: "member-2"},
 		})
 		secondDone <- resp
 	}()
@@ -633,11 +634,11 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 	model.applyEvent(events.Event{
 		Type:      events.EventToolStart,
 		AgentName: "coordinator",
-		ToolCalls: []agentcore.ToolCall{
+		ToolCalls: []domainmessage.ToolCall{
 			{
 				ID:    "call_first",
 				Index: &firstIndex,
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "ask_fkagent_researcher",
 					Arguments: `{"task":"first task"}`,
 				},
@@ -645,7 +646,7 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 			{
 				ID:    "call_second",
 				Index: &secondIndex,
-				Function: agentcore.FunctionCall{
+				Function: domainmessage.FunctionCall{
 					Name:      "ask_fkagent_researcher",
 					Arguments: `{"task":"second task"}`,
 				},
@@ -719,10 +720,10 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 	model.applyEvent(events.Event{
 		Type:      events.EventToolStart,
 		AgentName: "coordinator",
-		ToolCalls: []agentcore.ToolCall{{
+		ToolCalls: []domainmessage.ToolCall{{
 			ID:    "call_full",
 			Index: &callIndex,
-			Function: agentcore.FunctionCall{
+			Function: domainmessage.FunctionCall{
 				Name:      "ask_fkagent_researcher",
 				Arguments: `{"request":"完整任务目标"}`,
 			},
