@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"fmt"
 	"sync"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	gittool "fkteams/internal/adapters/tools/builtin/git"
 	schedulertool "fkteams/internal/adapters/tools/builtin/scheduler"
 	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	"fkteams/internal/app/appdata"
@@ -29,6 +31,26 @@ func RegisterDefaults() error {
 	registerOnce.Do(func() {
 		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.GlobalSessionManager))
 		apptools.RegisterMCPProvider(mcpadapter.DefaultProvider())
+		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+			Info: apptools.ToolGroupInfo{
+				Name:          "git",
+				DisplayName:   "Git",
+				Description:   "查看状态、提交、分支、日志和差异，适合版本管理和代码变更检查。",
+				Category:      "开发",
+				Builtin:       true,
+				IncludedTools: []string{"git_status", "git_diff", "git_log", "git_commit"},
+			},
+			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+				gitTools, err := gittool.NewGitTools(appdata.WorkspaceDir())
+				if err != nil {
+					return nil, fmt.Errorf("初始化Git工具失败: %w", err)
+				}
+				return gitTools.GetTools()
+			},
+		}); err != nil {
+			registerErr = err
+			return
+		}
 		registerErr = apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "scheduler",

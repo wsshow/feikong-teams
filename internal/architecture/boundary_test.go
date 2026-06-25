@@ -294,6 +294,7 @@ func assertBoundary(t *testing.T, rel, importPath string) {
 			"fkteams/agentcore",
 			"fkteams/internal/adapters",
 			"fkteams/internal/adapters/runtime/eino",
+			"github.com/go-git/go-git",
 			"github.com/mark3labs/mcp-go",
 			"github.com/cloudwego/eino",
 			"github.com/gin-gonic/gin",
@@ -722,6 +723,51 @@ func TestMCPToolsLiveInAdapter(t *testing.T) {
 			importPath := strings.Trim(spec.Path.Value, `"`)
 			if strings.HasPrefix(importPath, "github.com/mark3labs/mcp-go") {
 				t.Errorf("%s imports MCP SDK; use internal/ports/tools and internal/adapters/tools/mcp", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGitToolsLiveInAdapter(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	legacyDir := filepath.Join(root, "internal", "app", "tools", "git")
+	if entries, err := os.ReadDir(legacyDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+				t.Errorf("internal/app/tools/git/%s exists; Git SDK implementation belongs under internal/adapters/tools/builtin/git", entry.Name())
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	err := filepath.WalkDir(filepath.Join(root, "internal", "app"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			importPath := strings.Trim(spec.Path.Value, `"`)
+			if strings.HasPrefix(importPath, "github.com/go-git/go-git") {
+				t.Errorf("%s imports go-git SDK; use internal/adapters/tools/builtin/git and bootstrap registration", rel)
 			}
 		}
 		return nil

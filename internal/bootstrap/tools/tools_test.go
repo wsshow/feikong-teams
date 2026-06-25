@@ -30,6 +30,29 @@ func TestBootstrapRegistersSchedulerToolGroup(t *testing.T) {
 	}
 }
 
+func TestBootstrapRegistersGitToolGroup(t *testing.T) {
+	if err := RegisterDefaults(); err != nil {
+		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
+	}
+	if !contains(apptools.BuiltinToolNames(), "git") {
+		t.Fatal("git tool group is not registered")
+	}
+	resolved, err := apptools.GetToolsByName("git")
+	if err != nil {
+		t.Fatalf("GetToolsByName returned error: %v", err)
+	}
+	if len(resolved) == 0 {
+		t.Fatal("expected git tools")
+	}
+	info, err := resolved[0].Info(context.Background())
+	if err != nil {
+		t.Fatalf("tool info: %v", err)
+	}
+	if info.Name != "git_init" {
+		t.Fatalf("first git tool = %q, want git_init", info.Name)
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

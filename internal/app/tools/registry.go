@@ -12,7 +12,6 @@ import (
 	"fkteams/internal/app/tools/excel"
 	"fkteams/internal/app/tools/fetch"
 	"fkteams/internal/app/tools/file"
-	"fkteams/internal/app/tools/git"
 	"fkteams/internal/app/tools/script/bun"
 	"fkteams/internal/app/tools/script/uv"
 	"fkteams/internal/app/tools/search"
@@ -152,14 +151,6 @@ func builtinToolGroups() []ToolGroupRegistration {
 			IncludedTools: []string{"file_read", "file_write", "file_search", "file_list"},
 		}, Factory: fileToolGroup},
 		{Info: ToolGroupInfo{
-			Name:          "git",
-			DisplayName:   "Git",
-			Description:   "查看状态、提交、分支、日志和差异，适合版本管理和代码变更检查。",
-			Category:      "开发",
-			Builtin:       true,
-			IncludedTools: []string{"git_status", "git_diff", "git_log", "git_commit"},
-		}, Factory: gitToolGroup},
-		{Info: ToolGroupInfo{
 			Name:          "excel",
 			DisplayName:   "Excel",
 			Description:   "创建、读取和编辑 Excel 工作簿，处理表格数据、公式、样式和工作表。",
@@ -254,14 +245,6 @@ func fileToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
 		return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 	}
 	return fileTools.GetTools()
-}
-
-func gitToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
-	gitTools, err := git.NewGitTools(workspacePath())
-	if err != nil {
-		return nil, fmt.Errorf("初始化Git工具失败: %w", err)
-	}
-	return gitTools.GetTools()
 }
 
 func excelToolGroup(*resources.Cleaner) ([]runtimeport.Tool, error) {
