@@ -18,9 +18,6 @@ type ToolGroupInfo struct {
 
 // BuiltinToolInfos 返回内置可配置工具组信息。
 func BuiltinToolInfos() []ToolGroupInfo {
-	if defaultRegistryErr != nil {
-		return nil
-	}
 	return defaultRegistry.Infos()
 }
 

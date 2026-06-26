@@ -125,15 +125,8 @@ func (r *ToolGroupRegistry) Freeze() {
 	r.frozen = true
 }
 
-func defaultToolGroupRegistry() (*ToolGroupRegistry, error) {
-	return NewToolGroupRegistry(), nil
-}
-
-var defaultRegistry, defaultRegistryErr = defaultToolGroupRegistry()
+var defaultRegistry = NewToolGroupRegistry()
 
 func RegisterToolGroup(reg ToolGroupRegistration) error {
-	if defaultRegistryErr != nil {
-		return defaultRegistryErr
-	}
 	return defaultRegistry.Register(reg)
 }

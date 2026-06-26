@@ -14,9 +14,6 @@ func GetToolsByName(name string) ([]runtimeport.Tool, error) {
 
 // GetToolsByNameWithCleaner 按名称返回工具列表，并按需注册进程级清理函数。
 func GetToolsByNameWithCleaner(name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
-	if defaultRegistryErr != nil {
-		return nil, defaultRegistryErr
-	}
 	if resolved, ok, err := defaultRegistry.Resolve(name, cleaner); ok || err != nil {
 		return resolved, err
 	}
@@ -28,9 +25,6 @@ func GetToolsByNameWithCleaner(name string, cleaner *resources.Cleaner) ([]runti
 
 // BuiltinToolNames 返回所有内置工具组名称
 func BuiltinToolNames() []string {
-	if defaultRegistryErr != nil {
-		return nil
-	}
 	return defaultRegistry.Names()
 }
 

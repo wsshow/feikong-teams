@@ -668,7 +668,7 @@ func TestAppToolRegistryDoesNotOwnBuiltinImplementations(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, forbidden := range []string{"builtinToolGroups", "NewFileTools", "NewTodoTools", "ask.GetTools"} {
+	for _, forbidden := range []string{"builtinToolGroups", "defaultRegistryErr", "NewFileTools", "NewTodoTools", "ask.GetTools"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("internal/app/tools/registry.go contains %q; bootstrap must own default tool composition", forbidden)
 		}
