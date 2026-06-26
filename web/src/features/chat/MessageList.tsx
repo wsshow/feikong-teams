@@ -14,9 +14,16 @@ export function MessageList() {
   const statusText = useAppSelector((state) => state.chat.statusText);
   const error = useAppSelector((state) => state.chat.error);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(0);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, isProcessing, statusText, error, toolEventsKey(events)]);
+
+  useEffect(() => {
+    const previous = previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+    if (messages.length <= previous) return;
     anime({
       targets: ".message-row:last-of-type",
       opacity: [0, 1],
@@ -24,7 +31,7 @@ export function MessageList() {
       duration: 180,
       easing: "easeOutQuad",
     });
-  }, [messages.length, events.length]);
+  }, [messages.length]);
 
   if (messages.length === 0 && events.length === 0) {
     return (
@@ -94,4 +101,8 @@ export function MessageList() {
       </div>
     </div>
   );
+}
+
+function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown }>) {
+  return events.map((event) => (event.tool_calls?.length || 0) + (event.tool_call ? 1 : 0)).join(":");
 }

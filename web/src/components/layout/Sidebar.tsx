@@ -36,10 +36,12 @@ export function Sidebar() {
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const version = useAppSelector((state) => state.app.version);
 
-  const filtered = sessions.filter((session) => {
-    const text = `${session.title || ""} ${session.session_id}`.toLowerCase();
-    return text.includes(search.toLowerCase());
-  });
+  const filtered = sessions
+    .filter((session) => {
+      const text = `${session.title || ""} ${session.session_id}`.toLowerCase();
+      return text.includes(search.toLowerCase());
+    })
+    .sort((left, right) => sessionTime(right) - sessionTime(left));
 
   async function handleNewSession() {
     const result = await createSession("");
@@ -144,4 +146,18 @@ export function Sidebar() {
       ) : null}
     </aside>
   );
+}
+
+function sessionTime(session: { mod_time?: string; updated_at?: string }) {
+  const value = session.updated_at || session.mod_time || "";
+  const time = parseTime(value);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function parseTime(value: string) {
+  const normalized = value.trim().replace(/\//g, "-");
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (!match) return Date.parse(value);
+  const [, year, month, day, hour = "0", minute = "0", second = "0"] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).getTime();
 }
