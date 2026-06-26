@@ -16,7 +16,6 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
-	"fkteams/internal/runtime/turn"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -204,8 +203,8 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 // --- WebSocket HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, publish func(taskstream.Event) error, stream *taskstream.Stream) turn.InterruptHandler {
-	channelHandler := turn.ChannelHandler(stream.InterruptCh())
+func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, publish func(taskstream.Event) error, stream *taskstream.Stream) runtimeport.InterruptHandler {
+	channelHandler := appchat.ChannelInterruptHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
@@ -228,7 +227,7 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 				With("multi_select", info.MultiSelect), memberEvent))
 			_ = publish(payload)
 
-			result, err := turn.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
+			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 
 			if err == nil {
 				answerEvent := memberEvent

@@ -21,7 +21,6 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
-	"fkteams/internal/runtime/turn"
 
 	"github.com/pterm/pterm"
 )
@@ -267,9 +266,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		approvalReg = approval.NewDefaultRegistry()
 	}
 
-	var handler turn.InterruptHandler
+	var handler runtimeport.InterruptHandler
 	if !e.autoReject {
-		handler = turn.InfoHandler(func(info any) (any, bool) {
+		handler = appchat.InfoInterruptHandler(func(info any) (any, bool) {
 			if askInfo, ok := info.(*ask.AskInfo); ok {
 				return e.promptAskQuestions(askInfo), true
 			}

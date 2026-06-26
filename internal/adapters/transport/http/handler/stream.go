@@ -18,7 +18,6 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
-	"fkteams/internal/runtime/turn"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -708,8 +707,8 @@ func (rt *Runtime) StreamEventsHandler() gin.HandlerFunc {
 // ==================== 内部辅助 ====================
 
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
-func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) turn.InterruptHandler {
-	channelHandler := turn.ChannelHandler(stream.InterruptCh())
+func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) runtimeport.InterruptHandler {
+	channelHandler := appchat.ChannelInterruptHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
 		// 检查是否为 ask_questions 中断
 		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
@@ -731,7 +730,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 				With("options", info.Options).
 				With("multi_select", info.MultiSelect), memberEvent)))
 
-			result, err := turn.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
+			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
 				answerEvent := memberEvent
 				answerEvent.Type = events.EventAction
