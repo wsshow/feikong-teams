@@ -106,17 +106,12 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 
 		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		initialRunID := newTurnRunID(sessionID)
-		stream.Publish(attachContentParts(attachTurnMeta(map[string]any{
-			"type":       events.NotifyUserMessage,
-			"session_id": sessionID,
-			"content":    userDisplayText,
-		}, initialRunID), messageContentParts(turnInput.Message)))
+		stream.Publish(attachContentParts(
+			attachTurnMeta(taskstream.UserMessageEvent(sessionID, userDisplayText), initialRunID),
+			messageContentParts(turnInput.Message),
+		))
 
-		stream.Publish(attachTurnMeta(map[string]any{
-			"type":       events.NotifyProcessingStart,
-			"session_id": sessionID,
-			"message":    "开始处理您的请求...",
-		}, initialRunID))
+		stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, "开始处理您的请求..."), initialRunID))
 
 		// 后台执行任务
 		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
@@ -358,7 +353,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				}
 				data := convertEventToMap(event)
 				data["session_id"] = sessionID
-				stream.Publish(data)
+				stream.Publish(taskstream.Event(data))
 				return nil
 			}),
 			appchat.WithEventRecorderFunc(func(event events.Event) {
@@ -377,11 +372,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 			if isConnectionClosed(ctx, runErr) {
 				log.Printf("stream task cancelled: session=%s", sessionID)
 				stream.SetStatus("cancelled")
-				stream.Publish(map[string]any{
-					"type":       events.NotifyCancelled,
-					"session_id": sessionID,
-					"message":    "任务已取消",
-				})
+				stream.Publish(taskstream.CancelledEvent(sessionID, "任务已取消"))
 				finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
@@ -405,11 +396,7 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 		}
 
 		stream.SetStatus("completed")
-		stream.Publish(map[string]any{
-			"type":       events.NotifyProcessingEnd,
-			"session_id": sessionID,
-			"message":    "处理完成",
-		})
+		stream.Publish(taskstream.ProcessingEndEvent(sessionID, "处理完成"))
 		finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
@@ -683,14 +670,11 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 			askEvent.Content = info.Question
 			askEvent.Detail = askID
 			recorder.RecordEvent(askEvent)
-			stream.Publish(attachMemberPayload(map[string]any{
-				"type":         events.NotifyAskQuestions,
-				"session_id":   sessionID,
-				"ask_id":       askID,
-				"question":     info.Question,
-				"options":      info.Options,
-				"multi_select": info.MultiSelect,
-			}, memberEvent))
+			stream.Publish(taskstream.Event(attachMemberPayload(taskstream.NewEvent(events.NotifyAskQuestions, sessionID).
+				With("ask_id", askID).
+				With("question", info.Question).
+				With("options", info.Options).
+				With("multi_select", info.MultiSelect), memberEvent)))
 
 			result, err := turn.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
@@ -715,11 +699,7 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 			ActionType: events.ActionApprovalRequired,
 			Content:    msg,
 		})
-		stream.Publish(map[string]any{
-			"type":       events.NotifyApprovalRequired,
-			"session_id": sessionID,
-			"message":    msg,
-		})
+		stream.Publish(taskstream.NewEvent(events.NotifyApprovalRequired, sessionID).With("message", msg))
 
 		result, err := channelHandler(ctx, interrupts)
 		if err == nil {

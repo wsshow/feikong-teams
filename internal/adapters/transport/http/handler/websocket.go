@@ -137,7 +137,9 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 				}
 				stream := GlobalStreams.Get(sid)
 				if stream != nil {
-					ok, subID := stream.Subscribe(taskstream.FuncSubscriber(writeJSON), wsMsg.Offset)
+					ok, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
+						return writeJSON(event)
+					}), wsMsg.Offset)
 					if ok {
 						// 成功重新绑定并回放事件
 						sm.mu.Lock()
@@ -197,7 +199,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 // --- WebSocket HITL 中断处理器 ---
 
 // buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, writeJSON func(any) error, stream *taskstream.Stream) turn.InterruptHandler {
+func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, publish func(taskstream.Event) error, stream *taskstream.Stream) turn.InterruptHandler {
 	channelHandler := turn.ChannelHandler(stream.InterruptCh())
 	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (map[string]any, error) {
 		// 检查是否为 ask_questions 中断
@@ -214,15 +216,12 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			askEvent.Content = info.Question
 			askEvent.Detail = askID
 			recorder.RecordEvent(askEvent)
-			payload := attachMemberPayload(map[string]any{
-				"type":         events.NotifyAskQuestions,
-				"session_id":   sessionID,
-				"ask_id":       askID,
-				"question":     info.Question,
-				"options":      info.Options,
-				"multi_select": info.MultiSelect,
-			}, memberEvent)
-			_ = writeJSON(payload)
+			payload := taskstream.Event(attachMemberPayload(taskstream.NewEvent(events.NotifyAskQuestions, sessionID).
+				With("ask_id", askID).
+				With("question", info.Question).
+				With("options", info.Options).
+				With("multi_select", info.MultiSelect), memberEvent))
+			_ = publish(payload)
 
 			result, err := turn.ChannelTargetHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 
@@ -248,11 +247,7 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			ActionType: events.ActionApprovalRequired,
 			Content:    msg,
 		})
-		_ = writeJSON(map[string]any{
-			"type":       events.NotifyApprovalRequired,
-			"session_id": sessionID,
-			"message":    msg,
-		})
+		_ = publish(taskstream.NewEvent(events.NotifyApprovalRequired, sessionID).With("message", msg))
 
 		result, err := channelHandler(ctx, interrupts)
 
@@ -280,7 +275,7 @@ func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream) func(e
 		}
 		data := convertEventToMap(event)
 		data["session_id"] = sessionID
-		stream.Publish(data)
+		stream.Publish(taskstream.Event(data))
 		return nil
 	}
 }
@@ -315,7 +310,9 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		CleanupTTL: 5 * time.Minute,
 	})
 	// 绑定当前 WS 连接为 Push 订阅者
-	_, subID := stream.Subscribe(taskstream.FuncSubscriber(writeJSON), 0)
+	_, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
+		return writeJSON(event)
+	}), 0)
 	defer func() {
 		stream.Done()
 	}()
@@ -343,23 +340,21 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	currentRunID := newTurnRunID(sessionID)
-	stream.Publish(attachContentParts(attachTurnMeta(map[string]any{
-		"type":       events.NotifyUserMessage,
-		"session_id": sessionID,
-		"content":    userDisplayText,
-	}, currentRunID), messageContentParts(turnInput.Message)))
+	stream.Publish(attachContentParts(
+		attachTurnMeta(taskstream.UserMessageEvent(sessionID, userDisplayText), currentRunID),
+		messageContentParts(turnInput.Message),
+	))
 
-	publishFn := func(v any) error { stream.Publish(v.(map[string]any)); return nil }
+	publishFn := func(event taskstream.Event) error {
+		stream.Publish(event)
+		return nil
+	}
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
 	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
 	updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
-	stream.Publish(attachTurnMeta(map[string]any{
-		"type":       events.NotifyProcessingStart,
-		"session_id": sessionID,
-		"message":    "开始处理您的请求...",
-	}, currentRunID))
+	stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, "开始处理您的请求..."), currentRunID))
 
 	chatService := appchat.NewService()
 	for {
@@ -387,11 +382,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 			if isConnectionClosed(taskCtx, runErr) {
 				log.Printf("task cancelled: session=%s", sessionID)
 				stream.SetStatus("cancelled")
-				stream.Publish(map[string]any{
-					"type":       events.NotifyCancelled,
-					"session_id": sessionID,
-					"message":    "任务已取消",
-				})
+				stream.Publish(taskstream.CancelledEvent(sessionID, "任务已取消"))
 				finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
@@ -415,11 +406,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		}
 
 		stream.SetStatus("completed")
-		stream.Publish(map[string]any{
-			"type":       events.NotifyProcessingEnd,
-			"session_id": sessionID,
-			"message":    "处理完成",
-		})
+		stream.Publish(taskstream.ProcessingEndEvent(sessionID, "处理完成"))
 		finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}

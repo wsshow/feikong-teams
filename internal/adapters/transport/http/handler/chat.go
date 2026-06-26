@@ -52,20 +52,12 @@ func turnIDForRun(runID string) string {
 	return events.TurnID(runID, 1)
 }
 
-func attachTurnMeta(data map[string]any, runID string) map[string]any {
-	if runID == "" {
-		return data
-	}
-	data["run_id"] = runID
-	data["turn_id"] = turnIDForRun(runID)
-	return data
+func attachTurnMeta(data taskstream.Event, runID string) taskstream.Event {
+	return data.WithTurn(runID, turnIDForRun(runID))
 }
 
-func attachContentParts(data map[string]any, parts []domainmessage.ContentPart) map[string]any {
-	if len(parts) > 0 {
-		data["content_parts"] = append([]domainmessage.ContentPart(nil), parts...)
-	}
-	return data
+func attachContentParts(data taskstream.Event, parts []domainmessage.ContentPart) taskstream.Event {
+	return data.WithContentParts(parts)
 }
 
 func messageContentParts(message domainmessage.Message) []domainmessage.ContentPart {
@@ -124,15 +116,11 @@ func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.Que
 
 func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
 	queued := stream.EnqueueMessage(queuedChatMessage(kind, message, contents))
-	stream.Publish(attachContentParts(map[string]any{
-		"type":         events.NotifyUserMessage,
-		"session_id":   sessionID,
-		"content":      queued.DisplayText,
-		"queued":       true,
-		"queue_id":     queued.ID,
-		"queue_kind":   string(queued.Kind),
-		"queued_count": stream.QueuedCount(),
-	}, queued.Parts))
+	stream.Publish(attachContentParts(taskstream.UserMessageEvent(sessionID, queued.DisplayText).
+		With("queued", true).
+		With("queue_id", queued.ID).
+		With("queue_kind", string(queued.Kind)).
+		With("queued_count", stream.QueuedCount()), queued.Parts))
 	publishQueueUpdated(stream, sessionID)
 	return queued
 }
@@ -141,39 +129,26 @@ func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
 	if stream == nil {
 		return
 	}
-	stream.Publish(map[string]any{
-		"type":         events.NotifyQueueUpdated,
-		"session_id":   sessionID,
-		"queue":        stream.QueueSnapshot(),
-		"queued_count": stream.QueuedCount(),
-	})
+	stream.Publish(taskstream.QueueUpdatedEvent(sessionID, stream.QueueSnapshot(), stream.QueuedCount()))
 }
 
 func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, queued taskstream.QueuedMessage, runID string) {
 	if queued.Kind == taskstream.QueueFollowUp {
-		stream.Publish(attachContentParts(attachTurnMeta(map[string]any{
-			"type":             events.NotifyUserMessage,
-			"session_id":       sessionID,
-			"content":          queued.DisplayText,
-			"queue_id":         queued.ID,
-			"queue_kind":       string(queued.Kind),
-			"queued_executing": true,
-		}, runID), queued.Parts))
+		stream.Publish(attachContentParts(attachTurnMeta(taskstream.UserMessageEvent(sessionID, queued.DisplayText).
+			With("queue_id", queued.ID).
+			With("queue_kind", string(queued.Kind)).
+			With("queued_executing", true), runID), queued.Parts))
 	}
 
 	message := "继续处理排队消息..."
 	if queued.Kind == taskstream.QueueSteering {
 		message = "应用转向消息..."
 	}
-	stream.Publish(attachTurnMeta(map[string]any{
-		"type":             events.NotifyProcessingStart,
-		"session_id":       sessionID,
-		"message":          message,
-		"queue_id":         queued.ID,
-		"queue_kind":       string(queued.Kind),
-		"content":          queued.DisplayText,
-		"queued_executing": true,
-	}, runID))
+	stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, message).
+		With("queue_id", queued.ID).
+		With("queue_kind", string(queued.Kind)).
+		With("content", queued.DisplayText).
+		With("queued_executing", true), runID))
 }
 
 func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string) runtimeport.SteeringSource {
@@ -417,13 +392,13 @@ func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.
 		askEvent = events.NormalizeEvent(askEvent)
 		recorder.RecordEvent(askEvent)
 
-		askPayload := convertEventToMap(askEvent)
-		askPayload["type"] = events.NotifyAskQuestions
-		askPayload["session_id"] = sessionID
-		askPayload["ask_id"] = req.ID
-		askPayload["question"] = req.Info.Question
-		askPayload["options"] = req.Info.Options
-		askPayload["multi_select"] = req.Info.MultiSelect
+		askPayload := taskstream.Event(convertEventToMap(askEvent)).
+			With("type", events.NotifyAskQuestions).
+			With("session_id", sessionID).
+			With("ask_id", req.ID).
+			With("question", req.Info.Question).
+			With("options", req.Info.Options).
+			With("multi_select", req.Info.MultiSelect)
 		if req.ToolCallID != "" {
 			askPayload["tool_call_id"] = req.ToolCallID
 			askPayload["tool_call_ref"] = "tool_call:" + req.ToolCallID
@@ -638,15 +613,9 @@ func attachFriendlyError(result map[string]any, raw string) map[string]any {
 	return result
 }
 
-func errorEventPayload(sessionID, raw string) map[string]any {
-	payload := map[string]any{
-		"type":  events.NotifyError,
-		"error": raw,
-	}
-	if sessionID != "" {
-		payload["session_id"] = sessionID
-	}
-	return attachFriendlyError(payload, raw)
+func errorEventPayload(sessionID, raw string) taskstream.Event {
+	payload := taskstream.NewEvent(events.NotifyError, sessionID).With("error", raw)
+	return taskstream.Event(attachFriendlyError(payload, raw))
 }
 
 // ContentPart 多模态内容部分

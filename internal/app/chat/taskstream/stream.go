@@ -13,13 +13,66 @@ import (
 	"sync"
 	"time"
 
+	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 
 	"github.com/google/uuid"
 )
 
-// Event 是传输无关的任务事件
-type Event = map[string]any
+// Event 是传输无关的任务通知事件。
+type Event map[string]any
+
+func NewEvent(eventType domainevent.NotifyType, sessionID string) Event {
+	event := Event{"type": eventType}
+	if sessionID != "" {
+		event["session_id"] = sessionID
+	}
+	return event
+}
+
+func UserMessageEvent(sessionID, content string) Event {
+	return NewEvent(domainevent.NotifyUserMessage, sessionID).With("content", content)
+}
+
+func ProcessingStartEvent(sessionID, message string) Event {
+	return NewEvent(domainevent.NotifyProcessingStart, sessionID).With("message", message)
+}
+
+func ProcessingEndEvent(sessionID, message string) Event {
+	return NewEvent(domainevent.NotifyProcessingEnd, sessionID).With("message", message)
+}
+
+func CancelledEvent(sessionID, message string) Event {
+	return NewEvent(domainevent.NotifyCancelled, sessionID).With("message", message)
+}
+
+func QueueUpdatedEvent(sessionID string, queue []QueuedMessage, count int) Event {
+	return NewEvent(domainevent.NotifyQueueUpdated, sessionID).
+		With("queue", queue).
+		With("queued_count", count)
+}
+
+func (e Event) With(key string, value any) Event {
+	e[key] = value
+	return e
+}
+
+func (e Event) WithTurn(runID, turnID string) Event {
+	if runID != "" {
+		e["run_id"] = runID
+	}
+	if turnID != "" {
+		e["turn_id"] = turnID
+	}
+	return e
+}
+
+func (e Event) WithContentParts(parts []domainmessage.ContentPart) Event {
+	if len(parts) > 0 {
+		e["content_parts"] = append([]domainmessage.ContentPart(nil), parts...)
+	}
+	return e
+}
 
 // IndexedEvent 带递增 ID 的事件，支持 offset 断点续传
 type IndexedEvent struct {
@@ -74,7 +127,7 @@ type Subscriber interface {
 }
 
 // FuncSubscriber 将函数适配为 Subscriber 接口
-type FuncSubscriber func(any) error
+type FuncSubscriber func(Event) error
 
 func (f FuncSubscriber) WriteEvent(event Event) error { return f(event) }
 

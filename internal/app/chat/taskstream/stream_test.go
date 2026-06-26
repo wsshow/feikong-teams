@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 )
 
@@ -12,6 +13,27 @@ func newTestStream() *Stream {
 		SessionID: "test-session",
 		Cancel:    func() {},
 	})
+}
+
+func TestEventBuilderKeepsTransportPayloadStable(t *testing.T) {
+	parts := []domainmessage.ContentPart{{Type: domainmessage.ContentPartText, Text: "hello"}}
+	event := UserMessageEvent("session-1", "hello").
+		With("queued", true).
+		WithTurn("run-1", "turn-1").
+		WithContentParts(parts)
+
+	if event["type"] != domainevent.NotifyUserMessage {
+		t.Fatalf("type = %v, want %v", event["type"], domainevent.NotifyUserMessage)
+	}
+	if event["session_id"] != "session-1" || event["content"] != "hello" {
+		t.Fatalf("unexpected event payload: %#v", event)
+	}
+	if event["run_id"] != "run-1" || event["turn_id"] != "turn-1" {
+		t.Fatalf("missing turn metadata: %#v", event)
+	}
+	if got, ok := event["content_parts"].([]domainmessage.ContentPart); !ok || len(got) != 1 || got[0].Text != "hello" {
+		t.Fatalf("content_parts = %#v", event["content_parts"])
+	}
 }
 
 func TestSubmitInterruptRequiresPendingKind(t *testing.T) {
@@ -107,7 +129,7 @@ func TestUnsubscribeDoesNotCancelTask(t *testing.T) {
 		Cancel:    func() { cancelled <- struct{}{} },
 	})
 
-	ok, subID := s.Subscribe(FuncSubscriber(func(any) error { return nil }), 0)
+	ok, subID := s.Subscribe(FuncSubscriber(func(Event) error { return nil }), 0)
 	if !ok {
 		t.Fatal("expected subscribe to succeed")
 	}
@@ -126,14 +148,14 @@ func TestPublishFansOutToMultipleSubscribers(t *testing.T) {
 	var first []Event
 	var second []Event
 
-	if ok, _ := s.Subscribe(FuncSubscriber(func(event any) error {
-		first = append(first, event.(Event))
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
+		first = append(first, event)
 		return nil
 	}), 0); !ok {
 		t.Fatal("expected first subscribe to succeed")
 	}
-	if ok, _ := s.Subscribe(FuncSubscriber(func(event any) error {
-		second = append(second, event.(Event))
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
+		second = append(second, event)
 		return nil
 	}), 0); !ok {
 		t.Fatal("expected second subscribe to succeed")
@@ -158,8 +180,8 @@ func TestSubscribeReplaysEventsFromOffset(t *testing.T) {
 	s.Publish(Event{"type": "message", "content": "second"})
 
 	var replayed []Event
-	if ok, _ := s.Subscribe(FuncSubscriber(func(event any) error {
-		replayed = append(replayed, event.(Event))
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
+		replayed = append(replayed, event)
 		return nil
 	}), 1); !ok {
 		t.Fatal("expected subscribe to succeed")
