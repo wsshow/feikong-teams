@@ -130,6 +130,8 @@ type Service interface {
 - Channel：平台消息转换、回复发送和当前 Bridge 实例生命周期。
 - Scheduler：时间触发和结果归档。
 
+智能体目录由 `internal/app/agent/catalog.Registry` 实例持有，命令入口创建后通过 context 注入 HTTP、CLI、channel 和 scheduler。配置更新只 reload 当前入口持有的 registry；catalog 包不提供进程级 `Registry`、`GetRegistry()` 或 `ReloadRegistry()` 默认实例。
+
 ## Runtime 边界
 
 Runtime 端口必须足够小，不能暴露 Eino 概念。

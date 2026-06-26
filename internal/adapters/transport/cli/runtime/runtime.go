@@ -122,7 +122,10 @@ func (r *Runtime) requestExit() {
 }
 
 func (r *Runtime) switchAgent(agentName string) (string, error) {
-	agentInfo := agents.GetAgentByName(agentName)
+	agentInfo, err := agents.AgentByName(r.ctx, agentName)
+	if err != nil {
+		return "", err
+	}
 	if agentInfo == nil {
 		return "", fmt.Errorf("agent not found: %s", agentName)
 	}

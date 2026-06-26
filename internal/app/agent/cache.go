@@ -120,7 +120,10 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 				return CreateTeamRunner(ctx)
 			}, nil
 		}
-		info := agents.GetAgentByName(mode)
+		info, err := agents.AgentByName(ctx, mode)
+		if err != nil {
+			return "", nil, err
+		}
 		if info == nil {
 			return "", nil, fmt.Errorf("unknown mode or agent: %s", mode)
 		}
@@ -135,7 +138,10 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 }
 
 func createAgentRunnerByName(ctx context.Context, agentName string) (runtimeport.Runner, error) {
-	agentInfo := agents.GetAgentByName(agentName)
+	agentInfo, err := agents.AgentByName(ctx, agentName)
+	if err != nil {
+		return nil, err
+	}
 	if agentInfo == nil {
 		return nil, fmt.Errorf("agent not found: %s", agentName)
 	}

@@ -33,7 +33,10 @@ func agentCommand() *ucli.Command {
 					if err := config.Init(); err != nil {
 						return err
 					}
-					registry := agents.GetRegistry()
+					registry, err := agents.List(ctx)
+					if err != nil {
+						return err
+					}
 					if len(registry) == 0 {
 						fmt.Println("暂无可用的 Agent")
 						return nil
@@ -108,12 +111,19 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 	resumeSession := cmd.Root().String("resume")
 	temporarySession := cmd.Bool("temporary") || cmd.Root().Bool("temporary")
 
-	agentInfo := agents.GetAgentByName(agentName)
+	agentInfo, err := agents.AgentByName(ctx, agentName)
+	if err != nil {
+		return err
+	}
 	if agentInfo == nil {
 		pterm.Error.Printfln("未找到 Agent: %s", agentName)
 		pterm.DefaultSection.Println("可用的 Agent 列表")
 		var items []pterm.BulletListItem
-		for _, info := range agents.GetRegistry() {
+		registry, err := agents.List(ctx)
+		if err != nil {
+			return err
+		}
+		for _, info := range registry {
 			items = append(items, pterm.BulletListItem{
 				Level: 0,
 				Text:  pterm.Bold.Sprint(info.Name) + "  " + pterm.FgGray.Sprint(info.Description),

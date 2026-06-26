@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
@@ -109,10 +110,11 @@ func (s *Service) Name() string { return "channels" }
 func (s *Service) Start(ctx context.Context) error {
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
+	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	models, _ := modelregistry.RegistryFromContext(ctx)
 	tools, _ := apptools.RegistryFromContext(ctx)
 	for _, bridge := range s.bridges {
-		bridge.SetRuntimeDependencies(engine, interrupt, models, tools)
+		bridge.SetRuntimeDependencies(engine, interrupt, agentRegistry, models, tools)
 	}
 	log.Printf("[channels] starting all channels...")
 	return s.manager.StartAll(ctx)

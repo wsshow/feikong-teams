@@ -297,7 +297,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "@":
 				if m.input.Value() == "" {
-					m.picker = newAgentPicker()
+					m.picker = newAgentPicker(m.runtime.ctx)
 					return m, nil
 				}
 			case "/":

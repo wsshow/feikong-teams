@@ -137,7 +137,7 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 			m.appendBlock(runtimeBlockSystem, "帮助", runtimeHelpMarkdown())
 			return m, nil
 		case "list_agents":
-			m.appendBlock(runtimeBlockSystem, "可用智能体", runtimeAgentsMarkdown())
+			m.appendBlock(runtimeBlockSystem, "可用智能体", runtimeAgentsMarkdown(m.runtime.ctx))
 			return m, nil
 		case "list_chat_history":
 			m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true))

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,11 +59,12 @@ func runtimeCommandSyntax(command CommandInfo) string {
 	return syntax
 }
 
-func runtimeAgentsMarkdown() string {
+func runtimeAgentsMarkdown(ctx context.Context) string {
 	var sb strings.Builder
 	sb.WriteString("| 智能体 | 说明 |\n")
 	sb.WriteString("|--------|------|\n")
-	for _, info := range agents.GetRegistry() {
+	registry, _ := agents.List(ctx)
+	for _, info := range registry {
 		fmt.Fprintf(&sb, "| %s | %s |\n", info.Name, strings.ReplaceAll(info.Description, "|", "\\|"))
 	}
 	return sb.String()

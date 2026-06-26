@@ -13,6 +13,7 @@ import (
 	_ "fkteams/internal/adapters/transport/channel/weixin"
 	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/internal/adapters/transport/http/router"
+	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
@@ -70,9 +71,11 @@ func (s *httpService) Start(ctx context.Context) error {
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	modelRegistry, _ := modelregistry.RegistryFromContext(ctx)
 	toolRegistry, _ := apptools.RegistryFromContext(ctx)
+	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
 		Engine:        engine,
 		Interrupt:     interrupt,
+		AgentRegistry: agentRegistry,
 		ToolRegistry:  toolRegistry,
 		ModelRegistry: modelRegistry,
 		ResetChannels: s.resetChannels,

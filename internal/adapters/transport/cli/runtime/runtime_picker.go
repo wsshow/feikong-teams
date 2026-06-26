@@ -50,9 +50,10 @@ type runtimePickerItem struct {
 	Value string
 }
 
-func newAgentPicker() *runtimePicker {
+func newAgentPicker(ctx context.Context) *runtimePicker {
 	items := make([]runtimePickerItem, 0)
-	for _, a := range agents.GetRegistry() {
+	registry, _ := agents.List(ctx)
+	for _, a := range registry {
 		items = append(items, runtimePickerItem{
 			Label: fmt.Sprintf("%s - %s", a.Name, a.Description),
 			Value: a.Name,

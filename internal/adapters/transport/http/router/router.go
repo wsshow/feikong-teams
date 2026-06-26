@@ -66,7 +66,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		apiV1.GET("/version", handler.VersionHandler())
 
 		// 智能体 API
-		apiV1.GET("/agents", handler.GetAgentsHandler())
+		apiV1.GET("/agents", runtime.GetAgentsHandler())
 
 		// 来源图标代理
 		apiV1.GET("/favicon", runtime.FaviconHandler())

@@ -8,6 +8,7 @@ import (
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
+	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -30,6 +31,7 @@ type Runtime struct {
 	SessionShares *SessionShareStore
 	Favicons      *FaviconProxy
 	Scheduler     *appschedule.Service
+	AgentRegistry *agents.Registry
 	ToolRegistry  *apptools.ToolGroupRegistry
 	ModelRegistry *modelregistry.Registry
 	Engine        runtimeport.Engine
@@ -49,6 +51,7 @@ type RuntimeOptions struct {
 	SessionShares *SessionShareStore
 	Favicons      *FaviconProxy
 	Scheduler     *appschedule.Service
+	AgentRegistry *agents.Registry
 	ToolRegistry  *apptools.ToolGroupRegistry
 	ModelRegistry *modelregistry.Registry
 	Engine        runtimeport.Engine
@@ -77,6 +80,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		SessionShares: opt.SessionShares,
 		Favicons:      opt.Favicons,
 		Scheduler:     opt.Scheduler,
+		AgentRegistry: opt.AgentRegistry,
 		ToolRegistry:  opt.ToolRegistry,
 		ModelRegistry: opt.ModelRegistry,
 		Engine:        opt.Engine,
@@ -143,6 +147,7 @@ func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
 	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)
 	ctx = apptools.WithRegistry(ctx, rt.ToolRegistry)
+	ctx = agents.WithRegistry(ctx, rt.AgentRegistry)
 	return appschedule.WithService(ctx, rt.Scheduler)
 }
 

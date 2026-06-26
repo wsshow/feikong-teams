@@ -94,7 +94,7 @@ func CreateAgentRunner(ctx context.Context, agent runtimeport.Agent) (runtimepor
 
 // CreateTeamRunner 创建团队模式 Runner，使用 ChatModelAgent + AgentTool 协作。
 func CreateTeamRunner(ctx context.Context) (runtimeport.Runner, error) {
-	subAgents, err := agents.GetTeamAgents(ctx)
+	subAgents, err := agents.TeamAgents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("创建团队智能体失败: %w", err)
 	}
@@ -113,7 +113,7 @@ func CreateTeamRunner(ctx context.Context) (runtimeport.Runner, error) {
 
 // CreateDeepAgentsRunner 创建 DeepAgents 模式的 Runner
 func CreateDeepAgentsRunner(ctx context.Context) (runtimeport.Runner, error) {
-	subAgents, err := agents.GetTeamAgents(ctx)
+	subAgents, err := agents.TeamAgents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("创建团队智能体失败: %w", err)
 	}

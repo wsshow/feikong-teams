@@ -15,8 +15,16 @@ type AgentInfoResponse struct {
 
 // GetAgentsHandler 获取所有可用智能体
 func GetAgentsHandler() gin.HandlerFunc {
+	return NewRuntime().GetAgentsHandler()
+}
+
+func (rt *Runtime) GetAgentsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		registry := agents.GetRegistry()
+		registry, err := agents.List(rt.withRuntimeContext(c.Request.Context()))
+		if err != nil {
+			Fail(c, 500, err.Error())
+			return
+		}
 
 		agentList := make([]AgentInfoResponse, 0, len(registry))
 		for _, agent := range registry {

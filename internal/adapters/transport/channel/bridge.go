@@ -6,6 +6,7 @@ import (
 
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
+	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -65,6 +66,7 @@ type Bridge struct {
 	runtimeMu sync.RWMutex
 	engine    runtimeport.Engine
 	interrupt runtimeport.InterruptRuntime
+	agents    *agents.Registry
 	models    *modelregistry.Registry
 	tools     *apptools.ToolGroupRegistry
 	scheduler func() *appschedule.Service
@@ -124,10 +126,11 @@ func (b *Bridge) ResetRunner() {
 }
 
 // SetRuntimeDependencies 设置当前通道服务实例使用的 runtime 依赖。
-func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry) {
+func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, agentRegistry *agents.Registry, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry) {
 	b.runtimeMu.Lock()
 	b.engine = engine
 	b.interrupt = interrupt
+	b.agents = agentRegistry
 	b.models = models
 	b.tools = tools
 	b.runtimeMu.Unlock()
@@ -138,11 +141,13 @@ func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
 	b.runtimeMu.RLock()
 	engine := b.engine
 	interrupt := b.interrupt
+	agentRegistry := b.agents
 	models := b.models
 	tools := b.tools
 	b.runtimeMu.RUnlock()
 	ctx = runtimeport.WithEngine(ctx, engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
+	ctx = agents.WithRegistry(ctx, agentRegistry)
 	ctx = modelregistry.WithRegistry(ctx, models)
 	ctx = apptools.WithRegistry(ctx, tools)
 	if b.scheduler != nil {

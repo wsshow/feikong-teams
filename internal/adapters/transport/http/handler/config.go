@@ -156,7 +156,9 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		}
 
 		// 重载智能体注册表、清除 Runner 缓存和 MCP 工具缓存
-		agents.ReloadRegistry()
+		if err := agents.Reload(rt.withRuntimeContext(c.Request.Context())); err != nil {
+			log.Printf("[agent] reload registry failed: %v", err)
+		}
 		rt.clearRunnerCache()
 		tools.ClearMCPToolCache(rt.withRuntimeContext(c.Request.Context()))
 		if rt.ResetChannels != nil {

@@ -1032,6 +1032,29 @@ func TestAppToolsDoNotExposeProcessDefaultRegistry(t *testing.T) {
 	}
 }
 
+func TestAgentCatalogDoesNotExposeProcessDefaultRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "app", "agent", "catalog", "registry.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"Registry []AgentInfo",
+		"registryOnce",
+		"registryMu",
+		"func GetRegistry()",
+		"func GetAgentByName(name string)",
+		"func GetTeamAgents(ctx context.Context)",
+		"func ReloadRegistry()",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("agent catalog exposes process-default registry through %q", forbidden)
+		}
+	}
+}
+
 func TestMCPBridgeDoesNotLeakRawClientIntoPorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "ports", "tools", "mcp.go")
