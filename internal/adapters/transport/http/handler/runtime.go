@@ -22,6 +22,7 @@ type Runtime struct {
 	HistoryDir  string
 	RunnerCache *appagent.Cache
 	Connections *WebSocketHub
+	Engine      runtimeport.Engine
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
@@ -31,6 +32,7 @@ type RuntimeOptions struct {
 	HistoryDir  string
 	RunnerCache *appagent.Cache
 	Connections *WebSocketHub
+	Engine      runtimeport.Engine
 }
 
 // NewRuntime 创建一个独立的 HTTP runtime 实例。
@@ -49,6 +51,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		HistoryDir:  opt.HistoryDir,
 		RunnerCache: opt.RunnerCache,
 		Connections: opt.Connections,
+		Engine:      opt.Engine,
 	}
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
@@ -89,6 +92,7 @@ func (rt *Runtime) clearRunnerCache() {
 }
 
 func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (runtimeport.Runner, error) {
+	ctx = runtimeport.WithEngine(ctx, rt.Engine)
 	return rt.RunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
 }
 

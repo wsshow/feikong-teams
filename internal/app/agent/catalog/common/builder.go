@@ -7,7 +7,6 @@ import (
 	"fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/env"
-	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/runtime/resources"
 	"fkteams/internal/runtime/retry"
 	"fkteams/internal/runtime/toolpolicy"
@@ -117,7 +116,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
 	}
-	engine, err := runtimeregistry.Engine()
+	engine, err := runtimeport.RequireEngine(ctx)
 	if err != nil {
 		return nil, err
 	}

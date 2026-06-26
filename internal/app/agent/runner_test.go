@@ -8,7 +8,6 @@ import (
 	"fkteams/internal/app/config"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
-	runtimeregistry "fkteams/internal/runtime/registry"
 	"strings"
 	"testing"
 )
@@ -34,13 +33,13 @@ func TestAgentToolNameNormalizesAndDeduplicates(t *testing.T) {
 
 func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 	engine := &runnerTestEngine{}
-	restoreRuntime(t, "runner-test-build-tools", engine)
+	ctx := runtimeport.WithEngine(context.Background(), engine)
 
 	agents := []runtimeport.Agent{
 		runnerTestAgent{name: "成员 A"},
 		runnerTestAgent{name: "成员 A"},
 	}
-	tools, err := buildAgentTools(context.Background(), agents)
+	tools, err := buildAgentTools(ctx, agents)
 	if err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}
@@ -59,10 +58,10 @@ func TestBuildAgentToolsUsesRuntimeToolNameMapping(t *testing.T) {
 
 func TestCreateAgentRunnerUsesRuntimeRunnerConfig(t *testing.T) {
 	engine := &runnerTestEngine{}
-	restoreRuntime(t, "runner-test-create-agent", engine)
+	ctx := runtimeport.WithEngine(context.Background(), engine)
 
 	agent := runnerTestAgent{name: "agent"}
-	got, err := CreateAgentRunner(context.Background(), agent)
+	got, err := CreateAgentRunner(ctx, agent)
 	if err != nil {
 		t.Fatalf("CreateAgentRunner: %v", err)
 	}
@@ -82,9 +81,9 @@ func TestCreateAgentRunnerUsesRuntimeRunnerConfig(t *testing.T) {
 
 func TestCreateAgentRunnerPropagatesRuntimeError(t *testing.T) {
 	engine := &runnerTestEngine{runnerErr: errors.New("runner failed")}
-	restoreRuntime(t, "runner-test-runner-error", engine)
+	ctx := runtimeport.WithEngine(context.Background(), engine)
 
-	if _, err := CreateAgentRunner(context.Background(), runnerTestAgent{name: "agent"}); err == nil || !strings.Contains(err.Error(), "runner failed") {
+	if _, err := CreateAgentRunner(ctx, runnerTestAgent{name: "agent"}); err == nil || !strings.Contains(err.Error(), "runner failed") {
 		t.Fatalf("CreateAgentRunner error = %v, want runtime error", err)
 	}
 }
@@ -120,22 +119,6 @@ func TestCustomModeratorPromptUsesDefaultAndAppendsToolSection(t *testing.T) {
 	if !strings.HasPrefix(custom, "自定义主持人") || !strings.Contains(custom, "## 子智能体工具") {
 		t.Fatalf("custom prompt = %q", custom)
 	}
-}
-
-func restoreRuntime(t *testing.T, name string, engine runtimeport.Engine) {
-	t.Helper()
-	original := runtimeregistry.DefaultName()
-	if err := runtimeregistry.Register(name, engine); err != nil {
-		t.Fatalf("register runtime: %v", err)
-	}
-	if err := runtimeregistry.Use(name); err != nil {
-		t.Fatalf("use runtime: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := runtimeregistry.Use(original); err != nil {
-			t.Fatalf("restore runtime: %v", err)
-		}
-	})
 }
 
 type runnerTestAgent struct {

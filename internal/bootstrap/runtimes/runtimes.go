@@ -29,6 +29,14 @@ func RegisterDefaults() error {
 	return registerErr
 }
 
+// DefaultEngine 返回组合根注册的默认 runtime engine。
+func DefaultEngine() (runtimeport.Engine, error) {
+	if err := RegisterDefaults(); err != nil {
+		return nil, err
+	}
+	return runtimeregistry.Engine()
+}
+
 func registerDefaults() error {
 	engine := einoengine.NewEngine()
 	if err := runtimeregistry.Register(runtimeregistry.DefaultRuntimeName, engine); err != nil {

@@ -6,17 +6,20 @@ import (
 	"testing"
 
 	agentscommon "fkteams/internal/app/agent/catalog/common"
-	_ "fkteams/internal/bootstrap/runtimes"
+	bootstrapruntimes "fkteams/internal/bootstrap/runtimes"
 	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	checkpointmemory "fkteams/internal/runtime/checkpoint/memory"
-	runtimeregistry "fkteams/internal/runtime/registry"
 	"fkteams/internal/testmodel"
 )
 
 func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
-	ctx := context.Background()
+	engine, err := bootstrapruntimes.DefaultEngine()
+	if err != nil {
+		t.Fatalf("runtime engine: %v", err)
+	}
+	ctx := runtimeport.WithEngine(context.Background(), engine)
 	cm := testmodel.New().EnqueueStream(testmodel.AssistantMessage("builder-ok"))
 
 	agent, err := agentscommon.NewAgentBuilder("builder_test", "builder test agent").
@@ -28,10 +31,6 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 		t.Fatalf("build agent: %v", err)
 	}
 
-	engine, err := runtimeregistry.Engine()
-	if err != nil {
-		t.Fatalf("runtime engine: %v", err)
-	}
 	runner, err := engine.NewRunner(ctx, runtimeport.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,

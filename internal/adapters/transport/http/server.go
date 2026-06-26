@@ -18,6 +18,7 @@ import (
 	"fkteams/internal/app/lifecycle"
 	"fkteams/internal/app/version"
 	bootstrapservices "fkteams/internal/bootstrap/services"
+	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
 
 	"github.com/gin-gonic/gin"
@@ -60,7 +61,8 @@ func (s *httpService) Start(ctx context.Context) error {
 		h   http.Handler
 		err error
 	)
-	s.runtime = handler.NewRuntime()
+	engine, _ := runtimeport.EngineFromContext(ctx)
+	s.runtime = handler.NewRuntime(handler.RuntimeOptions{Engine: engine})
 	if s.mode == ModeAPI {
 		h, err = router.InitAPIWithRuntime(s.state, s.runtime)
 	} else {

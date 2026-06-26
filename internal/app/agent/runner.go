@@ -14,7 +14,6 @@ import (
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/checkpoint"
-	runtimeregistry "fkteams/internal/runtime/registry"
 	"fmt"
 	"regexp"
 	"strings"
@@ -39,7 +38,7 @@ func agentToolName(name string, index int, used map[string]bool) string {
 }
 
 func buildAgentTools(ctx context.Context, subAgents []runtimeport.Agent) ([]runtimeport.Tool, error) {
-	engine, err := runtimeregistry.Engine()
+	engine, err := runtimeport.RequireEngine(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +67,7 @@ func resolveCustomModel(cfg *config.Config, agent config.CustomAgent) custom.Mod
 
 // newRunner 用共享配置创建 Runner
 func newRunner(ctx context.Context, agent runtimeport.Agent) (runtimeport.Runner, error) {
-	engine, err := runtimeregistry.Engine()
+	engine, err := runtimeport.RequireEngine(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +138,7 @@ func CreateLoopAgentRunner(ctx context.Context) (runtimeport.Runner, error) {
 		}
 		subAgents = append(subAgents, agent)
 	}
-	engine, err := runtimeregistry.Engine()
+	engine, err := runtimeport.RequireEngine(ctx)
 	if err != nil {
 		return nil, err
 	}

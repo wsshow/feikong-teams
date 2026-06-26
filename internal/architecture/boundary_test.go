@@ -624,6 +624,36 @@ func TestRuntimeRegistryUsesInternalPackage(t *testing.T) {
 	}
 }
 
+func TestAppLayerDoesNotReadRuntimeRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	appRoot := filepath.Join(root, "internal", "app")
+	err := filepath.WalkDir(appRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.Trim(spec.Path.Value, `"`) == "fkteams/internal/runtime/registry" {
+				rel, _ := filepath.Rel(root, path)
+				t.Errorf("%s imports runtime registry; app layer must receive runtime.Engine from context or composition root", filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBootstrapAndRuntimeRegistryDoNotPanic(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	files := []string{
