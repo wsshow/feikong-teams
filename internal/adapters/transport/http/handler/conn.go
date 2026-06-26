@@ -2,18 +2,32 @@ package handler
 
 import (
 	"context"
-	"fkteams/internal/app/chat/taskstream"
 	"sync"
 	"time"
+
+	"fkteams/internal/app/chat/taskstream"
 
 	"github.com/gorilla/websocket"
 )
 
-// WS 连接池管理
-var (
+// WebSocketHub 管理单个 HTTP runtime 的 WebSocket 连接和连接级任务引用。
+type WebSocketHub struct {
+	streams *taskstream.Manager
+
 	wsConnsMu sync.Mutex
-	wsConns   = make(map[*websocket.Conn]context.CancelFunc)
-)
+	wsConns   map[*websocket.Conn]context.CancelFunc
+
+	sessionManagersMu sync.Mutex
+	sessionManagers   map[*websocket.Conn]*sessionManager
+}
+
+func NewWebSocketHub(streams *taskstream.Manager) *WebSocketHub {
+	return &WebSocketHub{
+		streams:         streams,
+		wsConns:         make(map[*websocket.Conn]context.CancelFunc),
+		sessionManagers: make(map[*websocket.Conn]*sessionManager),
+	}
+}
 
 // sessionTask 单个会话的任务状态
 type sessionTask struct {
@@ -29,11 +43,6 @@ type sessionManager struct {
 	tasks  map[string]*sessionTask // key: sessionID
 	nextID uint64
 }
-
-var (
-	sessionManagersMu sync.Mutex
-	sessionManagers   = make(map[*websocket.Conn]*sessionManager)
-)
 
 // startTask 注册一个新的会话任务。如果该 session 已有运行中的任务则先取消旧任务。
 // 返回任务 ID，用于 removeTask 时识别是否是自己注册的任务。
@@ -68,7 +77,7 @@ func (sm *sessionManager) removeTask(sessionID string, taskID uint64) {
 }
 
 // detachAll 分离所有运行中的任务（连接断开时调用，不取消任务）
-func (sm *sessionManager) detachAll() {
+func (sm *sessionManager) detachAll(streams *taskstream.Manager) {
 	sm.mu.Lock()
 	items := make([]taskstream.UnsubscribeItem, 0, len(sm.tasks))
 	for _, t := range sm.tasks {
@@ -78,52 +87,52 @@ func (sm *sessionManager) detachAll() {
 	}
 	sm.tasks = make(map[string]*sessionTask) // 清空连接级任务引用
 	sm.mu.Unlock()
-	GlobalStreams.UnsubscribeAll(items)
+	streams.UnsubscribeAll(items)
 }
 
-func registerConn(conn *websocket.Conn, cancel context.CancelFunc) {
-	wsConnsMu.Lock()
-	wsConns[conn] = cancel
-	wsConnsMu.Unlock()
+func (hub *WebSocketHub) registerConn(conn *websocket.Conn, cancel context.CancelFunc) {
+	hub.wsConnsMu.Lock()
+	hub.wsConns[conn] = cancel
+	hub.wsConnsMu.Unlock()
 }
 
-func unregisterConn(conn *websocket.Conn) {
-	wsConnsMu.Lock()
-	delete(wsConns, conn)
-	wsConnsMu.Unlock()
+func (hub *WebSocketHub) unregisterConn(conn *websocket.Conn) {
+	hub.wsConnsMu.Lock()
+	delete(hub.wsConns, conn)
+	hub.wsConnsMu.Unlock()
 }
 
-func getSessionManager(conn *websocket.Conn) *sessionManager {
-	sessionManagersMu.Lock()
-	defer sessionManagersMu.Unlock()
-	if sm, exists := sessionManagers[conn]; exists {
+func (hub *WebSocketHub) getSessionManager(conn *websocket.Conn) *sessionManager {
+	hub.sessionManagersMu.Lock()
+	defer hub.sessionManagersMu.Unlock()
+	if sm, exists := hub.sessionManagers[conn]; exists {
 		return sm
 	}
 	sm := &sessionManager{tasks: make(map[string]*sessionTask)}
-	sessionManagers[conn] = sm
+	hub.sessionManagers[conn] = sm
 	return sm
 }
 
-func removeSessionManager(conn *websocket.Conn) {
-	sessionManagersMu.Lock()
-	defer sessionManagersMu.Unlock()
-	if sm, exists := sessionManagers[conn]; exists {
-		sm.detachAll() // 分离任务而非取消，允许重连后恢复
-		delete(sessionManagers, conn)
+func (hub *WebSocketHub) removeSessionManager(conn *websocket.Conn) {
+	hub.sessionManagersMu.Lock()
+	defer hub.sessionManagersMu.Unlock()
+	if sm, exists := hub.sessionManagers[conn]; exists {
+		sm.detachAll(hub.streams) // 分离任务而非取消，允许重连后恢复
+		delete(hub.sessionManagers, conn)
 	}
 }
 
-// CloseAllWebSockets 服务退出时调用，主动关闭所有 WS 连接并取消所有任务
-func CloseAllWebSockets() {
+// CloseAllWebSockets 服务退出时调用，主动关闭所有 WS 连接并取消所有任务。
+func (hub *WebSocketHub) CloseAllWebSockets() {
 	// 先取消所有活跃任务（context.Background 创建的任务不会被连接关闭自动取消）
-	GlobalStreams.CancelAll()
+	hub.streams.CancelAll()
 
-	wsConnsMu.Lock()
-	conns := make(map[*websocket.Conn]context.CancelFunc, len(wsConns))
-	for c, cancel := range wsConns {
+	hub.wsConnsMu.Lock()
+	conns := make(map[*websocket.Conn]context.CancelFunc, len(hub.wsConns))
+	for c, cancel := range hub.wsConns {
 		conns[c] = cancel
 	}
-	wsConnsMu.Unlock()
+	hub.wsConnsMu.Unlock()
 
 	for conn, cancel := range conns {
 		cancel()

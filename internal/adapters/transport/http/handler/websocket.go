@@ -45,11 +45,16 @@ type WSMessage struct {
 
 // WebSocketHandler 处理 WebSocket 连接
 func WebSocketHandler() gin.HandlerFunc {
-	return WebSocketHandlerWithState(nil)
+	return NewRuntime().WebSocketHandlerWithState(nil)
 }
 
 // WebSocketHandlerWithState 处理 WebSocket 连接并使用显式应用状态。
 func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
+	return NewRuntime().WebSocketHandlerWithState(state)
+}
+
+// WebSocketHandlerWithState 处理当前 HTTP runtime 的 WebSocket 连接。
+func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
@@ -58,13 +63,13 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		}
 
 		connCtx, connCancel := context.WithCancel(c.Request.Context())
-		registerConn(conn, connCancel)
-		sm := getSessionManager(conn)
+		rt.Connections.registerConn(conn, connCancel)
+		sm := rt.Connections.getSessionManager(conn)
 
 		defer func() {
 			connCancel()
-			removeSessionManager(conn)
-			unregisterConn(conn)
+			rt.Connections.removeSessionManager(conn)
+			rt.Connections.unregisterConn(conn)
 			_ = conn.Close()
 		}()
 
@@ -124,10 +129,10 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 					_ = writeJSON(errorEventPayload("", "session_id is required"))
 					continue
 				}
-				go handleChatMessage(sm, wsMsg, writeJSON, state)
+				go rt.handleChatMessage(sm, wsMsg, writeJSON, state)
 
 			case "steer", "steering":
-				handleSteeringMessage(wsMsg, writeJSON)
+				rt.handleSteeringMessage(wsMsg, writeJSON)
 
 			case "resume":
 				sid := wsMsg.SessionID
@@ -135,7 +140,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 					_ = writeJSON(errorEventPayload("", "session_id is required"))
 					continue
 				}
-				stream := GlobalStreams.Get(sid)
+				stream := rt.Streams.Get(sid)
 				if stream != nil {
 					ok, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
 						return writeJSON(event)
@@ -164,14 +169,14 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			case "cancel":
 				sid := wsMsg.SessionID
 				if sid != "" {
-					GlobalStreams.CancelAndRemove(sid)
+					rt.Streams.CancelAndRemove(sid)
 					sm.cancelTask(sid)
 				}
 				_ = writeJSON(map[string]any{"type": "cancellation_requested", "session_id": sid, "message": "取消请求已发送"})
 
 			case "approval":
 				sid := wsMsg.SessionID
-				if stream := GlobalStreams.Get(sid); stream != nil {
+				if stream := rt.Streams.Get(sid); stream != nil {
 					_ = stream.SubmitInterrupt(taskstream.InterruptApproval, wsMsg.Decision)
 				}
 
@@ -182,7 +187,7 @@ func WebSocketHandlerWithState(state *appstate.State) gin.HandlerFunc {
 					Selected: wsMsg.AskSelected,
 					FreeText: wsMsg.AskFreeText,
 				}
-				if stream := GlobalStreams.Get(sid); stream != nil {
+				if stream := rt.Streams.Get(sid); stream != nil {
 					_ = stream.SubmitAskResponse(wsMsg.AskID, resp)
 				}
 
@@ -283,7 +288,7 @@ func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream) func(e
 // --- WebSocket 聊天处理 ---
 
 // handleChatMessage 处理 WebSocket 聊天消息
-func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error, state *appstate.State) {
+func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) error, state *appstate.State) {
 	sessionID := wsMsg.SessionID
 	mode := wsMsg.Mode
 	if mode == "" {
@@ -294,7 +299,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 		return
 	}
 
-	if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
+	if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
 		enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents)
 		return
 	}
@@ -304,7 +309,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	defer taskCancel()
 
 	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
-	stream := GlobalStreams.Register(taskstream.StreamConfig{
+	stream := rt.Streams.Register(taskstream.StreamConfig{
 		SessionID:  sessionID,
 		Cancel:     taskCancel,
 		CleanupTTL: 5 * time.Minute,
@@ -328,7 +333,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	defer sm.removeTask(sessionID, taskID)
 
 	// 获取 runner
-	r, err := resolveRunner(taskCtx, mode, wsMsg.AgentName)
+	r, err := rt.resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
 		stream.Publish(errorEventPayload(sessionID, err.Error()))
@@ -336,7 +341,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	}
 
 	// 构建输入消息
-	recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+	recorder := rt.recorder(sessionID)
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	currentRunID := newTurnRunID(sessionID)
@@ -353,7 +358,7 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
-	updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+	rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
 	stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, "开始处理您的请求..."), currentRunID))
 
 	chatService := appchat.NewService()
@@ -383,36 +388,36 @@ func handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJSON func(any) 
 				log.Printf("task cancelled: session=%s", sessionID)
 				stream.SetStatus("cancelled")
 				stream.Publish(taskstream.CancelledEvent(sessionID, "任务已取消"))
-				finishCancelledChat(recorder, sessionID, currentDisplayText)
+				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
 			log.Printf("failed to run task: session=%s, err=%v", sessionID, runErr)
 			stream.SetStatus("error")
 			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
-			finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
+			rt.finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
 			return
 		}
 
 		recorder.FinalizeCurrent()
-		saveTurnHistory(recorder, sessionID)
+		rt.saveTurnHistory(recorder, sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)
-			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+			rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
 			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
 			continue
 		}
 
 		stream.SetStatus("completed")
 		stream.Publish(taskstream.ProcessingEndEvent(sessionID, "处理完成"))
-		finishChat(recorder, sessionID, currentDisplayText, manager)
+		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
 }
 
-func handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) error) {
+func (rt *Runtime) handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) error) {
 	sessionID := wsMsg.SessionID
 	if sessionID == "" {
 		_ = writeJSON(errorEventPayload("", "session_id is required"))
@@ -422,7 +427,7 @@ func handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) error) {
 		_ = writeJSON(errorEventPayload(sessionID, "message or contents is required"))
 		return
 	}
-	stream := GlobalStreams.Get(sessionID)
+	stream := rt.Streams.Get(sessionID)
 	if stream == nil || stream.Status() != "processing" {
 		_ = writeJSON(errorEventPayload(sessionID, "no running task to steer"))
 		return

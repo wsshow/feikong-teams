@@ -27,12 +27,12 @@ func TestSessionSharesFilePathUsesAppDir(t *testing.T) {
 }
 
 func TestPublicSessionShareRequiresPassword(t *testing.T) {
-	withSessionHistoryDir(t)
+	rt := newTestRuntime(t)
 	withSessionShareStore(t, map[string]*sessionShareEntry{})
 	gin.SetMode(gin.TestMode)
 
 	sessionID := "shared-session"
-	writeShareableSession(t, sessionID, "Shared session")
+	writeShareableSession(t, rt, sessionID, "Shared session")
 	sessionShareStore.Lock()
 	sessionShareStore.m["share-1"] = &sessionShareEntry{
 		SessionID:    sessionID,
@@ -44,7 +44,7 @@ func TestPublicSessionShareRequiresPassword(t *testing.T) {
 	sessionShareStore.Unlock()
 
 	router := gin.New()
-	router.POST("/public/session-shares/:shareID/access", AccessPublicSessionShareHandler())
+	router.POST("/public/session-shares/:shareID/access", rt.AccessPublicSessionShareHandler())
 
 	req := httptest.NewRequest(http.MethodPost, "/public/session-shares/share-1/access", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -108,10 +108,10 @@ func TestExpiredSessionShareReturnsGone(t *testing.T) {
 	}
 }
 
-func writeShareableSession(t *testing.T, sessionID, title string) {
+func writeShareableSession(t *testing.T, rt *Runtime, sessionID, title string) {
 	t.Helper()
 	now := time.Now()
-	sessionDir := sessionDirPath(sessionID)
+	sessionDir := rt.sessionDirPath(sessionID)
 	if err := eventlog.SaveMetadata(sessionDir, &eventlog.SessionMetadata{
 		ID:        sessionID,
 		Title:     title,

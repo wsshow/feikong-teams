@@ -38,6 +38,7 @@ type httpService struct {
 	logLevel string     // 日志级别
 	mode     serverMode // 服务模式
 	state    *appstate.State
+	runtime  *handler.Runtime
 	server   *http.Server // HTTP 服务实例
 }
 
@@ -59,10 +60,11 @@ func (s *httpService) Start(ctx context.Context) error {
 		h   http.Handler
 		err error
 	)
+	s.runtime = handler.NewRuntime()
 	if s.mode == ModeAPI {
-		h, err = router.InitAPIWithState(s.state)
+		h, err = router.InitAPIWithRuntime(s.state, s.runtime)
 	} else {
-		h, err = router.InitWithState(s.state)
+		h, err = router.InitWithRuntime(s.state, s.runtime)
 	}
 	if err != nil {
 		return fmt.Errorf("init router: %w", err)
@@ -75,7 +77,7 @@ func (s *httpService) Start(ctx context.Context) error {
 		WriteTimeout:   60 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1MB
 	}
-	s.server.RegisterOnShutdown(handler.CloseAllWebSockets)
+	s.server.RegisterOnShutdown(s.runtime.Connections.CloseAllWebSockets)
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

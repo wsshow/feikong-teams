@@ -31,11 +31,16 @@ type ChatRequest struct {
 
 // ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
 func ChatHandler() gin.HandlerFunc {
-	return ChatHandlerWithState(nil)
+	return NewRuntime().ChatHandlerWithState(nil)
 }
 
 // ChatHandlerWithState HTTP POST 聊天处理器，使用显式应用状态。
 func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
+	return NewRuntime().ChatHandlerWithState(state)
+}
+
+// ChatHandlerWithState HTTP POST 聊天处理器，使用当前 HTTP runtime 的显式依赖。
+func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ChatRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,7 +63,7 @@ func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		}
 
 		ctx := appstate.WithState(c.Request.Context(), state)
-		r, err := resolveRunner(ctx, mode, req.AgentName)
+		r, err := rt.resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
 			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
 			status := http.StatusInternalServerError
@@ -69,20 +74,20 @@ func ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 
-		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+		recorder := rt.recorder(sessionID)
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
 		if req.Stream {
-			handleStreamChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
+			rt.handleStreamChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
 		} else {
-			handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
+			rt.handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
 		}
 	}
 }
 
 // handleStreamChat SSE 流式聊天响应
-func handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func (rt *Runtime) handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -107,17 +112,17 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner,
 			if err != nil {
 				if isConnectionClosed(ctx, err) {
 					log.Printf("connection closed, stopping: session=%s", sessionID)
-					saveTurnHistory(recorder, sessionID)
+					rt.saveTurnHistory(recorder, sessionID)
 					return
 				}
 				log.Printf("error processing event: %v", err)
-				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				rt.finishErrorChat(recorder, sessionID, userDisplayText, err)
 				data, _ := json.Marshal(errorEventPayload("", err.Error()))
 				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 				c.Writer.Flush()
 				return
 			}
-			finishChat(recorder, sessionID, userDisplayText, manager)
+			rt.finishChat(recorder, sessionID, userDisplayText, manager)
 			data, _ := json.Marshal(map[string]string{"type": string(events.NotifyProcessingEnd), "message": "处理完成"})
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
@@ -129,7 +134,7 @@ func handleStreamChat(c *gin.Context, ctx context.Context, r runtimeport.Runner,
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 
@@ -149,10 +154,10 @@ func handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, r
 		appchat.OnFinish(func(ctx context.Context, _ *runtimeport.RunResult, err error) {
 			if err != nil {
 				log.Printf("error processing event: %v", err)
-				finishErrorChat(recorder, sessionID, userDisplayText, err)
+				rt.finishErrorChat(recorder, sessionID, userDisplayText, err)
 				return
 			}
-			finishChat(recorder, sessionID, userDisplayText, manager)
+			rt.finishChat(recorder, sessionID, userDisplayText, manager)
 		}),
 	)
 	if runErr != nil {

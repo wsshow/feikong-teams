@@ -14,11 +14,11 @@ import (
 )
 
 func TestGetSessionReturnsEmptyMessagesWhenHistoryFileMissing(t *testing.T) {
-	withSessionHistoryDir(t)
+	rt := newTestRuntime(t)
 	gin.SetMode(gin.TestMode)
 
 	sessionID := "empty-session"
-	if err := eventlog.SaveMetadata(sessionDirPath(sessionID), &eventlog.SessionMetadata{
+	if err := eventlog.SaveMetadata(rt.sessionDirPath(sessionID), &eventlog.SessionMetadata{
 		ID:           sessionID,
 		Title:        "empty",
 		Status:       "idle",
@@ -30,7 +30,7 @@ func TestGetSessionReturnsEmptyMessagesWhenHistoryFileMissing(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.GET("/sessions/:sessionID", GetSessionHandler())
+	router.GET("/sessions/:sessionID", rt.GetSessionHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessionID, nil)
 	resp := httptest.NewRecorder()
@@ -64,11 +64,11 @@ func TestGetSessionReturnsEmptyMessagesWhenHistoryFileMissing(t *testing.T) {
 }
 
 func TestGetSessionReturnsNotFoundWhenSessionMissing(t *testing.T) {
-	withSessionHistoryDir(t)
+	rt := newTestRuntime(t)
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
-	router.GET("/sessions/:sessionID", GetSessionHandler())
+	router.GET("/sessions/:sessionID", rt.GetSessionHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/sessions/missing-session", nil)
 	resp := httptest.NewRecorder()
@@ -79,15 +79,8 @@ func TestGetSessionReturnsNotFoundWhenSessionMissing(t *testing.T) {
 	}
 }
 
-func withSessionHistoryDir(t *testing.T) {
+func newTestRuntime(t *testing.T) *Runtime {
 	t.Helper()
 
-	oldHistoryDir := historyDir
-	oldStreams := GlobalStreams
-	historyDir = filepath.Join(t.TempDir(), "sessions")
-	GlobalStreams = newGlobalStreams()
-	t.Cleanup(func() {
-		historyDir = oldHistoryDir
-		GlobalStreams = oldStreams
-	})
+	return NewRuntime(RuntimeOptions{HistoryDir: filepath.Join(t.TempDir(), "sessions")})
 }

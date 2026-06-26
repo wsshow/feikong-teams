@@ -35,11 +35,16 @@ type StreamStartRequest struct {
 
 // StreamStartHandler 启动流式任务（任务在后台执行，前端通过 SSE 订阅事件流）
 func StreamStartHandler() gin.HandlerFunc {
-	return StreamStartHandlerWithState(nil)
+	return NewRuntime().StreamStartHandlerWithState(nil)
 }
 
 // StreamStartHandlerWithState 启动流式任务并使用显式应用状态。
 func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
+	return NewRuntime().StreamStartHandlerWithState(state)
+}
+
+// StreamStartHandlerWithState 启动流式任务并使用当前 HTTP runtime。
+func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req StreamStartRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,7 +66,7 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 
-		if existing := GlobalStreams.Get(sessionID); existing != nil && existing.Status() == "processing" {
+		if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
 			queued := enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents)
 			OK(c, gin.H{
 				"session_id":   sessionID,
@@ -79,7 +84,7 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		}
 
 		ctx := appstate.WithState(context.Background(), state)
-		r, err := resolveRunner(ctx, mode, req.AgentName)
+		r, err := rt.resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
 			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
 			status := http.StatusInternalServerError
@@ -90,13 +95,13 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 
-		recorder := eventlog.GlobalSessionManager.GetOrCreate(sessionID, historyDir)
+		recorder := rt.recorder(sessionID)
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
-		// 创建任务——统一使用 GlobalStreams
+		// 创建任务并交给当前 HTTP runtime 的 stream hub 管理。
 		taskCtx, taskCancel := context.WithCancel(ctx)
-		stream := GlobalStreams.Register(taskstream.StreamConfig{
+		stream := rt.Streams.Register(taskstream.StreamConfig{
 			SessionID:  sessionID,
 			Cancel:     taskCancel,
 			CleanupTTL: 5 * time.Minute,
@@ -104,7 +109,7 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			AgentName:  req.AgentName,
 		})
 
-		updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
+		rt.updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		initialRunID := newTurnRunID(sessionID)
 		stream.Publish(attachContentParts(
 			attachTurnMeta(taskstream.UserMessageEvent(sessionID, userDisplayText), initialRunID),
@@ -114,7 +119,7 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		stream.Publish(attachTurnMeta(taskstream.ProcessingStartEvent(sessionID, "开始处理您的请求..."), initialRunID))
 
 		// 后台执行任务
-		go runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
+		go rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
 
 		OK(c, gin.H{
 			"session_id": sessionID,
@@ -126,6 +131,11 @@ func StreamStartHandlerWithState(state *appstate.State) gin.HandlerFunc {
 
 // StreamSteerHandler 在运行中的流式任务下一次模型调用前注入转向消息。
 func StreamSteerHandler() gin.HandlerFunc {
+	return NewRuntime().StreamSteerHandler()
+}
+
+// StreamSteerHandler 在当前 HTTP runtime 中注入转向消息。
+func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req StreamStartRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -145,7 +155,7 @@ func StreamSteerHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(req.SessionID)
+		stream := rt.Streams.Get(req.SessionID)
 		if stream == nil || stream.Status() != "processing" {
 			Fail(c, http.StatusNotFound, "no running task for this session")
 			return
@@ -164,9 +174,13 @@ func StreamSteerHandler() gin.HandlerFunc {
 
 // StreamQueueHandler 返回运行中任务的未消费队列快照。
 func StreamQueueHandler() gin.HandlerFunc {
+	return NewRuntime().StreamQueueHandler()
+}
+
+func (rt *Runtime) StreamQueueHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
-		stream := streamForQueueRequest(c, sessionID)
+		stream := rt.streamForQueueRequest(c, sessionID)
 		if stream == nil {
 			return
 		}
@@ -180,10 +194,14 @@ func StreamQueueHandler() gin.HandlerFunc {
 
 // StreamQueueUpdateHandler 修改尚未执行的队列项。
 func StreamQueueUpdateHandler() gin.HandlerFunc {
+	return NewRuntime().StreamQueueUpdateHandler()
+}
+
+func (rt *Runtime) StreamQueueUpdateHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := streamForQueueRequest(c, sessionID)
+		stream := rt.streamForQueueRequest(c, sessionID)
 		if stream == nil {
 			return
 		}
@@ -213,10 +231,14 @@ func StreamQueueUpdateHandler() gin.HandlerFunc {
 
 // StreamQueueDeleteHandler 删除尚未执行的队列项。
 func StreamQueueDeleteHandler() gin.HandlerFunc {
+	return NewRuntime().StreamQueueDeleteHandler()
+}
+
+func (rt *Runtime) StreamQueueDeleteHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := streamForQueueRequest(c, sessionID)
+		stream := rt.streamForQueueRequest(c, sessionID)
 		if stream == nil {
 			return
 		}
@@ -244,10 +266,14 @@ type StreamQueueKindRequest struct {
 
 // StreamQueueKindHandler 切换尚未执行队列项的语义类型。
 func StreamQueueKindHandler() gin.HandlerFunc {
+	return NewRuntime().StreamQueueKindHandler()
+}
+
+func (rt *Runtime) StreamQueueKindHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := streamForQueueRequest(c, sessionID)
+		stream := rt.streamForQueueRequest(c, sessionID)
 		if stream == nil {
 			return
 		}
@@ -277,10 +303,14 @@ func StreamQueueKindHandler() gin.HandlerFunc {
 
 // StreamQueueMoveHandler 调整尚未执行队列项在同类队列中的顺序。
 func StreamQueueMoveHandler() gin.HandlerFunc {
+	return NewRuntime().StreamQueueMoveHandler()
+}
+
+func (rt *Runtime) StreamQueueMoveHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := streamForQueueRequest(c, sessionID)
+		stream := rt.streamForQueueRequest(c, sessionID)
 		if stream == nil {
 			return
 		}
@@ -313,12 +343,12 @@ func StreamQueueMoveHandler() gin.HandlerFunc {
 	}
 }
 
-func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream {
+func (rt *Runtime) streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream {
 	if !validateSessionID(sessionID) {
 		Fail(c, http.StatusBadRequest, "invalid session ID")
 		return nil
 	}
-	stream := GlobalStreams.Get(sessionID)
+	stream := rt.Streams.Get(sessionID)
 	if stream == nil || stream.Status() != "processing" {
 		Fail(c, http.StatusNotFound, "no running task for this session")
 		return nil
@@ -327,7 +357,7 @@ func streamForQueueRequest(c *gin.Context, sessionID string) *taskstream.Stream 
 }
 
 // runStreamTask 后台执行流式任务
-func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
+func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID string, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, userDisplayText string, manager appstate.MemoryManager, initialRunID string) {
 	defer stream.Done()
 
 	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
@@ -373,37 +403,41 @@ func runStreamTask(ctx context.Context, stream *taskstream.Stream, sessionID str
 				log.Printf("stream task cancelled: session=%s", sessionID)
 				stream.SetStatus("cancelled")
 				stream.Publish(taskstream.CancelledEvent(sessionID, "任务已取消"))
-				finishCancelledChat(recorder, sessionID, currentDisplayText)
+				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
 				return
 			}
 			log.Printf("stream task error: session=%s, err=%v", sessionID, runErr)
 			stream.SetStatus("error")
 			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
-			finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
+			rt.finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
 			return
 		}
 
 		recorder.FinalizeCurrent()
-		saveTurnHistory(recorder, sessionID)
+		rt.saveTurnHistory(recorder, sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)
-			updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
+			rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
 			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
 			continue
 		}
 
 		stream.SetStatus("completed")
 		stream.Publish(taskstream.ProcessingEndEvent(sessionID, "处理完成"))
-		finishChat(recorder, sessionID, currentDisplayText, manager)
+		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
 }
 
 // StreamStopHandler 停止正在运行的流式任务
 func StreamStopHandler() gin.HandlerFunc {
+	return NewRuntime().StreamStopHandler()
+}
+
+func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		if !validateSessionID(sessionID) {
@@ -411,7 +445,7 @@ func StreamStopHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(sessionID)
+		stream := rt.Streams.Get(sessionID)
 		if stream == nil {
 			Fail(c, http.StatusNotFound, "no task found for this session")
 			return
@@ -434,6 +468,10 @@ func StreamStopHandler() gin.HandlerFunc {
 // 重连后可无损续接之前断开的事件流。
 // 仅对内存中有活跃/刚完成任务的 session 有效；已完成的历史数据应通过会话接口获取。
 func StreamSubscribeHandler() gin.HandlerFunc {
+	return NewRuntime().StreamSubscribeHandler()
+}
+
+func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		if !validateSessionID(sessionID) {
@@ -441,7 +479,7 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(sessionID)
+		stream := rt.Streams.Get(sessionID)
 		if stream == nil {
 			Fail(c, http.StatusNotFound, "no active task for this session")
 			return
@@ -505,6 +543,10 @@ func StreamSubscribeHandler() gin.HandlerFunc {
 
 // StreamStatusHandler 获取流式任务状态。
 func StreamStatusHandler() gin.HandlerFunc {
+	return NewRuntime().StreamStatusHandler()
+}
+
+func (rt *Runtime) StreamStatusHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		if !validateSessionID(sessionID) {
@@ -512,7 +554,7 @@ func StreamStatusHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(sessionID)
+		stream := rt.Streams.Get(sessionID)
 		if stream != nil {
 			result := gin.H{
 				"session_id":  sessionID,
@@ -533,7 +575,7 @@ func StreamStatusHandler() gin.HandlerFunc {
 		}
 
 		// 无活跃任务，返回会话元数据（供前端判断会话是否存在）
-		sessionDir := sessionDirPath(sessionID)
+		sessionDir := rt.sessionDirPath(sessionID)
 		meta, err := eventlog.LoadMetadata(sessionDir)
 		if err != nil {
 			Fail(c, http.StatusNotFound, "session not found")
@@ -552,6 +594,10 @@ func StreamStatusHandler() gin.HandlerFunc {
 
 // StreamApprovalHandler 提交 HITL 审批决定
 func StreamApprovalHandler() gin.HandlerFunc {
+	return NewRuntime().StreamApprovalHandler()
+}
+
+func (rt *Runtime) StreamApprovalHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID string `json:"session_id" binding:"required"`
@@ -566,7 +612,7 @@ func StreamApprovalHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(req.SessionID)
+		stream := rt.Streams.Get(req.SessionID)
 		if stream == nil || stream.Status() != "processing" {
 			Fail(c, http.StatusNotFound, "no running task for this session")
 			return
@@ -582,6 +628,10 @@ func StreamApprovalHandler() gin.HandlerFunc {
 
 // StreamAskResponseHandler 提交 ask_questions 回答
 func StreamAskResponseHandler() gin.HandlerFunc {
+	return NewRuntime().StreamAskResponseHandler()
+}
+
+func (rt *Runtime) StreamAskResponseHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID string   `json:"session_id" binding:"required"`
@@ -598,7 +648,7 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(req.SessionID)
+		stream := rt.Streams.Get(req.SessionID)
 		if stream == nil || stream.Status() != "processing" {
 			Fail(c, http.StatusNotFound, "no running task for this session")
 			return
@@ -619,6 +669,10 @@ func StreamAskResponseHandler() gin.HandlerFunc {
 
 // StreamEventsHandler 获取当前任务的已缓冲事件（非 SSE，一次性拉取）。
 func StreamEventsHandler() gin.HandlerFunc {
+	return NewRuntime().StreamEventsHandler()
+}
+
+func (rt *Runtime) StreamEventsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		if !validateSessionID(sessionID) {
@@ -626,7 +680,7 @@ func StreamEventsHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(sessionID)
+		stream := rt.Streams.Get(sessionID)
 		if stream == nil {
 			Fail(c, http.StatusNotFound, "no active task for this session")
 			return

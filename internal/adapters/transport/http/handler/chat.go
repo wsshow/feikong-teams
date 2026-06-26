@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"fkteams/internal/adapters/storage/file/history"
-	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
@@ -13,24 +12,10 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/google/uuid"
 )
-
-var globalRunnerCache = appagent.NewCache()
-
-// ClearRunnerCache 清除 runner 缓存
-func ClearRunnerCache() {
-	globalRunnerCache.Clear()
-	log.Println("runner cache cleared")
-}
-
-// resolveRunner 按 agentName 或 mode 获取 runner
-func resolveRunner(ctx context.Context, mode, agentName string) (runtimeport.Runner, error) {
-	return globalRunnerCache.ResolveWithTeamFallback(ctx, mode, agentName)
-}
 
 // --- 聊天输入构建 ---
 
@@ -171,61 +156,6 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 		publishQueuedExecutionStart(stream, sessionID, queued[0], runID)
 		return messages, nil
 	}
-}
-
-// chatHistoryPath 返回会话历史文件路径（使用 filepath.Base 防止路径穿越）
-// --- 执行后处理 ---
-
-func chatLifecycle() *appchat.SessionLifecycle {
-	store := eventlog.NewChatSessionStore(historyDir)
-	return appchat.NewSessionLifecycle(store, store)
-}
-
-func saveTurnHistory(recorder *eventlog.HistoryRecorder, sessionID string) {
-	err := eventlog.NewChatSessionStore(historyDir).SaveHistory(context.Background(), sessionID, recorder)
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-// updateSessionTitleAndStatus 更新会话标题（仅当标题为默认值时）和状态
-func updateSessionTitleAndStatus(sessionID, userInput, status string) {
-	err := chatLifecycle().MarkProcessing(context.Background(), sessionID, userInput)
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-// finishChat 保存历史、更新元数据、提取记忆
-func finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager) {
-	err := chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
-		SessionID:       sessionID,
-		TitleSource:     userInput,
-		Status:          appchat.SessionStatusCompleted,
-		History:         recorder,
-		FinalizeHistory: true,
-		Memory:          manager,
-		MemoryMessages:  eventlog.ConvertMemoryMessages(recorder),
-	})
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-func finishCancelledChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
-	err := chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
-		SessionID:   sessionID,
-		TitleSource: userInput,
-		Status:      appchat.SessionStatusCancelled,
-		History:     recorder,
-	})
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-func finishErrorChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, err error) {
-	lifecycleErr := chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
-		SessionID:       sessionID,
-		TitleSource:     userInput,
-		Status:          appchat.SessionStatusError,
-		History:         recorder,
-		FinalizeHistory: true,
-		Error:           err,
-	})
-	appchat.LogLifecycleError("http", sessionID, lifecycleErr)
 }
 
 // isConnectionClosed 检查是否为连接断开导致的错误

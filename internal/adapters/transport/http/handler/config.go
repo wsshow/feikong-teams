@@ -75,11 +75,16 @@ func GetConfigHandler() gin.HandlerFunc {
 
 // UpdateConfigHandler 更新配置（敏感字段合并旧值）
 func UpdateConfigHandler() gin.HandlerFunc {
-	return UpdateConfigHandlerWithState(nil)
+	return NewRuntime().UpdateConfigHandlerWithState(nil)
 }
 
 // UpdateConfigHandlerWithState 更新配置并使用显式应用状态重载依赖。
 func UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
+	return NewRuntime().UpdateConfigHandlerWithState(state)
+}
+
+// UpdateConfigHandlerWithState 更新配置并清理当前 HTTP runtime 的运行缓存。
+func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var newCfg config.Config
 		if err := c.ShouldBindJSON(&newCfg); err != nil {
@@ -152,7 +157,7 @@ func UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
 
 		// 重载智能体注册表、清除 Runner 缓存和 MCP 工具缓存
 		agents.ReloadRegistry()
-		ClearRunnerCache()
+		rt.clearRunnerCache()
 		tools.ClearMCPToolCache()
 		channel.ResetAllBridges()
 		resetMemoryLLM(state)

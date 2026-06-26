@@ -13,22 +13,22 @@ import (
 )
 
 func TestSessionCRUDHandlers(t *testing.T) {
-	withSessionHistoryDir(t)
+	rt := newTestRuntime(t)
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
-	router.GET("/sessions", ListSessionsHandler())
-	router.POST("/sessions", CreateSessionHandler())
-	router.DELETE("/sessions/:sessionID", DeleteSessionHandler())
-	router.POST("/sessions/rename", RenameSessionHandler())
-	router.POST("/sessions/agent", UpdateSessionAgentHandler())
+	router.GET("/sessions", rt.ListSessionsHandler())
+	router.POST("/sessions", rt.CreateSessionHandler())
+	router.DELETE("/sessions/:sessionID", rt.DeleteSessionHandler())
+	router.POST("/sessions/rename", rt.RenameSessionHandler())
+	router.POST("/sessions/agent", rt.UpdateSessionAgentHandler())
 
 	longTitle := strings.Repeat("题", 55)
 	resp := performJSON(router, http.MethodPost, "/sessions", `{"session_id":"session-1","title":"`+longTitle+`"}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("create session status = %d: %s", resp.Code, resp.Body.String())
 	}
-	meta, err := eventlog.LoadMetadata(sessionDirPath("session-1"))
+	meta, err := eventlog.LoadMetadata(rt.sessionDirPath("session-1"))
 	if err != nil {
 		t.Fatalf("load metadata after create: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("rename session status = %d: %s", resp.Code, resp.Body.String())
 	}
-	meta, err = eventlog.LoadMetadata(sessionDirPath("session-1"))
+	meta, err = eventlog.LoadMetadata(rt.sessionDirPath("session-1"))
 	if err != nil {
 		t.Fatalf("load metadata after rename: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("update agent status = %d: %s", resp.Code, resp.Body.String())
 	}
-	meta, err = eventlog.LoadMetadata(sessionDirPath("session-1"))
+	meta, err = eventlog.LoadMetadata(rt.sessionDirPath("session-1"))
 	if err != nil {
 		t.Fatalf("load metadata after agent update: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("delete session status = %d: %s", resp.Code, resp.Body.String())
 	}
-	if _, err := os.Stat(sessionDirPath("session-1")); !os.IsNotExist(err) {
+	if _, err := os.Stat(rt.sessionDirPath("session-1")); !os.IsNotExist(err) {
 		t.Fatalf("session dir should be deleted, stat err=%v", err)
 	}
 
@@ -95,14 +95,14 @@ func TestSessionCRUDHandlers(t *testing.T) {
 }
 
 func TestSessionHandlersRejectInvalidRequests(t *testing.T) {
-	withSessionHistoryDir(t)
+	rt := newTestRuntime(t)
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
-	router.POST("/sessions", CreateSessionHandler())
-	router.POST("/sessions/rename", RenameSessionHandler())
-	router.POST("/sessions/agent", UpdateSessionAgentHandler())
-	router.DELETE("/sessions/:sessionID", DeleteSessionHandler())
+	router.POST("/sessions", rt.CreateSessionHandler())
+	router.POST("/sessions/rename", rt.RenameSessionHandler())
+	router.POST("/sessions/agent", rt.UpdateSessionAgentHandler())
+	router.DELETE("/sessions/:sessionID", rt.DeleteSessionHandler())
 
 	tests := []struct {
 		name   string
@@ -134,7 +134,7 @@ func TestSessionHandlersRejectInvalidRequests(t *testing.T) {
 	}
 
 	now := time.Now()
-	if err := eventlog.SaveMetadata(sessionDirPath("session-2"), &eventlog.SessionMetadata{
+	if err := eventlog.SaveMetadata(rt.sessionDirPath("session-2"), &eventlog.SessionMetadata{
 		ID:        "session-2",
 		Title:     "title",
 		Status:    "idle",

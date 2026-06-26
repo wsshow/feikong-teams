@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"fkteams/internal/adapters/storage/file/history"
-	"fkteams/internal/app/appdata"
 	"log"
 	"net/http"
 	"os"
@@ -14,8 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
-
-var historyDir = appdata.SessionsDir()
 
 // SessionInfo 会话信息
 type SessionInfo struct {
@@ -36,20 +33,19 @@ func validateSessionID(sessionID string) bool {
 		!strings.Contains(sessionID, "\\")
 }
 
-// sessionDirPath 返回会话目录路径
-func sessionDirPath(sessionID string) string {
-	return filepath.Join(historyDir, filepath.Base(sessionID))
-}
-
 // ListSessionsHandler 列出所有历史会话
 func ListSessionsHandler() gin.HandlerFunc {
+	return NewRuntime().ListSessionsHandler()
+}
+
+func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, err := os.Stat(historyDir); os.IsNotExist(err) {
+		if _, err := os.Stat(rt.HistoryDir); os.IsNotExist(err) {
 			OK(c, gin.H{"sessions": []SessionInfo{}})
 			return
 		}
 
-		entries, err := os.ReadDir(historyDir)
+		entries, err := os.ReadDir(rt.HistoryDir)
 		if err != nil {
 			log.Printf("failed to read history dir: %v", err)
 			Fail(c, http.StatusInternalServerError, "failed to read directory")
@@ -62,7 +58,7 @@ func ListSessionsHandler() gin.HandlerFunc {
 				continue
 			}
 			sessionID := entry.Name()
-			sessionDir := filepath.Join(historyDir, sessionID)
+			sessionDir := filepath.Join(rt.HistoryDir, sessionID)
 
 			// 读取元数据
 			title := sessionID
@@ -96,7 +92,7 @@ func ListSessionsHandler() gin.HandlerFunc {
 				Title:        title,
 				Status:       status,
 				CurrentAgent: currentAgent,
-				ActiveTask:   GlobalStreams.Get(sessionID) != nil,
+				ActiveTask:   rt.Streams.Get(sessionID) != nil,
 				Size:         size,
 				ModTime:      modTime,
 			})
@@ -108,6 +104,10 @@ func ListSessionsHandler() gin.HandlerFunc {
 
 // CreateSessionHandler 创建新会话（仅创建元数据目录）
 func CreateSessionHandler() gin.HandlerFunc {
+	return NewRuntime().CreateSessionHandler()
+}
+
+func (rt *Runtime) CreateSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID string `json:"session_id"`
@@ -127,7 +127,7 @@ func CreateSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		sessionDir := sessionDirPath(req.SessionID)
+		sessionDir := rt.sessionDirPath(req.SessionID)
 		if _, err := os.Stat(sessionDir); err == nil {
 			// 会话已存在，返回已有的元数据
 			currentAgent := ""
@@ -172,6 +172,10 @@ func CreateSessionHandler() gin.HandlerFunc {
 
 // GetSessionHandler 加载指定会话的历史记录
 func GetSessionHandler() gin.HandlerFunc {
+	return NewRuntime().GetSessionHandler()
+}
+
+func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		if !validateSessionID(sessionID) {
@@ -179,10 +183,10 @@ func GetSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		stream := GlobalStreams.Get(sessionID)
+		stream := rt.Streams.Get(sessionID)
 		activeTask := stream != nil && stream.Status() == "processing"
 
-		sessionDir := sessionDirPath(sessionID)
+		sessionDir := rt.sessionDirPath(sessionID)
 		meta, metaErr := eventlog.LoadMetadata(sessionDir)
 
 		histFile := filepath.Join(sessionDir, eventlog.HistoryFileName)
@@ -216,6 +220,10 @@ func GetSessionHandler() gin.HandlerFunc {
 
 // DeleteSessionHandler 删除指定的会话目录
 func DeleteSessionHandler() gin.HandlerFunc {
+	return NewRuntime().DeleteSessionHandler()
+}
+
+func (rt *Runtime) DeleteSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		if !validateSessionID(sessionID) {
@@ -223,17 +231,17 @@ func DeleteSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		sessionDir := sessionDirPath(sessionID)
+		sessionDir := rt.sessionDirPath(sessionID)
 		if _, err := os.Stat(sessionDir); os.IsNotExist(err) {
 			Fail(c, http.StatusNotFound, "session not found")
 			return
 		}
 
 		// 取消该会话的活跃任务并清理缓存
-		GlobalStreams.CancelAndRemove(sessionID)
+		rt.Streams.CancelAndRemove(sessionID)
 
 		// 清理内存中的会话历史记录
-		eventlog.GlobalSessionManager.Remove(sessionID)
+		rt.Sessions.Remove(sessionID)
 
 		if err := os.RemoveAll(sessionDir); err != nil {
 			log.Printf("failed to delete session %s: %v", sessionID, err)
@@ -248,6 +256,10 @@ func DeleteSessionHandler() gin.HandlerFunc {
 
 // RenameSessionHandler 更新会话的标题
 func RenameSessionHandler() gin.HandlerFunc {
+	return NewRuntime().RenameSessionHandler()
+}
+
+func (rt *Runtime) RenameSessionHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID string `json:"session_id" binding:"required"`
@@ -262,7 +274,7 @@ func RenameSessionHandler() gin.HandlerFunc {
 			return
 		}
 
-		sessionDir := sessionDirPath(req.SessionID)
+		sessionDir := rt.sessionDirPath(req.SessionID)
 		meta, err := eventlog.LoadMetadata(sessionDir)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -293,6 +305,10 @@ func RenameSessionHandler() gin.HandlerFunc {
 
 // UpdateSessionAgentHandler 更新会话的当前智能体
 func UpdateSessionAgentHandler() gin.HandlerFunc {
+	return NewRuntime().UpdateSessionAgentHandler()
+}
+
+func (rt *Runtime) UpdateSessionAgentHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID    string `json:"session_id" binding:"required"`
@@ -307,7 +323,7 @@ func UpdateSessionAgentHandler() gin.HandlerFunc {
 			return
 		}
 
-		sessionDir := sessionDirPath(req.SessionID)
+		sessionDir := rt.sessionDirPath(req.SessionID)
 		meta, err := eventlog.LoadMetadata(sessionDir)
 		if err != nil {
 			if os.IsNotExist(err) {

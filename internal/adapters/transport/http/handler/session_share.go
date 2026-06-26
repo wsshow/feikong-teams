@@ -166,12 +166,12 @@ func sessionShareResponse(id string, entry *sessionShareEntry) SessionShare {
 	}
 }
 
-func sessionShareMessages(sessionID string, allowToolDetails bool) ([]eventlog.AgentMessage, error) {
+func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) ([]eventlog.AgentMessage, error) {
 	if !validateSessionID(sessionID) {
 		return nil, errors.New("invalid session ID")
 	}
 	recorder := eventlog.NewHistoryRecorder()
-	histFile := filepath.Join(sessionDirPath(sessionID), eventlog.HistoryFileName)
+	histFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.HistoryFileName)
 	if err := recorder.LoadFromFile(histFile); err != nil {
 		return nil, err
 	}
@@ -214,6 +214,10 @@ func sessionShareEntryByID(id string) (*sessionShareEntry, bool, bool) {
 
 // CreateSessionShareHandler 创建会话分享
 func CreateSessionShareHandler() gin.HandlerFunc {
+	return NewRuntime().CreateSessionShareHandler()
+}
+
+func (rt *Runtime) CreateSessionShareHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			SessionID        string `json:"session_id" binding:"required"`
@@ -230,9 +234,9 @@ func CreateSessionShareHandler() gin.HandlerFunc {
 			return
 		}
 
-		sessionDir := sessionDirPath(req.SessionID)
+		sessionDir := rt.sessionDirPath(req.SessionID)
 		meta, metaErr := eventlog.LoadMetadata(sessionDir)
-		messages, err := sessionShareMessages(req.SessionID, req.AllowToolDetails)
+		messages, err := sessionShareMessages(rt.HistoryDir, req.SessionID, req.AllowToolDetails)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) || metaErr != nil {
 				Fail(c, http.StatusNotFound, "session history not found")
@@ -380,6 +384,10 @@ func GetPublicSessionShareInfoHandler() gin.HandlerFunc {
 
 // AccessPublicSessionShareHandler 访问公开分享内容
 func AccessPublicSessionShareHandler() gin.HandlerFunc {
+	return NewRuntime().AccessPublicSessionShareHandler()
+}
+
+func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		shareID := c.Param("shareID")
 		entry, exists, expired := sessionShareEntryByID(shareID)
@@ -407,7 +415,7 @@ func AccessPublicSessionShareHandler() gin.HandlerFunc {
 			return
 		}
 
-		messages, err := sessionShareMessages(entry.SessionID, entry.AllowToolDetails)
+		messages, err := sessionShareMessages(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)
 		if err != nil {
 			log.Printf("failed to load public session share: share=%s, session=%s, err=%v", shareID, entry.SessionID, err)
 			Fail(c, http.StatusGone, "shared session unavailable")

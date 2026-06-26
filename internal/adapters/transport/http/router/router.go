@@ -39,13 +39,17 @@ func newEngine(authEnabled bool) *gin.Engine {
 
 // registerAPIRoutes 注册公共 API 路由
 func registerAPIRoutes(r *gin.Engine, authEnabled bool) {
-	registerAPIRoutesWithState(r, authEnabled, nil)
+	registerAPIRoutesWithRuntime(r, authEnabled, nil, handler.NewRuntime())
 }
 
 // registerAPIRoutesWithState 注册带应用状态的公共 API 路由。
 func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate.State) {
+	registerAPIRoutesWithRuntime(r, authEnabled, state, handler.NewRuntime())
+}
+
+func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appstate.State, runtime *handler.Runtime) {
 	r.GET("/health", handler.HealthHandler())
-	r.GET("/ws", handler.WebSocketHandlerWithState(state))
+	r.GET("/ws", runtime.WebSocketHandlerWithState(state))
 
 	// OpenAI 兼容 API（独立的 API Key 认证）
 	v1 := r.Group("/v1", middleware.APIKeyAuth())
@@ -68,24 +72,24 @@ func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate
 		apiV1.GET("/favicon", handler.FaviconHandler())
 
 		// 聊天 API
-		apiV1.POST("/chat", handler.ChatHandlerWithState(state))
+		apiV1.POST("/chat", runtime.ChatHandlerWithState(state))
 
 		// 流式任务 API（前端订阅模式，支持断线重连）
 		stream := apiV1.Group("/stream")
 		{
-			stream.POST("/start", handler.StreamStartHandlerWithState(state))
-			stream.POST("/steer", handler.StreamSteerHandler())
-			stream.GET("/queue/:sessionID", handler.StreamQueueHandler())
-			stream.PATCH("/queue/:sessionID/:queueID", handler.StreamQueueUpdateHandler())
-			stream.DELETE("/queue/:sessionID/:queueID", handler.StreamQueueDeleteHandler())
-			stream.POST("/queue/:sessionID/:queueID/kind", handler.StreamQueueKindHandler())
-			stream.POST("/queue/:sessionID/:queueID/move", handler.StreamQueueMoveHandler())
-			stream.POST("/stop/:sessionID", handler.StreamStopHandler())
-			stream.GET("/subscribe/:sessionID", handler.StreamSubscribeHandler())
-			stream.GET("/status/:sessionID", handler.StreamStatusHandler())
-			stream.GET("/events/:sessionID", handler.StreamEventsHandler())
-			stream.POST("/approval", handler.StreamApprovalHandler())
-			stream.POST("/ask-response", handler.StreamAskResponseHandler())
+			stream.POST("/start", runtime.StreamStartHandlerWithState(state))
+			stream.POST("/steer", runtime.StreamSteerHandler())
+			stream.GET("/queue/:sessionID", runtime.StreamQueueHandler())
+			stream.PATCH("/queue/:sessionID/:queueID", runtime.StreamQueueUpdateHandler())
+			stream.DELETE("/queue/:sessionID/:queueID", runtime.StreamQueueDeleteHandler())
+			stream.POST("/queue/:sessionID/:queueID/kind", runtime.StreamQueueKindHandler())
+			stream.POST("/queue/:sessionID/:queueID/move", runtime.StreamQueueMoveHandler())
+			stream.POST("/stop/:sessionID", runtime.StreamStopHandler())
+			stream.GET("/subscribe/:sessionID", runtime.StreamSubscribeHandler())
+			stream.GET("/status/:sessionID", runtime.StreamStatusHandler())
+			stream.GET("/events/:sessionID", runtime.StreamEventsHandler())
+			stream.POST("/approval", runtime.StreamApprovalHandler())
+			stream.POST("/ask-response", runtime.StreamAskResponseHandler())
 		}
 
 		// 文件管理 API
@@ -115,7 +119,7 @@ func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate
 		// 会话分享管理 API
 		sessionShares := apiV1.Group("/session-shares")
 		{
-			sessionShares.POST("", handler.CreateSessionShareHandler())
+			sessionShares.POST("", runtime.CreateSessionShareHandler())
 			sessionShares.GET("", handler.ListSessionSharesHandler())
 			sessionShares.DELETE("/:shareID", handler.DeleteSessionShareHandler())
 		}
@@ -124,18 +128,18 @@ func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate
 		publicSessionShares := apiV1.Group("/public/session-shares")
 		{
 			publicSessionShares.GET("/:shareID/info", handler.GetPublicSessionShareInfoHandler())
-			publicSessionShares.POST("/:shareID/access", handler.AccessPublicSessionShareHandler())
+			publicSessionShares.POST("/:shareID/access", runtime.AccessPublicSessionShareHandler())
 		}
 
 		// 会话管理 API
 		sessions := apiV1.Group("/sessions")
 		{
-			sessions.GET("", handler.ListSessionsHandler())
-			sessions.POST("", handler.CreateSessionHandler())
-			sessions.GET("/:sessionID", handler.GetSessionHandler())
-			sessions.DELETE("/:sessionID", handler.DeleteSessionHandler())
-			sessions.POST("/rename", handler.RenameSessionHandler())
-			sessions.POST("/agent", handler.UpdateSessionAgentHandler())
+			sessions.GET("", runtime.ListSessionsHandler())
+			sessions.POST("", runtime.CreateSessionHandler())
+			sessions.GET("/:sessionID", runtime.GetSessionHandler())
+			sessions.DELETE("/:sessionID", runtime.DeleteSessionHandler())
+			sessions.POST("/rename", runtime.RenameSessionHandler())
+			sessions.POST("/agent", runtime.UpdateSessionAgentHandler())
 		}
 
 		// 定时任务管理 API
@@ -171,7 +175,7 @@ func registerAPIRoutesWithState(r *gin.Engine, authEnabled bool, state *appstate
 		configGroup := apiV1.Group("/config")
 		{
 			configGroup.GET("", handler.GetConfigHandler())
-			configGroup.PUT("", handler.UpdateConfigHandlerWithState(state))
+			configGroup.PUT("", runtime.UpdateConfigHandlerWithState(state))
 			configGroup.GET("/tools", handler.GetToolNamesHandler())
 			configGroup.GET("/tool-catalog", handler.GetToolCatalogHandler())
 			configGroup.GET("/template-vars", handler.GetTemplateVarsHandler())
@@ -194,9 +198,17 @@ func Init() (*gin.Engine, error) {
 
 // InitWithState 初始化并返回带应用状态的 Gin 路由引擎（含 Web 界面）。
 func InitWithState(state *appstate.State) (*gin.Engine, error) {
+	return InitWithRuntime(state, handler.NewRuntime())
+}
+
+// InitWithRuntime 初始化并返回带显式 HTTP runtime 的 Gin 路由引擎（含 Web 界面）。
+func InitWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.Engine, error) {
 	authEnabled, err := handler.AuthEnabled()
 	if err != nil {
 		return nil, fmt.Errorf("check auth config: %w", err)
+	}
+	if runtime == nil {
+		runtime = handler.NewRuntime()
 	}
 
 	r := newEngine(authEnabled)
@@ -236,7 +248,7 @@ func InitWithState(state *appstate.State) (*gin.Engine, error) {
 		serveHTML(c, webFS, "session_share.html")
 	})
 
-	registerAPIRoutesWithState(r, authEnabled, state)
+	registerAPIRoutesWithRuntime(r, authEnabled, state, runtime)
 	return r, nil
 }
 
@@ -374,12 +386,20 @@ func InitAPI() (*gin.Engine, error) {
 
 // InitAPIWithState 初始化带应用状态的纯 API 路由。
 func InitAPIWithState(state *appstate.State) (*gin.Engine, error) {
+	return InitAPIWithRuntime(state, handler.NewRuntime())
+}
+
+// InitAPIWithRuntime 初始化带显式 HTTP runtime 的纯 API 路由。
+func InitAPIWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.Engine, error) {
 	authEnabled, err := handler.AuthEnabled()
 	if err != nil {
 		return nil, fmt.Errorf("check auth config: %w", err)
 	}
+	if runtime == nil {
+		runtime = handler.NewRuntime()
+	}
 
 	r := newEngine(authEnabled)
-	registerAPIRoutesWithState(r, authEnabled, state)
+	registerAPIRoutesWithRuntime(r, authEnabled, state, runtime)
 	return r, nil
 }
