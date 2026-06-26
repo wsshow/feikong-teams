@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"fkteams/internal/adapters/storage/file/history"
-	appschedule "fkteams/internal/app/schedule"
 
 	"fkteams/internal/adapters/transport/cli/tui"
 	appchat "fkteams/internal/app/chat"
@@ -168,19 +167,19 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 			m.appendBlock(runtimeBlockSystem, "模式", "已切换到工作模式: "+newMode)
 			return m, nil
 		case "list_schedule":
-			m.appendBlock(runtimeBlockSystem, "定时任务", runtimeScheduleMarkdown())
+			m.appendBlock(runtimeBlockSystem, "定时任务", runtimeScheduleMarkdown(m.runtime.session.scheduler))
 			return m, nil
 		case "cancel_schedule":
 			if args != "" {
 				return m.cancelRuntimeSchedule(args), nil
 			}
-			picker, err := newScheduleCancelPicker()
+			picker, err := newScheduleCancelPicker(m.runtime.session.scheduler)
 			return m.openRuntimePicker(picker, err, "取消定时任务")
 		case "delete_schedule":
 			if args != "" {
 				return m.deleteRuntimeSchedule(args), nil
 			}
-			picker, err := newScheduleDeletePicker()
+			picker, err := newScheduleDeletePicker(m.runtime.session.scheduler)
 			return m.openRuntimePicker(picker, err, "删除定时任务")
 		case "list_memory":
 			m.appendBlock(runtimeBlockSystem, "长期记忆", runtimeMemoryMarkdown(m.runtime.session.memory))
@@ -392,7 +391,7 @@ func (m runtimeModel) clearRuntimeMemory() runtimeModel {
 }
 
 func (m runtimeModel) cancelRuntimeSchedule(taskID string) runtimeModel {
-	service := appschedule.Default()
+	service := m.runtime.session.scheduler
 	if service == nil {
 		m.appendBlock(runtimeBlockError, "取消定时任务失败", "定时任务调度器未初始化")
 		return m
@@ -406,7 +405,7 @@ func (m runtimeModel) cancelRuntimeSchedule(taskID string) runtimeModel {
 }
 
 func (m runtimeModel) deleteRuntimeSchedule(taskID string) runtimeModel {
-	service := appschedule.Default()
+	service := m.runtime.session.scheduler
 	if service == nil {
 		m.appendBlock(runtimeBlockError, "删除定时任务失败", "定时任务调度器未初始化")
 		return m

@@ -850,6 +850,21 @@ func TestHTTPShareStoresAreRuntimeOwned(t *testing.T) {
 	}
 }
 
+func TestScheduleServiceDoesNotExposeProcessDefault(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "app", "schedule", "service.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"SetDefault(", "Default() *Service", "defaultService", "defaultMu"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("internal/app/schedule exposes process-default service through %q; inject schedule.Service explicitly", forbidden)
+		}
+	}
+}
+
 func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{

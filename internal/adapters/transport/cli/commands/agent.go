@@ -13,6 +13,7 @@ import (
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
+	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
 
 	"github.com/pterm/pterm"
@@ -149,10 +150,19 @@ func agentAction(ctx context.Context, cmd *ucli.Command) error {
 		return err
 	})
 
+	var schedulerSvc *bootstrapservices.SchedulerService
+	if cfg.SchedulerEnabled {
+		schedulerSvc = bootstrapservices.NewSchedulerService(cfg.SchedulerDir)
+		app.RegisterService(schedulerSvc)
+	}
+
 	var session *cliruntime.Session
 	app.OnReady(func(ctx context.Context) error {
 		session = cliruntime.NewSession(cliruntime.ModeTeam, inputHistory, nil)
 		session.SetMemoryManager(state.Memory())
+		if schedulerSvc != nil {
+			session.SetScheduleService(schedulerSvc.AppService())
+		}
 		session.SetCurrentAgent(agentName)
 		session.SetTemporary(temporarySession)
 		if resumeSession != "" {

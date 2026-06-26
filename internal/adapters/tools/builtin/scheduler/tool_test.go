@@ -14,11 +14,11 @@ import (
 
 func TestToolsDelegateToScheduleService(t *testing.T) {
 	fake := &fakeScheduler{}
-	tools := NewTools(func() *appschedule.Service {
-		return appschedule.NewService(fake)
-	})
+	service := appschedule.NewService(fake)
+	tools := NewTools(nil)
+	ctx := appschedule.WithService(context.Background(), service)
 
-	addResp, err := tools.ScheduleAdd(context.Background(), &ScheduleAddRequest{
+	addResp, err := tools.ScheduleAdd(ctx, &ScheduleAddRequest{
 		Task:      "生成日报",
 		ExecuteAt: time.Now().Add(time.Hour).Format(time.RFC3339),
 	})
@@ -29,7 +29,7 @@ func TestToolsDelegateToScheduleService(t *testing.T) {
 		t.Fatalf("ScheduleAdd response = %#v, addReq = %#v", addResp, fake.addReq)
 	}
 
-	listResp, err := tools.ScheduleList(context.Background(), &ScheduleListRequest{StatusFilter: string(domainschedule.StatusPending)})
+	listResp, err := tools.ScheduleList(ctx, &ScheduleListRequest{StatusFilter: string(domainschedule.StatusPending)})
 	if err != nil {
 		t.Fatalf("ScheduleList returned error: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestToolsDelegateToScheduleService(t *testing.T) {
 		t.Fatalf("ScheduleList response = %#v, status = %s", listResp, fake.listStatus)
 	}
 
-	cancelResp, err := tools.ScheduleCancel(context.Background(), &ScheduleCancelRequest{TaskID: "task-1"})
+	cancelResp, err := tools.ScheduleCancel(ctx, &ScheduleCancelRequest{TaskID: "task-1"})
 	if err != nil {
 		t.Fatalf("ScheduleCancel returned error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestToolsDelegateToScheduleService(t *testing.T) {
 		t.Fatalf("ScheduleCancel response = %#v, cancelID = %s", cancelResp, fake.cancelID)
 	}
 
-	deleteResp, err := tools.ScheduleDelete(context.Background(), &ScheduleDeleteRequest{TaskID: "task-1"})
+	deleteResp, err := tools.ScheduleDelete(ctx, &ScheduleDeleteRequest{TaskID: "task-1"})
 	if err != nil {
 		t.Fatalf("ScheduleDelete returned error: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestToolsDelegateToScheduleService(t *testing.T) {
 }
 
 func TestToolsReturnErrorMessageWhenServiceMissing(t *testing.T) {
-	tools := NewTools(func() *appschedule.Service { return nil })
+	tools := NewTools(nil)
 	resp, err := tools.ScheduleList(context.Background(), &ScheduleListRequest{})
 	if err != nil {
 		t.Fatalf("ScheduleList returned error: %v", err)
@@ -66,9 +66,7 @@ func TestToolsReturnErrorMessageWhenServiceMissing(t *testing.T) {
 }
 
 func TestToolsExposeRuntimeTools(t *testing.T) {
-	tools, err := NewTools(func() *appschedule.Service {
-		return appschedule.NewService(&fakeScheduler{})
-	}).GetTools()
+	tools, err := NewTools(nil).GetTools()
 	if err != nil {
 		t.Fatalf("GetTools: %v", err)
 	}

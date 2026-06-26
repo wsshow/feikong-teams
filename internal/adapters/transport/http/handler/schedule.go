@@ -1,7 +1,6 @@
 package handler
 
 import (
-	appschedule "fkteams/internal/app/schedule"
 	domainschedule "fkteams/internal/domain/schedule"
 	"log"
 	"net/http"
@@ -11,8 +10,12 @@ import (
 
 // GetScheduleTasksHandler 返回调度任务列表。
 func GetScheduleTasksHandler() gin.HandlerFunc {
+	return NewRuntime().GetScheduleTasksHandler()
+}
+
+func (rt *Runtime) GetScheduleTasksHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		service := appschedule.Default()
+		service := rt.Scheduler
 		if service == nil {
 			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return
@@ -35,6 +38,10 @@ func GetScheduleTasksHandler() gin.HandlerFunc {
 
 // CancelScheduleTaskHandler 取消调度任务。
 func CancelScheduleTaskHandler() gin.HandlerFunc {
+	return NewRuntime().CancelScheduleTaskHandler()
+}
+
+func (rt *Runtime) CancelScheduleTaskHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
 		if taskID == "" {
@@ -42,7 +49,7 @@ func CancelScheduleTaskHandler() gin.HandlerFunc {
 			return
 		}
 
-		service := appschedule.Default()
+		service := rt.Scheduler
 		if service == nil {
 			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return
@@ -60,6 +67,10 @@ func CancelScheduleTaskHandler() gin.HandlerFunc {
 
 // GetTaskResultHandler 返回任务最新结果。
 func GetTaskResultHandler() gin.HandlerFunc {
+	return NewRuntime().GetTaskResultHandler()
+}
+
+func (rt *Runtime) GetTaskResultHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
 		if taskID == "" {
@@ -67,7 +78,7 @@ func GetTaskResultHandler() gin.HandlerFunc {
 			return
 		}
 
-		service := appschedule.Default()
+		service := rt.Scheduler
 		if service == nil {
 			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return
@@ -85,6 +96,10 @@ func GetTaskResultHandler() gin.HandlerFunc {
 
 // GetTaskHistoryHandler 返回任务历史结果列表。
 func GetTaskHistoryHandler() gin.HandlerFunc {
+	return NewRuntime().GetTaskHistoryHandler()
+}
+
+func (rt *Runtime) GetTaskHistoryHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
 		if taskID == "" {
@@ -92,7 +107,7 @@ func GetTaskHistoryHandler() gin.HandlerFunc {
 			return
 		}
 
-		service := appschedule.Default()
+		service := rt.Scheduler
 		if service == nil {
 			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return
@@ -113,6 +128,10 @@ func GetTaskHistoryHandler() gin.HandlerFunc {
 
 // GetTaskHistoryFileHandler 返回指定历史结果内容。
 func GetTaskHistoryFileHandler() gin.HandlerFunc {
+	return NewRuntime().GetTaskHistoryFileHandler()
+}
+
+func (rt *Runtime) GetTaskHistoryFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskID := c.Param("id")
 		filename := c.Param("filename")
@@ -121,7 +140,7 @@ func GetTaskHistoryFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		service := appschedule.Default()
+		service := rt.Scheduler
 		if service == nil {
 			Fail(c, http.StatusServiceUnavailable, "scheduler not initialized")
 			return

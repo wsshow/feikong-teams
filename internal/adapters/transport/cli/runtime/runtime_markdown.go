@@ -10,6 +10,7 @@ import (
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
+	appschedule "fkteams/internal/app/schedule"
 	"fkteams/internal/app/version"
 )
 
@@ -113,8 +114,8 @@ func runtimeMemoryMarkdown(manager appstate.MemoryManager) string {
 	return sb.String()
 }
 
-func runtimeScheduleMarkdown() string {
-	tasks, err := runtimeScheduledTasks("")
+func runtimeScheduleMarkdown(service *appschedule.Service) string {
+	tasks, err := runtimeScheduledTasks(service, "")
 	if err != nil {
 		return err.Error()
 	}

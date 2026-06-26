@@ -9,6 +9,7 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
+	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
@@ -62,6 +63,7 @@ type Bridge struct {
 	runtimeMu sync.RWMutex
 	engine    runtimeport.Engine
 	interrupt runtimeport.InterruptRuntime
+	scheduler func() *appschedule.Service
 
 	queueMu sync.Mutex
 	queues  map[string]*sessionQueue // per-session 消息队列
@@ -69,9 +71,10 @@ type Bridge struct {
 
 // BridgeOptions 描述通道桥接器的显式依赖。
 type BridgeOptions struct {
-	State      *appstate.State
-	HistoryDir string
-	Sessions   *eventlog.SessionHistoryManager
+	State             *appstate.State
+	HistoryDir        string
+	Sessions          *eventlog.SessionHistoryManager
+	SchedulerProvider func() *appschedule.Service
 }
 
 // NewBridge 创建消息桥接器
@@ -103,6 +106,7 @@ func NewBridgeWithOptions(manager *Manager, mode string, options BridgeOptions) 
 		state:      options.State,
 		historyDir: historyDir,
 		sessions:   sessions,
+		scheduler:  options.SchedulerProvider,
 		queues:     make(map[string]*sessionQueue),
 	}
 }
@@ -130,7 +134,11 @@ func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
 	interrupt := b.interrupt
 	b.runtimeMu.RUnlock()
 	ctx = runtimeport.WithEngine(ctx, engine)
-	return runtimeport.WithInterruptRuntime(ctx, interrupt)
+	ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
+	if b.scheduler != nil {
+		ctx = appschedule.WithService(ctx, b.scheduler())
+	}
+	return ctx
 }
 
 // getRunner 惰性创建 runner（线程安全）

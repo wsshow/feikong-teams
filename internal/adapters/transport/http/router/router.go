@@ -145,11 +145,11 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		// 定时任务管理 API
 		schedules := apiV1.Group("/schedules")
 		{
-			schedules.GET("", handler.GetScheduleTasksHandler())
-			schedules.POST("/:id/cancel", handler.CancelScheduleTaskHandler())
-			schedules.GET("/:id/result", handler.GetTaskResultHandler())
-			schedules.GET("/:id/history", handler.GetTaskHistoryHandler())
-			schedules.GET("/:id/history/:filename", handler.GetTaskHistoryFileHandler())
+			schedules.GET("", runtime.GetScheduleTasksHandler())
+			schedules.POST("/:id/cancel", runtime.CancelScheduleTaskHandler())
+			schedules.GET("/:id/result", runtime.GetTaskResultHandler())
+			schedules.GET("/:id/history", runtime.GetTaskHistoryHandler())
+			schedules.GET("/:id/history/:filename", runtime.GetTaskHistoryFileHandler())
 		}
 
 		// 技能管理 API

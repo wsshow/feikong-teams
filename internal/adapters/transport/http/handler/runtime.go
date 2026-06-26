@@ -12,6 +12,7 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
+	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
@@ -25,6 +26,7 @@ type Runtime struct {
 	ChunkUploads  *ChunkUploadStore
 	PreviewLinks  *PreviewLinkStore
 	SessionShares *SessionShareStore
+	Scheduler     *appschedule.Service
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -40,6 +42,7 @@ type RuntimeOptions struct {
 	ChunkUploads  *ChunkUploadStore
 	PreviewLinks  *PreviewLinkStore
 	SessionShares *SessionShareStore
+	Scheduler     *appschedule.Service
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -64,6 +67,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		ChunkUploads:  opt.ChunkUploads,
 		PreviewLinks:  opt.PreviewLinks,
 		SessionShares: opt.SessionShares,
+		Scheduler:     opt.Scheduler,
 		Engine:        opt.Engine,
 		Interrupt:     opt.Interrupt,
 		ResetChannels: opt.ResetChannels,
@@ -122,7 +126,8 @@ func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (r
 
 func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
 	ctx = runtimeport.WithEngine(ctx, rt.Engine)
-	return runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
+	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
+	return appschedule.WithService(ctx, rt.Scheduler)
 }
 
 func (rt *Runtime) chatLifecycle() *appchat.SessionLifecycle {

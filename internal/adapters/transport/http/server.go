@@ -16,6 +16,7 @@ import (
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
+	appschedule "fkteams/internal/app/schedule"
 	"fkteams/internal/app/version"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -40,6 +41,7 @@ type httpService struct {
 	mode          serverMode // 服务模式
 	state         *appstate.State
 	resetChannels func()
+	scheduler     *bootstrapservices.SchedulerService
 	runtime       *handler.Runtime
 	server        *http.Server // HTTP 服务实例
 }
@@ -69,6 +71,9 @@ func (s *httpService) Start(ctx context.Context) error {
 		Interrupt:     interrupt,
 		ResetChannels: s.resetChannels,
 	})
+	if s.scheduler != nil {
+		s.runtime.Scheduler = s.scheduler.AppService()
+	}
 	if s.mode == ModeAPI {
 		h, err = router.InitAPIWithRuntime(s.state, s.runtime)
 	} else {
@@ -145,8 +150,10 @@ func run(ctx context.Context, mode serverMode, opts *ServeOptions) error {
 	if appCfg.MemoryEnabled {
 		app.RegisterService(bootstrapservices.NewMemoryService(appCfg.WorkspaceDir, state))
 	}
+	var schedulerSvc *bootstrapservices.SchedulerService
 	if appCfg.SchedulerEnabled {
-		app.RegisterService(bootstrapservices.NewSchedulerService(appCfg.SchedulerDir))
+		schedulerSvc = bootstrapservices.NewSchedulerService(appCfg.SchedulerDir)
+		app.RegisterService(schedulerSvc)
 	}
 
 	host := "127.0.0.1"
@@ -164,16 +171,24 @@ func run(ctx context.Context, mode serverMode, opts *ServeOptions) error {
 	}
 
 	httpSvc := &httpService{
-		host:     host,
-		port:     port,
-		logLevel: cfg.Server.LogLevel,
-		mode:     mode,
-		state:    state,
+		host:      host,
+		port:      port,
+		logLevel:  cfg.Server.LogLevel,
+		mode:      mode,
+		state:     state,
+		scheduler: schedulerSvc,
 	}
 	app.RegisterService(httpSvc)
 
 	// 注册消息通道
-	if svc, err := channel.SetupWithState(cfg.Channels.List(), state); err != nil {
+	var schedulerProvider func() *appschedule.Service
+	if schedulerSvc != nil {
+		schedulerProvider = schedulerSvc.AppService
+	}
+	if svc, err := channel.SetupWithOptions(cfg.Channels.List(), channel.SetupOptions{
+		State:             state,
+		SchedulerProvider: schedulerProvider,
+	}); err != nil {
 		return fmt.Errorf("setup channels: %w", err)
 	} else if svc != nil {
 		httpSvc.resetChannels = svc.ResetRunners

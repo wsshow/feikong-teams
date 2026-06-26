@@ -6,6 +6,7 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
+	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
 	"fmt"
@@ -19,6 +20,17 @@ func Setup(entries []config.ChannelEntry) (*Service, error) {
 
 // SetupWithState 从配置中创建通道，并把应用状态传给通道桥接器。
 func SetupWithState(entries []config.ChannelEntry, state *appstate.State) (*Service, error) {
+	return SetupWithOptions(entries, SetupOptions{State: state})
+}
+
+// SetupOptions 描述通道服务的显式依赖。
+type SetupOptions struct {
+	State             *appstate.State
+	SchedulerProvider func() *appschedule.Service
+}
+
+// SetupWithOptions 从配置中创建通道，并注入入口依赖。
+func SetupWithOptions(entries []config.ChannelEntry, options SetupOptions) (*Service, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
@@ -31,9 +43,10 @@ func SetupWithState(entries []config.ChannelEntry, state *appstate.State) (*Serv
 	bridges := make(map[string]*Bridge)
 	for _, entry := range entries {
 		bridge := NewBridgeWithOptions(mgr, entry.Mode, BridgeOptions{
-			State:      state,
-			HistoryDir: historyDir,
-			Sessions:   sessions,
+			State:             options.State,
+			HistoryDir:        historyDir,
+			Sessions:          sessions,
+			SchedulerProvider: options.SchedulerProvider,
 		})
 		bridges[entry.Name] = bridge
 	}

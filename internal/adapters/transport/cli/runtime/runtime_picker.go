@@ -105,8 +105,8 @@ func newMemoryDeletePicker(manager appstate.MemoryManager) (*runtimePicker, erro
 	return newRuntimePicker(runtimePickerMemoryDelete, "删除长期记忆", items, 12), nil
 }
 
-func newScheduleCancelPicker() (*runtimePicker, error) {
-	tasks, err := runtimeScheduledTasks("pending")
+func newScheduleCancelPicker(service *appschedule.Service) (*runtimePicker, error) {
+	tasks, err := runtimeScheduledTasks(service, "pending")
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +120,8 @@ func newScheduleCancelPicker() (*runtimePicker, error) {
 	return newRuntimePicker(runtimePickerScheduleCancel, "取消定时任务", items, 12), nil
 }
 
-func newScheduleDeletePicker() (*runtimePicker, error) {
-	tasks, err := runtimeScheduledTasks("")
+func newScheduleDeletePicker(service *appschedule.Service) (*runtimePicker, error) {
+	tasks, err := runtimeScheduledTasks(service, "")
 	if err != nil {
 		return nil, err
 	}
@@ -390,8 +390,7 @@ func runtimeMemoryEntriesFrom(manager appstate.MemoryManager) ([]domainmemory.Me
 	return manager.List(), nil
 }
 
-func runtimeScheduledTasks(status string) ([]domainschedule.Task, error) {
-	service := appschedule.Default()
+func runtimeScheduledTasks(service *appschedule.Service, status string) ([]domainschedule.Task, error) {
 	if service == nil {
 		return nil, fmt.Errorf("定时任务调度器未初始化")
 	}

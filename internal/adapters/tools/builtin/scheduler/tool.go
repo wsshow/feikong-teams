@@ -12,8 +12,8 @@ import (
 	schedulerport "fkteams/internal/ports/scheduler"
 )
 
-// ServiceProvider 延迟提供调度用例服务，避免工具解析阶段启动调度器。
-type ServiceProvider func() *appschedule.Service
+// ServiceProvider 从工具执行上下文提供调度用例服务。
+type ServiceProvider func(context.Context) *appschedule.Service
 
 // Tools 是 schedule 工具适配器。
 type Tools struct {
@@ -23,16 +23,16 @@ type Tools struct {
 // NewTools 创建 schedule 工具适配器。
 func NewTools(provider ServiceProvider) *Tools {
 	if provider == nil {
-		provider = appschedule.Default
+		provider = appschedule.FromContext
 	}
 	return &Tools{service: provider}
 }
 
-func (t *Tools) serviceOrError() (*appschedule.Service, error) {
+func (t *Tools) serviceOrError(ctx context.Context) (*appschedule.Service, error) {
 	if t == nil || t.service == nil {
 		return nil, fmt.Errorf("scheduler service is not initialized")
 	}
-	service := t.service()
+	service := t.service(ctx)
 	if service == nil {
 		return nil, fmt.Errorf("scheduler service is not initialized")
 	}
@@ -134,7 +134,7 @@ type ScheduleDeleteResponse struct {
 
 // ScheduleAdd 添加定时任务。
 func (t *Tools) ScheduleAdd(ctx context.Context, req *ScheduleAddRequest) (*ScheduleAddResponse, error) {
-	service, err := t.serviceOrError()
+	service, err := t.serviceOrError(ctx)
 	if err != nil {
 		return &ScheduleAddResponse{ErrorMessage: err.Error()}, nil
 	}
@@ -155,7 +155,7 @@ func (t *Tools) ScheduleAdd(ctx context.Context, req *ScheduleAddRequest) (*Sche
 
 // ScheduleList 列出定时任务。
 func (t *Tools) ScheduleList(ctx context.Context, req *ScheduleListRequest) (*ScheduleListResponse, error) {
-	service, err := t.serviceOrError()
+	service, err := t.serviceOrError(ctx)
 	if err != nil {
 		return &ScheduleListResponse{ErrorMessage: err.Error()}, nil
 	}
@@ -172,7 +172,7 @@ func (t *Tools) ScheduleList(ctx context.Context, req *ScheduleListRequest) (*Sc
 
 // ScheduleCancel 取消定时任务。
 func (t *Tools) ScheduleCancel(ctx context.Context, req *ScheduleCancelRequest) (*ScheduleCancelResponse, error) {
-	service, err := t.serviceOrError()
+	service, err := t.serviceOrError(ctx)
 	if err != nil {
 		return &ScheduleCancelResponse{ErrorMessage: err.Error()}, nil
 	}
@@ -184,7 +184,7 @@ func (t *Tools) ScheduleCancel(ctx context.Context, req *ScheduleCancelRequest) 
 
 // ScheduleDelete 删除定时任务。
 func (t *Tools) ScheduleDelete(ctx context.Context, req *ScheduleDeleteRequest) (*ScheduleDeleteResponse, error) {
-	service, err := t.serviceOrError()
+	service, err := t.serviceOrError(ctx)
 	if err != nil {
 		return &ScheduleDeleteResponse{ErrorMessage: err.Error()}, nil
 	}

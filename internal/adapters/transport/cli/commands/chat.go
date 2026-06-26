@@ -78,14 +78,19 @@ func chatAction(ctx context.Context, cmd *ucli.Command) error {
 			pterm.Info.Println("全局长期记忆已启用")
 		}
 	}
+	var schedulerSvc *bootstrapservices.SchedulerService
 	if cfg.SchedulerEnabled {
-		app.RegisterService(bootstrapservices.NewSchedulerService(cfg.SchedulerDir))
+		schedulerSvc = bootstrapservices.NewSchedulerService(cfg.SchedulerDir)
+		app.RegisterService(schedulerSvc)
 	}
 
 	var session *cliruntime.Session
 	app.OnReady(func(ctx context.Context) error {
 		session = cliruntime.NewSession(currentMode, inputHistory, createModeRunner)
 		session.SetMemoryManager(state.Memory())
+		if schedulerSvc != nil {
+			session.SetScheduleService(schedulerSvc.AppService())
+		}
 		session.ApproveStores = approve
 		session.SetTemporary(temporarySession)
 		if resumeSession != "" {

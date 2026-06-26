@@ -17,6 +17,7 @@ type SchedulerService struct {
 	schedulerDir string
 	mu           sync.Mutex
 	scheduler    *filecron.Scheduler
+	service      *appschedule.Service
 }
 
 // NewSchedulerService 创建调度服务
@@ -28,6 +29,13 @@ func NewSchedulerService(schedulerDir string) *SchedulerService {
 
 // Name 返回服务名称
 func (s *SchedulerService) Name() string { return "scheduler" }
+
+// AppService 返回已启动的调度用例服务。
+func (s *SchedulerService) AppService() *appschedule.Service {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.service
+}
 
 // Start 初始化调度器并启动定时任务服务
 func (s *SchedulerService) Start(ctx context.Context) error {
@@ -43,17 +51,19 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 		return nil // 调度器初始化失败不阻止应用启动
 	}
 
+	appService := appschedule.NewService(sched)
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	executor := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks")).
 		WithContextHook(func(ctx context.Context) context.Context {
 			ctx = runtimeport.WithEngine(ctx, engine)
-			return runtimeport.WithInterruptRuntime(ctx, interrupt)
+			ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
+			return appschedule.WithService(ctx, appService)
 		})
 	sched.SetExecutor(executor)
-	appschedule.SetDefault(appschedule.NewService(sched))
 	sched.Start()
 	s.scheduler = sched
+	s.service = appService
 	log.Println("[scheduler] 定时任务调度服务已启动")
 	return nil
 }
@@ -66,7 +76,7 @@ func (s *SchedulerService) Stop(ctx context.Context) error {
 		s.scheduler.Stop()
 		s.scheduler = nil
 	}
-	appschedule.SetDefault(nil)
+	s.service = nil
 	log.Println("[scheduler] 定时任务调度服务已停止")
 	return nil
 }

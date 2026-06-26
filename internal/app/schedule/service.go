@@ -3,7 +3,6 @@ package schedule
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	domainschedule "fkteams/internal/domain/schedule"
 	schedulerport "fkteams/internal/ports/scheduler"
@@ -14,28 +13,31 @@ type Service struct {
 	scheduler schedulerport.Scheduler
 }
 
-var (
-	defaultMu      sync.RWMutex
-	defaultService *Service
-)
+type serviceContextKey struct{}
 
 // NewService 创建调度用例服务。
 func NewService(scheduler schedulerport.Scheduler) *Service {
 	return &Service{scheduler: scheduler}
 }
 
-// SetDefault 设置进程级调度用例服务，供入口层和工具适配器复用。
-func SetDefault(service *Service) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
-	defaultService = service
+// WithService 将调度用例服务注入当前请求上下文。
+func WithService(ctx context.Context, service *Service) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if service == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, serviceContextKey{}, service)
 }
 
-// Default 返回进程级调度用例服务。
-func Default() *Service {
-	defaultMu.RLock()
-	defer defaultMu.RUnlock()
-	return defaultService
+// FromContext 从当前请求上下文读取调度用例服务。
+func FromContext(ctx context.Context) *Service {
+	if ctx == nil {
+		return nil
+	}
+	service, _ := ctx.Value(serviceContextKey{}).(*Service)
+	return service
 }
 
 // SchedulerNotReadyError 表示调度服务尚未完成组合根初始化。

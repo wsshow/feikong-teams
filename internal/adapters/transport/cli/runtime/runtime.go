@@ -42,6 +42,7 @@ func NewRuntime(ctx context.Context, session *Session, r runtimeport.Runner, exi
 	executor := NewQueryExecutor(r, session.queryState)
 	executor.SetSession(session)
 	executor.SetMemoryManager(session.memory)
+	executor.SetScheduleService(session.scheduler)
 	return &Runtime{
 		ctx:         ctx,
 		session:     session,

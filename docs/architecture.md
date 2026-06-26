@@ -118,7 +118,7 @@ type Service interface {
 
 `chat.Service` 负责：
 
-- 将入口层能力转换为稳定的 turn 执行选项：approval、ask、steering、事件记录、history sink、hooks 和 context hook。
+- 将入口层能力转换为稳定的 turn 执行选项：approval、ask、steering、事件记录、history sink、hooks、scheduler service 和 context hook。
 - 统一调用 `internal/runtime/turn.Session`，入口层不得直接散落这些 runtime context key。
 - 通过 `SessionLifecycle` 统一保存 history、更新 metadata、记录取消/错误、提取或 flush 长期记忆。
 - 通过 `internal/app/chat/taskstream` 提供运行中事件流、follow-up 队列、steering 队列、interrupt/ask 响应和断线续接能力。
@@ -179,7 +179,7 @@ type ToolRegistry interface {
 - `tools/mcp`：MCP client、缓存和工具组 provider 位于 `internal/adapters/tools/mcp`；app 工具层只依赖 `internal/ports/tools.MCPProvider`。MCP client 转 runtime tool 的桥接由 `internal/bootstrap/runtimes` 连接具体 runtime adapter，不进入 ports 契约。
 - `tools/command`、`tools/script/uv`、`tools/script/bun`：进程执行和脚本运行时实现位于 `internal/adapters/tools/builtin/*`；后台 tasker 通过隐藏工具组 `command_reject` 使用自动拒绝危险操作的命令策略。
 - `tools/file`、`tools/todo`：工作区文件 IO 和会话 todo 持久化位于 `internal/adapters/tools/builtin/*`，由 bootstrap 注入工作区和会话目录。
-- `tools/scheduler`：`schedule_*` 工具位于 `internal/adapters/tools/builtin/scheduler`，只委托 `internal/app/schedule`；调度器实现位于 `internal/adapters/scheduler/filecron`。
+- `tools/scheduler`：`schedule_*` 工具位于 `internal/adapters/tools/builtin/scheduler`，只委托 `internal/app/schedule`；工具执行时从 context 读取调度用例服务，不依赖进程级默认实例。调度器实现位于 `internal/adapters/scheduler/filecron`。
 - `tools/git`：go-git 实现位于 `internal/adapters/tools/builtin/git`，由 `internal/bootstrap/tools` 注册。
 - `tools/ssh`：SSH/SFTP 实现位于 `internal/adapters/tools/builtin/ssh`，配置读取、连接创建和资源清理由 `internal/bootstrap/tools` 组合。
 - `tools/excel`、`tools/doc`、`tools/fetch`、`tools/search`：文件格式引擎、HTTP 抓取和搜索实现位于 `internal/adapters/tools/builtin/*`，由 `internal/bootstrap/tools` 注册。
@@ -195,7 +195,7 @@ type ToolRegistry interface {
 - `TaskStore`：schedule task、result、history。
 - `StreamHub`：运行中事件流和队列快照。
 
-HTTP、CLI、channel 等入口必须由各自的 server/session/bridge 实例持有 `SessionHistoryManager`、history dir、stream manager 和 runner cache；禁止在文件历史 adapter 中恢复跨入口共享的全局 session manager。`internal/runtime/checkpoint` 只提供内存存储、命名空间等 runtime 无关实现。文件系统只是 adapter；核心不直接拼路径，也不依赖具体文件历史实现。
+HTTP、CLI、channel 等入口必须由各自的 server/session/bridge 实例持有 `SessionHistoryManager`、history dir、stream manager、runner cache、HTTP share/upload store 和 scheduler service；禁止在文件历史 adapter、HTTP handler 或 app service 中恢复跨入口共享的全局运行态。`internal/runtime/checkpoint` 只提供内存存储、命名空间等 runtime 无关实现。文件系统只是 adapter；核心不直接拼路径，也不依赖具体文件历史实现。
 
 ## Hooks
 
@@ -211,6 +211,8 @@ Hooks 是用例和运行时之间的稳定扩展边界：
 hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回裸 `any`。`internal/runtime/hooks` 负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用。HookBus 必须由用例或组合根显式传入；未传入时不执行 hook，不提供可注册的全局默认实例。
 
 中断 runtime 必须通过 context 或运行服务依赖显式传入；`internal/ports/runtime` 不提供进程级默认实例、全局注册函数或兜底注册表。HTTP、CLI、channel 和 scheduler 等入口由组合根注入默认 Eino interrupt runtime，测试通过 `runtime.WithInterruptRuntime` 注入假实现，避免跨用例污染。
+
+调度用例服务必须由 `internal/bootstrap/services.SchedulerService` 创建并显式注入 HTTP runtime、CLI session、channel bridge 和后台 tasker context；`internal/app/schedule` 只提供用例服务和 context 绑定函数，不提供 `Default` / `SetDefault` 形式的进程级服务实例。
 
 ## 事件分层
 

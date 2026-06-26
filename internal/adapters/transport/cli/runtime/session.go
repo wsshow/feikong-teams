@@ -5,6 +5,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
+	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
 	"fmt"
@@ -29,6 +30,7 @@ type Session struct {
 	createModeRunner ModeRunnerCreator
 	callbackBuilder  func(*eventlog.HistoryRecorder) func(events.Event) error
 	memory           appstate.MemoryManager
+	scheduler        *appschedule.Service
 	historyDir       string
 	historyManager   *eventlog.SessionHistoryManager
 	activeSessionID  string
@@ -58,6 +60,11 @@ func (s *Session) GetQueryState() *QueryState {
 // SetMemoryManager 设置会话使用的长期记忆管理器。
 func (s *Session) SetMemoryManager(manager appstate.MemoryManager) {
 	s.memory = manager
+}
+
+// SetScheduleService 设置会话使用的调度服务。
+func (s *Session) SetScheduleService(service *appschedule.Service) {
+	s.scheduler = service
 }
 
 // SetResumeSessionID 设置当前 CLI 会话要恢复的会话 ID。
@@ -149,6 +156,7 @@ func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSi
 	executor := NewQueryExecutor(r, s.queryState)
 	executor.SetSession(s)
 	executor.SetMemoryManager(s.memory)
+	executor.SetScheduleService(s.scheduler)
 	executor.SetAutoReject(true)
 	executor.SetApproveStores(s.ApproveStores)
 	if s.callbackBuilder != nil {

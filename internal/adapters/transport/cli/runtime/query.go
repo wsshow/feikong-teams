@@ -15,6 +15,7 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
+	appschedule "fkteams/internal/app/schedule"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/domain/session"
@@ -96,6 +97,7 @@ type QueryExecutor struct {
 	steeringMu    sync.Mutex
 	steering      []domainmessage.Message
 	memory        appstate.MemoryManager
+	scheduler     *appschedule.Service
 }
 
 // NewQueryExecutor 创建查询执行器
@@ -137,6 +139,11 @@ func (e *QueryExecutor) SetSession(session *Session) {
 // SetMemoryManager 设置执行器使用的长期记忆管理器。
 func (e *QueryExecutor) SetMemoryManager(manager appstate.MemoryManager) {
 	e.memory = manager
+}
+
+// SetScheduleService 设置执行器使用的调度服务。
+func (e *QueryExecutor) SetScheduleService(service *appschedule.Service) {
+	e.scheduler = service
 }
 
 // SetCallbackBuilder 设置事件回调构造器，用于 JSON 等非默认输出格式。
@@ -311,6 +318,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			appchat.WithApprovalRegistry(approvalReg),
 			appchat.WithSteeringSource(steeringSource),
 			appchat.WithAskRuntimeHandler(e.askRuntime),
+			appchat.WithContext(func(ctx context.Context) context.Context {
+				return appschedule.WithService(ctx, e.scheduler)
+			}),
 		)
 
 		recorder.FinalizeCurrent()
