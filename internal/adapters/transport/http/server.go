@@ -34,13 +34,14 @@ const (
 
 // httpService HTTP 服务，实现 lifecycle.Service 接口
 type httpService struct {
-	host     string     // 监听地址
-	port     int        // 监听端口
-	logLevel string     // 日志级别
-	mode     serverMode // 服务模式
-	state    *appstate.State
-	runtime  *handler.Runtime
-	server   *http.Server // HTTP 服务实例
+	host          string     // 监听地址
+	port          int        // 监听端口
+	logLevel      string     // 日志级别
+	mode          serverMode // 服务模式
+	state         *appstate.State
+	resetChannels func()
+	runtime       *handler.Runtime
+	server        *http.Server // HTTP 服务实例
 }
 
 // Name 返回服务名称
@@ -63,7 +64,11 @@ func (s *httpService) Start(ctx context.Context) error {
 	)
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
-	s.runtime = handler.NewRuntime(handler.RuntimeOptions{Engine: engine, Interrupt: interrupt})
+	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
+		Engine:        engine,
+		Interrupt:     interrupt,
+		ResetChannels: s.resetChannels,
+	})
 	if s.mode == ModeAPI {
 		h, err = router.InitAPIWithRuntime(s.state, s.runtime)
 	} else {
@@ -171,6 +176,7 @@ func run(ctx context.Context, mode serverMode, opts *ServeOptions) error {
 	if svc, err := channel.SetupWithState(cfg.Channels.List(), state); err != nil {
 		return fmt.Errorf("setup channels: %w", err)
 	} else if svc != nil {
+		httpSvc.resetChannels = svc.ResetRunners
 		app.RegisterService(svc)
 	}
 

@@ -17,24 +17,26 @@ import (
 
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
 type Runtime struct {
-	Streams     *taskstream.Manager
-	Sessions    *eventlog.SessionHistoryManager
-	HistoryDir  string
-	RunnerCache *appagent.Cache
-	Connections *WebSocketHub
-	Engine      runtimeport.Engine
-	Interrupt   runtimeport.InterruptRuntime
+	Streams       *taskstream.Manager
+	Sessions      *eventlog.SessionHistoryManager
+	HistoryDir    string
+	RunnerCache   *appagent.Cache
+	Connections   *WebSocketHub
+	Engine        runtimeport.Engine
+	Interrupt     runtimeport.InterruptRuntime
+	ResetChannels func()
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
 type RuntimeOptions struct {
-	Streams     *taskstream.Manager
-	Sessions    *eventlog.SessionHistoryManager
-	HistoryDir  string
-	RunnerCache *appagent.Cache
-	Connections *WebSocketHub
-	Engine      runtimeport.Engine
-	Interrupt   runtimeport.InterruptRuntime
+	Streams       *taskstream.Manager
+	Sessions      *eventlog.SessionHistoryManager
+	HistoryDir    string
+	RunnerCache   *appagent.Cache
+	Connections   *WebSocketHub
+	Engine        runtimeport.Engine
+	Interrupt     runtimeport.InterruptRuntime
+	ResetChannels func()
 }
 
 // NewRuntime 创建一个独立的 HTTP runtime 实例。
@@ -48,13 +50,14 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		streams = newStreamManager()
 	}
 	rt := &Runtime{
-		Streams:     streams,
-		Sessions:    opt.Sessions,
-		HistoryDir:  opt.HistoryDir,
-		RunnerCache: opt.RunnerCache,
-		Connections: opt.Connections,
-		Engine:      opt.Engine,
-		Interrupt:   opt.Interrupt,
+		Streams:       streams,
+		Sessions:      opt.Sessions,
+		HistoryDir:    opt.HistoryDir,
+		RunnerCache:   opt.RunnerCache,
+		Connections:   opt.Connections,
+		Engine:        opt.Engine,
+		Interrupt:     opt.Interrupt,
+		ResetChannels: opt.ResetChannels,
 	}
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()

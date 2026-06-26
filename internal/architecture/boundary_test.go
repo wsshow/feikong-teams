@@ -803,6 +803,21 @@ func TestFileHistoryDoesNotExposeGlobalSessionManager(t *testing.T) {
 	}
 }
 
+func TestChannelServiceDoesNotExposeGlobalBridgeRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "transport", "channel", "service.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"activeBridges", "ResetAllBridges"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("channel service exposes global bridge registry via %q", forbidden)
+		}
+	}
+}
+
 func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{

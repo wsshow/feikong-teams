@@ -9,22 +9,7 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
 	"fmt"
-	"sync"
 )
-
-var (
-	activeBridgesMu sync.RWMutex
-	activeBridges   []*Bridge
-)
-
-// ResetAllBridges 重置所有活跃通道的 runner（配置变更后调用，使下次请求使用新模型）
-func ResetAllBridges() {
-	activeBridgesMu.RLock()
-	defer activeBridgesMu.RUnlock()
-	for _, b := range activeBridges {
-		b.ResetRunner()
-	}
-}
 
 // Setup 从配置中创建并注册所有启用的通道，返回可注册到 lifecycle 的 Service
 // 如果没有启用任何通道则返回 nil
@@ -52,14 +37,6 @@ func SetupWithState(entries []config.ChannelEntry, state *appstate.State) (*Serv
 		})
 		bridges[entry.Name] = bridge
 	}
-
-	// 注册到全局列表，以便配置变更时重置
-	activeBridgesMu.Lock()
-	activeBridges = make([]*Bridge, 0, len(bridges))
-	for _, b := range bridges {
-		activeBridges = append(activeBridges, b)
-	}
-	activeBridgesMu.Unlock()
 
 	// 设置统一消息处理：根据通道名称路由到对应的 Bridge
 	mgr.SetHandler(func(ctx context.Context, chatID, senderID string, msg Message, isGroup bool) {
@@ -98,6 +75,16 @@ type Service struct {
 // NewService 创建通道服务
 func NewService(manager *Manager, bridges ...*Bridge) *Service {
 	return &Service{manager: manager, bridges: bridges}
+}
+
+// ResetRunners 重置当前通道服务实例的 runner 缓存。
+func (s *Service) ResetRunners() {
+	if s == nil {
+		return
+	}
+	for _, bridge := range s.bridges {
+		bridge.ResetRunner()
+	}
 }
 
 // Name 返回服务名称
