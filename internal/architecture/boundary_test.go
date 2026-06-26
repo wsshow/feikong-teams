@@ -589,6 +589,31 @@ func TestHooksDoNotExposeGlobalBus(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdaptersDoNotRegisterInterruptRuntimeInInit(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	adapterRoot := filepath.Join(root, "internal", "adapters", "runtime")
+	err := filepath.WalkDir(adapterRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), "RegisterInterruptRuntime(") {
+			rel, _ := filepath.Rel(root, path)
+			t.Errorf("%s registers interrupt runtime directly; bootstrap must compose runtime defaults", filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHooksUseInternalPackages(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {

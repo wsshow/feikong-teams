@@ -8,11 +8,12 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 )
 
-func init() {
-	runtimeport.RegisterInterruptRuntime(interruptRuntime{})
-}
-
 type interruptRuntime struct{}
+
+// NewInterruptRuntime 创建 Eino HITL 中断适配器。
+func NewInterruptRuntime() runtimeport.InterruptRuntime {
+	return interruptRuntime{}
+}
 
 func (interruptRuntime) Interrupt(ctx context.Context, info any) error {
 	if metadata, ok := runtimeport.InterruptMetadataFromContext(ctx); ok && metadata.MemberCallID != "" {

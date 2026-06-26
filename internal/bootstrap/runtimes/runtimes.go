@@ -3,8 +3,10 @@ package runtimes
 import (
 	"sync"
 
+	einoruntime "fkteams/internal/adapters/runtime/eino"
 	einoengine "fkteams/internal/adapters/runtime/eino/engine"
 	toolmcp "fkteams/internal/adapters/tools/mcp"
+	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
 	runtimeregistry "fkteams/internal/runtime/registry"
 
@@ -36,5 +38,6 @@ func registerDefaults() error {
 	if provider, ok := any(engine).(toolport.MCPClientToolProvider); ok {
 		toolmcp.RegisterToolProvider(provider.MCPTools)
 	}
+	runtimeport.RegisterInterruptRuntime(einoruntime.NewInterruptRuntime())
 	return nil
 }

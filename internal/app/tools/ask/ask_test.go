@@ -59,10 +59,9 @@ func TestAskQuestionsRequiresQuestion(t *testing.T) {
 func TestAskQuestionsRequestsInterruptOnFirstCall(t *testing.T) {
 	runtimeErr := errors.New("interrupt requested")
 	runtime := &askRuntime{interruptErr: runtimeErr}
-	runtimeport.RegisterInterruptRuntime(runtime)
-	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
+	ctx := runtimeport.WithInterruptRuntime(context.Background(), runtime)
 
-	result, err := AskQuestions(context.Background(), &AskRequest{
+	result, err := AskQuestions(ctx, &AskRequest{
 		Question:    "继续吗？",
 		Options:     []string{"继续", "停止"},
 		MultiSelect: true,
@@ -83,9 +82,8 @@ func TestAskQuestionsRequestsInterruptOnFirstCall(t *testing.T) {
 }
 
 func TestAskQuestionsReturnsResumeResponse(t *testing.T) {
-	runtimeport.RegisterInterruptRuntime(&askRuntime{})
-	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
-	ctx := context.WithValue(context.Background(), askTestContextKey{}, askRuntimeState{
+	ctx := runtimeport.WithInterruptRuntime(context.Background(), &askRuntime{})
+	ctx = context.WithValue(ctx, askTestContextKey{}, askRuntimeState{
 		wasInterrupted: true,
 		resumeTarget:   true,
 		hasData:        true,
@@ -144,9 +142,8 @@ func TestAskQuestionsUsesRuntimeHandlerForMemberAsk(t *testing.T) {
 func TestAskQuestionsReraisesInterruptForNonTargetResume(t *testing.T) {
 	runtimeErr := errors.New("rerun interrupt")
 	runtime := &askRuntime{interruptErr: runtimeErr}
-	runtimeport.RegisterInterruptRuntime(runtime)
-	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
-	ctx := context.WithValue(context.Background(), askTestContextKey{}, askRuntimeState{
+	ctx := runtimeport.WithInterruptRuntime(context.Background(), runtime)
+	ctx = context.WithValue(ctx, askTestContextKey{}, askRuntimeState{
 		wasInterrupted: true,
 		resumeTarget:   false,
 	})
@@ -164,9 +161,8 @@ func TestAskQuestionsReraisesInterruptForNonTargetResume(t *testing.T) {
 }
 
 func TestAskQuestionsReportsMissingResumeData(t *testing.T) {
-	runtimeport.RegisterInterruptRuntime(&askRuntime{})
-	t.Cleanup(func() { runtimeport.RegisterInterruptRuntime(nil) })
-	ctx := context.WithValue(context.Background(), askTestContextKey{}, askRuntimeState{
+	ctx := runtimeport.WithInterruptRuntime(context.Background(), &askRuntime{})
+	ctx = context.WithValue(ctx, askTestContextKey{}, askRuntimeState{
 		wasInterrupted: true,
 		resumeTarget:   true,
 		hasData:        false,
