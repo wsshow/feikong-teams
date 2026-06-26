@@ -23,6 +23,8 @@ type Runtime struct {
 	RunnerCache   *appagent.Cache
 	Connections   *WebSocketHub
 	ChunkUploads  *ChunkUploadStore
+	PreviewLinks  *PreviewLinkStore
+	SessionShares *SessionShareStore
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -36,6 +38,8 @@ type RuntimeOptions struct {
 	RunnerCache   *appagent.Cache
 	Connections   *WebSocketHub
 	ChunkUploads  *ChunkUploadStore
+	PreviewLinks  *PreviewLinkStore
+	SessionShares *SessionShareStore
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -58,6 +62,8 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		RunnerCache:   opt.RunnerCache,
 		Connections:   opt.Connections,
 		ChunkUploads:  opt.ChunkUploads,
+		PreviewLinks:  opt.PreviewLinks,
+		SessionShares: opt.SessionShares,
 		Engine:        opt.Engine,
 		Interrupt:     opt.Interrupt,
 		ResetChannels: opt.ResetChannels,
@@ -76,6 +82,12 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	}
 	if rt.ChunkUploads == nil {
 		rt.ChunkUploads = NewChunkUploadStore()
+	}
+	if rt.PreviewLinks == nil {
+		rt.PreviewLinks = NewPreviewLinkStore("")
+	}
+	if rt.SessionShares == nil {
+		rt.SessionShares = NewSessionShareStore("")
 	}
 	return rt
 }

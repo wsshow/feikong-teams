@@ -108,26 +108,26 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		// 文件预览链接 API
 		preview := apiV1.Group("/preview")
 		{
-			preview.POST("", handler.CreatePreviewLinkHandler())
-			preview.GET("", handler.ListPreviewLinksHandler())
-			preview.GET("/:linkId", handler.PreviewFileHandler())
-			preview.GET("/:linkId/info", handler.PreviewInfoHandler())
-			preview.GET("/:linkId/render/*filepath", handler.PreviewRenderHandler())
-			preview.DELETE("/:linkId", handler.DeletePreviewLinkHandler())
+			preview.POST("", runtime.CreatePreviewLinkHandler())
+			preview.GET("", runtime.ListPreviewLinksHandler())
+			preview.GET("/:linkId", runtime.PreviewFileHandler())
+			preview.GET("/:linkId/info", runtime.PreviewInfoHandler())
+			preview.GET("/:linkId/render/*filepath", runtime.PreviewRenderHandler())
+			preview.DELETE("/:linkId", runtime.DeletePreviewLinkHandler())
 		}
 
 		// 会话分享管理 API
 		sessionShares := apiV1.Group("/session-shares")
 		{
 			sessionShares.POST("", runtime.CreateSessionShareHandler())
-			sessionShares.GET("", handler.ListSessionSharesHandler())
-			sessionShares.DELETE("/:shareID", handler.DeleteSessionShareHandler())
+			sessionShares.GET("", runtime.ListSessionSharesHandler())
+			sessionShares.DELETE("/:shareID", runtime.DeleteSessionShareHandler())
 		}
 
 		// 公开会话分享 API
 		publicSessionShares := apiV1.Group("/public/session-shares")
 		{
-			publicSessionShares.GET("/:shareID/info", handler.GetPublicSessionShareInfoHandler())
+			publicSessionShares.GET("/:shareID/info", runtime.GetPublicSessionShareInfoHandler())
 			publicSessionShares.POST("/:shareID/access", runtime.AccessPublicSessionShareHandler())
 		}
 

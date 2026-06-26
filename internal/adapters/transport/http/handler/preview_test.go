@@ -23,14 +23,17 @@ func TestShareLinksFilePathUsesAppDir(t *testing.T) {
 func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 	appDir := t.TempDir()
 	t.Setenv(env.AppDir, appDir)
-	withPreviewStore(t, map[string]*previewLinkEntry{
+	store := NewPreviewLinkStore("")
+	store.Lock()
+	store.m = map[string]*previewLinkEntry{
 		"link-1": {
 			FilePaths: []string{"docs/report.pdf"},
 			CreatedAt: time.Unix(100, 0),
 		},
-	})
+	}
+	store.Unlock()
 
-	saveShareLinks()
+	store.Save()
 
 	data, err := os.ReadFile(filepath.Join(appDir, "share", "share.json"))
 	if err != nil {
@@ -48,7 +51,6 @@ func TestSaveShareLinksWritesToAppDir(t *testing.T) {
 func TestLoadShareLinksReadsFromAppDir(t *testing.T) {
 	appDir := t.TempDir()
 	t.Setenv(env.AppDir, appDir)
-	withPreviewStore(t, map[string]*previewLinkEntry{})
 
 	shareDir := filepath.Join(appDir, "share")
 	if err := os.MkdirAll(shareDir, 0755); err != nil {
@@ -59,11 +61,11 @@ func TestLoadShareLinksReadsFromAppDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loadShareLinks()
+	store := NewPreviewLinkStore("")
 
-	previewLinkStore.RLock()
-	entry := previewLinkStore.m["link-2"]
-	previewLinkStore.RUnlock()
+	store.RLock()
+	entry := store.m["link-2"]
+	store.RUnlock()
 	if entry == nil {
 		t.Fatal("expected share link to be loaded")
 	}
@@ -72,17 +74,16 @@ func TestLoadShareLinksReadsFromAppDir(t *testing.T) {
 	}
 }
 
-func withPreviewStore(t *testing.T, store map[string]*previewLinkEntry) {
+func newPreviewTestStore(t *testing.T, entries map[string]*previewLinkEntry) *PreviewLinkStore {
 	t.Helper()
+	store := NewPreviewLinkStore(filepath.Join(t.TempDir(), "share.json"))
+	store.Lock()
+	store.m = entries
+	store.Unlock()
+	return store
+}
 
-	previewLinkStore.Lock()
-	old := previewLinkStore.m
-	previewLinkStore.m = store
-	previewLinkStore.Unlock()
-
-	t.Cleanup(func() {
-		previewLinkStore.Lock()
-		previewLinkStore.m = old
-		previewLinkStore.Unlock()
-	})
+func newPreviewTestRuntime(t *testing.T, entries map[string]*previewLinkEntry) *Runtime {
+	t.Helper()
+	return NewRuntime(RuntimeOptions{PreviewLinks: newPreviewTestStore(t, entries)})
 }

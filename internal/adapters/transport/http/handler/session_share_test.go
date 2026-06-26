@@ -27,21 +27,20 @@ func TestSessionSharesFilePathUsesAppDir(t *testing.T) {
 }
 
 func TestPublicSessionShareRequiresPassword(t *testing.T) {
-	rt := newTestRuntime(t)
-	withSessionShareStore(t, map[string]*sessionShareEntry{})
+	rt := newSessionShareTestRuntime(t, map[string]*sessionShareEntry{})
 	gin.SetMode(gin.TestMode)
 
 	sessionID := "shared-session"
 	writeShareableSession(t, rt, sessionID, "Shared session")
-	sessionShareStore.Lock()
-	sessionShareStore.m["share-1"] = &sessionShareEntry{
+	rt.SessionShares.Lock()
+	rt.SessionShares.m["share-1"] = &sessionShareEntry{
 		SessionID:    sessionID,
 		Title:        "Shared session",
 		PasswordHash: hashPassword("secret"),
 		MessageCount: 1,
 		CreatedAt:    time.Now(),
 	}
-	sessionShareStore.Unlock()
+	rt.SessionShares.Unlock()
 
 	router := gin.New()
 	router.POST("/public/session-shares/:shareID/access", rt.AccessPublicSessionShareHandler())
@@ -78,20 +77,20 @@ func TestPublicSessionShareRequiresPassword(t *testing.T) {
 }
 
 func TestExpiredSessionShareReturnsGone(t *testing.T) {
-	withSessionShareStore(t, map[string]*sessionShareEntry{})
+	rt := newSessionShareTestRuntime(t, map[string]*sessionShareEntry{})
 	gin.SetMode(gin.TestMode)
 
-	sessionShareStore.Lock()
-	sessionShareStore.m["expired"] = &sessionShareEntry{
+	rt.SessionShares.Lock()
+	rt.SessionShares.m["expired"] = &sessionShareEntry{
 		SessionID: "old-session",
 		Title:     "Old session",
 		ExpiresAt: time.Now().Add(-time.Minute),
 		CreatedAt: time.Now().Add(-time.Hour),
 	}
-	sessionShareStore.Unlock()
+	rt.SessionShares.Unlock()
 
 	router := gin.New()
-	router.GET("/public/session-shares/:shareID/info", GetPublicSessionShareInfoHandler())
+	router.GET("/public/session-shares/:shareID/info", rt.GetPublicSessionShareInfoHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/public/session-shares/expired/info", nil)
 	resp := httptest.NewRecorder()
@@ -100,9 +99,9 @@ func TestExpiredSessionShareReturnsGone(t *testing.T) {
 	if resp.Code != http.StatusGone {
 		t.Fatalf("expected 410, got %d: %s", resp.Code, resp.Body.String())
 	}
-	sessionShareStore.RLock()
-	_, exists := sessionShareStore.m["expired"]
-	sessionShareStore.RUnlock()
+	rt.SessionShares.RLock()
+	_, exists := rt.SessionShares.m["expired"]
+	rt.SessionShares.RUnlock()
 	if exists {
 		t.Fatal("expected expired share to be removed")
 	}
@@ -128,17 +127,13 @@ func writeShareableSession(t *testing.T, rt *Runtime, sessionID, title string) {
 	}
 }
 
-func withSessionShareStore(t *testing.T, store map[string]*sessionShareEntry) {
+func newSessionShareTestRuntime(t *testing.T, entries map[string]*sessionShareEntry) *Runtime {
 	t.Helper()
-
-	sessionShareStore.Lock()
-	old := sessionShareStore.m
-	sessionShareStore.m = store
-	sessionShareStore.Unlock()
-
-	t.Cleanup(func() {
-		sessionShareStore.Lock()
-		sessionShareStore.m = old
-		sessionShareStore.Unlock()
-	})
+	store := NewSessionShareStore(filepath.Join(t.TempDir(), sessionShareFileName))
+	store.Lock()
+	store.m = entries
+	store.Unlock()
+	rt := newTestRuntime(t)
+	rt.SessionShares = store
+	return rt
 }

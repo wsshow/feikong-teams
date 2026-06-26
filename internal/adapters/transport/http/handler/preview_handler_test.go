@@ -16,7 +16,7 @@ import (
 
 func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	withPreviewStore(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.MkdirAll(filepath.Join(workspace, "docs"), 0755); err != nil {
@@ -27,11 +27,11 @@ func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.POST("/preview-links", CreatePreviewLinkHandler())
-	router.GET("/preview-links", ListPreviewLinksHandler())
-	router.GET("/preview/:linkId/info", PreviewInfoHandler())
-	router.GET("/preview/:linkId/file", PreviewFileHandler())
-	router.DELETE("/preview/:linkId", DeletePreviewLinkHandler())
+	router.POST("/preview-links", rt.CreatePreviewLinkHandler())
+	router.GET("/preview-links", rt.ListPreviewLinksHandler())
+	router.GET("/preview/:linkId/info", rt.PreviewInfoHandler())
+	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
+	router.DELETE("/preview/:linkId", rt.DeletePreviewLinkHandler())
 
 	resp := performJSON(router, http.MethodPost, "/preview-links", `{"file_path":"docs/report.txt","expires_in":-1}`)
 	if resp.Code != http.StatusOK {
@@ -43,7 +43,7 @@ func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 		t.Fatalf("preview link = %#v", link)
 	}
 
-	if _, err := os.Stat(shareLinksFilePath()); err != nil {
+	if _, err := os.Stat(rt.PreviewLinks.filePath); err != nil {
 		t.Fatalf("expected preview links to be persisted: %v", err)
 	}
 
@@ -90,28 +90,28 @@ func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 
 func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	withPreviewStore(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.WriteFile(filepath.Join(workspace, "secret.txt"), []byte("secret body"), 0644); err != nil {
 		t.Fatalf("write secret: %v", err)
 	}
-	previewLinkStore.Lock()
-	previewLinkStore.m["protected"] = &previewLinkEntry{
+	rt.PreviewLinks.Lock()
+	rt.PreviewLinks.m["protected"] = &previewLinkEntry{
 		FilePaths:    []string{"secret.txt"},
 		PasswordHash: hashPassword("secret"),
 		CreatedAt:    time.Now(),
 	}
-	previewLinkStore.m["expired"] = &previewLinkEntry{
+	rt.PreviewLinks.m["expired"] = &previewLinkEntry{
 		FilePaths: []string{"secret.txt"},
 		ExpiresAt: time.Now().Add(-time.Minute),
 		CreatedAt: time.Now().Add(-time.Hour),
 	}
-	previewLinkStore.Unlock()
+	rt.PreviewLinks.Unlock()
 
 	router := gin.New()
-	router.GET("/preview/:linkId/info", PreviewInfoHandler())
-	router.GET("/preview/:linkId/file", PreviewFileHandler())
+	router.GET("/preview/:linkId/info", rt.PreviewInfoHandler())
+	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
 
 	resp := performRequest(router, http.MethodGet, "/preview/protected/info", nil)
 	if resp.Code != http.StatusOK {
@@ -144,9 +144,9 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	if resp.Code != http.StatusGone {
 		t.Fatalf("expired info status = %d, want 410", resp.Code)
 	}
-	previewLinkStore.RLock()
-	_, exists := previewLinkStore.m["expired"]
-	previewLinkStore.RUnlock()
+	rt.PreviewLinks.RLock()
+	_, exists := rt.PreviewLinks.m["expired"]
+	rt.PreviewLinks.RUnlock()
 	if exists {
 		t.Fatal("expired preview link should be removed")
 	}
@@ -154,7 +154,7 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 
 func TestPreviewFileMultiFileZip(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	withPreviewStore(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.WriteFile(filepath.Join(workspace, "a.txt"), []byte("a"), 0644); err != nil {
@@ -163,15 +163,15 @@ func TestPreviewFileMultiFileZip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, "b.txt"), []byte("b"), 0644); err != nil {
 		t.Fatalf("write b: %v", err)
 	}
-	previewLinkStore.Lock()
-	previewLinkStore.m["multi"] = &previewLinkEntry{
+	rt.PreviewLinks.Lock()
+	rt.PreviewLinks.m["multi"] = &previewLinkEntry{
 		FilePaths: []string{"a.txt", "b.txt"},
 		CreatedAt: time.Now(),
 	}
-	previewLinkStore.Unlock()
+	rt.PreviewLinks.Unlock()
 
 	router := gin.New()
-	router.GET("/preview/:linkId/file", PreviewFileHandler())
+	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
 
 	resp := performRequest(router, http.MethodGet, "/preview/multi/file", nil)
 	if resp.Code != http.StatusOK {
@@ -195,15 +195,15 @@ func TestPreviewFileMultiFileZip(t *testing.T) {
 
 func TestCreatePreviewLinkRejectsInvalidRequests(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	withPreviewStore(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
 	gin.SetMode(gin.TestMode)
 	if err := os.WriteFile(filepath.Join(workspace, "exists.txt"), []byte("ok"), 0644); err != nil {
 		t.Fatalf("write exists: %v", err)
 	}
 
 	router := gin.New()
-	router.POST("/preview-links", CreatePreviewLinkHandler())
-	router.DELETE("/preview/:linkId", DeletePreviewLinkHandler())
+	router.POST("/preview-links", rt.CreatePreviewLinkHandler())
+	router.DELETE("/preview/:linkId", rt.DeletePreviewLinkHandler())
 
 	tests := []struct {
 		name string

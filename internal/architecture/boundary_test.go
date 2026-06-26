@@ -830,6 +830,26 @@ func TestHTTPChunkUploadsAreRuntimeOwned(t *testing.T) {
 	}
 }
 
+func TestHTTPShareStoresAreRuntimeOwned(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/adapters/transport/http/handler/preview.go",
+		"internal/adapters/transport/http/handler/session_share.go",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		for _, forbidden := range []string{"var previewLinkStore", "var sessionShareStore", "func init()"} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s exposes HTTP share state through %q; share stores must be owned by handler.Runtime", rel, forbidden)
+			}
+		}
+	}
+}
+
 func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{
