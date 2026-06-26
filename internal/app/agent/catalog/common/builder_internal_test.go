@@ -4,16 +4,33 @@ import (
 	"context"
 	"testing"
 
+	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/resources"
 	"fkteams/internal/testmodel"
 )
 
 func TestAgentBuilderBuildDoesNotMutateResolvedTools(t *testing.T) {
 	ctx := context.Background()
+	const toolGroupName = "builder_tools_test_group"
+	if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		Info: apptools.ToolGroupInfo{
+			Name:        toolGroupName,
+			DisplayName: "Builder Test",
+			Description: "Builder test tools",
+			Category:    "Test",
+			Builtin:     true,
+		},
+		Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+			return []runtimeport.Tool{registryTestTool{}}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register test tool group: %v", err)
+	}
 	builder := NewAgentBuilder("builder_tools_test", "builder tools test agent").
 		WithModel(testmodel.New()).
 		WithInstruction("test").
-		WithToolNames("ask")
+		WithToolNames(toolGroupName)
 
 	if _, err := builder.Build(ctx); err != nil {
 		t.Fatalf("first build: %v", err)
@@ -48,6 +65,16 @@ func TestRuntimeOptionalCapabilitiesAreNotRequired(t *testing.T) {
 }
 
 type minimalEngine struct{}
+
+type registryTestTool struct{}
+
+func (registryTestTool) Info(context.Context) (*runtimeport.ToolInfo, error) {
+	return &runtimeport.ToolInfo{Name: "builder_test_tool"}, nil
+}
+
+func (registryTestTool) Invoke(context.Context, runtimeport.ToolInvocation) (*runtimeport.ToolResult, error) {
+	return &runtimeport.ToolResult{}, nil
+}
 
 func (minimalEngine) NewChatModelAgent(context.Context, *runtimeport.ChatAgentConfig) (runtimeport.Agent, error) {
 	return nil, nil
