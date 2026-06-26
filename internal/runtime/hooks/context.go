@@ -17,5 +17,5 @@ func FromContext(ctx context.Context) *Bus {
 	if bus, ok := ctx.Value(busKey{}).(*Bus); ok && bus != nil {
 		return bus
 	}
-	return Global()
+	return nil
 }

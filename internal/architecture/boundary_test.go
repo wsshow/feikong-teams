@@ -563,6 +563,32 @@ func TestBootstrapAndRuntimeRegistryDoNotPanic(t *testing.T) {
 	}
 }
 
+func TestHooksDoNotExposeGlobalBus(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "runtime", "hooks")
+	err := filepath.WalkDir(path, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(filePath, ".go") || strings.HasSuffix(filePath, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+		text := string(data)
+		if strings.Contains(text, "func Global(") || strings.Contains(text, "globalBus") {
+			rel, _ := filepath.Rel(root, filePath)
+			t.Errorf("%s exposes global HookBus; pass HookBus explicitly instead", filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHooksUseInternalPackages(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {

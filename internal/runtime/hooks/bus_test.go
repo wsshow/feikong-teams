@@ -105,3 +105,16 @@ func TestBusTimesOutHandler(t *testing.T) {
 		t.Fatal("expected timeout")
 	}
 }
+
+func TestNilBusIsNoop(t *testing.T) {
+	var bus *Bus
+	input := message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}
+
+	got, err := bus.InvokeBeforeRun(context.Background(), input)
+	if err != nil {
+		t.Fatalf("nil bus before run: %v", err)
+	}
+	if got.Message.Content != "ping" {
+		t.Fatalf("input = %#v, want unchanged", got)
+	}
+}

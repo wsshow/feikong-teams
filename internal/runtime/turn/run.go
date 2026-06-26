@@ -82,7 +82,7 @@ func (cfg runConfig) hookBus() *hooks.Bus {
 	if cfg.HookBus != nil {
 		return cfg.HookBus
 	}
-	return hooks.Global()
+	return nil
 }
 
 func (cfg runConfig) interruptHandler() InterruptHandler {

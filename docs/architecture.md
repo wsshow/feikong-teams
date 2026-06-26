@@ -207,7 +207,7 @@ Hooks 是用例和运行时之间的稳定扩展边界：
 - before/after memory injection
 - before/after schedule execution
 
-hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回裸 `any`。`internal/runtime/hooks` 负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用。
+hook payload 使用 `internal/ports/hooks` 中的明确结构体，并统一实现 `hooks.Payload` 契约；`Invocation` 和 `Result` 只能携带 `hooks.Payload`，不能退回裸 `any`。`internal/runtime/hooks` 负责总线实现、payload 与 hook point 匹配校验、超时/错误策略、context 绑定和便捷调用。HookBus 必须由用例或组合根显式传入；未传入时不执行 hook，不提供可注册的全局默认实例。
 
 中断 runtime 通过并发安全的默认注册表提供兜底能力，并支持 context 覆盖；测试和多实例场景应优先使用 context 注入或注册函数返回的恢复函数，避免跨用例污染。
 

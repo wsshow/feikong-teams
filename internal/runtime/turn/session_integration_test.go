@@ -100,3 +100,18 @@ func TestSessionInvokesRunHooks(t *testing.T) {
 		t.Fatal("after hook was not called")
 	}
 }
+
+func TestSessionHasNoImplicitGlobalHookBus(t *testing.T) {
+	ctx := context.Background()
+	r := &recordingRunner{}
+
+	_, err := NewSession(r, "test-session").
+		WithInput(TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}}).
+		Run(ctx)
+	if err != nil {
+		t.Fatalf("run session: %v", err)
+	}
+	if r.input.Message.Content != "ping" {
+		t.Fatalf("runner input = %q, want unchanged", r.input.Message.Content)
+	}
+}

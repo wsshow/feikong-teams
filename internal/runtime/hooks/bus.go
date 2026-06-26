@@ -33,12 +33,6 @@ func NewBus() *Bus {
 	return &Bus{handlers: make(map[HookPoint][]registeredHandler)}
 }
 
-var globalBus = NewBus()
-
-func Global() *Bus {
-	return globalBus
-}
-
 func (b *Bus) Register(handler Handler, opts Options) func() {
 	if b == nil || handler == nil {
 		return func() {}

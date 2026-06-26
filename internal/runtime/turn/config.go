@@ -45,7 +45,7 @@ type runConfig struct {
 	// ContextHooks 额外 context 装配逻辑
 	ContextHooks []ContextHook
 
-	// HookBus 运行期扩展点总线。nil 时使用 hooks.Global()
+	// HookBus 运行期扩展点总线。nil 时不执行 hook
 	HookBus *hooks.Bus
 
 	// OnFinish 执行结束回调（含错误）。用于保存历史、更新元数据、提取记忆等
