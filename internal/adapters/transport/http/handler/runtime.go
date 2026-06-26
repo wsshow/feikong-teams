@@ -26,6 +26,7 @@ type Runtime struct {
 	ChunkUploads  *ChunkUploadStore
 	PreviewLinks  *PreviewLinkStore
 	SessionShares *SessionShareStore
+	Favicons      *FaviconProxy
 	Scheduler     *appschedule.Service
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
@@ -42,6 +43,7 @@ type RuntimeOptions struct {
 	ChunkUploads  *ChunkUploadStore
 	PreviewLinks  *PreviewLinkStore
 	SessionShares *SessionShareStore
+	Favicons      *FaviconProxy
 	Scheduler     *appschedule.Service
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
@@ -67,6 +69,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		ChunkUploads:  opt.ChunkUploads,
 		PreviewLinks:  opt.PreviewLinks,
 		SessionShares: opt.SessionShares,
+		Favicons:      opt.Favicons,
 		Scheduler:     opt.Scheduler,
 		Engine:        opt.Engine,
 		Interrupt:     opt.Interrupt,
@@ -92,6 +95,9 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	}
 	if rt.SessionShares == nil {
 		rt.SessionShares = NewSessionShareStore("")
+	}
+	if rt.Favicons == nil {
+		rt.Favicons = NewFaviconProxy(FaviconProxyOptions{})
 	}
 	return rt
 }

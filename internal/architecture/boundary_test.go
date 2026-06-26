@@ -878,6 +878,21 @@ func TestHTTPShareStoresAreRuntimeOwned(t *testing.T) {
 	}
 }
 
+func TestHTTPFaviconProxyIsRuntimeOwned(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "transport", "http", "handler", "favicon.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"var faviconCache", "var faviconHTTPClient", "var faviconUpstream"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("HTTP favicon proxy exposes package global state through %q; cache and client must be owned by handler.Runtime", forbidden)
+		}
+	}
+}
+
 func TestScheduleServiceDoesNotExposeProcessDefault(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "app", "schedule", "service.go")

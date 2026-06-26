@@ -22,10 +22,10 @@ func TestFaviconHandlerProxiesAndCachesUpstreamIcon(t *testing.T) {
 		_, _ = w.Write([]byte("png"))
 	}))
 	defer upstream.Close()
-	withFaviconTestState(t, upstream.URL)
+	rt := newFaviconTestRuntime(upstream.URL)
 
 	router := gin.New()
-	router.GET("/favicon", FaviconHandler())
+	router.GET("/favicon", rt.FaviconHandler())
 
 	for i := 0; i < 2; i++ {
 		resp := httptest.NewRecorder()
@@ -50,10 +50,10 @@ func TestFaviconHandlerReturnsFallbackSVGOnUpstream404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := httptest.NewServer(http.NotFoundHandler())
 	defer upstream.Close()
-	withFaviconTestState(t, upstream.URL)
+	rt := newFaviconTestRuntime(upstream.URL)
 
 	router := gin.New()
-	router.GET("/favicon", FaviconHandler())
+	router.GET("/favicon", rt.FaviconHandler())
 
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/favicon?domain=missing.example&size=32", nil)
@@ -70,21 +70,11 @@ func TestFaviconHandlerReturnsFallbackSVGOnUpstream404(t *testing.T) {
 	}
 }
 
-func withFaviconTestState(t *testing.T, upstream string) {
-	t.Helper()
-	oldUpstream := faviconUpstream
-	oldClient := faviconHTTPClient
-	faviconUpstream = upstream
-	faviconHTTPClient = &http.Client{Timeout: time.Second}
-	faviconCache.Lock()
-	oldCache := faviconCache.items
-	faviconCache.items = make(map[string]faviconCacheEntry)
-	faviconCache.Unlock()
-	t.Cleanup(func() {
-		faviconUpstream = oldUpstream
-		faviconHTTPClient = oldClient
-		faviconCache.Lock()
-		faviconCache.items = oldCache
-		faviconCache.Unlock()
+func newFaviconTestRuntime(upstream string) *Runtime {
+	return NewRuntime(RuntimeOptions{
+		Favicons: NewFaviconProxy(FaviconProxyOptions{
+			Upstream: upstream,
+			Client:   &http.Client{Timeout: time.Second},
+		}),
 	})
 }

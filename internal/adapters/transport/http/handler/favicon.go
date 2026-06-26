@@ -20,13 +20,38 @@ const (
 	maxFaviconSize     = 64
 )
 
-var faviconCache = struct {
-	sync.Mutex
-	items map[string]faviconCacheEntry
-}{items: make(map[string]faviconCacheEntry)}
+const defaultFaviconUpstream = "https://www.google.com/s2/favicons"
 
-var faviconHTTPClient = &http.Client{Timeout: 3 * time.Second}
-var faviconUpstream = "https://www.google.com/s2/favicons"
+// FaviconProxy 代理并缓存单个 HTTP runtime 的来源图标请求。
+type FaviconProxy struct {
+	sync.Mutex
+	items    map[string]faviconCacheEntry
+	client   *http.Client
+	upstream string
+}
+
+// FaviconProxyOptions 描述 favicon 代理的可替换依赖。
+type FaviconProxyOptions struct {
+	Client   *http.Client
+	Upstream string
+}
+
+// NewFaviconProxy 创建独立的 favicon 代理。
+func NewFaviconProxy(options FaviconProxyOptions) *FaviconProxy {
+	client := options.Client
+	if client == nil {
+		client = &http.Client{Timeout: 3 * time.Second}
+	}
+	upstream := options.Upstream
+	if upstream == "" {
+		upstream = defaultFaviconUpstream
+	}
+	return &FaviconProxy{
+		items:    make(map[string]faviconCacheEntry),
+		client:   client,
+		upstream: upstream,
+	}
+}
 
 type faviconCacheEntry struct {
 	data        []byte
@@ -36,6 +61,11 @@ type faviconCacheEntry struct {
 
 // FaviconHandler 代理来源站点图标，避免浏览器侧大量外部 favicon 404 噪音。
 func FaviconHandler() gin.HandlerFunc {
+	return NewRuntime().FaviconHandler()
+}
+
+// FaviconHandler 代理当前 HTTP runtime 的来源站点图标。
+func (rt *Runtime) FaviconHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		domain := normalizeFaviconDomain(c.Query("domain"))
 		if domain == "" {
@@ -44,13 +74,14 @@ func FaviconHandler() gin.HandlerFunc {
 		}
 		size := faviconSize(c.Query("size"))
 		key := fmt.Sprintf("%s:%d", domain, size)
+		proxy := rt.Favicons
 
-		if entry, ok := getFaviconCache(key); ok {
+		if entry, ok := proxy.get(key); ok {
 			writeFavicon(c, entry)
 			return
 		}
 
-		data, contentType, err := fetchFavicon(c.Request.Context(), domain, size)
+		data, contentType, err := proxy.fetch(c.Request.Context(), domain, size)
 		if err != nil {
 			data = fallbackFaviconSVG(domain, size)
 			contentType = "image/svg+xml; charset=utf-8"
@@ -60,26 +91,26 @@ func FaviconHandler() gin.HandlerFunc {
 			contentType: contentType,
 			expiresAt:   time.Now().Add(24 * time.Hour),
 		}
-		setFaviconCache(key, entry)
+		proxy.set(key, entry)
 		writeFavicon(c, entry)
 	}
 }
 
-func getFaviconCache(key string) (faviconCacheEntry, bool) {
-	faviconCache.Lock()
-	defer faviconCache.Unlock()
-	entry, ok := faviconCache.items[key]
+func (p *FaviconProxy) get(key string) (faviconCacheEntry, bool) {
+	p.Lock()
+	defer p.Unlock()
+	entry, ok := p.items[key]
 	if !ok || time.Now().After(entry.expiresAt) {
-		delete(faviconCache.items, key)
+		delete(p.items, key)
 		return faviconCacheEntry{}, false
 	}
 	return entry, true
 }
 
-func setFaviconCache(key string, entry faviconCacheEntry) {
-	faviconCache.Lock()
-	faviconCache.items[key] = entry
-	faviconCache.Unlock()
+func (p *FaviconProxy) set(key string, entry faviconCacheEntry) {
+	p.Lock()
+	p.items[key] = entry
+	p.Unlock()
 }
 
 func writeFavicon(c *gin.Context, entry faviconCacheEntry) {
@@ -87,8 +118,8 @@ func writeFavicon(c *gin.Context, entry faviconCacheEntry) {
 	c.Data(http.StatusOK, entry.contentType, entry.data)
 }
 
-func fetchFavicon(ctx context.Context, domain string, size int) ([]byte, string, error) {
-	u, err := url.Parse(faviconUpstream)
+func (p *FaviconProxy) fetch(ctx context.Context, domain string, size int) ([]byte, string, error) {
+	u, err := url.Parse(p.upstream)
 	if err != nil {
 		return nil, "", err
 	}
@@ -102,7 +133,7 @@ func fetchFavicon(ctx context.Context, domain string, size int) ([]byte, string,
 		return nil, "", err
 	}
 	req.Header.Set("User-Agent", "fkteams")
-	resp, err := faviconHTTPClient.Do(req)
+	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, "", err
 	}

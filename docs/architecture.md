@@ -196,7 +196,7 @@ type ToolRegistry interface {
 - `TaskStore`：schedule task、result、history。
 - `StreamHub`：运行中事件流和队列快照。
 
-HTTP、CLI、channel 等入口必须由各自的 server/session/bridge 实例持有 `SessionHistoryManager`、history dir、stream manager、runner cache、HTTP share/upload store 和 scheduler service；禁止在文件历史 adapter、HTTP handler 或 app service 中恢复跨入口共享的全局运行态。`internal/runtime/checkpoint` 只提供内存存储、命名空间等 runtime 无关实现。文件系统只是 adapter；核心不直接拼路径，也不依赖具体文件历史实现。
+HTTP、CLI、channel 等入口必须由各自的 server/session/bridge 实例持有 `SessionHistoryManager`、history dir、stream manager、runner cache、HTTP runtime cache/store 和 scheduler service；禁止在文件历史 adapter、HTTP handler 或 app service 中恢复跨入口共享的全局运行态。`internal/runtime/checkpoint` 只提供内存存储、命名空间等 runtime 无关实现。文件系统只是 adapter；核心不直接拼路径，也不依赖具体文件历史实现。
 
 ## Hooks
 
