@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	modelproviders "fkteams/internal/adapters/model/providers"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
 	agents "fkteams/internal/app/agent/catalog"
@@ -34,6 +35,7 @@ type Runtime struct {
 	AgentRegistry *agents.Registry
 	ToolRegistry  *apptools.ToolGroupRegistry
 	ModelRegistry *modelregistry.Registry
+	Providers     *modelproviders.Registry
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -54,6 +56,7 @@ type RuntimeOptions struct {
 	AgentRegistry *agents.Registry
 	ToolRegistry  *apptools.ToolGroupRegistry
 	ModelRegistry *modelregistry.Registry
+	Providers     *modelproviders.Registry
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -83,6 +86,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		AgentRegistry: opt.AgentRegistry,
 		ToolRegistry:  opt.ToolRegistry,
 		ModelRegistry: opt.ModelRegistry,
+		Providers:     opt.Providers,
 		Engine:        opt.Engine,
 		Interrupt:     opt.Interrupt,
 		ResetChannels: opt.ResetChannels,
@@ -146,6 +150,7 @@ func (rt *Runtime) withRuntimeContext(ctx context.Context) context.Context {
 	ctx = runtimeport.WithEngine(ctx, rt.Engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)
+	ctx = modelproviders.WithRegistry(ctx, rt.Providers)
 	ctx = apptools.WithRegistry(ctx, rt.ToolRegistry)
 	ctx = agents.WithRegistry(ctx, rt.AgentRegistry)
 	return appschedule.WithService(ctx, rt.Scheduler)

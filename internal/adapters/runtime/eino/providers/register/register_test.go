@@ -10,8 +10,9 @@ import (
 )
 
 func TestRegisterDefaultsRegistersAllProviderFactories(t *testing.T) {
-	registry := modelregistry.NewRegistry()
-	RegisterDefaults(registry)
+	providerRegistry := modelproviders.NewRegistry()
+	runtimeRegistry := modelregistry.NewRegistry()
+	RegisterDefaults(providerRegistry, runtimeRegistry)
 	for _, provider := range []modelproviders.Type{
 		modelproviders.OpenAI,
 		modelproviders.DeepSeek,
@@ -24,7 +25,7 @@ func TestRegisterDefaultsRegistersAllProviderFactories(t *testing.T) {
 		modelproviders.Copilot,
 	} {
 		t.Run(string(provider), func(t *testing.T) {
-			_, err := modelproviders.NewChatModel(context.Background(), &modelproviders.Config{
+			_, err := providerRegistry.NewChatModel(context.Background(), &modelproviders.Config{
 				Provider: provider,
 				BaseURL:  "http://127.0.0.1",
 				Model:    "test-model",
@@ -32,7 +33,7 @@ func TestRegisterDefaultsRegistersAllProviderFactories(t *testing.T) {
 			if err != nil && strings.Contains(err.Error(), "未知的模型提供者") {
 				t.Fatalf("%s factory was not registered: %v", provider, err)
 			}
-			_, err = registry.NewChatModel(context.Background(), &modelregistry.Config{
+			_, err = runtimeRegistry.NewChatModel(context.Background(), &modelregistry.Config{
 				Provider: modelregistry.Type(provider),
 				BaseURL:  "http://127.0.0.1",
 				Model:    "test-model",

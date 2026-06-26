@@ -781,6 +781,30 @@ func TestRuntimeModelRegistryIsInstanceOwned(t *testing.T) {
 	}
 }
 
+func TestAdapterModelProviderRegistryIsInstanceOwned(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "model", "providers", "providers.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{
+		"var factories",
+		"var modelListers",
+		"factories = map[Type]Factory",
+		"modelListers = map[Type]ModelLister",
+		"func Register(",
+		"func RegisterModelLister(",
+		"func NewChatModel(ctx context.Context",
+		"func ListModels(ctx context.Context",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("adapter model provider registry exposes process-global state through %q", forbidden)
+		}
+	}
+}
+
 func TestHooksDoNotExposeGlobalBus(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "runtime", "hooks")

@@ -611,7 +611,11 @@ func promptModelSelection(ctx context.Context, provider, apiKey, baseURL string)
 	}
 
 	fmt.Printf("正在获取 %s 可用模型列表...\n", provider)
-	models, err := providers.ListModels(ctx, &providers.Config{
+	registry, err := providers.RequireRegistry(ctx)
+	if err != nil {
+		return "", err
+	}
+	models, err := registry.ListModels(ctx, &providers.Config{
 		Provider: providers.Type(provider),
 		APIKey:   apiKey,
 		BaseURL:  baseURL,

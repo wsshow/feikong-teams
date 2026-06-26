@@ -18,28 +18,31 @@ import (
 )
 
 // RegisterDefaults 显式注册 Eino runtime 的内置模型提供者。
-func RegisterDefaults(registry *modelregistry.Registry) {
-	modelproviders.RegisterDefaultModelListers()
+func RegisterDefaults(providerRegistry *modelproviders.Registry, runtimeRegistry *modelregistry.Registry) {
+	if providerRegistry == nil {
+		providerRegistry = modelproviders.NewRegistry()
+	}
+	providerRegistry.RegisterDefaultModelListers()
 
-	modelproviders.Register(modelproviders.OpenAI, openai.New)
-	modelproviders.Register(modelproviders.DeepSeek, deepseek.New)
-	modelproviders.Register(modelproviders.Claude, claude.New)
-	modelproviders.Register(modelproviders.Ollama, ollama.New)
-	modelproviders.Register(modelproviders.Ark, ark.New)
-	modelproviders.Register(modelproviders.Gemini, gemini.New)
-	modelproviders.Register(modelproviders.Qwen, qwen.New)
-	modelproviders.Register(modelproviders.OpenRouter, openrouter.New)
-	modelproviders.Register(modelproviders.Copilot, copilot.New)
+	providerRegistry.Register(modelproviders.OpenAI, openai.New)
+	providerRegistry.Register(modelproviders.DeepSeek, deepseek.New)
+	providerRegistry.Register(modelproviders.Claude, claude.New)
+	providerRegistry.Register(modelproviders.Ollama, ollama.New)
+	providerRegistry.Register(modelproviders.Ark, ark.New)
+	providerRegistry.Register(modelproviders.Gemini, gemini.New)
+	providerRegistry.Register(modelproviders.Qwen, qwen.New)
+	providerRegistry.Register(modelproviders.OpenRouter, openrouter.New)
+	providerRegistry.Register(modelproviders.Copilot, copilot.New)
 
-	registerRuntimeModel(registry, modelregistry.OpenAI, openai.New)
-	registerRuntimeModel(registry, modelregistry.DeepSeek, deepseek.New)
-	registerRuntimeModel(registry, modelregistry.Claude, claude.New)
-	registerRuntimeModel(registry, modelregistry.Ollama, ollama.New)
-	registerRuntimeModel(registry, modelregistry.Ark, ark.New)
-	registerRuntimeModel(registry, modelregistry.Gemini, gemini.New)
-	registerRuntimeModel(registry, modelregistry.Qwen, qwen.New)
-	registerRuntimeModel(registry, modelregistry.OpenRouter, openrouter.New)
-	registerRuntimeModel(registry, modelregistry.Copilot, copilot.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.OpenAI, openai.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.DeepSeek, deepseek.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.Claude, claude.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.Ollama, ollama.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.Ark, ark.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.Gemini, gemini.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.Qwen, qwen.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.OpenRouter, openrouter.New)
+	registerRuntimeModel(runtimeRegistry, modelregistry.Copilot, copilot.New)
 }
 
 func registerRuntimeModel(registry *modelregistry.Registry, t modelregistry.Type, f func(context.Context, *providerkit.Config) (runtimeport.ChatModel, error)) {

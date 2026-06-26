@@ -182,8 +182,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		}
 
 		// 模型提供者 API
-		apiV1.GET("/providers", handler.GetProvidersHandler())
-		apiV1.POST("/providers/models", handler.GetProviderModelsHandler())
+		apiV1.GET("/providers", runtime.GetProvidersHandler())
+		apiV1.POST("/providers/models", runtime.GetProviderModelsHandler())
 
 		// 系统管理 API
 		apiV1.POST("/shutdown", handler.ShutdownHandler())

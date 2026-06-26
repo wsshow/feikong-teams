@@ -13,6 +13,10 @@ import (
 
 // GetProvidersHandler 获取所有已注册的提供者信息
 func GetProvidersHandler() gin.HandlerFunc {
+	return NewRuntime().GetProvidersHandler()
+}
+
+func (rt *Runtime) GetProvidersHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		OK(c, providers.ListProviders())
 	}
@@ -20,6 +24,10 @@ func GetProvidersHandler() gin.HandlerFunc {
 
 // GetProviderModelsHandler 获取指定提供者配置的可用模型列表
 func GetProviderModelsHandler() gin.HandlerFunc {
+	return NewRuntime().GetProviderModelsHandler()
+}
+
+func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Provider string `json:"provider"`
@@ -49,7 +57,13 @@ func GetProviderModelsHandler() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
 
-		models, err := providers.ListModels(ctx, &providers.Config{
+		registry, err := providers.RequireRegistry(rt.withRuntimeContext(ctx))
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		models, err := registry.ListModels(ctx, &providers.Config{
 			Provider: providers.Type(req.Provider),
 			BaseURL:  req.BaseURL,
 			APIKey:   apiKey,

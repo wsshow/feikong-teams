@@ -8,6 +8,7 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"strings"
+	"sync"
 
 	"fkteams/internal/adapters/model/providers/copilot"
 	"fkteams/internal/adapters/model/providers/providerkit"
@@ -40,22 +41,78 @@ type Config struct {
 // Factory 模型创建函数类型
 type Factory func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error)
 
-var factories = map[Type]Factory{}
+type registryContextKey struct{}
+
+// Registry 持有模型 provider 工厂和模型列表查询器。
+type Registry struct {
+	mu           sync.RWMutex
+	factories    map[Type]Factory
+	modelListers map[Type]ModelLister
+}
+
+// NewRegistry 创建空模型 provider 注册表。
+func NewRegistry() *Registry {
+	return &Registry{
+		factories:    make(map[Type]Factory),
+		modelListers: make(map[Type]ModelLister),
+	}
+}
+
+// WithRegistry 将模型 provider 注册表注入上下文。
+func WithRegistry(ctx context.Context, registry *Registry) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if registry == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, registryContextKey{}, registry)
+}
+
+// RegistryFromContext 从上下文读取模型 provider 注册表。
+func RegistryFromContext(ctx context.Context) (*Registry, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	registry, ok := ctx.Value(registryContextKey{}).(*Registry)
+	return registry, ok && registry != nil
+}
+
+// RequireRegistry 从上下文读取模型 provider 注册表，缺失时返回明确错误。
+func RequireRegistry(ctx context.Context) (*Registry, error) {
+	if registry, ok := RegistryFromContext(ctx); ok {
+		return registry, nil
+	}
+	return nil, fmt.Errorf("model provider registry is not configured")
+}
 
 // Register 注册提供者工厂函数
-func Register(t Type, f Factory) {
-	factories[t] = f
+func (r *Registry) Register(t Type, f Factory) {
+	if r == nil || f == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.factories[t] = f
 }
 
 // NewChatModel 根据配置创建聊天模型
-func NewChatModel(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
+func (r *Registry) NewChatModel(ctx context.Context, cfg *Config) (runtimeport.ChatModel, error) {
+	if r == nil {
+		return nil, fmt.Errorf("model provider registry is nil")
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("model provider config is nil")
+	}
 	t := cfg.Provider
 	if t == "" {
 		t = Detect(cfg.BaseURL, cfg.Model)
 	}
 
-	f, ok := factories[t]
-	if !ok {
+	r.mu.RLock()
+	f := r.factories[t]
+	r.mu.RUnlock()
+	if f == nil {
 		return nil, fmt.Errorf("未知的模型提供者: %s", t)
 	}
 
@@ -103,22 +160,25 @@ type ModelInfo = providerkit.ModelInfo
 // ModelLister 模型列表获取接口
 type ModelLister func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo, error)
 
-var modelListers = map[Type]ModelLister{}
-
 // RegisterDefaultModelListers 注册内置模型列表查询实现。
-func RegisterDefaultModelListers() {
-	RegisterModelLister(OpenAI, providerkit.ListOpenAIModels)
-	RegisterModelLister(DeepSeek, providerkit.ListOpenAIModels)
-	RegisterModelLister(Qwen, providerkit.ListOpenAIModels)
-	RegisterModelLister(OpenRouter, providerkit.ListOpenAIModels)
-	RegisterModelLister(Ollama, providerkit.ListOpenAIModels)
-	RegisterModelLister(Ark, providerkit.ListOpenAIModels)
-	RegisterModelLister(Copilot, copilot.ListModels)
+func (r *Registry) RegisterDefaultModelListers() {
+	r.RegisterModelLister(OpenAI, providerkit.ListOpenAIModels)
+	r.RegisterModelLister(DeepSeek, providerkit.ListOpenAIModels)
+	r.RegisterModelLister(Qwen, providerkit.ListOpenAIModels)
+	r.RegisterModelLister(OpenRouter, providerkit.ListOpenAIModels)
+	r.RegisterModelLister(Ollama, providerkit.ListOpenAIModels)
+	r.RegisterModelLister(Ark, providerkit.ListOpenAIModels)
+	r.RegisterModelLister(Copilot, copilot.ListModels)
 }
 
 // RegisterModelLister 注册模型列表获取函数
-func RegisterModelLister(t Type, l ModelLister) {
-	modelListers[t] = l
+func (r *Registry) RegisterModelLister(t Type, l ModelLister) {
+	if r == nil || l == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.modelListers[t] = l
 }
 
 // defaultBaseURLs 各提供者的默认 API 地址（用户未配置 base_url 时使用）
@@ -137,14 +197,22 @@ func DefaultBaseURL(t Type) string {
 }
 
 // ListModels 获取指定提供者的可用模型列表
-func ListModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
+func (r *Registry) ListModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
+	if r == nil {
+		return nil, fmt.Errorf("model provider registry is nil")
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("model provider config is nil")
+	}
 	t := cfg.Provider
 	if t == "" {
 		t = Detect(cfg.BaseURL, cfg.Model)
 	}
 
-	l, ok := modelListers[t]
-	if !ok {
+	r.mu.RLock()
+	l := r.modelListers[t]
+	r.mu.RUnlock()
+	if l == nil {
 		return nil, fmt.Errorf("提供者 %s 不支持模型列表查询", t)
 	}
 

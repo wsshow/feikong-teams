@@ -169,7 +169,12 @@ func listAvailableModels(ctx context.Context, provider, name string) error {
 	}
 
 	spinner, _ := pterm.DefaultSpinner.Start(fmt.Sprintf("正在查询 %s 可用模型...", pcfg.Provider))
-	models, err := providers.ListModels(ctx, &pcfg)
+	registry, err := providers.RequireRegistry(ctx)
+	if err != nil {
+		spinner.Fail(err.Error())
+		return err
+	}
+	models, err := registry.ListModels(ctx, &pcfg)
 	if err != nil {
 		spinner.Fail(err.Error())
 		return err

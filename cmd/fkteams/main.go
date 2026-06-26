@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	modelproviders "fkteams/internal/adapters/model/providers"
 	clicommands "fkteams/internal/adapters/transport/cli/commands"
 	agents "fkteams/internal/app/agent/catalog"
 	apptools "fkteams/internal/app/tools"
@@ -39,9 +40,15 @@ func main() {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
+	modelProviderRegistry, err := bootstrapruntimes.DefaultModelProviderRegistry()
+	if err != nil {
+		pterm.Error.Println(err)
+		os.Exit(1)
+	}
 	ctx := runtimeport.WithEngine(context.Background(), engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, bootstrapruntimes.DefaultInterruptRuntime())
 	ctx = modelregistry.WithRegistry(ctx, modelRegistry)
+	ctx = modelproviders.WithRegistry(ctx, modelProviderRegistry)
 	ctx = apptools.WithRegistry(ctx, toolRegistry)
 	ctx = agents.WithRegistry(ctx, agents.NewRegistry())
 	if err := clicommands.Root().Run(ctx, os.Args); err != nil {

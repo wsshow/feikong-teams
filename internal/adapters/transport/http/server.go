@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	modelproviders "fkteams/internal/adapters/model/providers"
 	channel "fkteams/internal/adapters/transport/channel"
 	_ "fkteams/internal/adapters/transport/channel/discord"
 	_ "fkteams/internal/adapters/transport/channel/qq"
@@ -70,6 +71,7 @@ func (s *httpService) Start(ctx context.Context) error {
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	modelRegistry, _ := modelregistry.RegistryFromContext(ctx)
+	providerRegistry, _ := modelproviders.RegistryFromContext(ctx)
 	toolRegistry, _ := apptools.RegistryFromContext(ctx)
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
@@ -78,6 +80,7 @@ func (s *httpService) Start(ctx context.Context) error {
 		AgentRegistry: agentRegistry,
 		ToolRegistry:  toolRegistry,
 		ModelRegistry: modelRegistry,
+		Providers:     providerRegistry,
 		ResetChannels: s.resetChannels,
 	})
 	if s.scheduler != nil {

@@ -40,15 +40,15 @@ func TestDetectProviderFromBaseURLOrModel(t *testing.T) {
 }
 
 func TestNewChatModelUsesFactoryAndAutoDetection(t *testing.T) {
-	restoreProvidersGlobals(t)
+	registry := NewRegistry()
 	model := testmodel.New(testmodel.AssistantMessage("ok"))
 	var captured *providerkit.Config
-	Register(DeepSeek, func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
+	registry.Register(DeepSeek, func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
 		captured = cfg
 		return model, nil
 	})
 
-	got, err := NewChatModel(context.Background(), &Config{
+	got, err := registry.NewChatModel(context.Background(), &Config{
 		BaseURL:      "https://api.deepseek.com",
 		APIKey:       "sk-test",
 		Model:        "deepseek-chat",
@@ -72,29 +72,29 @@ func TestNewChatModelUsesFactoryAndAutoDetection(t *testing.T) {
 }
 
 func TestNewChatModelReportsUnknownAndFactoryErrors(t *testing.T) {
-	restoreProvidersGlobals(t)
+	registry := NewRegistry()
 
-	if _, err := NewChatModel(context.Background(), &Config{Provider: Type("missing")}); err == nil || !strings.Contains(err.Error(), "未知的模型提供者") {
+	if _, err := registry.NewChatModel(context.Background(), &Config{Provider: Type("missing")}); err == nil || !strings.Contains(err.Error(), "未知的模型提供者") {
 		t.Fatalf("unknown provider error = %v", err)
 	}
 
-	Register(OpenAI, func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
+	registry.Register(OpenAI, func(ctx context.Context, cfg *providerkit.Config) (runtimeport.ChatModel, error) {
 		return nil, fmt.Errorf("factory failed")
 	})
-	if _, err := NewChatModel(context.Background(), &Config{Provider: OpenAI}); err == nil || !strings.Contains(err.Error(), "factory failed") {
+	if _, err := registry.NewChatModel(context.Background(), &Config{Provider: OpenAI}); err == nil || !strings.Contains(err.Error(), "factory failed") {
 		t.Fatalf("factory error = %v, want factory failed", err)
 	}
 }
 
 func TestListModelsUsesListerAndDefaultBaseURL(t *testing.T) {
-	restoreProvidersGlobals(t)
+	registry := NewRegistry()
 	var captured *providerkit.Config
-	RegisterModelLister(OpenAI, func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo, error) {
+	registry.RegisterModelLister(OpenAI, func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo, error) {
 		captured = cfg
 		return []ModelInfo{{ID: "gpt-5"}}, nil
 	})
 
-	models, err := ListModels(context.Background(), &Config{
+	models, err := registry.ListModels(context.Background(), &Config{
 		Provider:     OpenAI,
 		APIKey:       "sk-test",
 		ExtraHeaders: map[string]string{"X-Gateway": "token"},
@@ -117,16 +117,16 @@ func TestListModelsUsesListerAndDefaultBaseURL(t *testing.T) {
 }
 
 func TestListModelsReportsUnsupportedAndListerErrors(t *testing.T) {
-	restoreProvidersGlobals(t)
+	registry := NewRegistry()
 
-	if _, err := ListModels(context.Background(), &Config{Provider: Type("missing")}); err == nil || !strings.Contains(err.Error(), "不支持模型列表查询") {
+	if _, err := registry.ListModels(context.Background(), &Config{Provider: Type("missing")}); err == nil || !strings.Contains(err.Error(), "不支持模型列表查询") {
 		t.Fatalf("unsupported provider error = %v", err)
 	}
 
-	RegisterModelLister(OpenAI, func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo, error) {
+	registry.RegisterModelLister(OpenAI, func(ctx context.Context, cfg *providerkit.Config) ([]ModelInfo, error) {
 		return nil, fmt.Errorf("list failed")
 	})
-	if _, err := ListModels(context.Background(), &Config{Provider: OpenAI}); err == nil || !strings.Contains(err.Error(), "list failed") {
+	if _, err := registry.ListModels(context.Background(), &Config{Provider: OpenAI}); err == nil || !strings.Contains(err.Error(), "list failed") {
 		t.Fatalf("lister error = %v, want list failed", err)
 	}
 }
@@ -150,17 +150,4 @@ func TestDefaultBaseURLAndListProviders(t *testing.T) {
 	if seen[string(OpenAI)] != "OpenAI" || seen[string(Copilot)] != "GitHub Copilot" {
 		t.Fatalf("providers = %v, missing expected names", providers)
 	}
-}
-
-func restoreProvidersGlobals(t *testing.T) {
-	t.Helper()
-
-	originalFactories := factories
-	originalModelListers := modelListers
-	factories = map[Type]Factory{}
-	modelListers = map[Type]ModelLister{}
-	t.Cleanup(func() {
-		factories = originalFactories
-		modelListers = originalModelListers
-	})
 }
