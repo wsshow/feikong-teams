@@ -16,6 +16,7 @@ type SessionMetadata struct {
 	Title        string    `json:"title"`
 	Status       string    `json:"status"`
 	CurrentAgent string    `json:"current_agent,omitempty"`
+	Favorite     bool      `json:"favorite,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

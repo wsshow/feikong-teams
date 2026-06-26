@@ -131,6 +131,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 			sessions.GET("/:sessionID", runtime.GetSessionHandler())
 			sessions.DELETE("/:sessionID", runtime.DeleteSessionHandler())
 			sessions.POST("/rename", runtime.RenameSessionHandler())
+			sessions.POST("/favorite", runtime.FavoriteSessionHandler())
 			sessions.POST("/agent", runtime.UpdateSessionAgentHandler())
 		}
 

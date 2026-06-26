@@ -21,6 +21,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	router.POST("/sessions", rt.CreateSessionHandler())
 	router.DELETE("/sessions/:sessionID", rt.DeleteSessionHandler())
 	router.POST("/sessions/rename", rt.RenameSessionHandler())
+	router.POST("/sessions/favorite", rt.FavoriteSessionHandler())
 	router.POST("/sessions/agent", rt.UpdateSessionAgentHandler())
 
 	longTitle := strings.Repeat("题", 55)
@@ -53,6 +54,18 @@ func TestSessionCRUDHandlers(t *testing.T) {
 		t.Fatalf("renamed title = %q", meta.Title)
 	}
 
+	resp = performJSON(router, http.MethodPost, "/sessions/favorite", `{"session_id":"session-1","favorite":true}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("favorite session status = %d: %s", resp.Code, resp.Body.String())
+	}
+	meta, err = eventlog.LoadMetadata(rt.sessionDirPath("session-1"))
+	if err != nil {
+		t.Fatalf("load metadata after favorite update: %v", err)
+	}
+	if !meta.Favorite {
+		t.Fatal("session should be favorite")
+	}
+
 	resp = performJSON(router, http.MethodPost, "/sessions/agent", `{"session_id":"session-1","current_agent":"coder"}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("update agent status = %d: %s", resp.Code, resp.Body.String())
@@ -76,7 +89,7 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	if len(list.Sessions) != 1 {
 		t.Fatalf("sessions = %#v", list.Sessions)
 	}
-	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != "新标题" || list.Sessions[0].CurrentAgent != "coder" {
+	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != "新标题" || list.Sessions[0].CurrentAgent != "coder" || !list.Sessions[0].Favorite {
 		t.Fatalf("listed session = %#v", list.Sessions[0])
 	}
 
@@ -101,6 +114,7 @@ func TestSessionHandlersRejectInvalidRequests(t *testing.T) {
 	router := gin.New()
 	router.POST("/sessions", rt.CreateSessionHandler())
 	router.POST("/sessions/rename", rt.RenameSessionHandler())
+	router.POST("/sessions/favorite", rt.FavoriteSessionHandler())
 	router.POST("/sessions/agent", rt.UpdateSessionAgentHandler())
 	router.DELETE("/sessions/:sessionID", rt.DeleteSessionHandler())
 
@@ -114,6 +128,8 @@ func TestSessionHandlersRejectInvalidRequests(t *testing.T) {
 		{name: "create bad id", method: http.MethodPost, path: "/sessions", body: `{"session_id":"../bad"}`},
 		{name: "rename bad body", method: http.MethodPost, path: "/sessions/rename", body: `{}`},
 		{name: "rename bad id", method: http.MethodPost, path: "/sessions/rename", body: `{"session_id":"../bad","title":"x"}`},
+		{name: "favorite bad body", method: http.MethodPost, path: "/sessions/favorite", body: `{}`},
+		{name: "favorite bad id", method: http.MethodPost, path: "/sessions/favorite", body: `{"session_id":"../bad","favorite":true}`},
 		{name: "agent bad body", method: http.MethodPost, path: "/sessions/agent", body: `{}`},
 		{name: "agent bad id", method: http.MethodPost, path: "/sessions/agent", body: `{"session_id":"../bad"}`},
 		{name: "delete bad id", method: http.MethodDelete, path: "/sessions/bad%5Cid"},
@@ -150,5 +166,9 @@ func TestSessionHandlersRejectInvalidRequests(t *testing.T) {
 	resp = performJSON(router, http.MethodPost, "/sessions/agent", `{"session_id":"missing","current_agent":"coder"}`)
 	if resp.Code != http.StatusNotFound {
 		t.Fatalf("agent missing status = %d, want 404", resp.Code)
+	}
+	resp = performJSON(router, http.MethodPost, "/sessions/favorite", `{"session_id":"missing","favorite":true}`)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("favorite missing status = %d, want 404", resp.Code)
 	}
 }

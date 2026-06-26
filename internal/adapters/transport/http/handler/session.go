@@ -20,6 +20,7 @@ type SessionInfo struct {
 	Title        string    `json:"title"`
 	Status       string    `json:"status"`
 	CurrentAgent string    `json:"current_agent,omitempty"`
+	Favorite     bool      `json:"favorite,omitempty"`
 	ActiveTask   bool      `json:"active_task"` // 是否有内存中的活跃流式任务可订阅
 	Size         int64     `json:"size"`
 	ModTime      time.Time `json:"mod_time"`
@@ -83,8 +84,10 @@ func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 			}
 
 			currentAgent := ""
+			favorite := false
 			if metaErr == nil {
 				currentAgent = meta.CurrentAgent
+				favorite = meta.Favorite
 			}
 
 			files = append(files, SessionInfo{
@@ -92,6 +95,7 @@ func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 				Title:        title,
 				Status:       status,
 				CurrentAgent: currentAgent,
+				Favorite:     favorite,
 				ActiveTask:   rt.Streams.Get(sessionID) != nil,
 				Size:         size,
 				ModTime:      modTime,
@@ -205,13 +209,16 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		}
 
 		currentAgent := ""
+		favorite := false
 		if metaErr == nil {
 			currentAgent = meta.CurrentAgent
+			favorite = meta.Favorite
 		}
 
 		OK(c, gin.H{
 			"session_id":    sessionID,
 			"current_agent": currentAgent,
+			"favorite":      favorite,
 			"messages":      recorder.GetMessages(),
 			"active_task":   activeTask,
 		})
@@ -299,6 +306,54 @@ func (rt *Runtime) RenameSessionHandler() gin.HandlerFunc {
 			"message":    "session renamed",
 			"session_id": req.SessionID,
 			"title":      req.Title,
+		})
+	}
+}
+
+// FavoriteSessionHandler 更新会话收藏状态
+func FavoriteSessionHandler() gin.HandlerFunc {
+	return NewRuntime().FavoriteSessionHandler()
+}
+
+func (rt *Runtime) FavoriteSessionHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			SessionID string `json:"session_id" binding:"required"`
+			Favorite  bool   `json:"favorite"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if !validateSessionID(req.SessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+
+		sessionDir := rt.sessionDirPath(req.SessionID)
+		meta, err := eventlog.LoadMetadata(sessionDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				Fail(c, http.StatusNotFound, "session not found")
+			} else {
+				log.Printf("failed to load metadata: session=%s, err=%v", req.SessionID, err)
+				Fail(c, http.StatusInternalServerError, "failed to read metadata")
+			}
+			return
+		}
+
+		meta.Favorite = req.Favorite
+		meta.UpdatedAt = time.Now()
+		if err := eventlog.SaveMetadata(sessionDir, meta); err != nil {
+			log.Printf("failed to save metadata: session=%s, err=%v", req.SessionID, err)
+			Fail(c, http.StatusInternalServerError, "failed to save metadata")
+			return
+		}
+
+		OK(c, gin.H{
+			"message":    "session favorite updated",
+			"session_id": req.SessionID,
+			"favorite":   req.Favorite,
 		})
 	}
 }

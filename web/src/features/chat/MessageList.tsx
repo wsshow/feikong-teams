@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { Bot, GitBranch, User } from "lucide-react";
+import { Check, ChevronDown, Copy, GitBranch } from "lucide-react";
 import { useAppSelector } from "@/app/hooks";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
@@ -39,44 +39,17 @@ export function MessageList() {
 
   const toolEvents = collectToolActivities(events);
   const memberEvents = collectMemberActivities(events);
+  const reasoningByMessage = collectReasoningBlocks(events);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-      <div className="mx-auto max-w-5xl space-y-4">
+    <div className="chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-8">
+      <div className="mx-auto w-full max-w-3xl space-y-10">
         {messages.map((message) => (
-          <article key={message.id} className={cn("message-row flex gap-3", message.role === "user" && "justify-end")}>
-            {message.role !== "user" ? (
-              <div className="sketch-surface mt-1 flex h-9 w-9 items-center justify-center rounded-md bg-secondary">
-                <Bot className="h-4 w-4" />
-              </div>
-            ) : null}
-            <div
-              className={cn(
-                "max-w-[78%] rounded-md px-4 py-3 text-sm",
-                message.role === "user"
-                  ? "border border-primary/65 bg-primary text-primary-foreground shadow-[3px_4px_0_hsl(214_45%_30%/0.14)]"
-                  : "sketch-surface bg-card",
-              )}
-            >
-              {message.agent ? <div className="mb-2 text-xs text-muted-foreground">{message.agent}</div> : null}
-              <div
-                className="prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-              />
-            </div>
-            {message.role === "user" ? (
-              <div className="mt-1 flex h-9 w-9 items-center justify-center rounded-md border border-primary/65 bg-primary text-primary-foreground shadow-[2px_3px_0_hsl(214_45%_30%/0.14)]">
-                <User className="h-4 w-4" />
-              </div>
-            ) : null}
-          </article>
+          <MessageRow key={message.id} message={message} reasoning={message.reasoningContent || reasoningByMessage.get(message.id)} />
         ))}
         {isProcessing ? (
-          <div className="message-row flex gap-3">
-            <div className="sketch-surface mt-1 flex h-9 w-9 items-center justify-center rounded-md bg-secondary">
-              <Bot className="h-4 w-4" />
-            </div>
-            <div className="sketch-surface rounded-md px-4 py-3 text-sm text-muted-foreground">
+          <div className="message-row text-lg text-muted-foreground">
+            <div>
               {statusText || "处理中"}
               <span className="ml-1 inline-flex w-8 justify-between align-middle">
                 <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
@@ -106,10 +79,121 @@ export function MessageList() {
   );
 }
 
+function MessageRow({
+  message,
+  reasoning,
+}: {
+  message: {
+    id: string;
+    role: "user" | "assistant" | "system" | "tool";
+    agent?: string;
+    content: string;
+    reasoningContent?: string;
+  };
+  reasoning?: string;
+}) {
+  if (message.role === "user") {
+    return (
+      <article className="message-row flex w-full flex-col items-end gap-3">
+        <div className="max-w-[78%] rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        </div>
+        <MessageActions align="right" content={message.content} />
+      </article>
+    );
+  }
+
+  return (
+    <article className="message-row w-full">
+      {message.agent ? <div className="mb-3 text-sm text-muted-foreground">{message.agent}</div> : null}
+      {reasoning ? <ReasoningBlock content={reasoning} /> : null}
+      <div
+        className="prose message-prose max-w-none text-lg leading-9"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+      />
+      <MessageActions content={message.content} />
+    </article>
+  );
+}
+
+function ReasoningBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-4 rounded-xl border border-border/70 bg-muted/35">
+      <button
+        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-muted-foreground"
+        onClick={() => setOpen(!open)}
+        type="button"
+      >
+        <span>模型思考</span>
+        <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="border-t border-border/60 px-4 py-3 text-sm leading-7 text-muted-foreground">
+          <div className="whitespace-pre-wrap">{content}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MessageActions({ content, align = "left" }: { content: string; align?: "left" | "right" }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyContent() {
+    await navigator.clipboard?.writeText(content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  return (
+    <div className={cn("flex items-center gap-2", align === "right" && "justify-end")}>
+      <button
+        className={cn(
+          "flex h-8 items-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          copied && "bg-muted text-foreground",
+        )}
+        aria-label={copied ? "已复制" : "复制"}
+        onClick={() => void copyContent()}
+      >
+        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        {copied ? <span className="text-xs">已复制</span> : null}
+      </button>
+    </div>
+  );
+}
+
 function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown; tool_call_ref?: string; type?: string }>) {
   return events
     .map((event) => `${event.type}:${event.tool_call_ref || ""}:${event.tool_calls?.length || 0}:${event.tool_call ? 1 : 0}`)
     .join(":");
+}
+
+function collectReasoningBlocks(events: ChatEvent[]) {
+  const blocks = new Map<string, string>();
+  for (const event of events) {
+    if (event.type !== "message_delta" || event.delta_kind !== "reasoning" || event.role === "tool") continue;
+    const content = String(event.reasoning_content || event.content || event.delta || "");
+    if (!content) continue;
+    for (const key of reasoningKeys(event)) {
+      blocks.set(key, appendText(blocks.get(key), content));
+    }
+  }
+  return blocks;
+}
+
+function reasoningKeys(event: ChatEvent) {
+  const keys = new Set<string>();
+  if (event.message_id) keys.add(event.message_id);
+  if (event.stream_id) {
+    keys.add(event.stream_id);
+    const suffix = event.delta_kind ? `:${event.delta_kind}` : "";
+    if (suffix && event.stream_id.endsWith(suffix)) {
+      keys.add(event.stream_id.slice(0, -suffix.length));
+    }
+  }
+  keys.add(`${event.agent_name || "assistant"}`);
+  return keys;
 }
 
 function collectToolActivities(events: ChatEvent[]): ToolCallDTO[] {

@@ -2,25 +2,28 @@ import {
   CalendarClock,
   FileText,
   FolderOpen,
+  MoreVertical,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
   Search,
   Settings,
-  SlidersHorizontal,
   Sparkles,
-  UserRound,
+  Star,
+  Trash2,
+  X,
 } from "lucide-react";
-import { useRef } from "react";
+import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { appActions, chatActions, sessionsActions, type AppPanel } from "@/app/store";
+import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { shortID, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { createSession } from "@/api/sessions";
+import { createSession, deleteSession, favoriteSession, renameSession } from "@/api/sessions";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 
 const panels: Array<{ key: AppPanel; label: string; path: string; icon: LucideIcon }> = [
@@ -33,21 +36,21 @@ const panels: Array<{ key: AppPanel; label: string; path: string; icon: LucideIc
 
 export function Sidebar() {
   const dispatch = useAppDispatch();
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [openMenuID, setOpenMenuID] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const sidebarOpen = useAppSelector((state) => state.app.sidebarOpen);
   const activePanel = useAppSelector((state) => state.app.activePanel);
   const sessions = useAppSelector((state) => state.sessions.items);
-  const search = useAppSelector((state) => state.sessions.search);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const version = useAppSelector((state) => state.app.version);
 
-  const filtered = sessions
-    .filter((session) => {
-      const text = `${session.title || ""} ${session.session_id}`.toLowerCase();
-      return text.includes(search.toLowerCase());
-    })
-    .sort((left, right) => sessionTime(right) - sessionTime(left));
-  const groups = groupSessions(filtered);
+  const sortedSessions = [...sessions].sort((left, right) => sessionTime(right) - sessionTime(left));
+  const searchResults = sortedSessions.filter((session) => {
+    const text = `${session.title || ""} ${session.session_id}`.toLowerCase();
+    return text.includes(searchQuery.toLowerCase());
+  });
+  const groups = groupSessions(sortedSessions);
 
   async function handleNewSession() {
     const result = await createSession("");
@@ -61,24 +64,65 @@ export function Sidebar() {
     if (location.pathname !== panel.path) history.pushState(null, "", panel.path);
   }
 
+  async function toggleFavorite(session: { session_id: string; favorite?: boolean }) {
+    await favoriteSession(session.session_id, !session.favorite);
+    setOpenMenuID("");
+    dispatch(loadSessions());
+  }
+
+  async function handleRename(session: { session_id: string; title?: string }) {
+    const title = window.prompt("重命名会话", session.title || "");
+    if (title === null) return;
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+    await renameSession(session.session_id, nextTitle);
+    setOpenMenuID("");
+    dispatch(loadSessions());
+  }
+
+  async function handleDelete(sessionID: string) {
+    if (!window.confirm("确定删除这个会话吗？")) return;
+    await deleteSession(sessionID);
+    setOpenMenuID("");
+    if (activeSessionID === sessionID) {
+      dispatch(chatActions.setActiveSession(""));
+      dispatch(chatActions.clearMessages());
+    }
+    dispatch(loadSessions());
+  }
+
   return (
-    <aside
-      className={cn(
-        "sketch-rule flex h-screen shrink-0 flex-col border-r bg-sidebar/95 text-sidebar-foreground transition-[width]",
-        sidebarOpen ? "w-[312px]" : "w-16",
-      )}
-    >
-      <div className="flex h-16 items-center gap-3 px-4">
-        <img className="h-9 w-9 shrink-0 drop-shadow-sm" src="/assets/fkteams-logo.svg" alt="" />
-        {sidebarOpen ? <div className="min-w-0 flex-1 text-xl font-semibold tracking-normal">非空小队</div> : null}
+    <>
+      <aside
+        className={cn(
+          "sketch-rule flex h-screen shrink-0 flex-col border-r bg-sidebar/95 text-sidebar-foreground transition-[width]",
+          sidebarOpen ? "w-[292px]" : "w-16",
+        )}
+      >
+      <div
+        className={cn(
+          "flex items-center",
+          sidebarOpen ? "h-14 gap-2.5 px-3" : "h-20 flex-col justify-center gap-1.5 px-0",
+        )}
+      >
+        <img className="h-8 w-8 shrink-0 drop-shadow-sm" src="/assets/fkteams-logo.svg" alt="" />
         {sidebarOpen ? (
-          <Button size="icon" variant="ghost" aria-label="搜索会话" onClick={() => searchInputRef.current?.focus()}>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="truncate text-lg font-semibold tracking-normal">非空小队</div>
+            <span className="shrink-0 rounded-full border border-border/75 bg-card/70 px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">
+              {version?.version || "dev"}
+            </span>
+          </div>
+        ) : null}
+        {sidebarOpen ? (
+          <Button size="icon" variant="ghost" aria-label="搜索会话" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
           </Button>
         ) : null}
         <Button
           size="icon"
           variant="ghost"
+          className={cn(!sidebarOpen && "h-8 w-8")}
           aria-label={sidebarOpen ? "收起侧栏" : "展开侧栏"}
           onClick={() => dispatch(appActions.setSidebarOpen(!sidebarOpen))}
         >
@@ -86,7 +130,7 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <nav className="space-y-1 px-3 pb-4">
+      <nav className="space-y-0.5 px-2 pb-3">
         <SidebarNavItem
           icon={Plus}
           label="新建会话"
@@ -105,7 +149,7 @@ export function Sidebar() {
         ))}
         <div
           className={cn(
-            "flex h-9 items-center gap-3 rounded-md px-2.5 text-sm text-muted-foreground/60",
+            "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground/55",
             !sidebarOpen && "justify-center px-0",
           )}
           title="文档"
@@ -122,67 +166,184 @@ export function Sidebar() {
 
       {sidebarOpen ? (
         <>
-          <div className="px-4 pb-3">
-            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span>最近会话</span>
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-            </div>
-            <Input
-              ref={searchInputRef}
-              value={search}
-              onChange={(event) => dispatch(sessionsActions.setSessionSearch(event.target.value))}
-              placeholder="搜索会话"
-              className="h-8 rounded-lg bg-background/70"
-            />
+          <div className="px-3 pb-1">
+            <div className="text-[11px] text-muted-foreground">最近会话</div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">
-            {filtered.length === 0 ? (
+          <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+            {sortedSessions.length === 0 ? (
               <div className="px-2 py-8 text-sm text-muted-foreground">暂无会话</div>
             ) : (
               groups.map((group) => (
-                <section key={group.label} className="mb-4">
-                  <div className="px-2 pb-1 pt-2 text-xs text-muted-foreground">{group.label}</div>
+                <section key={group.label} className="mb-2.5">
+                  <div className="px-2 pb-0.5 pt-1.5 text-[11px] text-muted-foreground">{group.label}</div>
                   {group.sessions.map((session) => (
-                    <button
+                    <div
                       key={session.session_id}
                       className={cn(
-                        "group mb-1 w-full rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-card/75",
-                        activeSessionID === session.session_id && "bg-card text-accent-foreground shadow-[2px_2px_0_hsl(218_32%_30%/0.08)]",
+                        "group relative mb-0.5 flex w-full items-start gap-1 rounded-lg py-1 pl-2 pr-1 text-sm transition-colors hover:bg-card/70",
+                        activeSessionID === session.session_id && "bg-card/80 text-accent-foreground",
                       )}
-                      onClick={() => dispatch(chatActions.setActiveSession(session.session_id))}
                     >
-                      <div className="truncate font-medium">{session.title || shortID(session.session_id)}</div>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="truncate">{shortID(session.session_id)}</span>
-                        <span>·</span>
-                        <span className="truncate">{formatTime(session.mod_time || session.updated_at)}</span>
-                        {session.status ? (
-                          <>
-                            <span>·</span>
-                            <span className="truncate">{session.status}</span>
-                          </>
-                        ) : null}
-                      </div>
-                    </button>
+                      <button
+                        className="min-w-0 flex-1 text-left"
+                        onClick={() => {
+                          setOpenMenuID("");
+                          dispatch(chatActions.setActiveSession(session.session_id));
+                        }}
+                      >
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          {session.favorite ? (
+                            <Star className="h-3.5 w-3.5 shrink-0 fill-foreground" />
+                          ) : null}
+                          <span className="truncate font-medium">{session.title || shortID(session.session_id)}</span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
+                          <span className="truncate">{formatTime(session.mod_time || session.updated_at)}</span>
+                          {session.status ? (
+                            <>
+                              <span>·</span>
+                              <span className="truncate">{session.status}</span>
+                            </>
+                          ) : null}
+                        </div>
+                      </button>
+                      <button
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                        aria-label="会话操作"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenMenuID(openMenuID === session.session_id ? "" : session.session_id);
+                        }}
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                      {openMenuID === session.session_id ? (
+                        <SessionMenu
+                          favorite={Boolean(session.favorite)}
+                          onToggleFavorite={() => void toggleFavorite(session)}
+                          onRename={() => void handleRename(session)}
+                          onDelete={() => void handleDelete(session.session_id)}
+                        />
+                      ) : null}
+                    </div>
                   ))}
                 </section>
               ))
             )}
           </div>
-          <div className="sketch-rule border-t p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background">
-                <UserRound className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">本地工作区</div>
-                <div className="truncate text-xs text-muted-foreground">{version?.version || "dev"}</div>
-              </div>
-            </div>
-          </div>
         </>
       ) : null}
-    </aside>
+      </aside>
+      {searchOpen ? (
+        <SessionSearchDialog
+          activeSessionID={activeSessionID}
+          query={searchQuery}
+          sessions={searchResults}
+          onQueryChange={setSearchQuery}
+          onClose={() => setSearchOpen(false)}
+          onSelect={(sessionID) => {
+            dispatch(chatActions.setActiveSession(sessionID));
+            dispatch(appActions.setActivePanel("chat"));
+            if (location.pathname !== "/chat") history.pushState(null, "", "/chat");
+            setSearchOpen(false);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SessionSearchDialog({
+  activeSessionID,
+  query,
+  sessions,
+  onQueryChange,
+  onClose,
+  onSelect,
+}: {
+  activeSessionID: string;
+  query: string;
+  sessions: Array<{ session_id: string; title?: string; mod_time?: string; updated_at?: string }>;
+  onQueryChange: (value: string) => void;
+  onClose: () => void;
+  onSelect: (sessionID: string) => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-foreground/10 px-6 pt-24 backdrop-blur-[1px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="mx-auto flex max-h-[78vh] max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_50px_hsl(218_30%_20%/0.18)]">
+        <div className="flex h-20 items-center gap-4 border-b border-border/70 px-6">
+          <Search className="h-6 w-6 shrink-0 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") onClose();
+            }}
+            placeholder="搜索会话"
+            className="h-12 border-0 bg-transparent px-0 text-xl shadow-none focus-visible:ring-0"
+          />
+          <button className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClose} aria-label="关闭搜索">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {sessions.length === 0 ? (
+            <div className="px-4 py-10 text-sm text-muted-foreground">没有匹配的会话</div>
+          ) : (
+            sessions.map((session) => (
+              <button
+                key={session.session_id}
+                className={cn(
+                  "flex h-14 w-full items-center gap-3 rounded-xl px-4 text-left text-base hover:bg-muted",
+                  activeSessionID === session.session_id && "bg-muted",
+                )}
+                onClick={() => onSelect(session.session_id)}
+              >
+                <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate font-medium">{session.title || shortID(session.session_id)}</span>
+                <span className="shrink-0 text-sm text-muted-foreground">{relativeSessionTime(session)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SessionMenu({
+  favorite,
+  onToggleFavorite,
+  onRename,
+  onDelete,
+}: {
+  favorite: boolean;
+  onToggleFavorite: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="sketch-surface absolute right-1 top-9 z-40 w-44 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]">
+      <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-accent/65" onClick={onToggleFavorite}>
+        <Star className={cn("h-4 w-4", favorite && "fill-foreground")} />
+        {favorite ? "取消收藏" : "收藏"}
+      </button>
+      <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-accent/65" onClick={onRename}>
+        <Pencil className="h-4 w-4" />
+        重命名
+      </button>
+      <div className="my-1 border-t border-border/70" />
+      <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-destructive hover:bg-destructive/10" onClick={onDelete}>
+        <Trash2 className="h-4 w-4" />
+        删除
+      </button>
+    </div>
   );
 }
 
@@ -221,6 +382,17 @@ function sessionTime(session: { mod_time?: string; updated_at?: string }) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function relativeSessionTime(session: { mod_time?: string; updated_at?: string }) {
+  const time = sessionTime(session);
+  if (!time) return "";
+  const diff = Date.now() - time;
+  const day = 24 * 60 * 60 * 1000;
+  if (diff < day) return "今天";
+  if (diff < day * 2) return "昨天";
+  if (diff < day * 30) return "近 30 天";
+  return "更早";
+}
+
 function parseTime(value: string) {
   const normalized = value.trim().replace(/\//g, "-");
   const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
@@ -229,19 +401,19 @@ function parseTime(value: string) {
   return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).getTime();
 }
 
-function groupSessions<T extends { mod_time?: string; updated_at?: string }>(sessions: T[]) {
+function groupSessions<T extends { favorite?: boolean; mod_time?: string; updated_at?: string }>(sessions: T[]) {
   const today = startOfDay(new Date());
   const yesterday = today - 24 * 60 * 60 * 1000;
   const groups = new Map<string, T[]>();
   for (const session of sessions) {
     const time = sessionTime(session);
     const day = Number.isFinite(time) ? startOfDay(new Date(time)) : 0;
-    const label = day === today ? "今天" : day === yesterday ? "昨天" : "更早";
+    const label = session.favorite ? "收藏" : day === today ? "今天" : day === yesterday ? "昨天" : "更早";
     const bucket = groups.get(label) || [];
     bucket.push(session);
     groups.set(label, bucket);
   }
-  return ["今天", "昨天", "更早"]
+  return ["收藏", "今天", "昨天", "更早"]
     .map((label) => ({ label, sessions: groups.get(label) || [] }))
     .filter((group) => group.sessions.length > 0);
 }

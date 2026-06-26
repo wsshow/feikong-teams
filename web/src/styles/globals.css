@@ -100,6 +100,55 @@
     border-color: hsl(218 30% 76% / 0.72);
   }
 
+  .composer-textarea {
+    scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
+  }
+
+  .composer-textarea::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .composer-textarea::-webkit-scrollbar-track {
+    background: transparent;
+    border: 0;
+  }
+
+  .composer-textarea::-webkit-scrollbar-thumb {
+    background: hsl(218 22% 66% / 0.72);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    box-shadow: none;
+  }
+
+  .composer-textarea::-webkit-scrollbar-thumb:hover {
+    background: hsl(218 22% 58% / 0.82);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .chat-scroll {
+    scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
+  }
+
+  .chat-scroll::-webkit-scrollbar-track {
+    background: transparent;
+    border: 0;
+  }
+
+  .chat-scroll::-webkit-scrollbar-thumb {
+    background: hsl(218 22% 66% / 0.72);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    box-shadow: none;
+  }
+
+  .chat-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(218 22% 58% / 0.82);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
   .prose {
     color: inherit;
   }
@@ -130,5 +179,50 @@
   .prose td {
     border: 1px solid hsl(var(--border));
     padding: 0.4rem 0.5rem;
+  }
+
+  .message-row,
+  .message-prose {
+    min-width: 0;
+  }
+
+  .message-prose {
+    overflow-wrap: break-word;
+  }
+
+  .message-prose pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .message-prose table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
+  }
+
+  .message-prose table::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .message-prose table::-webkit-scrollbar-track {
+    background: transparent;
+    border: 0;
+  }
+
+  .message-prose table::-webkit-scrollbar-thumb {
+    background: hsl(218 22% 66% / 0.72);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    box-shadow: none;
+  }
+
+  .message-prose th,
+  .message-prose td {
+    max-width: 24rem;
+    overflow-wrap: break-word;
+    vertical-align: top;
   }
 }

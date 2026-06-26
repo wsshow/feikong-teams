@@ -4,6 +4,7 @@ export interface SessionSummary {
   session_id: string;
   title: string;
   status?: string;
+  favorite?: boolean;
   mod_time?: string;
   updated_at?: string;
   current_agent?: string;
@@ -30,6 +31,7 @@ export interface SessionDetail {
   session_id: string;
   title?: string;
   status?: string;
+  favorite?: boolean;
   messages?: AgentMessage[];
 }
 
@@ -38,6 +40,7 @@ export interface ChatViewMessage {
   role: "user" | "assistant" | "system" | "tool";
   agent?: string;
   content: string;
+  reasoningContent?: string;
   events: ChatEvent[];
 }
 

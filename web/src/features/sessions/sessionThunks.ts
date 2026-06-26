@@ -18,9 +18,14 @@ export const loadSessionDetail = createAsyncThunk("sessions/detail", async (sess
 
 function historyToMessages(messages: AgentMessage[]): ChatViewMessage[] {
   return messages.map((message, index) => {
+    const reasoningContent = (message.events || [])
+      .filter((event) => event.type === "reasoning")
+      .map((event) => event.content || "")
+      .join("");
     const content = (message.events || [])
       .map((event) => {
         if (event.type === "text") return event.content || "";
+        if (event.type === "reasoning") return "";
         if (event.type === "tool_call" && event.tool_call) {
           return `\n[${event.tool_call.display_name || event.tool_call.name}] ${event.tool_call.result || ""}\n`;
         }
@@ -33,6 +38,7 @@ function historyToMessages(messages: AgentMessage[]): ChatViewMessage[] {
       role: message.role === "user" ? "user" : "assistant",
       agent: message.agent_name,
       content: content || message.content || "",
+      reasoningContent,
       events: [],
     };
   });

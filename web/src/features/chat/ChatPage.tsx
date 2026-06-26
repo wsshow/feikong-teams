@@ -33,7 +33,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full flex-col pt-12">
+    <div className="flex h-full flex-col">
       <MessageList />
       <QueuePanel />
       <ChatInput />
@@ -59,9 +59,7 @@ function ChatHome() {
     <div className="flex h-full items-center justify-center px-6 pb-10 pt-20">
       <div className="w-full max-w-4xl">
         <div className="mb-9 flex items-center justify-center gap-4 text-center">
-          <span className="text-4xl text-destructive" aria-hidden>
-            ※
-          </span>
+          <img className="h-12 w-12 shrink-0 drop-shadow-sm md:h-14 md:w-14" src="/assets/fkteams-logo.svg" alt="" />
           <h1 className="text-4xl font-semibold tracking-normal text-foreground md:text-5xl">
             {greeting()}，非空小队
           </h1>
