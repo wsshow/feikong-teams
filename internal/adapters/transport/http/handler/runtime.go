@@ -22,6 +22,7 @@ type Runtime struct {
 	HistoryDir    string
 	RunnerCache   *appagent.Cache
 	Connections   *WebSocketHub
+	ChunkUploads  *ChunkUploadStore
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -34,6 +35,7 @@ type RuntimeOptions struct {
 	HistoryDir    string
 	RunnerCache   *appagent.Cache
 	Connections   *WebSocketHub
+	ChunkUploads  *ChunkUploadStore
 	Engine        runtimeport.Engine
 	Interrupt     runtimeport.InterruptRuntime
 	ResetChannels func()
@@ -55,6 +57,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		HistoryDir:    opt.HistoryDir,
 		RunnerCache:   opt.RunnerCache,
 		Connections:   opt.Connections,
+		ChunkUploads:  opt.ChunkUploads,
 		Engine:        opt.Engine,
 		Interrupt:     opt.Interrupt,
 		ResetChannels: opt.ResetChannels,
@@ -70,6 +73,9 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	}
 	if rt.Connections == nil {
 		rt.Connections = NewWebSocketHub(streams)
+	}
+	if rt.ChunkUploads == nil {
+		rt.ChunkUploads = NewChunkUploadStore()
 	}
 	return rt
 }

@@ -100,7 +100,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 			files.GET("/download", handler.DownloadFileHandler())
 			files.POST("/download/batch", handler.BatchDownloadHandler())
 			files.POST("/upload", handler.UploadFileHandler())
-			files.POST("/upload/chunk", handler.UploadChunkHandler())
+			files.POST("/upload/chunk", runtime.UploadChunkHandler())
 			files.DELETE("", handler.DeleteFileHandler())
 			files.GET("/serve/*filepath", handler.ServeFileHandler())
 		}

@@ -299,15 +299,25 @@ type chunkUploadMeta struct {
 	FilePath    string
 }
 
-// chunkUploads 全局分片上传状态管理
-var chunkUploads = struct {
+// ChunkUploadStore 保存单个 HTTP runtime 的分片上传状态。
+type ChunkUploadStore struct {
 	sync.Mutex
 	m map[string]*chunkUploadMeta
-}{m: make(map[string]*chunkUploadMeta)}
+}
+
+// NewChunkUploadStore 创建独立的分片上传状态存储。
+func NewChunkUploadStore() *ChunkUploadStore {
+	return &ChunkUploadStore{m: make(map[string]*chunkUploadMeta)}
+}
 
 // UploadChunkHandler 处理分片上传
 // 参数: file(分片内容), uploadId(上传标识), chunkIndex(分片序号,0-based), totalChunks(总分片数), fileName(文件名), path(可选子目录)
 func UploadChunkHandler() gin.HandlerFunc {
+	return NewRuntime().UploadChunkHandler()
+}
+
+// UploadChunkHandler 处理当前 HTTP runtime 的分片上传。
+func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseDir, absBase, err := getWorkspaceDir()
 		if err != nil {
@@ -387,17 +397,18 @@ func UploadChunkHandler() gin.HandlerFunc {
 		}
 
 		// 更新上传状态
-		chunkUploads.Lock()
-		meta, exists := chunkUploads.m[uploadID]
+		uploads := rt.ChunkUploads
+		uploads.Lock()
+		meta, exists := uploads.m[uploadID]
 		if !exists {
 			meta = &chunkUploadMeta{
 				TotalChunks: totalChunks,
 				Received:    make(map[int]bool),
 				FilePath:    finalPath,
 			}
-			chunkUploads.m[uploadID] = meta
+			uploads.m[uploadID] = meta
 		}
-		chunkUploads.Unlock()
+		uploads.Unlock()
 
 		meta.mu.Lock()
 		meta.Received[chunkIndex] = true
@@ -445,9 +456,9 @@ func UploadChunkHandler() gin.HandlerFunc {
 
 		// 清理临时分片
 		os.RemoveAll(chunkDir)
-		chunkUploads.Lock()
-		delete(chunkUploads.m, uploadID)
-		chunkUploads.Unlock()
+		uploads.Lock()
+		delete(uploads.m, uploadID)
+		uploads.Unlock()
 
 		info, _ := os.Stat(finalPath)
 		relativePath := safeName

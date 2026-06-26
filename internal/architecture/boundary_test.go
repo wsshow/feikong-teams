@@ -818,6 +818,18 @@ func TestChannelServiceDoesNotExposeGlobalBridgeRegistry(t *testing.T) {
 	}
 }
 
+func TestHTTPChunkUploadsAreRuntimeOwned(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	path := filepath.Join(root, "internal", "adapters", "transport", "http", "handler", "files.go")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "var chunkUploads") {
+		t.Fatal("HTTP chunk upload state must be owned by handler.Runtime, not a package global")
+	}
+}
+
 func TestProcessBackedToolsLiveInAdapters(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, rel := range []string{
