@@ -89,10 +89,16 @@ mode = "team"                              # 智能体模式
 
 ## 扩展新平台
 
-通道层支持扩展，只需实现 `channels.Channel` 接口并通过 `channels.RegisterFactory` 注册即可：
+通道层支持扩展：平台 adapter 实现 `channel.Channel` 接口并导出注册函数，组合根负责创建 `FactoryRegistry` 并显式注册平台工厂。
 
 ```go
-func init() {
-    channels.RegisterFactory("your_platform", NewChannel)
+package yourplatform
+
+import "fkteams/internal/adapters/transport/channel"
+
+func Register(registry *channel.FactoryRegistry) {
+    registry.Register("your_platform", NewChannel)
 }
 ```
+
+入口层需要在 bootstrap 包中调用该注册函数。禁止通过 `init()`、空白 import 或包级全局工厂表装配通道。
