@@ -24,19 +24,19 @@ func toolCommand() *ucli.Command {
 					if err := config.Init(); err != nil {
 						return err
 					}
-					return listTools()
+					return listTools(ctx)
 				},
 			},
 		},
 	}
 }
 
-func listTools() error {
+func listTools(ctx context.Context) error {
 	// 内置工具
 	pterm.DefaultSection.Println("内置工具")
 
-	for _, groupName := range tools.BuiltinToolNames() {
-		ts, err := tools.GetToolsByName(groupName)
+	for _, groupName := range tools.BuiltinToolNames(ctx) {
+		ts, err := tools.GetToolsByName(ctx, groupName)
 		if err != nil {
 			pterm.FgGray.Printfln("  [%s] (不可用: %v)", groupName, err)
 			continue
@@ -50,7 +50,7 @@ func listTools() error {
 	}
 
 	// MCP 工具
-	mcpTools, err := tools.GetAllMCPToolGroups()
+	mcpTools, err := tools.GetAllMCPToolGroups(ctx)
 	if err == nil && len(mcpTools) > 0 {
 		fmt.Println()
 		pterm.DefaultSection.Println("MCP 工具")

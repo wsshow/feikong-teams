@@ -12,8 +12,10 @@ import (
 
 func TestAgentBuilderBuildDoesNotMutateResolvedTools(t *testing.T) {
 	ctx := runtimeport.WithEngine(context.Background(), minimalEngine{})
+	registry := apptools.NewToolGroupRegistry()
+	ctx = apptools.WithRegistry(ctx, registry)
 	const toolGroupName = "builder_tools_test_group"
-	if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+	if err := registry.Register(apptools.ToolGroupRegistration{
 		Info: apptools.ToolGroupInfo{
 			Name:        toolGroupName,
 			DisplayName: "Builder Test",

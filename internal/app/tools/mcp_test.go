@@ -23,22 +23,22 @@ func (p fakeMCPProvider) GetAllToolGroups(context.Context) (toolport.MCPToolGrou
 func (p fakeMCPProvider) ClearCache() {}
 
 func TestMCPProviderRegistrationResolvesDynamicTools(t *testing.T) {
-	original := currentMCPProvider()
-	RegisterMCPProvider(fakeMCPProvider{
+	registry := NewToolGroupRegistry()
+	registry.RegisterMCPProvider(fakeMCPProvider{
 		groups: toolport.MCPToolGroups{
 			"demo": {Name: "demo", Tools: []runtimeport.Tool{registryTestTool{}}},
 		},
 	})
-	t.Cleanup(func() { RegisterMCPProvider(original) })
+	ctx := WithRegistry(context.Background(), registry)
 
-	resolved, err := GetToolsByName("mcp-demo")
+	resolved, err := GetToolsByName(ctx, "mcp-demo")
 	if err != nil {
 		t.Fatalf("GetToolsByName returned error: %v", err)
 	}
 	if len(resolved) != 1 {
 		t.Fatalf("tool count = %d, want 1", len(resolved))
 	}
-	names := GetAllToolNames()
+	names := GetAllToolNames(ctx)
 	if !containsString(names, "mcp-demo") {
 		t.Fatalf("tool names = %#v, want mcp-demo", names)
 	}

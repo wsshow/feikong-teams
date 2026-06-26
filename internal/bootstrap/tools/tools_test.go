@@ -8,13 +8,15 @@ import (
 )
 
 func TestBootstrapRegistersSchedulerToolGroup(t *testing.T) {
-	if err := RegisterDefaults(); err != nil {
+	registry, err := RegisterDefaults()
+	if err != nil {
 		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
 	}
-	if !contains(apptools.BuiltinToolNames(), "scheduler") {
+	ctx := apptools.WithRegistry(context.Background(), registry)
+	if !contains(apptools.BuiltinToolNames(ctx), "scheduler") {
 		t.Fatal("scheduler tool group is not registered")
 	}
-	resolved, err := apptools.GetToolsByName("scheduler")
+	resolved, err := apptools.GetToolsByName(ctx, "scheduler")
 	if err != nil {
 		t.Fatalf("GetToolsByName returned error: %v", err)
 	}
@@ -31,13 +33,15 @@ func TestBootstrapRegistersSchedulerToolGroup(t *testing.T) {
 }
 
 func TestBootstrapRegistersGitToolGroup(t *testing.T) {
-	if err := RegisterDefaults(); err != nil {
+	registry, err := RegisterDefaults()
+	if err != nil {
 		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
 	}
-	if !contains(apptools.BuiltinToolNames(), "git") {
+	ctx := apptools.WithRegistry(context.Background(), registry)
+	if !contains(apptools.BuiltinToolNames(ctx), "git") {
 		t.Fatal("git tool group is not registered")
 	}
-	resolved, err := apptools.GetToolsByName("git")
+	resolved, err := apptools.GetToolsByName(ctx, "git")
 	if err != nil {
 		t.Fatalf("GetToolsByName returned error: %v", err)
 	}
@@ -54,10 +58,12 @@ func TestBootstrapRegistersGitToolGroup(t *testing.T) {
 }
 
 func TestBootstrapRegistersSSHToolGroup(t *testing.T) {
-	if err := RegisterDefaults(); err != nil {
+	registry, err := RegisterDefaults()
+	if err != nil {
 		t.Fatalf("RegisterDefaults should be idempotent: %v", err)
 	}
-	infos := apptools.BuiltinToolInfos()
+	ctx := apptools.WithRegistry(context.Background(), registry)
+	infos := apptools.BuiltinToolInfos(ctx)
 	for _, info := range infos {
 		if info.Name != "ssh" {
 			continue

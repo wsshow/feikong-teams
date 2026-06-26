@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	clicommands "fkteams/internal/adapters/transport/cli/commands"
+	apptools "fkteams/internal/app/tools"
 	bootstrapruntimes "fkteams/internal/bootstrap/runtimes"
 	bootstraptools "fkteams/internal/bootstrap/tools"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -22,7 +23,8 @@ func main() {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
-	if err := bootstraptools.RegisterDefaults(); err != nil {
+	toolRegistry, err := bootstraptools.RegisterDefaults()
+	if err != nil {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
@@ -39,6 +41,7 @@ func main() {
 	ctx := runtimeport.WithEngine(context.Background(), engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, bootstrapruntimes.DefaultInterruptRuntime())
 	ctx = modelregistry.WithRegistry(ctx, modelRegistry)
+	ctx = apptools.WithRegistry(ctx, toolRegistry)
 	if err := clicommands.Root().Run(ctx, os.Args); err != nil {
 		pterm.Error.Println(err)
 	}

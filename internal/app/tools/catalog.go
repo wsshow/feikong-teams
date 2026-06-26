@@ -17,14 +17,26 @@ type ToolGroupInfo struct {
 }
 
 // BuiltinToolInfos 返回内置可配置工具组信息。
-func BuiltinToolInfos() []ToolGroupInfo {
-	return defaultRegistry.Infos()
+func BuiltinToolInfos(ctx context.Context) []ToolGroupInfo {
+	registry, ok := RegistryFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	return registry.Infos()
 }
 
 // GetAllToolInfos 返回所有可配置工具组信息（内置 + MCP）。
-func GetAllToolInfos() []ToolGroupInfo {
-	infos := BuiltinToolInfos()
-	mcpGroups, err := GetAllMCPToolGroups()
+func GetAllToolInfos(ctx context.Context) []ToolGroupInfo {
+	registry, ok := RegistryFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	return registry.GetAllToolInfos(ctx)
+}
+
+func (r *ToolGroupRegistry) GetAllToolInfos(ctx context.Context) []ToolGroupInfo {
+	infos := r.Infos()
+	mcpGroups, err := r.GetAllMCPToolGroups(ctx)
 	if err != nil {
 		return infos
 	}
@@ -35,7 +47,7 @@ func GetAllToolInfos() []ToolGroupInfo {
 			Description:   group.Desc,
 			Category:      "MCP",
 			Builtin:       false,
-			IncludedTools: toolNames(group.Tools),
+			IncludedTools: toolNames(ctx, group.Tools),
 		}
 		if info.Description == "" {
 			info.Description = "来自 MCP 服务 " + name + " 的工具组。"
@@ -45,10 +57,10 @@ func GetAllToolInfos() []ToolGroupInfo {
 	return infos
 }
 
-func toolNames(list []runtimeport.Tool) []string {
+func toolNames(ctx context.Context, list []runtimeport.Tool) []string {
 	names := make([]string, 0, len(list))
 	for _, t := range list {
-		info, err := t.Info(context.Background())
+		info, err := t.Info(ctx)
 		if err == nil && info != nil && info.Name != "" {
 			names = append(names, info.Name)
 		}

@@ -31,6 +31,7 @@ import (
 var (
 	registerOnce sync.Once
 	registerErr  error
+	toolRegistry *apptools.ToolGroupRegistry
 )
 
 func runtimeDir() string {
@@ -38,11 +39,13 @@ func runtimeDir() string {
 }
 
 // RegisterDefaults 将工具适配器连接到应用工具注册表。
-func RegisterDefaults() error {
+func RegisterDefaults() (*apptools.ToolGroupRegistry, error) {
 	registerOnce.Do(func() {
+		registry := apptools.NewToolGroupRegistry()
+		toolRegistry = registry
 		attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.NewSessionHistoryManager()))
-		apptools.RegisterMCPProvider(mcpadapter.DefaultProvider())
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		registry.RegisterMCPProvider(mcpadapter.DefaultProvider())
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "file",
 				DisplayName:   "文件",
@@ -62,7 +65,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "todo",
 				DisplayName:   "待办事项",
@@ -82,7 +85,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "ask",
 				DisplayName:   "向用户提问",
@@ -98,7 +101,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "command",
 				DisplayName:   "命令执行",
@@ -112,7 +115,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "command_reject",
 				DisplayName:   "命令执行（自动拒绝危险操作）",
@@ -127,7 +130,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "uv",
 				DisplayName:   "Python",
@@ -147,7 +150,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "bun",
 				DisplayName:   "JavaScript",
@@ -167,7 +170,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "excel",
 				DisplayName:   "Excel",
@@ -187,7 +190,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "search",
 				DisplayName:   "网络搜索",
@@ -203,7 +206,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "fetch",
 				DisplayName:   "网页抓取",
@@ -219,7 +222,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "doc",
 				DisplayName:   "文档",
@@ -235,7 +238,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "git",
 				DisplayName:   "Git",
@@ -255,7 +258,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		if err := apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "ssh",
 				DisplayName:   "SSH",
@@ -288,7 +291,7 @@ func RegisterDefaults() error {
 			registerErr = err
 			return
 		}
-		registerErr = apptools.RegisterToolGroup(apptools.ToolGroupRegistration{
+		if err := registry.Register(apptools.ToolGroupRegistration{
 			Info: apptools.ToolGroupInfo{
 				Name:          "scheduler",
 				DisplayName:   "定时任务",
@@ -300,9 +303,19 @@ func RegisterDefaults() error {
 			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
 				return schedulertool.NewTools(nil).GetTools()
 			},
-		})
+		}); err != nil {
+			registerErr = err
+			return
+		}
+		registry.Freeze()
 	})
-	return registerErr
+	if registerErr != nil {
+		return nil, registerErr
+	}
+	if toolRegistry == nil {
+		return nil, fmt.Errorf("tool registry is not registered")
+	}
+	return toolRegistry, nil
 }
 
 func commandToolGroup(mode commandtool.ApprovalMode) apptools.ToolGroupFactory {

@@ -10,6 +10,7 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	appschedule "fkteams/internal/app/schedule"
+	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
@@ -65,6 +66,7 @@ type Bridge struct {
 	engine    runtimeport.Engine
 	interrupt runtimeport.InterruptRuntime
 	models    *modelregistry.Registry
+	tools     *apptools.ToolGroupRegistry
 	scheduler func() *appschedule.Service
 
 	queueMu sync.Mutex
@@ -122,11 +124,12 @@ func (b *Bridge) ResetRunner() {
 }
 
 // SetRuntimeDependencies 设置当前通道服务实例使用的 runtime 依赖。
-func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, models *modelregistry.Registry) {
+func (b *Bridge) SetRuntimeDependencies(engine runtimeport.Engine, interrupt runtimeport.InterruptRuntime, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry) {
 	b.runtimeMu.Lock()
 	b.engine = engine
 	b.interrupt = interrupt
 	b.models = models
+	b.tools = tools
 	b.runtimeMu.Unlock()
 	b.ResetRunner()
 }
@@ -136,10 +139,12 @@ func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
 	engine := b.engine
 	interrupt := b.interrupt
 	models := b.models
+	tools := b.tools
 	b.runtimeMu.RUnlock()
 	ctx = runtimeport.WithEngine(ctx, engine)
 	ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
 	ctx = modelregistry.WithRegistry(ctx, models)
+	ctx = apptools.WithRegistry(ctx, tools)
 	if b.scheduler != nil {
 		ctx = appschedule.WithService(ctx, b.scheduler())
 	}

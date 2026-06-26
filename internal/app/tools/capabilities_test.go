@@ -8,13 +8,14 @@ import (
 )
 
 func TestSessionAttachmentIsBuiltinCapabilityNotConfigurableTool(t *testing.T) {
-	if slices.Contains(BuiltinToolNames(), "attachment") {
+	ctx := WithRegistry(context.Background(), NewToolGroupRegistry())
+	if slices.Contains(BuiltinToolNames(ctx), "attachment") {
 		t.Fatal("attachment should not be exposed as a configurable tool group")
 	}
-	if slices.Contains(GetAllToolNames(), "attachment") {
+	if slices.Contains(GetAllToolNames(ctx), "attachment") {
 		t.Fatal("attachment should not be exposed in all configurable tool names")
 	}
-	if _, err := GetToolsByName("attachment"); err == nil {
+	if _, err := GetToolsByName(ctx, "attachment"); err == nil {
 		t.Fatal("attachment should not be resolved by configurable tool lookup")
 	}
 	if !slices.Contains(BuiltinCapabilityNames(), "session_attachment") {

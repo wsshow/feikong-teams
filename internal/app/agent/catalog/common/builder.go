@@ -146,7 +146,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	}
 	toolList = append(toolList, builtinTools...)
 
-	namedTools, err := resolveNamedToolGroups(b.toolNames, cleaner)
+	namedTools, err := resolveNamedToolGroups(ctx, b.toolNames, cleaner)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 		if dispatchConfig.Model == nil {
 			dispatchConfig.Model = coreModel
 		}
-		dispatchTools, err := resolveNamedToolGroups(dispatchConfig.ToolNames, cleaner)
+		dispatchTools, err := resolveNamedToolGroups(ctx, dispatchConfig.ToolNames, cleaner)
 		if err != nil {
 			return nil, fmt.Errorf("init dispatch tools: %w", err)
 		}
@@ -252,7 +252,7 @@ func (b *AgentBuilder) Build(ctx context.Context) (runtimeport.Agent, error) {
 	return engine.NewChatModelAgent(ctx, cfg)
 }
 
-func resolveNamedToolGroups(names []string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+func resolveNamedToolGroups(ctx context.Context, names []string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 	seen := make(map[string]bool, len(names))
 	var result []runtimeport.Tool
 	for _, name := range names {
@@ -260,7 +260,7 @@ func resolveNamedToolGroups(names []string, cleaner *resources.Cleaner) ([]runti
 			continue
 		}
 		seen[name] = true
-		resolved, err := tools.GetToolsByNameWithCleaner(name, cleaner)
+		resolved, err := tools.GetToolsByNameWithCleaner(ctx, name, cleaner)
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", name, err)
 		}

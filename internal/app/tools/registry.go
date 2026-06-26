@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
 	runtimeport "fkteams/internal/ports/runtime"
+	toolport "fkteams/internal/ports/tools"
 	"fkteams/internal/runtime/resources"
 )
 
@@ -16,10 +18,11 @@ type ToolGroupRegistration struct {
 }
 
 type ToolGroupRegistry struct {
-	mu     sync.RWMutex
-	order  []string
-	groups map[string]toolGroupEntry
-	frozen bool
+	mu          sync.RWMutex
+	order       []string
+	groups      map[string]toolGroupEntry
+	frozen      bool
+	mcpProvider toolport.MCPProvider
 }
 
 type toolGroupEntry struct {
@@ -27,8 +30,35 @@ type toolGroupEntry struct {
 	factory ToolGroupFactory
 }
 
+type registryContextKey struct{}
+
 func NewToolGroupRegistry() *ToolGroupRegistry {
 	return &ToolGroupRegistry{groups: make(map[string]toolGroupEntry)}
+}
+
+func WithRegistry(ctx context.Context, registry *ToolGroupRegistry) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if registry == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, registryContextKey{}, registry)
+}
+
+func RegistryFromContext(ctx context.Context) (*ToolGroupRegistry, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	registry, ok := ctx.Value(registryContextKey{}).(*ToolGroupRegistry)
+	return registry, ok && registry != nil
+}
+
+func RequireRegistry(ctx context.Context) (*ToolGroupRegistry, error) {
+	if registry, ok := RegistryFromContext(ctx); ok {
+		return registry, nil
+	}
+	return nil, fmt.Errorf("tool registry is not configured")
 }
 
 func (r *ToolGroupRegistry) Register(reg ToolGroupRegistration) error {
@@ -123,10 +153,4 @@ func (r *ToolGroupRegistry) Freeze() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.frozen = true
-}
-
-var defaultRegistry = NewToolGroupRegistry()
-
-func RegisterToolGroup(reg ToolGroupRegistration) error {
-	return defaultRegistry.Register(reg)
 }

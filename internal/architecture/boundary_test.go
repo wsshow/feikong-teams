@@ -1000,6 +1000,38 @@ func TestAppToolRegistryDoesNotOwnBuiltinImplementations(t *testing.T) {
 	}
 }
 
+func TestAppToolsDoNotExposeProcessDefaultRegistry(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, rel := range []string{
+		"internal/app/tools/registry.go",
+		"internal/app/tools/mcp.go",
+		"internal/app/tools/tools.go",
+		"internal/app/tools/catalog.go",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		for _, forbidden := range []string{
+			"defaultRegistry",
+			"RegisterToolGroup(",
+			"mcpProviderMu",
+			"var mcpProvider",
+			"func GetToolsByName(name string)",
+			"func BuiltinToolNames()",
+			"func GetAllToolNames()",
+			"func BuiltinToolInfos()",
+			"func GetAllToolInfos()",
+		} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s exposes process-default tool state through %q", rel, forbidden)
+			}
+		}
+	}
+}
+
 func TestMCPBridgeDoesNotLeakRawClientIntoPorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	path := filepath.Join(root, "internal", "ports", "tools", "mcp.go")

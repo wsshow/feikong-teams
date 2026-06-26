@@ -1,14 +1,16 @@
 package tools
 
 import (
+	"context"
 	"slices"
 	"testing"
 )
 
 func TestBuiltinToolInfosExposeDescriptions(t *testing.T) {
-	infos := BuiltinToolInfos()
-	if len(infos) != len(BuiltinToolNames()) {
-		t.Fatalf("tool info count = %d, want %d", len(infos), len(BuiltinToolNames()))
+	ctx := WithRegistry(context.Background(), newTestRegistry(t))
+	infos := BuiltinToolInfos(ctx)
+	if len(infos) != len(BuiltinToolNames(ctx)) {
+		t.Fatalf("tool info count = %d, want %d", len(infos), len(BuiltinToolNames(ctx)))
 	}
 
 	names := make([]string, 0, len(infos))
@@ -25,7 +27,7 @@ func TestBuiltinToolInfosExposeDescriptions(t *testing.T) {
 		}
 	}
 
-	for _, name := range BuiltinToolNames() {
+	for _, name := range BuiltinToolNames(ctx) {
 		if !slices.Contains(names, name) {
 			t.Fatalf("tool catalog missing %s", name)
 		}

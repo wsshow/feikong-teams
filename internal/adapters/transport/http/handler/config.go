@@ -158,7 +158,7 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		// 重载智能体注册表、清除 Runner 缓存和 MCP 工具缓存
 		agents.ReloadRegistry()
 		rt.clearRunnerCache()
-		tools.ClearMCPToolCache()
+		tools.ClearMCPToolCache(rt.withRuntimeContext(c.Request.Context()))
 		if rt.ResetChannels != nil {
 			rt.ResetChannels()
 		}
@@ -190,15 +190,23 @@ func resetMemoryLLM(ctx context.Context, state *appstate.State) {
 
 // GetToolNamesHandler 获取可用工具名列表
 func GetToolNamesHandler() gin.HandlerFunc {
+	return NewRuntime().GetToolNamesHandler()
+}
+
+func (rt *Runtime) GetToolNamesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		OK(c, tools.GetAllToolNames())
+		OK(c, tools.GetAllToolNames(rt.withRuntimeContext(c.Request.Context())))
 	}
 }
 
 // GetToolCatalogHandler 获取可配置工具组详情
 func GetToolCatalogHandler() gin.HandlerFunc {
+	return NewRuntime().GetToolCatalogHandler()
+}
+
+func (rt *Runtime) GetToolCatalogHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		OK(c, tools.GetAllToolInfos())
+		OK(c, tools.GetAllToolInfos(rt.withRuntimeContext(c.Request.Context())))
 	}
 }
 

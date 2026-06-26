@@ -20,7 +20,7 @@ func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.A
 	}
 	toolNames := []string{"file", "doc", "command", "search", "fetch"}
 	for _, toolName := range toolNames {
-		baseTools, err := tools.GetToolsByName(toolName)
+		baseTools, err := tools.GetToolsByName(ctx, toolName)
 		if err != nil {
 			return nil, fmt.Errorf("init tool %s: %w", toolName, err)
 		}

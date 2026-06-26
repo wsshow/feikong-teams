@@ -176,8 +176,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		{
 			configGroup.GET("", handler.GetConfigHandler())
 			configGroup.PUT("", runtime.UpdateConfigHandlerWithState(state))
-			configGroup.GET("/tools", handler.GetToolNamesHandler())
-			configGroup.GET("/tool-catalog", handler.GetToolCatalogHandler())
+			configGroup.GET("/tools", runtime.GetToolNamesHandler())
+			configGroup.GET("/tool-catalog", runtime.GetToolCatalogHandler())
 			configGroup.GET("/template-vars", handler.GetTemplateVarsHandler())
 		}
 

@@ -17,6 +17,7 @@ import (
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/lifecycle"
 	appschedule "fkteams/internal/app/schedule"
+	apptools "fkteams/internal/app/tools"
 	"fkteams/internal/app/version"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -68,9 +69,11 @@ func (s *httpService) Start(ctx context.Context) error {
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	modelRegistry, _ := modelregistry.RegistryFromContext(ctx)
+	toolRegistry, _ := apptools.RegistryFromContext(ctx)
 	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
 		Engine:        engine,
 		Interrupt:     interrupt,
+		ToolRegistry:  toolRegistry,
 		ModelRegistry: modelRegistry,
 		ResetChannels: s.resetChannels,
 	})

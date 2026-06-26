@@ -8,6 +8,7 @@ import (
 	"fkteams/internal/adapters/scheduler/filecron"
 	appagent "fkteams/internal/app/agent"
 	appschedule "fkteams/internal/app/schedule"
+	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/log"
 	modelregistry "fkteams/internal/runtime/model"
@@ -56,11 +57,13 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	engine, _ := runtimeport.EngineFromContext(ctx)
 	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
 	models, _ := modelregistry.RegistryFromContext(ctx)
+	tools, _ := apptools.RegistryFromContext(ctx)
 	executor := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks")).
 		WithContextHook(func(ctx context.Context) context.Context {
 			ctx = runtimeport.WithEngine(ctx, engine)
 			ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
 			ctx = modelregistry.WithRegistry(ctx, models)
+			ctx = apptools.WithRegistry(ctx, tools)
 			return appschedule.WithService(ctx, appService)
 		})
 	sched.SetExecutor(executor)
