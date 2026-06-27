@@ -4,6 +4,7 @@ import { Check, ChevronDown, Copy, GitBranch } from "lucide-react";
 import { useAppSelector } from "@/app/hooks";
 import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
+import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
 import type { ChatEvent, ToolCallDTO } from "@/types/events";
 
@@ -79,6 +80,10 @@ export function MessageList() {
   );
 }
 
+export function chatMessageElementID(messageID: string) {
+  return `chat-message-${messageID.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
 function MessageRow({
   message,
   reasoning,
@@ -89,22 +94,23 @@ function MessageRow({
     agent?: string;
     content: string;
     reasoningContent?: string;
+    createdAt?: string;
   };
   reasoning?: string;
 }) {
   if (message.role === "user") {
     return (
-      <article className="message-row flex w-full flex-col items-end gap-3">
+      <article id={chatMessageElementID(message.id)} className="message-row group flex w-full scroll-mt-8 flex-col items-end gap-2">
         <div className="max-w-[78%] rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
           <div className="whitespace-pre-wrap">{message.content}</div>
         </div>
-        <MessageActions align="right" content={message.content} />
+        <MessageActions align="right" content={message.content} time={message.createdAt} />
       </article>
     );
   }
 
   return (
-    <article className="message-row w-full">
+    <article id={chatMessageElementID(message.id)} className="message-row group w-full scroll-mt-8">
       {message.agent ? <div className="mb-3 text-sm text-muted-foreground">{message.agent}</div> : null}
       {reasoning ? <ReasoningBlock content={reasoning} /> : null}
       <div
@@ -137,7 +143,7 @@ function ReasoningBlock({ content }: { content: string }) {
   );
 }
 
-function MessageActions({ content, align = "left" }: { content: string; align?: "left" | "right" }) {
+function MessageActions({ content, align = "left", time }: { content: string; align?: "left" | "right"; time?: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copyContent() {
@@ -147,7 +153,14 @@ function MessageActions({ content, align = "left" }: { content: string; align?: 
   }
 
   return (
-    <div className={cn("flex items-center gap-2", align === "right" && "justify-end")}>
+    <div
+      className={cn(
+        "flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+        copied && "opacity-100",
+        align === "right" && "justify-end",
+      )}
+    >
+      {time ? <span className="px-1 text-sm text-muted-foreground">{formatTime(time)}</span> : null}
       <button
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",

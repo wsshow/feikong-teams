@@ -5,6 +5,7 @@ import { startStream, stopStream } from "@/api/chat";
 import { subscribeStream } from "@/api/stream";
 import { readJSON, storageKeys, writeJSON } from "@/lib/storage";
 import { cn } from "@/lib/cn";
+import { loadSessions } from "@/features/sessions/sessionThunks";
 import { ChatComposer } from "./ChatComposer";
 
 export function ChatInput({ variant = "dock", className }: { variant?: "dock" | "hero"; className?: string }) {
@@ -21,7 +22,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
     if (!message || isProcessing) return;
     setValue("");
     dispatch(chatActions.setError(undefined));
-    dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: message }));
+    dispatch(chatActions.appendUserMessage({ id: `user-${Date.now()}`, content: message, createdAt: new Date().toISOString() }));
     dispatch(chatActions.setProcessing(true));
     try {
       const result = await startStream({
@@ -32,6 +33,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
       });
       dispatch(chatActions.setActiveSession(result.session_id));
       dispatch(chatActions.setRunningSession(result.session_id));
+      dispatch(loadSessions());
       resetOffset(result.session_id);
       void subscribe(result.session_id, 0);
     } catch (error) {
@@ -45,6 +47,9 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
     const offset = initialOffset ?? offsets[id] ?? 0;
     await subscribeStream(id, offset, (event) => {
       dispatch(chatActions.receiveEvent(event));
+      if (event.type === "processing_end" || event.type === "cancelled") {
+        dispatch(loadSessions());
+      }
       if (event.stream_event_id !== undefined) {
         offsets[id] = Number(event.stream_event_id) + 1;
         writeJSON(storageKeys.streamOffsets, offsets);

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/pathguard"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +30,8 @@ type FileInfo struct {
 	Size    int64  `json:"size"`
 	ModTime int64  `json:"mod_time"`
 }
+
+const editableFileMaxBytes = 2 * 1024 * 1024
 
 // getWorkspaceDir 获取工作目录并返回绝对路径
 func getWorkspaceDir() (string, string, error) {
@@ -208,6 +212,126 @@ func SearchFilesHandler() gin.HandlerFunc {
 		})
 
 		OK(c, results)
+	}
+}
+
+// GetFileContentHandler 读取工作目录中的文本文件内容。
+// Query: path(文件相对路径)
+func GetFileContentHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		filePath := c.Query("path")
+		if filePath == "" {
+			Fail(c, http.StatusBadRequest, "缺少 path 参数")
+			return
+		}
+
+		fullPath, cleanPath, err := resolveAndValidatePath(baseDir, absBase, filePath)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusNotFound, "文件不存在")
+			return
+		}
+		if info.IsDir() {
+			Fail(c, http.StatusBadRequest, "路径不是文件")
+			return
+		}
+		if info.Size() > editableFileMaxBytes {
+			Fail(c, http.StatusBadRequest, "文件过大，无法编辑")
+			return
+		}
+
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			log.Printf("failed to read file content: path=%s, err=%v", fullPath, err)
+			Fail(c, http.StatusInternalServerError, "读取文件失败")
+			return
+		}
+		if !utf8.Valid(data) {
+			Fail(c, http.StatusBadRequest, "文件不是 UTF-8 文本")
+			return
+		}
+
+		OK(c, gin.H{
+			"path":     cleanPath,
+			"name":     filepath.Base(cleanPath),
+			"content":  string(data),
+			"size":     info.Size(),
+			"mod_time": info.ModTime().Unix(),
+		})
+	}
+}
+
+// SaveFileContentHandler 保存工作目录中的文本文件内容。
+// JSON body: {"path": "相对路径", "content": "文件内容"}
+func SaveFileContentHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		baseDir, absBase, err := getWorkspaceDir()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		var req struct {
+			Path    string `json:"path" binding:"required"`
+			Content string `json:"content"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			Fail(c, http.StatusBadRequest, "缺少 path 参数")
+			return
+		}
+		if len([]byte(req.Content)) > editableFileMaxBytes {
+			Fail(c, http.StatusBadRequest, "内容过大，无法保存")
+			return
+		}
+
+		fullPath, cleanPath, err := resolveAndValidatePath(baseDir, absBase, req.Path)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusNotFound, "文件不存在")
+			return
+		}
+		if info.IsDir() {
+			Fail(c, http.StatusBadRequest, "路径不是文件")
+			return
+		}
+		if !utf8.ValidString(req.Content) {
+			Fail(c, http.StatusBadRequest, "内容不是 UTF-8 文本")
+			return
+		}
+
+		if err := atomicfile.WriteFile(fullPath, []byte(req.Content), info.Mode().Perm()); err != nil {
+			log.Printf("failed to save file content: path=%s, err=%v", fullPath, err)
+			Fail(c, http.StatusInternalServerError, "保存文件失败")
+			return
+		}
+
+		nextInfo, err := os.Stat(fullPath)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "读取文件状态失败")
+			return
+		}
+		OK(c, gin.H{
+			"path":     cleanPath,
+			"name":     filepath.Base(cleanPath),
+			"size":     nextInfo.Size(),
+			"mod_time": nextInfo.ModTime().Unix(),
+		})
 	}
 }
 

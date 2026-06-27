@@ -238,7 +238,7 @@ func truncatePreview(s string, n int) string {
 // agentMessageToCoreMessages 将 AgentMessage 转为结构化消息列表。
 // 用户消息 → UserMessage；Agent 消息 → 文本 AssistantMessage + 工具调用拆分为 ToolCall/ToolMessage 对。
 func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int) []domainmessage.Message {
-	if msg.AgentName == "用户" {
+	if isUserAgentName(msg.AgentName) {
 		var text strings.Builder
 		var parts []domainmessage.ContentPart
 		for _, event := range msg.Events {
@@ -321,6 +321,10 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 
 	flushText()
 	return messages
+}
+
+func isUserAgentName(agentName string) bool {
+	return agentName == "user" || agentName == "用户"
 }
 
 func omittedContentPartsNotice(parts []domainmessage.ContentPart, refs []domainhistory.AttachmentRef) string {

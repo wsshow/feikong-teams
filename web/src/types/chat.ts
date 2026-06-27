@@ -24,6 +24,8 @@ export interface AgentMessage {
   agent_name?: string;
   role?: string;
   content?: string;
+  start_time?: string;
+  end_time?: string;
   events?: MessageEvent[];
 }
 
@@ -41,6 +43,7 @@ export interface ChatViewMessage {
   agent?: string;
   content: string;
   reasoningContent?: string;
+  createdAt?: string;
   events: ChatEvent[];
 }
 

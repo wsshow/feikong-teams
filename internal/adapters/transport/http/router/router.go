@@ -89,6 +89,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		{
 			files.GET("", handler.GetFilesHandler())
 			files.GET("/search", handler.SearchFilesHandler())
+			files.GET("/content", handler.GetFileContentHandler())
+			files.PUT("/content", handler.SaveFileContentHandler())
 			files.GET("/download", handler.DownloadFileHandler())
 			files.POST("/download/batch", handler.BatchDownloadHandler())
 			files.POST("/upload", handler.UploadFileHandler())

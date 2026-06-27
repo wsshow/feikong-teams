@@ -27,7 +27,7 @@ func (h *HistoryRecorder) RecordUserMessage(msg message.Message) {
 	parts := append([]message.ContentPart(nil), msg.ContentParts...)
 
 	h.messages = append(h.messages, AgentMessage{
-		AgentName: "用户",
+		AgentName: "user",
 		StartTime: time.Now(),
 		EndTime:   time.Now(),
 		Events: []MessageEvent{
@@ -212,7 +212,7 @@ func (h *HistoryRecorder) reconstructSummaryFromEvents() {
 				h.summary = evt.Action.Detail
 
 				for j := i - 1; j >= 0; j-- {
-					if h.messages[j].AgentName == "用户" {
+					if isUserAgentName(h.messages[j].AgentName) {
 						h.summarizedCount = j
 						return
 					}
@@ -222,6 +222,10 @@ func (h *HistoryRecorder) reconstructSummaryFromEvents() {
 			}
 		}
 	}
+}
+
+func isUserAgentName(agentName string) bool {
+	return agentName == "user" || agentName == "用户"
 }
 func (h *HistoryRecorder) GetAgentNames() []string {
 	h.mu.RLock()

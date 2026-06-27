@@ -1,6 +1,5 @@
 import {
   CalendarClock,
-  FileText,
   FolderOpen,
   MoreVertical,
   MessageSquare,
@@ -23,11 +22,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { shortID, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { createSession, deleteSession, favoriteSession, renameSession } from "@/api/sessions";
+import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 
 const panels: Array<{ key: AppPanel; label: string; path: string; icon: LucideIcon }> = [
-  { key: "chat", label: "对话", path: "/chat", icon: MessageSquare },
   { key: "files", label: "文件", path: "/files", icon: FolderOpen },
   { key: "schedules", label: "任务", path: "/schedules", icon: CalendarClock },
   { key: "skills", label: "技能", path: "/skills", icon: Sparkles },
@@ -52,16 +50,24 @@ export function Sidebar() {
   });
   const groups = groupSessions(sortedSessions);
 
-  async function handleNewSession() {
-    const result = await createSession("");
-    dispatch(chatActions.setActiveSession(result.session_id));
+  function handleNewSession() {
+    setOpenMenuID("");
+    dispatch(appActions.setActivePanel("chat"));
+    dispatch(chatActions.setActiveSession(""));
     dispatch(chatActions.clearMessages());
-    dispatch(loadSessions());
+    if (location.pathname !== "/chat") history.pushState(null, "", "/chat");
   }
 
   function switchPanel(panel: (typeof panels)[number]) {
     dispatch(appActions.setActivePanel(panel.key));
     if (location.pathname !== panel.path) history.pushState(null, "", panel.path);
+  }
+
+  function openSession(sessionID: string) {
+    setOpenMenuID("");
+    dispatch(appActions.setActivePanel("chat"));
+    dispatch(chatActions.setActiveSession(sessionID));
+    if (location.pathname !== "/chat") history.pushState(null, "", "/chat");
   }
 
   async function toggleFavorite(session: { session_id: string; favorite?: boolean }) {
@@ -147,57 +153,39 @@ export function Sidebar() {
             onClick={() => switchPanel(panel)}
           />
         ))}
-        <div
-          className={cn(
-            "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground/55",
-            !sidebarOpen && "justify-center px-0",
-          )}
-          title="文档"
-        >
-          <FileText className="h-4 w-4" />
-          {sidebarOpen ? (
-            <>
-              <span className="flex-1">文档</span>
-              <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs text-muted-foreground">后续</span>
-            </>
-          ) : null}
-        </div>
       </nav>
 
       {sidebarOpen ? (
         <>
           <div className="px-3 pb-1">
-            <div className="text-[11px] text-muted-foreground">最近会话</div>
+            <div className="text-xs text-muted-foreground">最近会话</div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
             {sortedSessions.length === 0 ? (
-              <div className="px-2 py-8 text-sm text-muted-foreground">暂无会话</div>
+              <div className="px-2 py-8 text-base text-muted-foreground">暂无会话</div>
             ) : (
               groups.map((group) => (
-                <section key={group.label} className="mb-2.5">
-                  <div className="px-2 pb-0.5 pt-1.5 text-[11px] text-muted-foreground">{group.label}</div>
+                <section key={group.label} className="mb-3">
+                  <div className="px-2 pb-1 pt-2 text-xs text-muted-foreground">{group.label}</div>
                   {group.sessions.map((session) => (
                     <div
                       key={session.session_id}
                       className={cn(
-                        "group relative mb-0.5 flex w-full items-start gap-1 rounded-lg py-1 pl-2 pr-1 text-sm transition-colors hover:bg-card/70",
+                        "group relative mb-1 flex w-full items-start gap-1 rounded-xl py-2 pl-2.5 pr-1.5 text-base transition-colors hover:bg-card/70",
                         activeSessionID === session.session_id && "bg-card/80 text-accent-foreground",
                       )}
                     >
                       <button
                         className="min-w-0 flex-1 text-left"
-                        onClick={() => {
-                          setOpenMenuID("");
-                          dispatch(chatActions.setActiveSession(session.session_id));
-                        }}
+                        onClick={() => openSession(session.session_id)}
                       >
                         <div className="flex min-w-0 items-center gap-1.5">
                           {session.favorite ? (
-                            <Star className="h-3.5 w-3.5 shrink-0 fill-foreground" />
+                            <Star className="h-4 w-4 shrink-0 fill-foreground" />
                           ) : null}
                           <span className="truncate font-medium">{session.title || shortID(session.session_id)}</span>
                         </div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
+                        <div className="mt-1 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
                           <span className="truncate">{formatTime(session.mod_time || session.updated_at)}</span>
                           {session.status ? (
                             <>
@@ -208,7 +196,7 @@ export function Sidebar() {
                         </div>
                       </button>
                       <button
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
                         aria-label="会话操作"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -242,9 +230,7 @@ export function Sidebar() {
           onQueryChange={setSearchQuery}
           onClose={() => setSearchOpen(false)}
           onSelect={(sessionID) => {
-            dispatch(chatActions.setActiveSession(sessionID));
-            dispatch(appActions.setActivePanel("chat"));
-            if (location.pathname !== "/chat") history.pushState(null, "", "/chat");
+            openSession(sessionID);
             setSearchOpen(false);
           }}
         />

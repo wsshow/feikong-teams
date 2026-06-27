@@ -152,6 +152,50 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	}
 }
 
+func TestPreviewMarkdownDoesNotDownloadUnlessRequested(t *testing.T) {
+	workspace := setupWorkspaceDir(t)
+	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	gin.SetMode(gin.TestMode)
+
+	if err := os.WriteFile(filepath.Join(workspace, "note.md"), []byte("# note\n"), 0644); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	rt.PreviewLinks.Lock()
+	rt.PreviewLinks.m["markdown"] = &previewLinkEntry{
+		FilePaths: []string{"note.md"},
+		CreatedAt: time.Now(),
+	}
+	rt.PreviewLinks.Unlock()
+
+	router := gin.New()
+	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
+	router.GET("/preview/:linkId/render/*filepath", rt.PreviewRenderHandler())
+
+	resp := performRequest(router, http.MethodGet, "/preview/markdown/file", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preview markdown status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline;") {
+		t.Fatalf("preview markdown disposition = %q, want inline", got)
+	}
+
+	resp = performRequest(router, http.MethodGet, "/preview/markdown/file?download=1", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("download markdown status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "attachment;") {
+		t.Fatalf("download markdown disposition = %q, want attachment", got)
+	}
+
+	resp = performRequest(router, http.MethodGet, "/preview/markdown/render/note.md", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("render markdown status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline;") {
+		t.Fatalf("render markdown disposition = %q, want inline", got)
+	}
+}
+
 func TestPreviewFileMultiFileZip(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
 	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})

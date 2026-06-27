@@ -3,7 +3,7 @@ import { CalendarClock, FolderOpen, Settings, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
-import { MessageList } from "./MessageList";
+import { chatMessageElementID, MessageList } from "./MessageList";
 import { QueuePanel } from "./QueuePanel";
 import { ChatInput } from "./ChatInput";
 
@@ -33,11 +33,67 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <MessageList />
+      <QuestionNavigator />
       <QueuePanel />
       <ChatInput />
     </div>
+  );
+}
+
+function QuestionNavigator() {
+  const messages = useAppSelector((state) => state.chat.messages);
+  const questions = messages.filter((message) => message.role === "user" && message.content.trim());
+  const orderedQuestions = questions.map((question, index) => ({ question, index: index + 1 })).reverse();
+  const visibleQuestions = orderedQuestions.slice(0, 8);
+
+  function jumpTo(messageID: string) {
+    document.getElementById(chatMessageElementID(messageID))?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }
+
+  if (questions.length === 0) return null;
+
+  return (
+    <aside
+      className="group absolute top-[42%] z-20 hidden -translate-y-1/2 xl:block"
+      style={{ right: "0.75rem" }}
+    >
+      <div className="flex min-h-24 w-7 items-center justify-center">
+        <div className="space-y-4 rounded-full bg-background/55 px-2 py-3 backdrop-blur-sm">
+          {visibleQuestions.map(({ question, index }) => (
+            <button
+              key={question.id}
+              className="block h-[2px] w-3.5 rounded-full bg-muted-foreground/35 transition-all hover:w-5 hover:bg-primary"
+              onClick={() => jumpTo(question.id)}
+              aria-label={`跳转到问题 ${index}`}
+              title={question.content}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-80 w-72 -translate-y-1/2 overflow-y-auto rounded-2xl bg-card/95 p-4 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <div className="space-y-1.5">
+          {orderedQuestions.map(({ question, index }) => (
+            <button
+              key={question.id}
+              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-muted"
+              onClick={() => jumpTo(question.id)}
+              title={question.content}
+            >
+              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/55 text-[11px] text-muted-foreground">
+                {index}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-foreground/90">{question.content}</span>
+              <span className="h-[2px] w-3.5 shrink-0 rounded-full bg-muted-foreground/35" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
   );
 }
 

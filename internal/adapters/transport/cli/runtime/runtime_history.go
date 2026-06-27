@@ -52,7 +52,7 @@ func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
 	if msg.MemberName != "" {
 		agent = msg.MemberName
 	}
-	if agent == "用户" {
+	if agent == "user" || agent == "用户" {
 		content := strings.TrimSpace(msg.GetTextContent())
 		if content != "" {
 			m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockUser, Title: "用户", Content: content})

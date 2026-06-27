@@ -9,7 +9,7 @@ func ConvertMemoryMessages(recorder *HistoryRecorder) []domainmemory.Message {
 	var msgs []domainmemory.Message
 	for _, am := range agentMessages {
 		role := "assistant"
-		if am.AgentName == "用户" || am.AgentName == "user" {
+		if isUserAgentName(am.AgentName) {
 			role = "user"
 		}
 		content := am.GetTextContent()

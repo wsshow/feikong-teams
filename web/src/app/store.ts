@@ -72,12 +72,16 @@ const chatSlice = createSlice({
       state.events = [];
       state.queue = [];
       state.isProcessing = false;
+      state.runningSessionID = "";
+      state.error = undefined;
+      state.statusText = undefined;
     },
-    appendUserMessage(state, action: PayloadAction<{ id: string; content: string }>) {
+    appendUserMessage(state, action: PayloadAction<{ id: string; content: string; createdAt?: string }>) {
       state.messages.push({
         id: action.payload.id,
         role: "user",
         content: action.payload.content,
+        createdAt: action.payload.createdAt,
         events: [],
       });
     },
@@ -102,6 +106,7 @@ const chatSlice = createSlice({
             id: `user-${event.stream_event_id ?? Date.now()}`,
             role: "user",
             content,
+            createdAt: event.created_at,
             events: [event],
           });
         }

@@ -378,13 +378,10 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 			return
 		}
 
-		contentType := mime.TypeByExtension(filepath.Ext(filePath))
-		if contentType == "" {
-			contentType = "application/octet-stream"
-		}
+		contentType := previewContentType(filePath)
 
 		disposition := "inline"
-		if !isPreviewable(contentType) {
+		if c.Query("download") == "1" {
 			disposition = "attachment"
 		}
 		fileName := filepath.Base(filePath)
@@ -470,10 +467,7 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 		// 密码保护链接：返回渲染所需的基本信息，但不泄露完整路径
 		if entry.PasswordHash != "" {
 			fileName := filepath.Base(entry.FilePaths[0])
-			contentType := mime.TypeByExtension(filepath.Ext(entry.FilePaths[0]))
-			if contentType == "" {
-				contentType = "application/octet-stream"
-			}
+			contentType := previewContentType(entry.FilePaths[0])
 			isMulti := len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0]))
 			OK(c, gin.H{
 				"file_name":        fileName,
@@ -487,10 +481,7 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 		}
 
 		fileName := filepath.Base(entry.FilePaths[0])
-		contentType := mime.TypeByExtension(filepath.Ext(entry.FilePaths[0]))
-		if contentType == "" {
-			contentType = "application/octet-stream"
-		}
+		contentType := previewContentType(entry.FilePaths[0])
 
 		isMulti := len(entry.FilePaths) > 1 || isDir(filepath.Join(baseDir, entry.FilePaths[0]))
 
@@ -767,6 +758,29 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 			return
 		}
 
+		c.Header("Content-Type", previewContentType(fullPath))
+		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, strings.NewReplacer(`"`, `\"`, "\r", "", "\n", "").Replace(info.Name())))
 		serveFileContent(c, fullPath, info)
+	}
+}
+
+func previewContentType(filePath string) string {
+	contentType := mime.TypeByExtension(filepath.Ext(filePath))
+	if contentType != "" {
+		return contentType
+	}
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".txt", ".log", ".env", ".gitignore":
+		return "text/plain; charset=utf-8"
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".yaml", ".yml", ".toml":
+		return "text/plain; charset=utf-8"
+	case ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".xml", ".svg", ".go", ".py", ".sh", ".rs", ".java", ".c", ".cpp", ".h":
+		return "text/plain; charset=utf-8"
+	default:
+		return "application/octet-stream"
 	}
 }

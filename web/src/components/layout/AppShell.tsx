@@ -1,4 +1,5 @@
 import { ChevronDown, Menu } from "lucide-react";
+import { useEffect } from "react";
 import { appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const sessions = useAppSelector((state) => state.sessions.items);
   const title = resolveTitle(activePanel, activeSessionID, sessions);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => dispatch(appActions.showToast(undefined)), 2000);
+    return () => window.clearTimeout(timer);
+  }, [dispatch, toast]);
 
   async function shareSession() {
     if (!activeSessionID) return;

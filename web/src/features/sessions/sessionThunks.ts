@@ -35,11 +35,17 @@ function historyToMessages(messages: AgentMessage[]): ChatViewMessage[] {
       .join("");
     return {
       id: `history-${index}`,
-      role: message.role === "user" ? "user" : "assistant",
+      role: isHistoryUserMessage(message) ? "user" : "assistant",
       agent: message.agent_name,
       content: content || message.content || "",
       reasoningContent,
+      createdAt: message.start_time || message.end_time,
       events: [],
     };
   });
+}
+
+function isHistoryUserMessage(message: AgentMessage) {
+  const agentName = (message.agent_name || "").trim().toLowerCase();
+  return message.role === "user" || agentName === "用户" || agentName === "user";
 }

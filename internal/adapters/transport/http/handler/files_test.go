@@ -148,6 +148,52 @@ func TestDeleteFileHandler(t *testing.T) {
 	}
 }
 
+func TestFileContentHandlers(t *testing.T) {
+	workspace := setupWorkspaceDir(t)
+	filePath := filepath.Join(workspace, "note.md")
+	if err := os.WriteFile(filePath, []byte("# title\n"), 0644); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(workspace, "docs"), 0755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/content", GetFileContentHandler())
+	router.PUT("/content", SaveFileContentHandler())
+
+	resp := performRequest(router, http.MethodGet, "/content?path=note.md", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("get content status = %d: %s", resp.Code, resp.Body.String())
+	}
+	var got struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	decodeRawData(t, resp, &got)
+	if got.Path != "note.md" || got.Content != "# title\n" {
+		t.Fatalf("unexpected content response: %#v", got)
+	}
+
+	resp = performJSON(router, http.MethodPut, "/content", `{"path":"note.md","content":"updated\n"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("save content status = %d: %s", resp.Code, resp.Body.String())
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if string(data) != "updated\n" {
+		t.Fatalf("unexpected saved content: %q", data)
+	}
+
+	resp = performRequest(router, http.MethodGet, "/content?path=docs", nil)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("directory content status = %d, want 400", resp.Code)
+	}
+}
+
 func TestServeFileHandler(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
 	siteDir := filepath.Join(workspace, "site")

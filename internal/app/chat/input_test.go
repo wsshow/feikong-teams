@@ -93,7 +93,7 @@ func TestHistoryRecorderOmitMultimodalUserInputFromModelContext(t *testing.T) {
 	}
 	recorder := &testHistory{
 		messages: []domainhistory.AgentMessage{{
-			AgentName: "用户",
+			AgentName: "user",
 			Events: []domainhistory.MessageEvent{{
 				Type:         domainhistory.MsgTypeText,
 				Content:      "describe this",
