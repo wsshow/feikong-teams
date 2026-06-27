@@ -55,7 +55,7 @@ export function MessageList() {
 
   return (
     <div className="chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-8">
-      <div className="mx-auto w-full max-w-3xl space-y-6">
+      <div className="mx-auto w-full max-w-4xl space-y-6">
         {timelineMessages.map((message) => {
           if (message.hidden) {
             const member = memberByMessageID.get(message.id);
@@ -151,7 +151,7 @@ function MessageRow({
       {hasContent ? (
         <>
           <div
-            className="prose message-prose max-w-none text-lg leading-9"
+            className="prose message-prose w-full max-w-none text-lg leading-9"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
           />
           <MessageActions content={message.content} />
@@ -261,7 +261,7 @@ function MemberActivityDetails({ member }: { member: MemberActivity }) {
         <ToolCallCard key={`${tool.ref || tool.id || tool.name}-${index}`} tool={tool} />
       ))}
       {member.preview ? (
-        <div className="prose message-prose max-w-none text-base leading-8" dangerouslySetInnerHTML={{ __html: renderMarkdown(member.preview) }} />
+        <div className="prose message-prose w-full max-w-none text-base leading-8" dangerouslySetInnerHTML={{ __html: renderMarkdown(member.preview) }} />
       ) : null}
     </div>
   );

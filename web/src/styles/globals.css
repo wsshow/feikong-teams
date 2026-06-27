@@ -187,6 +187,8 @@
   }
 
   .message-prose {
+    width: 100%;
+    max-width: none;
     overflow-wrap: break-word;
   }
 
@@ -196,9 +198,11 @@
   }
 
   .message-prose table {
-    display: block;
+    display: table;
+    width: 100%;
+    min-width: 100%;
     max-width: 100%;
-    overflow-x: auto;
+    table-layout: auto;
     scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
   }
 
@@ -221,8 +225,8 @@
 
   .message-prose th,
   .message-prose td {
-    max-width: 24rem;
-    overflow-wrap: break-word;
+    max-width: none;
+    overflow-wrap: anywhere;
     vertical-align: top;
   }
 }
