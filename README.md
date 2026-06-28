@@ -2,7 +2,7 @@
 
 fkteams（FeiKong Teams，非空小队）是一个开源的多智能体协作 AI 助手，适合代码开发、资料研究、数据分析、远程运维和自动化任务。它支持 Web UI、CLI、OpenAI 兼容 API 和消息通道（Discord / QQ / 微信）多种入口。
 
-![非空小队架构简介](./docs/images/fkteams.png)
+![非空小队架构简介](./docs/images/fkteams_promo.png)
 
 ## 演示图
 
