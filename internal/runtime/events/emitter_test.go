@@ -14,7 +14,7 @@ func TestEmitterFillsRunTurnNormalizesAndSends(t *testing.T) {
 		return nil
 	})
 
-	event := MessageDelta(MessageEvent{
+	event := AssistantDelta(MessageEvent{
 		MessageID: "msg_1",
 		Role:      message.RoleAssistant,
 		AgentName: "coder",
@@ -52,11 +52,11 @@ func TestEmitterUsesNoopSinkAndValidatesContract(t *testing.T) {
 		t.Fatalf("noop sink emit: %v", err)
 	}
 
-	err := emitter.Emit(ToolStart(ToolEvent{ToolName: "search"}))
+	err := emitter.Emit(ToolCallStarted(ToolEvent{ToolName: "search"}))
 	if err == nil {
 		t.Fatal("expected missing tool identity error")
 	}
-	if emitter.LastEvent().Type != EventToolStart {
+	if emitter.LastEvent().Type != EventToolCallStarted {
 		t.Fatalf("last event should still reflect failed event, got %#v", emitter.LastEvent())
 	}
 
@@ -83,7 +83,7 @@ func TestEventConstructors(t *testing.T) {
 		AgentError("run_1", errors.New("boom")),
 		TurnStart("run_1", "turn_1"),
 		TurnEnd("run_1", "turn_1"),
-		MessageStart(MessageEvent{
+		AssistantStarted(MessageEvent{
 			MessageID:   "msg_1",
 			Role:        message.RoleAssistant,
 			AgentName:   "coder",
@@ -93,7 +93,7 @@ func TestEventConstructors(t *testing.T) {
 			ToolCallRef: "ref_1",
 			ToolName:    "search",
 		}),
-		MessageDelta(MessageEvent{
+		AssistantDelta(MessageEvent{
 			MessageID:   "msg_1",
 			Role:        message.RoleAssistant,
 			DeltaKind:   DeltaToolArgs,
@@ -101,7 +101,7 @@ func TestEventConstructors(t *testing.T) {
 			ToolCallRef: "ref_1",
 			ToolName:    "search",
 		}, `{"query":"go"}`),
-		MessageEnd(MessageEvent{
+		AssistantCompleted(MessageEvent{
 			MessageID:        "msg_1",
 			Role:             message.RoleAssistant,
 			Content:          "done",
@@ -109,7 +109,7 @@ func TestEventConstructors(t *testing.T) {
 			ToolCalls:        []message.ToolCall{*toolCall},
 			ToolCallRefs:     map[int]string{toolIndex: "ref_1"},
 		}),
-		ToolStart(ToolEvent{
+		ToolCallStarted(ToolEvent{
 			AgentName:     "coder",
 			RunPath:       "root/coder",
 			ToolCallID:    "call_1",
@@ -119,38 +119,38 @@ func TestEventConstructors(t *testing.T) {
 			ToolCall:      toolCall,
 			ToolCallIndex: &toolIndex,
 		}),
-		ToolUpdate(ToolEvent{
+		ToolCallResultDelta(ToolEvent{
 			ToolCallID:  "call_1",
 			ToolCallRef: "ref_1",
 			ToolName:    "search",
 			Content:     "partial",
 		}),
-		ToolEnd(ToolEvent{
+		ToolCallCompleted(ToolEvent{
 			ToolCallID:  "call_1",
 			ToolCallRef: "ref_1",
 			ToolName:    "search",
 			ToolResult:  "result",
 		}),
-		Action("coder", "root/coder", ActionInterrupted, "paused"),
+		SystemNotice("coder", "root/coder", "interrupted", "paused"),
 		Error("coder", "root/coder", errors.New("failed")),
 		Usage("coder", "root/coder", 1, 2, 3),
 	}
 
 	wantTypes := []EventType{
-		EventAgentStart,
-		EventAgentEnd,
-		EventAgentEnd,
-		EventTurnStart,
-		EventTurnEnd,
-		EventMessageStart,
-		EventMessageDelta,
-		EventMessageEnd,
-		EventToolStart,
-		EventToolUpdate,
-		EventToolEnd,
-		EventAction,
+		EventAgentStarted,
+		EventAgentCompleted,
+		EventAgentCompleted,
+		EventTurnStarted,
+		EventTurnCompleted,
+		EventAssistantStarted,
+		EventToolCallArguments,
+		EventAssistantCompleted,
+		EventToolCallStarted,
+		EventToolCallResult,
+		EventToolCallCompleted,
+		EventSystemNotice,
 		EventError,
-		EventUsage,
+		EventUsageReported,
 	}
 	for i, event := range constructors {
 		if event.Type != wantTypes[i] {
@@ -162,20 +162,20 @@ func TestEventConstructors(t *testing.T) {
 		t.Fatalf("AgentError error = %q", constructors[2].Error)
 	}
 	if constructors[8].Content != constructors[8].ToolArgs {
-		t.Fatalf("ToolStart content should default to args: %#v", constructors[8])
+		t.Fatalf("ToolCallStarted content should default to args: %#v", constructors[8])
 	}
 	if constructors[9].DeltaKind != DeltaToolResult {
-		t.Fatalf("ToolUpdate delta kind = %q", constructors[9].DeltaKind)
+		t.Fatalf("ToolCallResultDelta delta kind = %q", constructors[9].DeltaKind)
 	}
 	if constructors[10].Content != "result" || constructors[10].ToolResult != "result" {
-		t.Fatalf("ToolEnd result fields = %#v", constructors[10])
+		t.Fatalf("ToolCallCompleted result fields = %#v", constructors[10])
 	}
 	if constructors[13].PromptTokens != 1 || constructors[13].CompletionTokens != 2 || constructors[13].TotalTokens != 3 {
 		t.Fatalf("Usage tokens = %#v", constructors[13])
 	}
 }
 
-func TestUserMessagePairTurnIDAndFirstNonEmpty(t *testing.T) {
+func TestUserMessageTurnIDAndFirstNonEmpty(t *testing.T) {
 	msg := message.Message{
 		Role: message.RoleUser,
 		ContentParts: []message.ContentPart{
@@ -184,15 +184,15 @@ func TestUserMessagePairTurnIDAndFirstNonEmpty(t *testing.T) {
 			{Type: message.ContentPartText, Text: "world"},
 		},
 	}
-	start, end := UserMessagePair("run_1", "turn_1", "msg_1", msg)
-	if start.Type != EventMessageStart || end.Type != EventMessageEnd {
-		t.Fatalf("pair types = %q/%q", start.Type, end.Type)
+	event := UserMessage("run_1", "turn_1", "msg_1", msg)
+	if event.Type != EventUserMessage {
+		t.Fatalf("event type = %q", event.Type)
 	}
-	if start.RunID != "run_1" || start.TurnID != "turn_1" || start.Content != "hello world" {
-		t.Fatalf("start event = %#v", start)
+	if event.RunID != "run_1" || event.TurnID != "turn_1" || event.Content != "hello world" {
+		t.Fatalf("user event = %#v", event)
 	}
-	if end.Message == nil || end.Message.Role != message.RoleUser {
-		t.Fatalf("end message = %#v", end.Message)
+	if event.Message == nil || event.Message.Role != message.RoleUser {
+		t.Fatalf("event message = %#v", event.Message)
 	}
 	if TurnID("run_1", 7) != "run_1:turn:7" {
 		t.Fatalf("TurnID returned unexpected value")

@@ -285,11 +285,30 @@ func forwardEvents(ctx context.Context, tasks []taskItem, eventCh <-chan viewEve
 			"event_type":   e.Type,
 			"event_detail": e.Content,
 		})
+		eventType := events.EventSystemNotice
+		if e.Type == "start" {
+			eventType = events.EventMemberStarted
+		}
+		if e.Type == "done" || e.Type == "content" {
+			eventType = events.EventMemberCompleted
+		}
+		if e.Type == "error" {
+			_ = events.DispatchEvent(ctx, events.Event{
+				Type:    events.EventError,
+				Content: e.Content,
+				Detail:  string(detail),
+			})
+			continue
+		}
 		_ = events.DispatchEvent(ctx, events.Event{
-			Type:       events.EventMemberUpdate,
-			ActionType: events.ActionType(e.Type),
-			Content:    e.Content,
-			Detail:     string(detail),
+			Type:    eventType,
+			Content: e.Content,
+			Detail:  string(detail),
+			Notice: &events.NoticePayload{
+				Level:   "info",
+				Code:    e.Type,
+				Message: e.Content,
+			},
 		})
 	}
 }

@@ -1,16 +1,27 @@
 export type ChatEventType =
-  | "message_start"
-  | "message_delta"
-  | "message_end"
-  | "tool_start"
-  | "tool_update"
-  | "tool_end"
-  | "action"
-  | "usage"
+  | "agent_started"
+  | "agent_completed"
+  | "turn_started"
+  | "turn_completed"
+  | "user_message"
+  | "assistant_started"
+  | "assistant_reasoning_delta"
+  | "assistant_text_delta"
+  | "assistant_completed"
+  | "tool_call_started"
+  | "tool_call_arguments_delta"
+  | "tool_call_result_delta"
+  | "tool_call_completed"
+  | "tool_call_failed"
+  | "ask_requested"
+  | "ask_answered"
+  | "approval_requested"
+  | "approval_answered"
+  | "system_notice"
+  | "usage_reported"
   | "error"
   | "processing_start"
   | "processing_end"
-  | "user_message"
   | "queue_updated"
   | "cancelled"
   | string;
@@ -53,10 +64,11 @@ export interface ChatEvent {
   agent_name?: string;
   role?: string;
   delta_kind?: string;
-  delta?: string;
   content?: string;
   reasoning_content?: string;
   message_id?: string;
+  block_id?: string;
+  block_type?: string;
   stream_id?: string;
   chunk_index?: number;
   tool_name?: string;
@@ -70,7 +82,6 @@ export interface ChatEvent {
   tool_call_index?: number;
   tool_calls?: ToolCallDTO[];
   tool_call?: ToolCallDTO;
-  action_type?: string;
   detail?: string;
   ask_id?: string;
   question?: string;

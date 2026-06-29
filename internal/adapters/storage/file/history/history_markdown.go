@@ -85,9 +85,9 @@ func saveMessagesToMarkdown(messages []AgentMessage, filePath string) error {
 					md.WriteString("\n")
 				}
 
-			case MsgTypeAction:
-				if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
-					fmt.Fprintf(&md, "> **[Action]**: [%s] %s\n\n", event.Action.ActionType, event.Action.Content)
+			case MsgTypeNotice:
+				if event.Content != "" {
+					fmt.Fprintf(&md, "> **[Notice]**: %s\n\n", event.Content)
 				}
 
 			case MsgTypeError:

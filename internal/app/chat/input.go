@@ -306,9 +306,9 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 			// ToolMessage 携带结果
 			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
 
-		case domainhistory.MsgTypeAction:
-			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
-				fmt.Fprintf(&textBuf, "[%s] %s\n", event.Action.ActionType, event.Action.Content)
+		case domainhistory.MsgTypeNotice:
+			if event.Content != "" {
+				fmt.Fprintf(&textBuf, "[系统] %s\n", event.Content)
 			}
 
 		case domainhistory.MsgTypeError:

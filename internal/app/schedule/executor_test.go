@@ -85,9 +85,9 @@ func (r fakeRunner) Run(_ context.Context, input message.TurnInput, opts runtime
 		return nil, r.err
 	}
 	if opts.Sink != nil {
-		_ = opts.Sink(event.Event{Type: event.TypeMessageStart})
-		_ = opts.Sink(event.Event{Type: event.TypeMessageDelta, Content: r.content, DeltaKind: event.DeltaOutput})
-		_ = opts.Sink(event.Event{Type: event.TypeMessageEnd, Content: r.content})
+		_ = opts.Sink(event.Event{Type: event.TypeAssistantStarted})
+		_ = opts.Sink(event.Event{Type: event.TypeAssistantText, Content: r.content, DeltaKind: event.DeltaOutput})
+		_ = opts.Sink(event.Event{Type: event.TypeAssistantCompleted, Content: r.content})
 	}
-	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeMessageEnd}}, nil
+	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeAssistantCompleted}}, nil
 }

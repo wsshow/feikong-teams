@@ -204,9 +204,8 @@ func (h *HistoryRecorder) reconstructSummaryFromEvents() {
 
 	for i := len(h.messages) - 1; i >= 0; i-- {
 		for _, evt := range h.messages[i].Events {
-			if evt.Type == MsgTypeAction && evt.Action != nil &&
-				evt.Action.ActionType == ActionContextCompress && evt.Action.Detail != "" {
-				h.summary = evt.Action.Detail
+			if evt.Type == MsgTypeNotice && evt.Detail != "" {
+				h.summary = evt.Detail
 
 				for j := i - 1; j >= 0; j-- {
 					if isUserAgentName(h.messages[j].AgentName) {

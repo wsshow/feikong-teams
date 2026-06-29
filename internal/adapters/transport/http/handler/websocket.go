@@ -180,7 +180,7 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 					_ = stream.SubmitInterrupt(taskstream.InterruptApproval, wsMsg.Decision)
 				}
 
-			case "ask_response":
+			case "ask_answered":
 				sid := wsMsg.SessionID
 				resp := &ask.AskResponse{
 					AskID:    wsMsg.AskID,
@@ -215,27 +215,18 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 			info := askInterrupt.Info
 			askID := askInterrupt.ID
 			memberEvent := askInterrupt.Event
-			askEvent := memberEvent
-			askEvent.Type = events.EventAction
-			askEvent.ActionType = events.ActionAskQuestions
-			askEvent.Content = info.Question
-			askEvent.Detail = askID
+			askEvent := askRequestedEvent(memberEvent, askID, info)
+			askEvent = events.NormalizeEvent(askEvent)
 			recorder.RecordEvent(askEvent)
-			payload := taskstream.Event(attachMemberPayload(taskstream.NewEvent(events.NotifyAskQuestions, sessionID).
-				With("ask_id", askID).
-				With("question", info.Question).
-				With("options", info.Options).
-				With("multi_select", info.MultiSelect), memberEvent))
+			payload := taskstream.Event(convertEventToMapWithResolver(askEvent, nil)).
+				With("session_id", sessionID)
 			_ = publish(payload)
 
 			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 
 			if err == nil {
-				answerEvent := memberEvent
-				answerEvent.Type = events.EventAction
-				answerEvent.ActionType = events.ActionAskResponse
-				answerEvent.Content = askResponseText(result)
-				answerEvent.Detail = askID
+				answerEvent := askAnsweredEvent(memberEvent, askID, askResponseFromResult(askID, result), askResponseText(result))
+				answerEvent = events.NormalizeEvent(answerEvent)
 				recorder.RecordEvent(answerEvent)
 			}
 			return result, err
@@ -248,9 +239,11 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
 		recorder.RecordEvent(events.Event{
-			Type:       events.EventAction,
-			ActionType: events.ActionApprovalRequired,
-			Content:    msg,
+			Type:    events.EventApprovalRequested,
+			Content: msg,
+			Approval: &events.ApprovalPayload{
+				Message: msg,
+			},
 		})
 		_ = publish(taskstream.NewEvent(events.NotifyApprovalRequired, sessionID).With("message", msg))
 
@@ -259,9 +252,11 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
 				recorder.RecordEvent(events.Event{
-					Type:       events.EventAction,
-					ActionType: events.ActionApprovalDecision,
-					Content:    text,
+					Type:    events.EventApprovalAnswered,
+					Content: text,
+					Approval: &events.ApprovalPayload{
+						Decision: text,
+					},
 				})
 			}
 		}
@@ -275,9 +270,6 @@ func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string,
 // wsEventCallbackBuffered 构建支持断线缓冲的事件发布回调。
 func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream, resolver toolmeta.Resolver) func(events.Event) error {
 	return func(event events.Event) error {
-		if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
-			return nil
-		}
 		data := convertEventToMapWithResolver(event, resolver)
 		data["session_id"] = sessionID
 		stream.Publish(taskstream.Event(data))
@@ -372,9 +364,6 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			appchat.WithRunID(currentRunID),
 			appchat.OnEvent(wsEventCallbackBuffered(sessionID, stream, rt.ToolDisplays)),
 			appchat.WithEventRecorderFunc(func(event events.Event) {
-				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
-					return
-				}
 				recorder.RecordEvent(event)
 			}),
 			appchat.WithHistory(recorder),

@@ -119,6 +119,7 @@ function toolMatchesParent(tool: { id?: string; ref?: string; name?: string }, r
 }
 
 function historyEventsToChatEvents(messageID: string, message: AgentMessage): ChatEvent[] {
+  const isUser = isHistoryUserMessage(message);
   const common = {
     message_id: messageID,
     agent_name: message.agent_name,
@@ -129,48 +130,87 @@ function historyEventsToChatEvents(messageID: string, message: AgentMessage): Ch
     member_name: message.member_name,
   };
 
-  return (message.events || []).map((event, index) => {
+  return (message.events || []).flatMap((event, index): ChatEvent | ChatEvent[] => {
     const base = {
       ...common,
       sequence: event.sequence || index,
       created_at: message.start_time || message.end_time,
     };
     if (event.type === "text") {
+      if (isUser) {
+        return [{
+          ...base,
+          type: "user_message",
+          role: "user",
+          content: event.content || "",
+        }];
+      }
       return {
         ...base,
-        type: "message_delta",
+        type: "assistant_text_delta",
         role: "assistant",
         delta_kind: "output",
         content: event.content || "",
-        delta: event.content || "",
       };
     }
     if (event.type === "reasoning") {
       return {
         ...base,
-        type: "message_delta",
+        type: "assistant_reasoning_delta",
         role: "assistant",
         delta_kind: "reasoning",
         content: event.content || "",
-        delta: event.content || "",
         reasoning_content: event.content || "",
       };
     }
     if (event.type === "tool_call" && event.tool_call) {
-      return {
-        ...base,
-        type: "message_end",
-        tool_call: event.tool_call,
-        tool_calls: [event.tool_call],
-      };
+      const ref = event.tool_call.ref || (event.tool_call.id ? `tool_call:${event.tool_call.id}` : undefined);
+      return [
+        {
+          ...base,
+          type: "tool_call_started",
+          tool_name: event.tool_call.name,
+          tool_display_name: event.tool_call.display_name,
+          tool_kind: event.tool_call.kind,
+          tool_target: event.tool_call.target,
+          tool_args: event.tool_call.arguments,
+          tool_call_id: event.tool_call.id,
+          tool_call_ref: ref,
+          tool_call_index: event.tool_call.index,
+          tool_call: event.tool_call,
+          tool_calls: [event.tool_call],
+        },
+        {
+          ...base,
+          sequence: (event.sequence || index) + 0.1,
+          type: "tool_call_completed",
+          tool_name: event.tool_call.name,
+          tool_display_name: event.tool_call.display_name,
+          tool_kind: event.tool_call.kind,
+          tool_target: event.tool_call.target,
+          tool_args: event.tool_call.arguments,
+          tool_result: event.tool_call.result,
+          content: event.tool_call.result,
+          tool_call_id: event.tool_call.id,
+          tool_call_ref: ref,
+          tool_call_index: event.tool_call.index,
+          tool_call: event.tool_call,
+          tool_calls: [event.tool_call],
+        },
+      ];
     }
-    if (event.type === "action") {
+    if (event.type === "ask" && event.ask) {
       return {
         ...base,
-        type: "action",
-        action_type: event.action?.action_type,
-        content: event.action?.content || event.content || "",
-        detail: event.action?.detail || event.detail,
+        type: event.ask.answered ? "ask_answered" : "ask_requested",
+        ask_id: event.ask.id,
+        question: event.ask.question,
+        options: event.ask.options,
+        multi_select: event.ask.multi_select,
+        selected: event.ask.selected,
+        free_text: event.ask.free_text,
+        content: event.ask.answered ? askResponseSummary(event.ask.selected || [], event.ask.free_text || "") : event.ask.question || "",
+        detail: event.ask.id,
       };
     }
     return {
@@ -179,4 +219,8 @@ function historyEventsToChatEvents(messageID: string, message: AgentMessage): Ch
       content: event.content || "",
     };
   }) as ChatEvent[];
+}
+
+function askResponseSummary(selected: string[], freeText: string) {
+  return [...selected, freeText].filter((item) => item && item.trim()).join("；");
 }

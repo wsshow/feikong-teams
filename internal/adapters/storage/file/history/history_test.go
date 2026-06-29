@@ -1,6 +1,7 @@
 package eventlog
 
 import (
+	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	"fkteams/internal/runtime/events"
 	"testing"
@@ -12,7 +13,7 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:    1,
-		Type:        EventToolStart,
+		Type:        EventToolCallStarted,
 		AgentName:   "coordinator",
 		ToolCallID:  "call_1",
 		ToolCallRef: "tool_call:call_1",
@@ -30,7 +31,7 @@ func TestHistoryRecorderKeepsParentToolCallBeforeMemberMessage(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:       2,
-		Type:           EventMessageDelta,
+		Type:           EventAssistantText,
 		Role:           message.RoleAssistant,
 		DeltaKind:      events.DeltaOutput,
 		AgentName:      "researcher",
@@ -63,7 +64,7 @@ func TestHistoryRecorderPreservesMemberEventSequences(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:       10,
-		Type:           EventMessageDelta,
+		Type:           EventAssistantReasoning,
 		Role:           message.RoleAssistant,
 		DeltaKind:      events.DeltaReasoning,
 		AgentName:      "ask-member",
@@ -75,7 +76,7 @@ func TestHistoryRecorderPreservesMemberEventSequences(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:       11,
-		Type:           EventMessageDelta,
+		Type:           EventAssistantText,
 		Role:           message.RoleAssistant,
 		DeltaKind:      events.DeltaOutput,
 		AgentName:      "ask-member",
@@ -87,11 +88,11 @@ func TestHistoryRecorderPreservesMemberEventSequences(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:       12,
-		Type:           EventAction,
-		ActionType:     events.ActionAskQuestions,
+		Type:           events.EventAskRequested,
 		AgentName:      "ask-member",
 		Content:        "Choose?",
 		Detail:         "ask-1",
+		Ask:            &domainevent.AskPayload{ID: "ask-1", Question: "Choose?"},
 		MemberCallID:   "member-call-1",
 		MemberToolName: "ask_fkagent_member",
 		MemberName:     "Ask Member",
@@ -120,7 +121,7 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:  1,
-		Type:      EventMessageDelta,
+		Type:      EventAssistantText,
 		Role:      message.RoleAssistant,
 		DeltaKind: events.DeltaOutput,
 		AgentName: "coordinator",
@@ -128,7 +129,7 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:         2,
-		Type:             EventUsage,
+		Type:             EventUsageReported,
 		AgentName:        "coordinator",
 		PromptTokens:     3,
 		CompletionTokens: 4,
@@ -144,11 +145,8 @@ func TestHistoryRecorderStoresUsageAsUsageEvent(t *testing.T) {
 		t.Fatalf("event count = %d, want 2", len(messages[0].Events))
 	}
 	usageEvent := messages[0].Events[1]
-	if usageEvent.Type != MsgTypeUsage {
-		t.Fatalf("usage event type = %q, want %q", usageEvent.Type, MsgTypeUsage)
-	}
-	if usageEvent.Action != nil {
-		t.Fatalf("usage event action = %#v, want nil", usageEvent.Action)
+	if usageEvent.Type != MsgTypeUsageReported {
+		t.Fatalf("usage event type = %q, want %q", usageEvent.Type, MsgTypeUsageReported)
 	}
 	if usageEvent.Usage == nil || usageEvent.Usage.TotalTokens != 7 {
 		t.Fatalf("usage event usage = %#v, want total tokens 7", usageEvent.Usage)
@@ -187,7 +185,7 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:    1,
-		Type:        EventToolStart,
+		Type:        EventToolCallStarted,
 		AgentName:   "coordinator",
 		ToolCallRef: "tool_call:call_1",
 		ToolCalls: []message.ToolCall{{
@@ -201,7 +199,7 @@ func TestHistoryRecorderRecordsCancellationForActiveMessages(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:       2,
-		Type:           EventMessageDelta,
+		Type:           EventAssistantText,
 		Role:           message.RoleAssistant,
 		DeltaKind:      events.DeltaReasoning,
 		AgentName:      "researcher",
@@ -235,7 +233,7 @@ func TestHistoryRecorderRecordsToolRoleMessageEndAsToolResult(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:      1,
-		Type:          EventToolStart,
+		Type:          EventToolCallStarted,
 		AgentName:     "assistant",
 		ToolCallID:    "call_1",
 		ToolCallRef:   "ref_1",
@@ -245,8 +243,7 @@ func TestHistoryRecorderRecordsToolRoleMessageEndAsToolResult(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    2,
-		Type:        events.EventMessageEnd,
-		Role:        message.RoleTool,
+		Type:        events.EventToolCallCompleted,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "ref_1",
@@ -273,7 +270,7 @@ func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.
 
 	recorder.RecordEvent(Event{
 		Sequence:  1,
-		Type:      events.EventMessageEnd,
+		Type:      events.EventAssistantCompleted,
 		Role:      message.RoleAssistant,
 		AgentName: "assistant",
 		ToolCalls: []message.ToolCall{
@@ -289,8 +286,7 @@ func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    2,
-		Type:        events.EventMessageEnd,
-		Role:        message.RoleTool,
+		Type:        events.EventToolCallCompleted,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "tool_call:call_1",
@@ -321,7 +317,7 @@ func TestHistoryRecorderMergesToolResultByIDWhenRefDiffers(t *testing.T) {
 
 	recorder.RecordEvent(Event{
 		Sequence:    1,
-		Type:        EventToolStart,
+		Type:        EventToolCallStarted,
 		AgentName:   "assistant",
 		ToolCallRef: "ref_from_args",
 		ToolCallRefs: map[int]string{
@@ -338,7 +334,7 @@ func TestHistoryRecorderMergesToolResultByIDWhenRefDiffers(t *testing.T) {
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    2,
-		Type:        EventToolEnd,
+		Type:        EventToolCallCompleted,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "ref_from_result",
@@ -369,7 +365,7 @@ func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.
 
 	recorder.RecordEvent(Event{
 		Sequence:      1,
-		Type:          EventToolStart,
+		Type:          EventToolCallStarted,
 		AgentName:     "assistant",
 		ToolCallID:    "call_1",
 		ToolCallRef:   "ref_1",
@@ -379,7 +375,7 @@ func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    2,
-		Type:        EventToolEnd,
+		Type:        EventToolCallCompleted,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",
 		ToolCallRef: "ref_1",
@@ -389,7 +385,7 @@ func TestHistoryRecorderDoesNotDuplicateToolEndAndToolRoleMessageEnd(t *testing.
 	})
 	recorder.RecordEvent(Event{
 		Sequence:    3,
-		Type:        events.EventMessageEnd,
+		Type:        events.EventAssistantCompleted,
 		Role:        message.RoleTool,
 		AgentName:   "assistant",
 		ToolCallID:  "call_1",

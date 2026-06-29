@@ -17,7 +17,7 @@ type recordingRunner struct {
 func (r *recordingRunner) Run(_ context.Context, input message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
 	r.input = input
 	event := domainevent.Event{
-		Type:      domainevent.TypeMessageDelta,
+		Type:      domainevent.TypeAssistantText,
 		Role:      message.RoleAssistant,
 		DeltaKind: domainevent.DeltaOutput,
 		Content:   "pong",

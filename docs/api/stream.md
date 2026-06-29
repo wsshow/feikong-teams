@@ -227,7 +227,7 @@ SSE 事件格式：
 
 ```text
 id: 42
-data: {"type":"message_delta","session_id":"abc-123","content":"...","stream_event_id":42}
+data: {"type":"assistant_text_delta","session_id":"abc-123","content":"...","stream_event_id":42}
 ```
 
 服务端优先使用 `Last-Event-ID`，并从 `Last-Event-ID + 1` 开始回放；没有该 header 时使用 `offset` query 参数。
@@ -375,7 +375,7 @@ data: {"type":"message_delta","session_id":"abc-123","content":"...","stream_eve
 
 ## POST /api/fkteams/stream/ask-response
 
-提交 `ask_questions` 的回答。
+提交 `ask_requested` 的回答。
 
 **请求 Body**：
 
@@ -388,7 +388,7 @@ data: {"type":"message_delta","session_id":"abc-123","content":"...","stream_eve
 }
 ```
 
-当 `ask_questions` 事件包含 `ask_id` 时，提交回答应带回同一个 `ask_id`。并行子智能体同时提问时，服务端会按 `ask_id` 将回答投递给对应成员。
+当 `ask_requested` 事件包含 `ask_id` 时，提交回答应带回同一个 `ask_id`。并行子智能体同时提问时，服务端会按 `ask_id` 将回答投递给对应成员。
 
 **成功响应**：
 
@@ -426,7 +426,6 @@ data: {"type":"message_delta","session_id":"abc-123","content":"...","stream_eve
 | `message_id` | 模型消息 ID，用于合并增量 |
 | `agent_name` | 事件所属智能体 |
 | `content` | 文本内容 |
-| `delta` | `message_delta` 的文本增量 |
 | `delta_kind` | 增量类型，如正文或工具参数 |
 | `tool_calls` | 工具调用列表 |
 | `tool_call_ref` | 工具调用稳定引用 |
@@ -443,10 +442,10 @@ data: {"type":"message_delta","session_id":"abc-123","content":"...","stream_eve
 | `processing_start` | 某个用户轮次或队列项开始处理 |
 | `processing_end` | 任务全部完成 |
 | `queue_updated` | 队列快照更新 |
-| `message_delta` | 模型输出增量 |
-| `message_end` | 模型消息结束 |
-| `tool_start` / `tool_update` / `tool_end` | 工具执行事件 |
-| `ask_questions` | 需要用户回答问题；并行成员提问会携带 `ask_id` 和成员归属字段 |
+| `assistant_reasoning_delta` / `assistant_text_delta` | 模型思考或正文输出增量 |
+| `assistant_completed` | 模型消息结束，可能携带 `tool_calls` |
+| `tool_call_started` / `tool_call_arguments_delta` / `tool_call_result_delta` / `tool_call_completed` | 工具调用事件 |
+| `ask_requested` / `ask_answered` | 需要用户回答问题或记录用户回答；并行成员提问会携带 `ask_id` 和成员归属字段 |
 | `approval_required` | 需要用户审批 |
 | `error` | 任务错误 |
 | `cancelled` | 任务被取消 |

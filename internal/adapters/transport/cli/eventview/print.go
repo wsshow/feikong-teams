@@ -20,18 +20,16 @@ const agentToolPrefix = toolmeta.AgentToolPrefix
 type Event = domainevent.Event
 
 const (
-	EventMessageDelta = domainevent.TypeMessageDelta
-	EventMessageEnd   = domainevent.TypeMessageEnd
-	EventToolStart    = domainevent.TypeToolStart
-	EventToolUpdate   = domainevent.TypeToolUpdate
-	EventToolEnd      = domainevent.TypeToolEnd
-	EventAction       = domainevent.TypeAction
-	EventUsage        = domainevent.TypeUsage
-	EventError        = domainevent.TypeError
-
-	ActionTransfer             = domainevent.ActionTransfer
-	ActionContextCompressStart = domainevent.ActionContextCompressStart
-	ActionContextCompress      = domainevent.ActionContextCompress
+	EventAssistantText      = domainevent.TypeAssistantText
+	EventAssistantReason    = domainevent.TypeAssistantReasoning
+	EventToolCallArgs       = domainevent.TypeToolCallArguments
+	EventAssistantCompleted = domainevent.TypeAssistantCompleted
+	EventToolCallStarted    = domainevent.TypeToolCallStarted
+	EventToolCallResult     = domainevent.TypeToolCallResult
+	EventToolCallCompleted  = domainevent.TypeToolCallCompleted
+	EventSystemNotice       = domainevent.TypeSystemNotice
+	EventUsageReported      = domainevent.TypeUsageReported
+	EventError              = domainevent.TypeError
 )
 
 func isInternalToolName(name string) bool {
@@ -385,7 +383,7 @@ func newPrintEvent() (func(Event), func()) {
 
 	printFn = func(event Event) {
 		switch event.Type {
-		case EventMessageDelta:
+		case EventAssistantText, EventAssistantReason, EventToolCallArgs:
 			switch event.DeltaKind {
 			case domainevent.DeltaReasoning:
 				if isMemberEvent(event) {
@@ -485,7 +483,7 @@ func newPrintEvent() (func(Event), func()) {
 				sb.addChunk(event.Content)
 			}
 
-		case EventMessageEnd:
+		case EventAssistantCompleted:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.ReasoningContent != "" {
@@ -518,7 +516,7 @@ func newPrintEvent() (func(Event), func()) {
 				lipgloss.Println(formatAssistantOutput(fktui.RenderMarkdown(printContent)))
 			}
 
-		case EventToolEnd:
+		case EventToolCallCompleted:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				if event.Content != "" {
@@ -590,7 +588,7 @@ func newPrintEvent() (func(Event), func()) {
 			}
 			delete(toolFlows, key)
 
-		case EventToolUpdate:
+		case EventToolCallResult:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				toolKey := memberToolKey(event, domainmessage.ToolCall{}, 0)
@@ -615,7 +613,7 @@ func newPrintEvent() (func(Event), func()) {
 			flow.Streamed = true
 			sendToolPanel(key, flow, "content", event.Content, true)
 
-		case EventToolStart:
+		case EventToolCallStarted:
 			if isMemberEvent(event) {
 				key, name := memberFromEvent(event)
 				for i, tool := range runtimeevents.ToolCallsFromEvent(event) {
@@ -684,24 +682,16 @@ func newPrintEvent() (func(Event), func()) {
 				}
 			}
 
-		case EventAction:
+		case EventSystemNotice:
 			if finishMembersBeforeParentOutput(event) {
 				return
 			}
 			tryFlush()
-			switch event.ActionType {
-			case ActionContextCompressStart:
-				fmt.Printf("\n\033[1;33m~ [%s] %s\033[0m", event.AgentName, event.Content)
-			case ActionContextCompress:
+			if event.Content != "" {
 				fmt.Printf("\n\033[1;33m✓ [%s] %s\033[0m\n", event.AgentName, event.Content)
-			default:
-				fmt.Printf("\n\033[1;34m▸ [%s] 动作: %s\033[0m\n", event.AgentName, event.ActionType)
-				if event.Content != "" {
-					fmt.Printf("  详情: %s\n", event.Content)
-				}
 			}
 
-		case EventUsage:
+		case EventUsageReported:
 			return
 
 		case EventError:

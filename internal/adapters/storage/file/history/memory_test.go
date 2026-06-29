@@ -8,7 +8,7 @@ import (
 func TestConvertMemoryMessages(t *testing.T) {
 	recorder := NewHistoryRecorder()
 	recorder.RecordUserMessage(domainmessage.Message{Role: domainmessage.RoleUser, Content: "用户消息"})
-	recorder.RecordEvent(Event{Type: EventMessageDelta, AgentName: "assistant", Content: "助手回复"})
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "assistant", Content: "助手回复"})
 	recorder.FinalizeCurrent()
 
 	messages := ConvertMemoryMessages(recorder)

@@ -85,10 +85,10 @@ func TestForwardEventsDispatchesMemberUpdates(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("forwarded events count = %d, want 3", len(got))
 	}
-	if got[0].Type != events.EventMemberUpdate || got[0].ActionType != events.ActionType("start") {
+	if got[0].Type != events.EventMemberStarted {
 		t.Fatalf("first forwarded event = %#v", got[0])
 	}
-	if got[1].Content != "完成" || got[1].ActionType != events.ActionType("content") {
+	if got[1].Content != "完成" || got[1].Type != events.EventMemberCompleted {
 		t.Fatalf("second forwarded event = %#v", got[1])
 	}
 

@@ -39,7 +39,7 @@ func TestServiceRunsThroughNonEinoRuntime(t *testing.T) {
 	}, hooks.Options{})
 	bus.RegisterFunc("after-run", []hooks.HookPoint{hooks.HookAfterRun}, func(ctx hooks.Context, inv hooks.Invocation) (hooks.Result, error) {
 		payload := inv.Payload.(hooks.AfterRunPayload)
-		if payload.Result == nil || payload.Result.LastEvent.Type != event.TypeMessageEnd {
+		if payload.Result == nil || payload.Result.LastEvent.Type != event.TypeAssistantCompleted {
 			t.Fatalf("after-run result = %#v, want message_end", payload.Result)
 		}
 		afterRunCalled = true
@@ -166,9 +166,9 @@ func (r *fakeRuntimeRunner) Run(ctx context.Context, input message.TurnInput, op
 	}
 
 	events := []event.Event{
-		{Type: event.TypeToolStart, ToolCallID: "tool-1", ToolName: "fake_echo"},
-		{Type: event.TypeToolEnd, ToolCallID: "tool-1", ToolName: "fake_echo", ToolResult: r.toolResult},
-		{Type: event.TypeMessageEnd, Message: &message.Message{Role: message.RoleAssistant, Content: "done"}},
+		{Type: event.TypeToolCallStarted, ToolCallID: "tool-1", ToolName: "fake_echo"},
+		{Type: event.TypeToolCallCompleted, ToolCallID: "tool-1", ToolName: "fake_echo", ToolResult: r.toolResult},
+		{Type: event.TypeAssistantCompleted, Message: &message.Message{Role: message.RoleAssistant, Content: "done"}},
 	}
 	for _, event := range events {
 		if err := opts.Sink(event); err != nil {

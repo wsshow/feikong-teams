@@ -8,6 +8,7 @@ import (
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
+	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
@@ -203,7 +204,7 @@ func approvalDecisionText(result map[string]any) string {
 	return ""
 }
 
-// askResponseText 从中断结果中提取 ask_response 的可读文本
+// askResponseText 从中断结果中提取 ask_answered 的可读文本
 func askResponseText(result map[string]any) string {
 	for _, v := range result {
 		if resp, ok := v.(*ask.AskResponse); ok {
@@ -314,28 +315,21 @@ func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.
 		defer stream.CompleteAsk(req.ID)
 
 		memberEvent := memberEventFromMetadata(req.Metadata)
-		askEvent := memberEvent
-		askEvent.Type = events.EventAction
-		askEvent.ActionType = events.ActionAskQuestions
-		askEvent.Content = req.Info.Question
-		askEvent.Detail = req.ID
+		askEvent := askRequestedEvent(memberEvent, req.ID, req.Info)
+		askEvent.ToolCallID = req.ToolCallID
+		if req.ToolCallID != "" {
+			askEvent.ToolCallRef = "tool_call:" + req.ToolCallID
+		}
+		askEvent.ToolName = req.ToolName
 		askEvent = events.NormalizeEvent(askEvent)
 		recorder.RecordEvent(askEvent)
 
 		askPayload := taskstream.Event(convertEventToMapWithResolver(askEvent, nil)).
-			With("type", events.NotifyAskQuestions).
 			With("session_id", sessionID).
 			With("ask_id", req.ID).
 			With("question", req.Info.Question).
 			With("options", req.Info.Options).
 			With("multi_select", req.Info.MultiSelect)
-		if req.ToolCallID != "" {
-			askPayload["tool_call_id"] = req.ToolCallID
-			askPayload["tool_call_ref"] = "tool_call:" + req.ToolCallID
-		}
-		if req.ToolName != "" {
-			askPayload["tool_name"] = req.ToolName
-		}
 		stream.Publish(askPayload)
 
 		var raw any
@@ -352,15 +346,64 @@ func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.
 			resp.AskID = req.ID
 		}
 
-		answerEvent := memberEvent
-		answerEvent.Type = events.EventAction
-		answerEvent.ActionType = events.ActionAskResponse
-		answerEvent.Content = askResponseText(map[string]any{req.ID: resp})
-		answerEvent.Detail = req.ID
+		answerEvent := askAnsweredEvent(memberEvent, req.ID, resp, askResponseText(map[string]any{req.ID: resp}))
+		answerEvent.ToolCallID = req.ToolCallID
+		if req.ToolCallID != "" {
+			answerEvent.ToolCallRef = "tool_call:" + req.ToolCallID
+		}
+		answerEvent.ToolName = req.ToolName
 		answerEvent = events.NormalizeEvent(answerEvent)
 		recorder.RecordEvent(answerEvent)
 		return resp, nil
 	}
+}
+
+func askRequestedEvent(base events.Event, askID string, info *ask.AskInfo) events.Event {
+	event := base
+	event.Type = events.EventAskRequested
+	event.Detail = askID
+	if info == nil {
+		event.Ask = &domainevent.AskPayload{ID: askID}
+		return event
+	}
+	event.Content = info.Question
+	event.Ask = &domainevent.AskPayload{
+		ID:          askID,
+		Question:    info.Question,
+		Options:     append([]string(nil), info.Options...),
+		MultiSelect: info.MultiSelect,
+	}
+	return event
+}
+
+func askAnsweredEvent(base events.Event, askID string, resp *ask.AskResponse, content string) events.Event {
+	event := base
+	event.Type = events.EventAskAnswered
+	event.Content = content
+	event.Detail = askID
+	event.Ask = &domainevent.AskPayload{ID: askID}
+	if resp != nil {
+		event.Ask.Selected = append([]string(nil), resp.Selected...)
+		event.Ask.FreeText = resp.FreeText
+	}
+	return event
+}
+
+func askResponseFromResult(askID string, result runtimeport.InterruptDecisions) *ask.AskResponse {
+	if result == nil {
+		return nil
+	}
+	if askID != "" {
+		if resp, ok := result[askID].(*ask.AskResponse); ok {
+			return resp
+		}
+	}
+	for _, raw := range result {
+		if resp, ok := raw.(*ask.AskResponse); ok {
+			return resp
+		}
+	}
+	return nil
 }
 
 func attachMemberPayload(payload map[string]any, event events.Event) map[string]any {
@@ -429,6 +472,12 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 	if event.MessageID != "" {
 		result["message_id"] = event.MessageID
 	}
+	if event.BlockID != "" {
+		result["block_id"] = event.BlockID
+	}
+	if event.BlockType != "" {
+		result["block_type"] = event.BlockType
+	}
 	if event.Role != "" {
 		result["role"] = event.Role
 	}
@@ -440,9 +489,6 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 		if event.Sequence != 0 {
 			result["chunk_index"] = event.Sequence
 		}
-	}
-	if event.Type == events.EventMessageDelta && event.Content != "" {
-		result["delta"] = event.Content
 	}
 	if event.RunPath != "" {
 		result["run_path"] = event.RunPath
@@ -484,9 +530,6 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 			result["tool_call"] = toolCalls[0]
 		}
 	}
-	if event.ActionType != "" {
-		result["action_type"] = event.ActionType
-	}
 	if event.ToolCallID != "" {
 		result["tool_call_id"] = event.ToolCallID
 	}
@@ -504,6 +547,12 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 	}
 	if event.ToolCallIndex != nil {
 		result["tool_call_index"] = *event.ToolCallIndex
+	}
+	if event.ToolArgs != "" {
+		result["tool_args"] = event.ToolArgs
+	}
+	if event.ToolResult != "" {
+		result["tool_result"] = event.ToolResult
 	}
 	if events.IsMemberEvent(event) {
 		result["is_member_event"] = true
@@ -542,7 +591,43 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 	if event.TotalTokens > 0 {
 		result["total_tokens"] = event.TotalTokens
 	}
+	if event.Ask != nil {
+		result["ask_id"] = event.Ask.ID
+		if event.Ask.Question != "" {
+			result["question"] = event.Ask.Question
+		}
+		if len(event.Ask.Options) > 0 {
+			result["options"] = append([]string(nil), event.Ask.Options...)
+		}
+		if event.Ask.MultiSelect {
+			result["multi_select"] = event.Ask.MultiSelect
+		}
+		if len(event.Ask.Selected) > 0 {
+			result["selected"] = append([]string(nil), event.Ask.Selected...)
+		}
+		if event.Ask.FreeText != "" {
+			result["free_text"] = event.Ask.FreeText
+		}
+	}
+	if event.Usage != nil {
+		result["usage"] = event.Usage
+	}
+	if event.Notice != nil {
+		result["notice"] = event.Notice
+	}
+	if event.Approval != nil {
+		result["approval"] = event.Approval
+	}
 	return result
+}
+
+func isDeltaEvent(event events.Event) bool {
+	switch event.Type {
+	case events.EventAssistantText, events.EventAssistantReasoning, events.EventToolCallArguments, events.EventToolCallResult:
+		return true
+	default:
+		return false
+	}
 }
 
 func attachFriendlyError(result map[string]any, raw string) map[string]any {

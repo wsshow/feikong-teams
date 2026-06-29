@@ -224,14 +224,14 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	defer h.mu.Unlock()
 
 	switch event.Type {
-	case EventUsage:
+	case EventUsageReported:
 		if event.PromptTokens == 0 && event.CompletionTokens == 0 && event.TotalTokens == 0 {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Sequence: event.Sequence,
-			Type:     MsgTypeUsage,
+			Type:     MsgTypeUsageReported,
 			Usage: &UsageRecord{
 				PromptTokens:     event.PromptTokens,
 				CompletionTokens: event.CompletionTokens,
@@ -239,7 +239,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			},
 		})
 
-	case EventMessageDelta:
+	case events.EventAssistantReasoning, events.EventAssistantText:
 		if event.Role == message.RoleUser {
 			return
 		}
@@ -248,13 +248,20 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
-		if event.Role == message.RoleTool && (event.DeltaKind == "" || event.DeltaKind == events.DeltaOutput) {
+		deltaKind := event.DeltaKind
+		if event.Type == events.EventAssistantReasoning {
+			deltaKind = events.DeltaReasoning
+		}
+		if event.Type == events.EventAssistantText {
+			deltaKind = events.DeltaOutput
+		}
+		if event.Role == message.RoleTool && (deltaKind == "" || deltaKind == events.DeltaOutput) {
 			if key := toolResultKey(event); key != "" {
 				ctx.toolResultChunks[key] += content
 			}
 			return
 		}
-		switch event.DeltaKind {
+		switch deltaKind {
 		case events.DeltaReasoning:
 
 			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
@@ -286,28 +293,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 
-	case events.EventMessageEnd:
-		if event.Role != message.RoleTool {
-			return
-		}
-		content := toolResultContentFromEvent(event)
-		if content == "" || events.IsInternalContinueContent(content) {
-			return
-		}
-		ctx := h.ensureMessageContext(event)
-		resultKey := toolResultKey(event)
-		if resultKey != "" && ctx.toolResultChunks[resultKey] != "" {
-			chunked := ctx.toolResultChunks[resultKey]
-			if strings.Contains(chunked, content) {
-				content = chunked
-			} else if !strings.Contains(content, chunked) {
-				content = chunked + content
-			}
-			delete(ctx.toolResultChunks, resultKey)
-		}
-		h.recordToolResult(ctx, event, content)
-
-	case EventToolStart:
+	case EventToolCallStarted:
 		ctx := h.ensureMessageContext(event)
 		toolCalls := event.ToolCalls
 		if event.ToolCall != nil {
@@ -355,7 +341,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		}
 
-	case EventToolUpdate:
+	case EventToolCallResult:
 		content := event.Content
 		if content == "" {
 			content = event.ToolResult
@@ -368,7 +354,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			ctx.toolResultChunks[key] += content
 		}
 
-	case EventToolEnd:
+	case EventToolCallCompleted:
 		content := toolResultContentFromEvent(event)
 		if events.IsInternalContinueContent(content) {
 			return
@@ -386,16 +372,42 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		}
 		h.recordToolResult(ctx, event, content)
 
-	case EventAction:
+	case events.EventAskRequested, events.EventAskAnswered:
+		ctx := h.ensureMessageContext(event)
+		record := &AskRecord{}
+		if event.Ask != nil {
+			record.ID = event.Ask.ID
+			record.Question = event.Ask.Question
+			record.Options = append([]string(nil), event.Ask.Options...)
+			record.MultiSelect = event.Ask.MultiSelect
+			record.Selected = append([]string(nil), event.Ask.Selected...)
+			record.FreeText = event.Ask.FreeText
+		}
+		if record.ID == "" {
+			record.ID = event.Detail
+		}
+		if record.Question == "" && event.Type == events.EventAskRequested {
+			record.Question = event.Content
+		}
+		if event.Type == events.EventAskAnswered {
+			record.Answered = true
+			if record.FreeText == "" && len(record.Selected) == 0 {
+				record.FreeText = event.Content
+			}
+		}
+		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
+			Sequence: event.Sequence,
+			Type:     MsgTypeAsk,
+			Ask:      record,
+		})
+
+	case EventSystemNotice:
 		ctx := h.ensureMessageContext(event)
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Sequence: event.Sequence,
-			Type:     MsgTypeAction,
-			Action: &ActionRecord{
-				ActionType: event.ActionType,
-				Content:    event.Content,
-				Detail:     event.Detail,
-			},
+			Type:     MsgTypeNotice,
+			Content:  event.Content,
+			Detail:   event.Detail,
 		})
 
 	case EventError:

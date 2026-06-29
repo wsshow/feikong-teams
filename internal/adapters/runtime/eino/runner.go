@@ -43,11 +43,8 @@ func (r *Runner) Run(ctx context.Context, input domainmessage.TurnInput, opts ru
 	if !input.Message.IsEmpty() && input.Message.Role == domainmessage.RoleUser {
 		userMessage := input.Message
 		messageID := fmt.Sprintf("%s:user", turnID)
-		start, end := events.UserMessagePair(runID, turnID, messageID, userMessage)
-		if err := emitter.Emit(start); err != nil {
-			return nil, err
-		}
-		if err := emitter.Emit(end); err != nil {
+		userEvent := events.UserMessage(runID, turnID, messageID, userMessage)
+		if err := emitter.Emit(userEvent); err != nil {
 			return nil, err
 		}
 	}
@@ -205,7 +202,7 @@ func (c *converter) flushUnknownToolReports() error {
 		if events.IsInternalToolName(report.ToolName) {
 			continue
 		}
-		nEvent := events.ToolEnd(events.ToolEvent{
+		nEvent := events.ToolCallCompleted(events.ToolEvent{
 			AgentName:  report.AgentName,
 			ToolCallID: report.ToolCallID,
 			ToolName:   report.ToolName,
@@ -256,25 +253,21 @@ func (c *converter) process(ctx context.Context, event *adk.AgentEvent) error {
 func (c *converter) handleAction(event *adk.AgentEvent, scope MemberScope) error {
 	action := event.Action
 	if action.TransferToAgent != nil {
-		nEvent := events.Action(event.AgentName, formatRunPath(event.RunPath), domainevent.ActionTransfer, fmt.Sprintf("Transfer to agent: %s", action.TransferToAgent.DestAgentName))
+		content := fmt.Sprintf("Transfer to agent: %s", action.TransferToAgent.DestAgentName)
+		nEvent := events.SystemNotice(event.AgentName, formatRunPath(event.RunPath), "transfer", content)
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
 	if action.Interrupted != nil {
-		for _, ic := range action.Interrupted.InterruptContexts {
-			content := fmt.Sprintf("%v", ic.Info)
-			if stringer, ok := ic.Info.(fmt.Stringer); ok {
-				content = stringer.String()
-			}
-			nEvent := events.Action(event.AgentName, formatRunPath(event.RunPath), domainevent.ActionInterrupted, content)
-			scope.apply(&nEvent, c)
-			if err := c.emit(nEvent); err != nil {
-				return err
-			}
-		}
+		return nil
 	}
 	if action.Exit {
-		nEvent := events.Action(event.AgentName, formatRunPath(event.RunPath), domainevent.ActionExit, "Agent execution completed")
+		nEvent := events.Event{
+			Type:      events.EventAgentCompleted,
+			AgentName: event.AgentName,
+			RunPath:   formatRunPath(event.RunPath),
+			Content:   "Agent execution completed",
+		}
 		scope.apply(&nEvent, c)
 		return c.emit(nEvent)
 	}
@@ -310,7 +303,7 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 		RunPath:   formatRunPath(event.RunPath),
 		Message:   &message,
 	}
-	start := events.MessageStart(messageMeta)
+	start := events.AssistantStarted(messageMeta)
 	scope.apply(&start, c)
 	if err := c.emit(start); err != nil {
 		return err
@@ -318,7 +311,7 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 	if msg.ReasoningContent != "" {
 		deltaMeta := messageMeta
 		deltaMeta.DeltaKind = domainevent.DeltaReasoning
-		delta := events.MessageDelta(deltaMeta, msg.ReasoningContent)
+		delta := events.AssistantDelta(deltaMeta, msg.ReasoningContent)
 		scope.apply(&delta, c)
 		if err := c.emit(delta); err != nil {
 			return err
@@ -327,7 +320,7 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 	if msg.Content != "" {
 		deltaMeta := messageMeta
 		deltaMeta.DeltaKind = domainevent.DeltaOutput
-		delta := events.MessageDelta(deltaMeta, msg.Content)
+		delta := events.AssistantDelta(deltaMeta, msg.Content)
 		scope.apply(&delta, c)
 		if err := c.emit(delta); err != nil {
 			return err
@@ -338,7 +331,7 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 	endMeta.ReasoningContent = msg.ReasoningContent
 	endMeta.ToolCalls = message.ToolCalls
 	endMeta.ToolCallRefs = c.identities.refsFor(message.ToolCalls)
-	end := events.MessageEnd(endMeta)
+	end := events.AssistantCompleted(endMeta)
 	scope.apply(&end, c)
 	if err := c.emit(end); err != nil {
 		return err
@@ -348,7 +341,7 @@ func (c *converter) handleRegularMessage(event *adk.AgentEvent, msg *schema.Mess
 
 func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Message, scope MemberScope) error {
 	content := normalizeToolResultContent(msg.Content)
-	toolEvent := events.ToolEnd(events.ToolEvent{
+	toolEvent := events.ToolCallCompleted(events.ToolEvent{
 		AgentName:  event.AgentName,
 		RunPath:    formatRunPath(event.RunPath),
 		ToolCallID: msg.ToolCallID,
@@ -357,35 +350,7 @@ func (c *converter) emitToolResultMessage(event *adk.AgentEvent, msg *schema.Mes
 	})
 	c.identities.attach(&toolEvent)
 	scope.apply(&toolEvent, c)
-	if err := c.emit(toolEvent); err != nil {
-		return err
-	}
-
-	message := adaptMessageFromRunner(msg)
-	message.ToolCallID = toolEvent.ToolCallID
-	message.Content = content
-	messageID := c.messageID(event, "tool")
-	toolMessageMeta := events.MessageEvent{
-		MessageID:   messageID,
-		Role:        domainmessage.RoleTool,
-		AgentName:   event.AgentName,
-		RunPath:     formatRunPath(event.RunPath),
-		Message:     &message,
-		ToolCallID:  toolEvent.ToolCallID,
-		ToolCallRef: toolEvent.ToolCallRef,
-		ToolName:    msg.ToolName,
-	}
-	start := events.MessageStart(toolMessageMeta)
-	c.identities.attach(&start)
-	scope.apply(&start, c)
-	if err := c.emit(start); err != nil {
-		return err
-	}
-	toolMessageMeta.Content = content
-	end := events.MessageEnd(toolMessageMeta)
-	c.identities.attach(&end)
-	scope.apply(&end, c)
-	return c.emit(end)
+	return c.emit(toolEvent)
 }
 
 func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string, toolCalls []domainmessage.ToolCall, scope MemberScope) error {
@@ -395,7 +360,7 @@ func (c *converter) emitToolStarts(event *adk.AgentEvent, sourceMessageID string
 		}
 		ref := c.identities.ensure(sourceMessageID, position, scope, &tc)
 		c.identities.rememberResult(tc.Function.Name, tc.ID)
-		nEvent := events.ToolStart(events.ToolEvent{
+		nEvent := events.ToolCallStarted(events.ToolEvent{
 			AgentName:     event.AgentName,
 			RunPath:       formatRunPath(event.RunPath),
 			ToolCallID:    tc.ID,
@@ -467,7 +432,7 @@ func (c *converter) handleStreamingMessage(ctx context.Context, event *adk.Agent
 		for _, idx := range indexes {
 			message.ToolCalls = append(message.ToolCalls, ss.toolCalls[idx])
 		}
-		end := events.MessageEnd(events.MessageEvent{
+		end := events.AssistantCompleted(events.MessageEvent{
 			MessageID:        ss.messageID,
 			Role:             ss.role,
 			AgentName:        event.AgentName,
@@ -505,7 +470,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		if events.IsInternalToolName(chunk.ToolName) || events.IsInternalContinueContent(chunk.Content) {
 			return nil
 		}
-		nEvent := events.ToolUpdate(events.ToolEvent{
+		nEvent := events.ToolCallResultDelta(events.ToolEvent{
 			AgentName:  event.AgentName,
 			RunPath:    formatRunPath(event.RunPath),
 			ToolCallID: chunk.ToolCallID,
@@ -521,7 +486,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		if chunk.Role != "" {
 			ss.role = adaptRoleFromRunner(chunk.Role)
 		}
-		start := events.MessageStart(events.MessageEvent{
+		start := events.AssistantStarted(events.MessageEvent{
 			MessageID: ss.messageID,
 			Role:      ss.role,
 			AgentName: event.AgentName,
@@ -534,7 +499,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 	}
 	if chunk.ReasoningContent != "" {
 		ss.reasoning.WriteString(chunk.ReasoningContent)
-		nEvent := events.MessageDelta(events.MessageEvent{
+		nEvent := events.AssistantDelta(events.MessageEvent{
 			MessageID: ss.messageID,
 			Role:      ss.role,
 			AgentName: event.AgentName,
@@ -548,7 +513,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 	}
 	if chunk.Content != "" {
 		ss.content.WriteString(chunk.Content)
-		nEvent := events.MessageDelta(events.MessageEvent{
+		nEvent := events.AssistantDelta(events.MessageEvent{
 			MessageID: ss.messageID,
 			Role:      ss.role,
 			AgentName: event.AgentName,
@@ -583,7 +548,7 @@ func (c *converter) processStreamChunk(event *adk.AgentEvent, chunk *schema.Mess
 		ss.toolCalls[idx] = current
 		ss.toolRefs[idx] = ref
 		if tc.Function.Arguments != "" {
-			nEvent := events.MessageDelta(events.MessageEvent{
+			nEvent := events.AssistantDelta(events.MessageEvent{
 				MessageID:   ss.messageID,
 				Role:        ss.role,
 				AgentName:   event.AgentName,

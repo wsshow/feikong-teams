@@ -83,7 +83,7 @@ func (t *toolIdentityTracker) attach(event *domainevent.Event) {
 		return
 	}
 	if event.ToolCallID == "" && event.ToolName != "" {
-		event.ToolCallID = t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolEnd)
+		event.ToolCallID = t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolCallCompleted)
 	}
 	if event.ToolCallID == "" {
 		return
@@ -94,7 +94,7 @@ func (t *toolIdentityTracker) attach(event *domainevent.Event) {
 		}
 	}
 	if event.ToolCallRef == "" && event.ToolName != "" {
-		if mappedID := t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolEnd); mappedID != "" {
+		if mappedID := t.resultIDByName(event.ToolName, event.Type == domainevent.TypeToolCallCompleted); mappedID != "" {
 			event.ToolCallID = mappedID
 			if ref, ok := t.refsByID.Load(event.ToolCallID); ok {
 				if value, ok := ref.(string); ok && value != "" {
@@ -106,7 +106,7 @@ func (t *toolIdentityTracker) attach(event *domainevent.Event) {
 	if order, ok := t.orderForID(event.ToolCallID); ok {
 		event.ToolCallIndex = &order
 	}
-	if event.Type == domainevent.TypeToolEnd && event.ToolName != "" {
+	if event.Type == domainevent.TypeToolCallCompleted && event.ToolName != "" {
 		delete(t.activeResultsByName, event.ToolName)
 		t.consumePendingResult(event.ToolName, event.ToolCallID)
 	}

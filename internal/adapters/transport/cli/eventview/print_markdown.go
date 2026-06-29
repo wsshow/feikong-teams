@@ -28,7 +28,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 
 	callback = func(event Event) error {
 		switch event.Type {
-		case EventMessageDelta:
+		case EventAssistantText:
 			if event.DeltaKind != "" && event.DeltaKind != domainevent.DeltaOutput {
 				return nil
 			}
@@ -40,7 +40,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			buf.WriteString(event.Content)
 			inStream = true
 
-		case EventToolStart:
+		case EventToolCallStarted:
 			flushStream()
 			toolCalls := runtimeevents.ToolCallsFromEvent(event)
 			for i, tc := range toolCalls {
@@ -63,7 +63,7 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			}
 			lastAgent = ""
 
-		case EventToolEnd:
+		case EventToolCallCompleted:
 			if event.Content != "" && !isInternalContinueContent(event.Content) {
 				toolName := lastToolName
 				if event.ToolCallID != "" {
@@ -77,14 +77,11 @@ func NewMarkdownCollector() (callback func(Event) error, getResult func() string
 			}
 			lastAgent = ""
 
-		case EventAction:
-			switch event.ActionType {
-			case ActionTransfer:
+		case EventSystemNotice:
+			if event.Notice != nil && event.Notice.Code == "transfer" {
 				flushStream()
 				fmt.Fprintf(&buf, "\n\n> **[%s]** → %s", event.AgentName, event.Content)
 				lastAgent = ""
-			case ActionContextCompressStart, ActionContextCompress:
-
 			}
 
 		case EventError:

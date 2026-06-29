@@ -3,6 +3,7 @@ package events
 import (
 	"fmt"
 
+	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 )
@@ -43,11 +44,11 @@ func (e *Emitter) LastEvent() Event {
 }
 
 func AgentStart(runID string) Event {
-	return Event{Type: EventAgentStart, RunID: runID}
+	return Event{Type: EventAgentStarted, RunID: runID}
 }
 
 func AgentEnd(runID string) Event {
-	return Event{Type: EventAgentEnd, RunID: runID}
+	return Event{Type: EventAgentCompleted, RunID: runID}
 }
 
 func AgentError(runID string, err error) Event {
@@ -59,11 +60,11 @@ func AgentError(runID string, err error) Event {
 }
 
 func TurnStart(runID, turnID string) Event {
-	return Event{Type: EventTurnStart, RunID: runID, TurnID: turnID}
+	return Event{Type: EventTurnStarted, RunID: runID, TurnID: turnID}
 }
 
 func TurnEnd(runID, turnID string) Event {
-	return Event{Type: EventTurnEnd, RunID: runID, TurnID: turnID}
+	return Event{Type: EventTurnCompleted, RunID: runID, TurnID: turnID}
 }
 
 type MessageEvent struct {
@@ -82,9 +83,9 @@ type MessageEvent struct {
 	ReasoningContent string
 }
 
-func MessageStart(meta MessageEvent) Event {
+func AssistantStarted(meta MessageEvent) Event {
 	return Event{
-		Type:        EventMessageStart,
+		Type:        EventAssistantStarted,
 		MessageID:   meta.MessageID,
 		Role:        meta.Role,
 		AgentName:   meta.AgentName,
@@ -97,10 +98,25 @@ func MessageStart(meta MessageEvent) Event {
 	}
 }
 
-func MessageDelta(meta MessageEvent, delta string) Event {
+func AssistantDelta(meta MessageEvent, delta string) Event {
+	blockType := string(meta.DeltaKind)
+	eventType := EventAssistantText
+	switch meta.DeltaKind {
+	case DeltaReasoning:
+		eventType = EventAssistantReasoning
+	case DeltaOutput, "":
+		eventType = EventAssistantText
+		blockType = string(DeltaOutput)
+	case DeltaToolArgs:
+		eventType = EventToolCallArguments
+	case DeltaToolResult:
+		eventType = EventToolCallResult
+	}
 	return Event{
-		Type:        EventMessageDelta,
+		Type:        eventType,
 		MessageID:   meta.MessageID,
+		BlockID:     blockID(meta.MessageID, blockType, meta.ToolCallRef),
+		BlockType:   blockType,
 		Role:        meta.Role,
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
@@ -112,9 +128,9 @@ func MessageDelta(meta MessageEvent, delta string) Event {
 	}
 }
 
-func MessageEnd(meta MessageEvent) Event {
+func AssistantCompleted(meta MessageEvent) Event {
 	return Event{
-		Type:             EventMessageEnd,
+		Type:             EventAssistantCompleted,
 		MessageID:        meta.MessageID,
 		Role:             meta.Role,
 		AgentName:        meta.AgentName,
@@ -143,10 +159,10 @@ type ToolEvent struct {
 	ToolCallIndex *int
 }
 
-func ToolStart(meta ToolEvent) Event {
+func ToolCallStarted(meta ToolEvent) Event {
 	content := firstNonEmpty(meta.Content, meta.ToolArgs)
 	return Event{
-		Type:          EventToolStart,
+		Type:          EventToolCallStarted,
 		AgentName:     meta.AgentName,
 		RunPath:       meta.RunPath,
 		ToolCallID:    meta.ToolCallID,
@@ -159,9 +175,9 @@ func ToolStart(meta ToolEvent) Event {
 	}
 }
 
-func ToolUpdate(meta ToolEvent) Event {
+func ToolCallResultDelta(meta ToolEvent) Event {
 	return Event{
-		Type:        EventToolUpdate,
+		Type:        EventToolCallResult,
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
 		ToolCallID:  meta.ToolCallID,
@@ -172,10 +188,14 @@ func ToolUpdate(meta ToolEvent) Event {
 	}
 }
 
-func ToolEnd(meta ToolEvent) Event {
+func ToolCallCompleted(meta ToolEvent) Event {
 	content := firstNonEmpty(meta.Content, meta.ToolResult)
+	eventType := EventToolCallCompleted
+	if meta.ToolResult == "" && meta.Content == "" {
+		eventType = EventToolCallFailed
+	}
 	return Event{
-		Type:        EventToolEnd,
+		Type:        eventType,
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
 		ToolCallID:  meta.ToolCallID,
@@ -186,13 +206,17 @@ func ToolEnd(meta ToolEvent) Event {
 	}
 }
 
-func Action(agentName, runPath string, actionType ActionType, content string) Event {
+func SystemNotice(agentName, runPath, code, content string) Event {
 	return Event{
-		Type:       EventAction,
-		AgentName:  agentName,
-		RunPath:    runPath,
-		ActionType: actionType,
-		Content:    content,
+		Type:      EventSystemNotice,
+		AgentName: agentName,
+		RunPath:   runPath,
+		Content:   content,
+		Notice: &NoticePayload{
+			Level:   "info",
+			Code:    code,
+			Message: content,
+		},
 	}
 }
 
@@ -210,30 +234,36 @@ func Error(agentName, runPath string, err error) Event {
 
 func Usage(agentName, runPath string, promptTokens, completionTokens, totalTokens int) Event {
 	return Event{
-		Type:             EventUsage,
+		Type:             EventUsageReported,
 		AgentName:        agentName,
 		RunPath:          runPath,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		TotalTokens:      totalTokens,
+		Usage: &domainevent.UsagePayload{
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+			TotalTokens:      totalTokens,
+		},
 	}
 }
 
-func UserMessagePair(runID, turnID, messageID string, msg message.Message) (Event, Event) {
+func UserMessage(runID, turnID, messageID string, msg message.Message) Event {
 	content := msg.DisplayText()
-	meta := MessageEvent{
-		MessageID: messageID,
-		Role:      message.RoleUser,
-		Content:   content,
-		Message:   &msg,
+	event := Event{Type: EventUserMessage, MessageID: messageID, Role: message.RoleUser, Content: content, Message: &msg}
+	event.RunID = runID
+	event.TurnID = turnID
+	return event
+}
+
+func blockID(messageID, blockType, toolCallRef string) string {
+	if messageID == "" || blockType == "" {
+		return ""
 	}
-	start := MessageStart(meta)
-	end := MessageEnd(meta)
-	start.RunID = runID
-	start.TurnID = turnID
-	end.RunID = runID
-	end.TurnID = turnID
-	return start, end
+	if toolCallRef != "" {
+		return messageID + ":" + blockType + ":" + toolCallRef
+	}
+	return messageID + ":" + blockType
 }
 
 func TurnID(runID string, index int) string {

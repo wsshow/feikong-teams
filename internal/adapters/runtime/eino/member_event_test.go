@@ -86,7 +86,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 	got := runAgentForTest(t, ctx, parentAgent, true)
 
 	parentStartIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolStart &&
+		return event.Type == domainevent.TypeToolCallStarted &&
 			event.ToolCallID == "parent-member-call" &&
 			event.ToolName == "ask_fkagent_member" &&
 			event.ToolCallRef != ""
@@ -101,7 +101,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 	}, "member-scoped reasoning")
 	memberToolStartIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
-			event.Type == domainevent.TypeToolStart &&
+			event.Type == domainevent.TypeToolCallStarted &&
 			event.ToolName == "member_echo" &&
 			event.ToolCallRef != "" &&
 			event.ToolCallIndex != nil &&
@@ -109,7 +109,7 @@ func TestAgentToolMemberEventsKeepScopeForReasoningAndTools(t *testing.T) {
 	}, "member-scoped tool start")
 	memberToolResultIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
-			(event.Type == domainevent.TypeToolUpdate || event.Type == domainevent.TypeToolEnd) &&
+			(event.Type == domainevent.TypeToolCallResult || event.Type == domainevent.TypeToolCallCompleted) &&
 			event.ToolName == "member_echo" &&
 			event.ToolCallRef != ""
 	}, "member-scoped tool result")
@@ -328,11 +328,11 @@ func TestMemberAskInterruptResumesInsideMemberAgent(t *testing.T) {
 
 	requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-member-call" &&
-			event.Type == domainevent.TypeMessageEnd &&
+			event.Type == domainevent.TypeAssistantCompleted &&
 			event.Content == "member resumed with answer"
 	}, "member resumed output")
 	requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd &&
+		return event.Type == domainevent.TypeAssistantCompleted &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "parent done"
 	}, "parent final output")
@@ -481,7 +481,7 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 
 	waitEvent(t, ctx, eventCh, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-worker-call" &&
-			event.Type == domainevent.TypeMessageEnd &&
+			event.Type == domainevent.TypeAssistantCompleted &&
 			event.Content == "worker done"
 	}, "worker completion before ask answer")
 
@@ -489,11 +489,11 @@ func TestMemberRuntimeAskDoesNotBlockParallelMember(t *testing.T) {
 
 	waitEvent(t, ctx, eventCh, func(event domainevent.Event) bool {
 		return event.MemberCallID == "parent-asker-call" &&
-			event.Type == domainevent.TypeMessageEnd &&
+			event.Type == domainevent.TypeAssistantCompleted &&
 			event.Content == "asker done"
 	}, "asker completion after answer")
 	waitEvent(t, ctx, eventCh, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd &&
+		return event.Type == domainevent.TypeAssistantCompleted &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "parent done"
 	}, "parent completion")

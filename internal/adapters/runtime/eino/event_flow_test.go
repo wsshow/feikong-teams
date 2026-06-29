@@ -33,33 +33,29 @@ func TestRunnerEmitsLifecycleEventsInOrder(t *testing.T) {
 	if len(got) < 6 {
 		t.Fatalf("expected lifecycle and message events, got %#v", got)
 	}
-	if got[0].Type != domainevent.TypeAgentStart || got[0].RunID != "event-flow-test" {
+	if got[0].Type != domainevent.TypeAgentStarted || got[0].RunID != "event-flow-test" {
 		t.Fatalf("first event = %#v, want agent_start", got[0])
 	}
-	if got[1].Type != domainevent.TypeTurnStart || got[1].TurnID != "event-flow-test:turn:1" {
+	if got[1].Type != domainevent.TypeTurnStarted || got[1].TurnID != "event-flow-test:turn:1" {
 		t.Fatalf("second event = %#v, want turn_start", got[1])
 	}
 
 	userStartIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageStart && event.Role == domainmessage.RoleUser
-	}, "user message start")
-	userEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd && event.Role == domainmessage.RoleUser && event.Content == "start"
-	}, "user message end")
+		return event.Type == domainevent.TypeUserMessage && event.Role == domainmessage.RoleUser && event.Content == "start"
+	}, "user message")
 	assistantIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantText &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "done"
 	}, "assistant output")
 	turnEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeTurnEnd
+		return event.Type == domainevent.TypeTurnCompleted
 	}, "turn end")
 	agentEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeAgentEnd
+		return event.Type == domainevent.TypeAgentCompleted
 	}, "agent end")
 
-	requireBefore(t, got, userStartIdx, userEndIdx, "user message start", "user message end")
-	requireBefore(t, got, userEndIdx, assistantIdx, "user message end", "assistant output")
+	requireBefore(t, got, userStartIdx, assistantIdx, "user message", "assistant output")
 	requireBefore(t, got, assistantIdx, turnEndIdx, "assistant output", "turn end")
 	requireBefore(t, got, turnEndIdx, agentEndIdx, "turn end", "agent end")
 	if agentEndIdx != len(got)-1 {
@@ -88,17 +84,17 @@ func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
 	if len(got) < 3 {
 		t.Fatalf("expected start and error events, got %#v", got)
 	}
-	if got[0].Type != domainevent.TypeAgentStart || got[1].Type != domainevent.TypeTurnStart {
+	if got[0].Type != domainevent.TypeAgentStarted || got[1].Type != domainevent.TypeTurnStarted {
 		t.Fatalf("expected agent_start then turn_start, got %#v", got)
 	}
 	errorIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.Type == domainevent.TypeError && strings.Contains(event.Error, "model boom")
 	}, "model error")
 	turnEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeTurnEnd
+		return event.Type == domainevent.TypeTurnCompleted
 	}, "turn end after error")
 	agentEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeAgentEnd
+		return event.Type == domainevent.TypeAgentCompleted
 	}, "agent end after error")
 	requireBefore(t, got, errorIdx, turnEndIdx, "model error", "turn end")
 	requireBefore(t, got, turnEndIdx, agentEndIdx, "turn end", "agent end")
@@ -153,33 +149,33 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 
 	events := runAgentForTest(t, ctx, agent, true)
 	reasoningIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantReasoning &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaReasoning &&
 			event.Content == "think "
 	}, "reasoning delta")
 	outputIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantText &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "draft "
 	}, "output delta")
 	firstArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeToolCallArguments &&
 			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolName == "flow_echo" &&
 			event.Content == `{"text":`
 	}, "first tool args delta")
 	secondArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeToolCallArguments &&
 			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolName == "flow_echo" &&
 			event.Content == `"hello"}`
 	}, "second tool args delta")
 	messageEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd &&
+		return event.Type == domainevent.TypeAssistantCompleted &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "draft " &&
 			event.ReasoningContent == "think " &&
@@ -189,7 +185,7 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 			event.ToolCalls[0].Function.Arguments == `{"text":"hello"}`
 	}, "assistant message end with aggregated tool call")
 	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolStart &&
+		return event.Type == domainevent.TypeToolCallStarted &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolCallRef != "" &&
 			event.ToolName == "flow_echo" &&
@@ -199,21 +195,14 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	}, "tool start")
 	toolStart := events[toolStartIdx]
 	toolEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolEnd &&
+		return event.Type == domainevent.TypeToolCallCompleted &&
 			event.ToolCallID == "flow-tool-call" &&
 			event.ToolCallRef == toolStart.ToolCallRef &&
 			event.ToolName == "flow_echo" &&
 			strings.Contains(event.ToolResult, "echo:hello")
 	}, "tool end")
-	toolMessageIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd &&
-			event.Role == domainmessage.RoleTool &&
-			event.ToolCallID == "flow-tool-call" &&
-			event.ToolName == "flow_echo" &&
-			strings.Contains(event.Content, "echo:hello")
-	}, "tool message end")
 	finalIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantText &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "final"
@@ -225,8 +214,7 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	requireBefore(t, events, secondArgsIdx, messageEndIdx, "second tool args", "message end")
 	requireBefore(t, events, messageEndIdx, toolStartIdx, "message end", "tool start")
 	requireBefore(t, events, toolStartIdx, toolEndIdx, "tool start", "tool end")
-	requireBefore(t, events, toolEndIdx, toolMessageIdx, "tool end", "tool message")
-	requireBefore(t, events, toolMessageIdx, finalIdx, "tool message", "final output")
+	requireBefore(t, events, toolEndIdx, finalIdx, "tool end", "final output")
 
 	firstArgs := events[firstArgsIdx]
 	secondArgs := events[secondArgsIdx]
@@ -286,19 +274,19 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 
 	events := runAgentForTest(t, ctx, agent, false)
 	reasoningIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantReasoning &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaReasoning &&
 			event.Content == "regular-thinking"
 	}, "regular reasoning delta")
 	outputIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantText &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "regular-draft"
 	}, "regular output delta")
 	messageEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd &&
+		return event.Type == domainevent.TypeAssistantCompleted &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.Content == "regular-draft" &&
 			event.ReasoningContent == "regular-thinking" &&
@@ -308,7 +296,7 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 			event.ToolCalls[0].Function.Arguments == `{"text":"hello"}`
 	}, "regular message end with tool call")
 	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolStart &&
+		return event.Type == domainevent.TypeToolCallStarted &&
 			event.ToolCallID == "generate-tool-call" &&
 			event.ToolName == "generate_echo" &&
 			event.ToolCallRef != "" &&
@@ -316,14 +304,14 @@ func TestGenerateRunEmitsRegularMessageAndToolEvents(t *testing.T) {
 	}, "regular tool start")
 	toolStart := events[toolStartIdx]
 	toolEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolEnd &&
+		return event.Type == domainevent.TypeToolCallCompleted &&
 			event.ToolCallID == "generate-tool-call" &&
 			event.ToolCallRef == toolStart.ToolCallRef &&
 			event.ToolName == "generate_echo" &&
 			strings.Contains(event.ToolResult, "echo:hello")
 	}, "regular tool end")
 	finalIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantText &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "regular-final"
@@ -382,21 +370,21 @@ func TestUnknownToolCallEmitsToolEndWithHandlerResult(t *testing.T) {
 
 	events := runAgentForTest(t, ctx, agent, false)
 	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolStart &&
+		return event.Type == domainevent.TypeToolCallStarted &&
 			event.ToolCallID == "unknown-tool-call" &&
 			event.ToolName == "search" &&
 			event.ToolCallRef != ""
 	}, "unknown tool start")
 	toolStart := events[toolStartIdx]
 	toolEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolEnd &&
+		return event.Type == domainevent.TypeToolCallCompleted &&
 			event.ToolCallID == "unknown-tool-call" &&
 			event.ToolCallRef == toolStart.ToolCallRef &&
 			event.ToolName == "search" &&
 			strings.Contains(event.ToolResult, "does not exist")
 	}, "unknown tool end")
 	finalIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeAssistantText &&
 			event.Role == domainmessage.RoleAssistant &&
 			event.DeltaKind == domainevent.DeltaOutput &&
 			event.Content == "final"
@@ -448,24 +436,24 @@ func TestRunGeneratesToolIdentityWhenModelOmitsToolCallID(t *testing.T) {
 
 	events := runAgentForTest(t, ctx, agent, true)
 	firstArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeToolCallArguments &&
 			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolName == "generated_id_echo" &&
 			event.Content == `{"text":`
 	}, "first generated-id tool args")
 	secondArgsIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageDelta &&
+		return event.Type == domainevent.TypeToolCallArguments &&
 			event.DeltaKind == domainevent.DeltaToolArgs &&
 			event.ToolName == "generated_id_echo" &&
 			event.Content == `"hello"}`
 	}, "second generated-id tool args")
 	messageEndIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeMessageEnd &&
+		return event.Type == domainevent.TypeAssistantCompleted &&
 			len(event.ToolCalls) == 1 &&
 			event.ToolCalls[0].Function.Name == "generated_id_echo"
 	}, "generated-id message end")
 	toolStartIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeToolStart &&
+		return event.Type == domainevent.TypeToolCallStarted &&
 			event.ToolName == "generated_id_echo"
 	}, "generated-id tool start")
 

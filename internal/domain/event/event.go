@@ -8,20 +8,32 @@ import (
 type Type string
 
 const (
-	TypeAgentStart   Type = "agent_start"
-	TypeAgentEnd     Type = "agent_end"
-	TypeTurnStart    Type = "turn_start"
-	TypeTurnEnd      Type = "turn_end"
-	TypeMessageStart Type = "message_start"
-	TypeMessageDelta Type = "message_delta"
-	TypeMessageEnd   Type = "message_end"
-	TypeToolStart    Type = "tool_start"
-	TypeToolUpdate   Type = "tool_update"
-	TypeToolEnd      Type = "tool_end"
-	TypeAction       Type = "action"
-	TypeUsage        Type = "usage"
-	TypeError        Type = "error"
-	TypeMemberUpdate Type = "member_update"
+	TypeAgentStarted       Type = "agent_started"
+	TypeAgentCompleted     Type = "agent_completed"
+	TypeTurnStarted        Type = "turn_started"
+	TypeTurnCompleted      Type = "turn_completed"
+	TypeTurnFailed         Type = "turn_failed"
+	TypeTurnCancelled      Type = "turn_cancelled"
+	TypeUserMessage        Type = "user_message"
+	TypeAssistantStarted   Type = "assistant_started"
+	TypeAssistantReasoning Type = "assistant_reasoning_delta"
+	TypeAssistantText      Type = "assistant_text_delta"
+	TypeAssistantCompleted Type = "assistant_completed"
+	TypeToolCallStarted    Type = "tool_call_started"
+	TypeToolCallArguments  Type = "tool_call_arguments_delta"
+	TypeToolCallResult     Type = "tool_call_result_delta"
+	TypeToolCallCompleted  Type = "tool_call_completed"
+	TypeToolCallFailed     Type = "tool_call_failed"
+	TypeAskRequested       Type = "ask_requested"
+	TypeAskAnswered        Type = "ask_answered"
+	TypeApprovalRequested  Type = "approval_requested"
+	TypeApprovalAnswered   Type = "approval_answered"
+	TypeMemberStarted      Type = "member_started"
+	TypeMemberCompleted    Type = "member_completed"
+	TypeQueueUpdated       Type = "queue_updated"
+	TypeSystemNotice       Type = "system_notice"
+	TypeUsageReported      Type = "usage_reported"
+	TypeError              Type = "error"
 )
 
 type DeltaKind string
@@ -33,20 +45,6 @@ const (
 	DeltaToolResult DeltaKind = "tool_result"
 )
 
-type ActionType string
-
-const (
-	ActionTransfer             ActionType = "transfer"
-	ActionInterrupted          ActionType = "interrupted"
-	ActionExit                 ActionType = "exit"
-	ActionAskQuestions         ActionType = "ask_questions"
-	ActionAskResponse          ActionType = "ask_response"
-	ActionApprovalRequired     ActionType = "approval_required"
-	ActionApprovalDecision     ActionType = "approval_decision"
-	ActionContextCompressStart ActionType = "context_compress_start"
-	ActionContextCompress      ActionType = "context_compress"
-)
-
 type NotifyType string
 
 const (
@@ -56,7 +54,6 @@ const (
 	NotifyQueueUpdated     NotifyType = "queue_updated"
 	NotifyCancelled        NotifyType = "cancelled"
 	NotifyError            NotifyType = "error"
-	NotifyAskQuestions     NotifyType = "ask_questions"
 	NotifyApprovalRequired NotifyType = "approval_required"
 	NotifyConnected        NotifyType = "connected"
 	NotifyPong             NotifyType = "pong"
@@ -71,6 +68,8 @@ type Event struct {
 	RunID            string             `json:"run_id,omitempty"`
 	TurnID           string             `json:"turn_id,omitempty"`
 	MessageID        string             `json:"message_id,omitempty"`
+	BlockID          string             `json:"block_id,omitempty"`
+	BlockType        string             `json:"block_type,omitempty"`
 	ToolCallID       string             `json:"tool_call_id,omitempty"`
 	ToolCallRef      string             `json:"tool_call_ref,omitempty"`
 	ParentToolCallID string             `json:"parent_tool_call_id,omitempty"`
@@ -94,9 +93,39 @@ type Event struct {
 	MemberToolName   string             `json:"member_tool_name,omitempty"`
 	MemberName       string             `json:"member_name,omitempty"`
 	MemberOrder      *int               `json:"member_order,omitempty"`
-	ActionType       ActionType         `json:"action_type,omitempty"`
 	Error            string             `json:"error,omitempty"`
 	PromptTokens     int                `json:"prompt_tokens,omitempty"`
 	CompletionTokens int                `json:"completion_tokens,omitempty"`
 	TotalTokens      int                `json:"total_tokens,omitempty"`
+	Ask              *AskPayload        `json:"ask,omitempty"`
+	Approval         *ApprovalPayload   `json:"approval,omitempty"`
+	Usage            *UsagePayload      `json:"usage,omitempty"`
+	Notice           *NoticePayload     `json:"notice,omitempty"`
+}
+
+type AskPayload struct {
+	ID          string   `json:"id"`
+	Question    string   `json:"question,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	MultiSelect bool     `json:"multi_select,omitempty"`
+	Selected    []string `json:"selected,omitempty"`
+	FreeText    string   `json:"free_text,omitempty"`
+}
+
+type ApprovalPayload struct {
+	ID       string `json:"id,omitempty"`
+	Message  string `json:"message,omitempty"`
+	Decision string `json:"decision,omitempty"`
+}
+
+type UsagePayload struct {
+	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
+type NoticePayload struct {
+	Level   string `json:"level,omitempty"`
+	Message string `json:"message,omitempty"`
+	Code    string `json:"code,omitempty"`
 }

@@ -5,20 +5,32 @@ import domainevent "fkteams/internal/domain/event"
 type EventType = domainevent.Type
 
 const (
-	EventAgentStart   = domainevent.TypeAgentStart
-	EventAgentEnd     = domainevent.TypeAgentEnd
-	EventTurnStart    = domainevent.TypeTurnStart
-	EventTurnEnd      = domainevent.TypeTurnEnd
-	EventMessageStart = domainevent.TypeMessageStart
-	EventMessageDelta = domainevent.TypeMessageDelta
-	EventMessageEnd   = domainevent.TypeMessageEnd
-	EventToolStart    = domainevent.TypeToolStart
-	EventToolUpdate   = domainevent.TypeToolUpdate
-	EventToolEnd      = domainevent.TypeToolEnd
-	EventAction       = domainevent.TypeAction
-	EventUsage        = domainevent.TypeUsage
-	EventError        = domainevent.TypeError
-	EventMemberUpdate = domainevent.TypeMemberUpdate
+	EventAgentStarted       = domainevent.TypeAgentStarted
+	EventAgentCompleted     = domainevent.TypeAgentCompleted
+	EventTurnStarted        = domainevent.TypeTurnStarted
+	EventTurnCompleted      = domainevent.TypeTurnCompleted
+	EventTurnFailed         = domainevent.TypeTurnFailed
+	EventTurnCancelled      = domainevent.TypeTurnCancelled
+	EventUserMessage        = domainevent.TypeUserMessage
+	EventAssistantStarted   = domainevent.TypeAssistantStarted
+	EventAssistantReasoning = domainevent.TypeAssistantReasoning
+	EventAssistantText      = domainevent.TypeAssistantText
+	EventAssistantCompleted = domainevent.TypeAssistantCompleted
+	EventToolCallStarted    = domainevent.TypeToolCallStarted
+	EventToolCallArguments  = domainevent.TypeToolCallArguments
+	EventToolCallResult     = domainevent.TypeToolCallResult
+	EventToolCallCompleted  = domainevent.TypeToolCallCompleted
+	EventToolCallFailed     = domainevent.TypeToolCallFailed
+	EventAskRequested       = domainevent.TypeAskRequested
+	EventAskAnswered        = domainevent.TypeAskAnswered
+	EventApprovalRequested  = domainevent.TypeApprovalRequested
+	EventApprovalAnswered   = domainevent.TypeApprovalAnswered
+	EventMemberStarted      = domainevent.TypeMemberStarted
+	EventMemberCompleted    = domainevent.TypeMemberCompleted
+	EventQueueUpdated       = domainevent.TypeQueueUpdated
+	EventSystemNotice       = domainevent.TypeSystemNotice
+	EventUsageReported      = domainevent.TypeUsageReported
+	EventError              = domainevent.TypeError
 )
 
 type DeltaKind = domainevent.DeltaKind
@@ -30,20 +42,6 @@ const (
 	DeltaToolResult = domainevent.DeltaToolResult
 )
 
-type ActionType = domainevent.ActionType
-
-const (
-	ActionTransfer             = domainevent.ActionTransfer
-	ActionInterrupted          = domainevent.ActionInterrupted
-	ActionExit                 = domainevent.ActionExit
-	ActionAskQuestions         = domainevent.ActionAskQuestions
-	ActionAskResponse          = domainevent.ActionAskResponse
-	ActionApprovalRequired     = domainevent.ActionApprovalRequired
-	ActionApprovalDecision     = domainevent.ActionApprovalDecision
-	ActionContextCompressStart = domainevent.ActionContextCompressStart
-	ActionContextCompress      = domainevent.ActionContextCompress
-)
-
 type NotifyType = domainevent.NotifyType
 
 const (
@@ -53,7 +51,6 @@ const (
 	NotifyQueueUpdated     = domainevent.NotifyQueueUpdated
 	NotifyCancelled        = domainevent.NotifyCancelled
 	NotifyError            = domainevent.NotifyError
-	NotifyAskQuestions     = domainevent.NotifyAskQuestions
 	NotifyApprovalRequired = domainevent.NotifyApprovalRequired
 	NotifyConnected        = domainevent.NotifyConnected
 	NotifyPong             = domainevent.NotifyPong
@@ -61,3 +58,7 @@ const (
 )
 
 type Event = domainevent.Event
+type AskPayload = domainevent.AskPayload
+type ApprovalPayload = domainevent.ApprovalPayload
+type UsagePayload = domainevent.UsagePayload
+type NoticePayload = domainevent.NoticePayload

@@ -73,9 +73,9 @@ func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
 			if event.ToolCall != nil {
 				m.appendHistoryToolCall(event.ToolCall)
 			}
-		case eventlog.MsgTypeAction:
-			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
-				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockSystem, Title: string(event.Action.ActionType), Content: event.Action.Content})
+		case eventlog.MsgTypeNotice:
+			if event.Content != "" {
+				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockSystem, Title: "system_notice", Content: event.Content})
 			}
 		case eventlog.MsgTypeError:
 			if event.Content != "" {
@@ -109,9 +109,9 @@ func (m *runtimeModel) appendHistoryMemberMessage(msg eventlog.AgentMessage) {
 			if event.ToolCall != nil {
 				m.appendHistoryMemberToolCall(member, event.ToolCall)
 			}
-		case eventlog.MsgTypeAction:
-			if event.Action != nil && (event.Action.ActionType != "" || event.Action.Content != "") {
-				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockSystem, Title: string(event.Action.ActionType), Content: event.Action.Content})
+		case eventlog.MsgTypeNotice:
+			if event.Content != "" {
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockSystem, Title: "system_notice", Content: event.Content})
 			}
 		case eventlog.MsgTypeError:
 			if event.Content != "" {

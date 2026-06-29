@@ -430,7 +430,7 @@ func newReplyCollector(mgr *Manager, channelName, chatID string) *replyCollector
 // handleEvent 处理引擎产生的各类事件
 func (rc *replyCollector) handleEvent(event events.Event) error {
 	switch event.Type {
-	case events.EventMessageDelta:
+	case events.EventAssistantText:
 		if event.DeltaKind != "" && event.DeltaKind != events.DeltaOutput {
 			return nil
 		}
@@ -447,12 +447,11 @@ func (rc *replyCollector) handleEvent(event events.Event) error {
 			rc.pendingParts = append(rc.pendingParts, event.Content)
 		}
 		rc.mu.Unlock()
-	case events.EventAction:
-		// 智能体切换时 flush
-		if event.ActionType == events.ActionTransfer {
+	case events.EventSystemNotice:
+		if event.Notice != nil && event.Notice.Code == "transfer" {
 			rc.flush()
 		}
-	case events.EventToolStart:
+	case events.EventToolCallStarted:
 		// 工具调用：flush 之前的文本，按 ToolCall.ID 记录所有工具调用
 		rc.flush()
 		rc.mu.Lock()
@@ -463,7 +462,7 @@ func (rc *replyCollector) handleEvent(event events.Event) error {
 			}
 		}
 		rc.mu.Unlock()
-	case events.EventToolEnd:
+	case events.EventToolCallCompleted:
 		// 工具调用完成：按 ToolCallID 匹配调用，发送摘要
 		rc.mu.Lock()
 		call, found := rc.pendingCalls[event.ToolCallID]
@@ -485,7 +484,7 @@ func (rc *replyCollector) handleEvent(event events.Event) error {
 			summary := "[" + call.name + "] " + call.args + "\n-> " + result
 			rc.send(summary)
 		}
-	case events.EventToolUpdate:
+	case events.EventToolCallResult:
 		rc.mu.Lock()
 		if event.ToolCallID != "" {
 			rc.resultChunks[event.ToolCallID] += event.Content

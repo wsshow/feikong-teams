@@ -106,7 +106,8 @@ func (v *runtimeQueryView) flushPending() {
 }
 
 func runtimeCanCoalesceDelta(event events.Event) bool {
-	return event.Type == events.EventMessageDelta && event.DeltaKind != events.DeltaToolArgs
+	return (event.Type == events.EventAssistantText || event.Type == events.EventAssistantReasoning) &&
+		event.DeltaKind != events.DeltaToolArgs
 }
 
 func runtimeCanMergeDelta(a, b events.Event) bool {

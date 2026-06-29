@@ -87,11 +87,11 @@ func TestHandleSummaryCallbackPersistsAndDispatchesEvent(t *testing.T) {
 	if persisted != "compressed summary" {
 		t.Fatalf("persisted summary = %q, want compressed summary", persisted)
 	}
-	if dispatched.Type != events.EventAction {
-		t.Fatalf("event type = %q, want action", dispatched.Type)
+	if dispatched.Type != events.EventSystemNotice {
+		t.Fatalf("event type = %q, want system notice", dispatched.Type)
 	}
-	if dispatched.ActionType != events.ActionContextCompress {
-		t.Fatalf("action type = %q, want context compress", dispatched.ActionType)
+	if dispatched.Notice == nil || dispatched.Notice.Code != "context_compress" {
+		t.Fatalf("notice = %#v, want context compress", dispatched.Notice)
 	}
 	if dispatched.Detail != "compressed summary" {
 		t.Fatalf("event detail = %q, want compressed summary", dispatched.Detail)

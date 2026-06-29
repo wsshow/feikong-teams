@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 )
 
@@ -21,16 +20,20 @@ type ToolCallRecord struct {
 	Result      string `json:"result"`
 }
 
-type ActionRecord struct {
-	ActionType domainevent.ActionType `json:"action_type"`
-	Content    string                 `json:"content"`
-	Detail     string                 `json:"detail,omitempty"`
-}
-
 type UsageRecord struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
+type AskRecord struct {
+	ID          string   `json:"id,omitempty"`
+	Question    string   `json:"question,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	MultiSelect bool     `json:"multi_select,omitempty"`
+	Selected    []string `json:"selected,omitempty"`
+	FreeText    string   `json:"free_text,omitempty"`
+	Answered    bool     `json:"answered,omitempty"`
 }
 
 type FriendlyError struct {
@@ -58,23 +61,25 @@ type Line struct {
 type MsgEventType string
 
 const (
-	MsgTypeText      MsgEventType = "text"
-	MsgTypeReasoning MsgEventType = "reasoning"
-	MsgTypeToolCall  MsgEventType = "tool_call"
-	MsgTypeAction    MsgEventType = "action"
-	MsgTypeUsage     MsgEventType = "usage"
-	MsgTypeError     MsgEventType = "error"
-	MsgTypeCancelled MsgEventType = "cancelled"
+	MsgTypeText          MsgEventType = "text"
+	MsgTypeReasoning     MsgEventType = "reasoning"
+	MsgTypeToolCall      MsgEventType = "tool_call"
+	MsgTypeAsk           MsgEventType = "ask"
+	MsgTypeNotice        MsgEventType = "notice"
+	MsgTypeUsageReported MsgEventType = "usage"
+	MsgTypeError         MsgEventType = "error"
+	MsgTypeCancelled     MsgEventType = "cancelled"
 )
 
 type MessageEvent struct {
 	Type         MsgEventType          `json:"type"`
 	Sequence     int64                 `json:"sequence,omitempty"`
 	Content      string                `json:"content,omitempty"`
+	Detail       string                `json:"detail,omitempty"`
 	ContentParts []message.ContentPart `json:"content_parts,omitempty"`
 	Error        *FriendlyError        `json:"error,omitempty"`
 	ToolCall     *ToolCallRecord       `json:"tool_call,omitempty"`
-	Action       *ActionRecord         `json:"action,omitempty"`
+	Ask          *AskRecord            `json:"ask,omitempty"`
 	Usage        *UsageRecord          `json:"usage,omitempty"`
 }
 

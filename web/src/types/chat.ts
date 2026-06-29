@@ -16,10 +16,14 @@ export interface MessageEvent {
   content?: string;
   detail?: string;
   tool_call?: ToolCallDTO;
-  action?: {
-    action_type?: string;
-    content?: string;
-    detail?: string;
+  ask?: {
+    id?: string;
+    question?: string;
+    options?: string[];
+    multi_select?: boolean;
+    selected?: string[];
+    free_text?: string;
+    answered?: boolean;
   };
 }
 

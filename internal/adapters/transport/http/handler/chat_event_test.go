@@ -20,7 +20,7 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 	displays := toolmeta.NewRegistry()
 	displays.RegisterAgentToolDisplay(toolName, "Event Flow Member")
 	event := events.NormalizeEvent(events.Event{
-		Type:             events.EventMessageDelta,
+		Type:             events.EventAssistantText,
 		Sequence:         42,
 		CreatedAt:        time.Unix(100, 0).UTC(),
 		MessageID:        "msg_member_1",
@@ -51,13 +51,12 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 	})
 
 	got := convertEventToMapWithResolver(event, displays)
-	requireMapValue(t, got, "type", events.EventMessageDelta)
+	requireMapValue(t, got, "type", events.EventAssistantText)
 	requireMapValue(t, got, "sequence", int64(42))
 	requireMapValue(t, got, "message_id", "msg_member_1")
 	requireMapValue(t, got, "stream_id", "msg_member_1:tool_args")
 	requireMapValue(t, got, "chunk_index", int64(42))
 	requireMapValue(t, got, "delta_kind", events.DeltaToolArgs)
-	requireMapValue(t, got, "delta", `{"request":`)
 	requireMapValue(t, got, "content", `{"request":`)
 	requireMapValue(t, got, "tool_call_id", "tool-call-1")
 	requireMapValue(t, got, "tool_call_ref", "ref-tool-call-1")
@@ -90,7 +89,7 @@ func TestConvertEventToMapKeepsFrontendStreamAndMemberMetadata(t *testing.T) {
 
 func TestConvertEventToMapOmitsStreamMetadataForNonDeltaEvents(t *testing.T) {
 	got := convertEventToMap(events.Event{
-		Type:      events.EventMessageEnd,
+		Type:      events.EventAssistantCompleted,
 		Sequence:  7,
 		MessageID: "msg_1",
 		Role:      message.RoleAssistant,
@@ -107,7 +106,7 @@ func TestConvertEventToMapOmitsStreamMetadataForNonDeltaEvents(t *testing.T) {
 
 func TestConvertEventToMapKeepsRunAndTurnID(t *testing.T) {
 	got := convertEventToMap(events.Event{
-		Type:   events.EventMessageStart,
+		Type:   events.EventAssistantStarted,
 		RunID:  "run-1",
 		TurnID: "run-1:turn:1",
 		Role:   message.RoleAssistant,
@@ -137,7 +136,7 @@ func TestConvertEventToMapAddsFriendlyErrorFields(t *testing.T) {
 func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
 	toolIndex := 0
 	got := convertEventToMap(events.Event{
-		Type:          events.EventToolStart,
+		Type:          events.EventToolCallStarted,
 		ToolCallID:    "tool-call-1",
 		ToolCallRef:   "ref-tool-call-1",
 		ToolName:      "single_tool",
@@ -168,7 +167,7 @@ func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) 
 
 func TestConvertEventToMapDoesNotExposeSingularToolCallForMultipleCalls(t *testing.T) {
 	got := convertEventToMap(events.Event{
-		Type: events.EventMessageEnd,
+		Type: events.EventAssistantCompleted,
 		ToolCalls: []message.ToolCall{
 			{ID: "tool-call-1", Function: message.FunctionCall{Name: "first_tool"}},
 			{ID: "tool-call-2", Function: message.FunctionCall{Name: "second_tool"}},
@@ -186,7 +185,7 @@ func TestConvertEventToMapDoesNotExposeSingularToolCallForMultipleCalls(t *testi
 
 func TestConvertEventToMapUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.T) {
 	got := convertEventToMap(events.Event{
-		Type: events.EventMessageEnd,
+		Type: events.EventAssistantCompleted,
 		ToolCalls: []message.ToolCall{
 			{ID: "tool-call-1", Function: message.FunctionCall{Name: "first_tool"}},
 			{ID: "tool-call-2", Function: message.FunctionCall{Name: "second_tool"}},
@@ -289,7 +288,7 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 			t.Fatal("timed out waiting for ask notification")
 		case <-ticker.C:
 			for _, item := range stream.EventsSince(0) {
-				if item.Data["type"] == events.NotifyAskQuestions {
+				if item.Data["type"] == events.EventAskRequested {
 					askPayload = item.Data
 					break
 				}
@@ -297,7 +296,7 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 		}
 	}
 
-	requireMapValue(t, askPayload, "type", events.NotifyAskQuestions)
+	requireMapValue(t, askPayload, "type", events.EventAskRequested)
 	requireMapValue(t, askPayload, "session_id", "session-member-ask-order")
 	requireMapValue(t, askPayload, "ask_id", "ask-order-1")
 	requireMapValue(t, askPayload, "detail", "ask-order-1")

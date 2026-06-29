@@ -108,8 +108,7 @@ export function MessageList() {
                 onAskAnswered={(ask, selected, freeText) => {
                   setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
                   dispatch(chatActions.receiveEvent({
-                    type: "action",
-                    action_type: "ask_response",
+                    type: "ask_answered",
                     session_id: ask.sessionID || activeSessionID,
                     ask_id: ask.id,
                     detail: ask.id,
@@ -130,8 +129,7 @@ export function MessageList() {
             onAnswered={(selected, freeText) => {
               setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
               dispatch(chatActions.receiveEvent({
-                type: "action",
-                action_type: "ask_response",
+                type: "ask_answered",
                 session_id: ask.sessionID || activeSessionID,
                 ask_id: ask.id,
                 detail: ask.id,
@@ -295,12 +293,12 @@ function assistantMessageParts(
   const parts: MessageRenderPart[] = [];
   const renderedTools = new Set<string>();
   for (const event of message.events || []) {
-    if (event.type === "message_delta" && event.delta_kind === "reasoning" && event.role !== "tool") {
-      appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || event.delta || ""));
+    if (isReasoningDelta(event) && event.role !== "tool") {
+      appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || ""));
       continue;
     }
-    if (event.type === "message_delta" && (event.delta_kind === "output" || event.delta_kind === "" || !event.delta_kind) && event.role !== "tool") {
-      appendMessagePart(parts, "text", String(event.content || event.delta || ""));
+    if (isTextDelta(event) && event.role !== "tool") {
+      appendMessagePart(parts, "text", String(event.content || ""));
       continue;
     }
     const ask = askFromToolEvent(event, asks);
@@ -646,7 +644,7 @@ function eventDisplayKey(event: ChatEvent) {
     event.tool_call_ref || "",
     event.tool_call_id || "",
     event.ask_id || event.detail || "",
-    event.content || event.delta || "",
+    event.content || "",
   ].join(":");
 }
 
@@ -711,13 +709,13 @@ function collectReasoningBlocks(events: ChatEvent[]) {
   for (const event of events) {
     if (isMemberActivityEvent(event)) continue;
     const keys = reasoningKeys(event);
-    if (event.type !== "message_delta" || event.delta_kind !== "reasoning" || event.role === "tool") {
+    if (!isReasoningDelta(event) || event.role === "tool") {
       for (const key of keys) {
         if ((blocks.get(key) || []).length > 0) closed.add(key);
       }
       continue;
     }
-    const content = String(event.reasoning_content || event.content || event.delta || "");
+    const content = String(event.reasoning_content || event.content || "");
     if (!content) continue;
     for (const key of keys) {
       const current = blocks.get(key) || [];
@@ -798,11 +796,11 @@ function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>)
 }
 
 function isAskQuestionEvent(event: ChatEvent) {
-  return event.type === "ask_questions" || event.action_type === "ask_questions";
+  return event.type === "ask_requested";
 }
 
 function isAskResponseEvent(event: ChatEvent) {
-  return event.type === "ask_response" || event.action_type === "ask_response";
+  return event.type === "ask_answered";
 }
 
 function askEventID(event: ChatEvent) {
@@ -865,7 +863,7 @@ function toolFromEvent(event: ChatEvent, tools: ToolActivity[]) {
       ...directTool,
       ref: directTool.ref || event.tool_call_ref,
       id: directTool.id || event.tool_call_id,
-      status: event.type === "message_end" ? "completed" : "running",
+      status: isAssistantCompleted(event) ? "completed" : "running",
       message_id: event.message_id,
     };
   }
@@ -876,6 +874,26 @@ function toolFromEvent(event: ChatEvent, tools: ToolActivity[]) {
 
 function hasToolEvent(event: ChatEvent) {
   return Boolean(event.tool_calls?.length || event.tool_call || event.tool_name || event.tool_call_ref || event.tool_call_id);
+}
+
+function isReasoningDelta(event: ChatEvent) {
+  return event.type === "assistant_reasoning_delta";
+}
+
+function isTextDelta(event: ChatEvent) {
+  return event.type === "assistant_text_delta";
+}
+
+function isAssistantCompleted(event: ChatEvent) {
+  return event.type === "assistant_completed";
+}
+
+function isToolCompleted(event: ChatEvent) {
+  return event.type === "tool_call_completed";
+}
+
+function isToolResultEvent(event: ChatEvent) {
+  return event.type === "tool_call_result_delta" || event.type === "tool_call_completed" || event.delta_kind === "tool_result";
 }
 
 function findMatchingAsk(question: string, asks: AskActivity[], sequence?: number) {
@@ -923,7 +941,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         ...tool,
         ref: tool.ref || event.tool_call_ref,
         id: tool.id || event.tool_call_id,
-        status: event.type === "message_end" ? "completed" : "pending",
+        status: isAssistantCompleted(event) ? "completed" : "pending",
         member_name: event.member_name || tool.member_name,
         message_id: event.message_id,
       });
@@ -935,7 +953,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         ...event.tool_call,
         ref: event.tool_call.ref || event.tool_call_ref,
         id: event.tool_call.id || event.tool_call_id,
-        status: event.type === "message_end" ? "completed" : "pending",
+        status: isAssistantCompleted(event) ? "completed" : "pending",
         member_name: event.member_name || event.tool_call.member_name,
         message_id: event.message_id,
       });
@@ -951,18 +969,18 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         kind: event.tool_kind || current?.kind,
         target: event.tool_target || current?.target,
         member_name: event.member_name || current?.member_name,
-        status: event.type === "tool_end" ? "completed" : event.type === "error" ? "error" : current?.status || "running",
+        status: isToolCompleted(event) ? "completed" : event.type === "tool_call_failed" || event.type === "error" ? "error" : current?.status || "running",
         message_id: event.message_id || current?.message_id,
       });
       const next = result.get(key)!;
-      const content = String(event.tool_args || event.content || event.delta || "");
+      const content = String(event.tool_args || event.content || "");
       if (event.delta_kind === "tool_args" && content) {
         next.arguments = appendText(next.arguments, content);
       }
-      if ((event.type === "tool_start" || event.delta_kind === "tool_args") && content && !next.arguments) {
+      if ((event.type === "tool_call_started" || event.delta_kind === "tool_args") && content && !next.arguments) {
         next.arguments = content;
       }
-      if ((event.type === "tool_update" || event.type === "tool_end" || event.delta_kind === "tool_result" || event.role === "tool") && content) {
+      if ((isToolResultEvent(event) || event.role === "tool") && content) {
         next.result = appendText(next.result, content);
       }
     }
@@ -982,11 +1000,10 @@ function collectMemberActivities(events: ChatEvent[]) {
       let preview = "";
       let reasoning = "";
       for (const event of memberEvents) {
-        const content = String(event.content || event.delta || "");
+        const content = String(event.content || "");
         if (!content) continue;
-        if (event.type === "message_delta" && event.delta_kind === "reasoning") reasoning = appendText(reasoning, content);
-        if (event.type === "message_delta" && event.delta_kind === "output") preview = appendText(preview, content);
-        if (event.type === "action" && event.action_type !== "ask_response") preview = appendText(preview, content);
+        if (isReasoningDelta(event)) reasoning = appendText(reasoning, content);
+        if (isTextDelta(event)) preview = appendText(preview, content);
       }
       return {
         id,

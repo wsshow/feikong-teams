@@ -40,7 +40,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 			m.activeReason = -1
 			m.appendBlock(runtimeBlockSystem, "转向消息", event.Content)
 		}
-	case events.EventMessageDelta:
+	case events.EventAssistantText, events.EventAssistantReasoning, events.EventToolCallArguments:
 		switch event.DeltaKind {
 		case events.DeltaReasoning:
 			content := event.ReasoningContent
@@ -66,7 +66,7 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 		default:
 			m.appendOutput(agent, event.Content)
 		}
-	case events.EventToolStart:
+	case events.EventToolCallStarted:
 		m.activeOutput = -1
 		m.activeReason = -1
 		for i, tool := range events.ToolCallsFromEvent(event) {
@@ -85,18 +85,18 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 			key := events.ToolCallRefAt(event, tool, i)
 			m.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
-	case events.EventToolEnd, events.EventToolUpdate:
+	case events.EventToolCallCompleted, events.EventToolCallResult:
 		m.activeOutput = -1
 		m.activeReason = -1
 		if m.applyAgentToolResult(event) {
 			return
 		}
-		m.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == events.EventToolUpdate)
-	case events.EventAction:
+		m.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == events.EventToolCallResult)
+	case events.EventSystemNotice:
 		m.activeOutput = -1
 		m.activeReason = -1
-		if event.ActionType != "" || event.Content != "" {
-			m.appendBlock(runtimeBlockSystem, string(event.ActionType), event.Content)
+		if event.Content != "" {
+			m.appendBlock(runtimeBlockSystem, "system_notice", event.Content)
 		}
 	case events.EventError:
 		msg := event.Error
@@ -131,7 +131,7 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 		agent = member.Name
 	}
 	switch event.Type {
-	case events.EventMessageDelta:
+	case events.EventAssistantText, events.EventAssistantReasoning, events.EventToolCallArguments:
 		switch event.DeltaKind {
 		case events.DeltaReasoning:
 			content := event.ReasoningContent
@@ -146,12 +146,12 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 		default:
 			member.appendOutput(agent, event.Content)
 		}
-	case events.EventMessageEnd:
+	case events.EventAssistantCompleted:
 		if event.Content != "" && len(member.Blocks) == 0 {
 			member.appendOutput(agent, event.Content)
 		}
 		member.Status = "done"
-	case events.EventToolStart:
+	case events.EventToolCallStarted:
 		member.ActiveOutput = -1
 		member.ActiveReason = -1
 		for i, tool := range events.ToolCallsFromEvent(event) {
@@ -159,10 +159,10 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 			display := toolmeta.FormatToolDisplay(tool.Function.Name)
 			member.upsertToolCall(key, display.DisplayName, tool.Function.Arguments, tui.ToolStatusRunning)
 		}
-	case events.EventToolEnd, events.EventToolUpdate:
+	case events.EventToolCallCompleted, events.EventToolCallResult:
 		member.ActiveOutput = -1
 		member.ActiveReason = -1
-		member.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == events.EventToolUpdate)
+		member.upsertToolResult(runtimeToolEventKey(event), event.ToolName, event.Content, tui.ToolStatusDone, event.Type == events.EventToolCallResult)
 	case events.EventError:
 		msg := event.Error
 		if msg == "" {
@@ -175,13 +175,12 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 			member.markDirty()
 			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockError, Title: agent, Content: msg})
 		}
-	case events.EventAction:
-		if event.ActionType == events.ActionExit {
-			member.Status = "done"
-		}
+	case events.EventAgentCompleted:
+		member.Status = "done"
+	case events.EventSystemNotice:
 		if event.Content != "" {
 			member.markDirty()
-			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockSystem, Title: string(event.ActionType), Content: event.Content})
+			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockSystem, Title: "system_notice", Content: event.Content})
 		}
 	}
 	m.syncMemberSummary(member)
@@ -210,7 +209,7 @@ func (m *runtimeModel) applyAgentToolResult(event events.Event) bool {
 	}
 	member.ActiveOutput = -1
 	member.ActiveReason = -1
-	if event.Type == events.EventToolUpdate {
+	if event.Type == events.EventToolCallResult {
 		member.Status = "running"
 	} else {
 		member.Status = "done"
@@ -307,7 +306,7 @@ func runtimeAgentToolEventKey(event events.Event) string {
 }
 
 func runtimeLikelyPendingAgentToolArgs(event events.Event) bool {
-	if event.Type != events.EventMessageDelta || event.DeltaKind != events.DeltaToolArgs {
+	if (event.Type != events.EventAssistantText && event.Type != events.EventToolCallArguments) || event.DeltaKind != events.DeltaToolArgs {
 		return false
 	}
 	return event.ToolCallID != "" || event.ToolCallRef != ""

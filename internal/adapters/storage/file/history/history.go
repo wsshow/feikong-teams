@@ -10,24 +10,22 @@ import (
 )
 
 type Event = events.Event
-type ActionType = events.ActionType
 
 const (
-	EventMessageDelta = events.EventMessageDelta
-	EventToolStart    = events.EventToolStart
-	EventToolUpdate   = events.EventToolUpdate
-	EventToolEnd      = events.EventToolEnd
-	EventAction       = events.EventAction
-	EventUsage        = events.EventUsage
-	EventError        = events.EventError
-
-	ActionContextCompress = events.ActionContextCompress
+	EventAssistantReasoning = events.EventAssistantReasoning
+	EventAssistantText      = events.EventAssistantText
+	EventToolCallStarted    = events.EventToolCallStarted
+	EventToolCallResult     = events.EventToolCallResult
+	EventToolCallCompleted  = events.EventToolCallCompleted
+	EventSystemNotice       = events.EventSystemNotice
+	EventUsageReported      = events.EventUsageReported
+	EventError              = events.EventError
 )
 
 const HistoryFileName = "history.jsonl"
 
 type ToolCallRecord = domainhistory.ToolCallRecord
-type ActionRecord = domainhistory.ActionRecord
+type AskRecord = domainhistory.AskRecord
 type UsageRecord = domainhistory.UsageRecord
 type FriendlyError = domainhistory.FriendlyError
 type HistoryLine = domainhistory.Line
@@ -39,13 +37,14 @@ type AttachmentRef = domainhistory.AttachmentRef
 const historyLineTypeMessageEvent = "message_event"
 
 const (
-	MsgTypeText      = domainhistory.MsgTypeText
-	MsgTypeReasoning = domainhistory.MsgTypeReasoning
-	MsgTypeToolCall  = domainhistory.MsgTypeToolCall
-	MsgTypeAction    = domainhistory.MsgTypeAction
-	MsgTypeUsage     = domainhistory.MsgTypeUsage
-	MsgTypeError     = domainhistory.MsgTypeError
-	MsgTypeCancelled = domainhistory.MsgTypeCancelled
+	MsgTypeText          = domainhistory.MsgTypeText
+	MsgTypeReasoning     = domainhistory.MsgTypeReasoning
+	MsgTypeToolCall      = domainhistory.MsgTypeToolCall
+	MsgTypeAsk           = domainhistory.MsgTypeAsk
+	MsgTypeNotice        = domainhistory.MsgTypeNotice
+	MsgTypeUsageReported = domainhistory.MsgTypeUsageReported
+	MsgTypeError         = domainhistory.MsgTypeError
+	MsgTypeCancelled     = domainhistory.MsgTypeCancelled
 )
 
 // NoisyToolPrefixes 定义高输出量噪声工具的名称前缀列表。

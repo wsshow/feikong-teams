@@ -70,7 +70,7 @@ func TestReplyCollectorFlushesTextOnAgentTransfer(t *testing.T) {
 	rc := newReplyCollector(manager, channel.name, "chat-1")
 
 	if err := rc.handleEvent(events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		AgentName: "assistant",
 		DeltaKind: events.DeltaReasoning,
 		Content:   "ignored",
@@ -78,7 +78,7 @@ func TestReplyCollectorFlushesTextOnAgentTransfer(t *testing.T) {
 		t.Fatalf("handle reasoning delta returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		AgentName: "assistant",
 		DeltaKind: events.DeltaOutput,
 		Content:   "hello",
@@ -86,7 +86,7 @@ func TestReplyCollectorFlushesTextOnAgentTransfer(t *testing.T) {
 		t.Fatalf("handle first delta returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		AgentName: "assistant",
 		DeltaKind: events.DeltaOutput,
 		Content:   " world",
@@ -94,8 +94,9 @@ func TestReplyCollectorFlushesTextOnAgentTransfer(t *testing.T) {
 		t.Fatalf("handle second delta returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:       events.EventAction,
-		ActionType: events.ActionTransfer,
+		Type:    events.EventSystemNotice,
+		Notice:  &events.NoticePayload{Code: "transfer"},
+		Content: "transfer",
 	}); err != nil {
 		t.Fatalf("handle transfer returned error: %v", err)
 	}
@@ -125,13 +126,13 @@ func TestReplyCollectorSendsToolSummaryFromEnd(t *testing.T) {
 		},
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:     events.EventToolStart,
+		Type:     events.EventToolCallStarted,
 		ToolCall: toolCall,
 	}); err != nil {
 		t.Fatalf("handle tool start returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:       events.EventToolEnd,
+		Type:       events.EventToolCallCompleted,
 		ToolCallID: "call-1",
 		Content:    "晴天",
 	}); err != nil {
@@ -154,7 +155,7 @@ func TestReplyCollectorFlushesToolUpdateChunksBeforeText(t *testing.T) {
 	rc := newReplyCollector(manager, channel.name, "chat-1")
 
 	if err := rc.handleEvent(events.Event{
-		Type: events.EventToolStart,
+		Type: events.EventToolCallStarted,
 		ToolCalls: []domainmessage.ToolCall{
 			{
 				ID: "call-1",
@@ -168,21 +169,21 @@ func TestReplyCollectorFlushesToolUpdateChunksBeforeText(t *testing.T) {
 		t.Fatalf("handle tool start returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:       events.EventToolUpdate,
+		Type:       events.EventToolCallResult,
 		ToolCallID: "call-1",
 		Content:    "part-1 ",
 	}); err != nil {
 		t.Fatalf("handle first tool update returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:       events.EventToolUpdate,
+		Type:       events.EventToolCallResult,
 		ToolCallID: "call-1",
 		Content:    "part-2",
 	}); err != nil {
 		t.Fatalf("handle second tool update returned error: %v", err)
 	}
 	if err := rc.handleEvent(events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		DeltaKind: events.DeltaOutput,
 		Content:   "done",
 	}); err != nil {

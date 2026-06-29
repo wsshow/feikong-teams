@@ -130,12 +130,12 @@ const chatSlice = createSlice({
           state.messages.push(message);
         }
         const content = eventText(event);
-        if (event.type === "message_delta" && isOutputDelta(event) && content) {
+        if (isAssistantTextDelta(event) && content) {
           message.content += content;
         }
         message.events.push(event);
       }
-      if (event.type === "action" && event.action_type !== "ask_response") {
+      if (event.type === "system_notice") {
         state.statusText = eventText(event) || state.statusText;
       }
       if (event.type === "error") {
@@ -173,7 +173,7 @@ const chatSlice = createSlice({
 });
 
 function eventText(event: ChatEvent) {
-  return String(event.content || event.delta || event.message || "");
+  return String(event.content || event.message || "");
 }
 
 function sameEventIdentity(left: ChatEvent, right: ChatEvent) {
@@ -186,11 +186,8 @@ function shouldAttachAssistantMessage(event: ChatEvent) {
   if (isMemberActivityEvent(event)) {
     return false;
   }
-  if (event.type === "message_start") {
-    return event.role !== "tool";
-  }
-  if (event.type === "message_delta") {
-    return event.role !== "tool" && event.delta_kind !== "tool_args" && event.delta_kind !== "tool_result";
+  if (event.type === "assistant_started" || event.type === "assistant_reasoning_delta" || event.type === "assistant_text_delta" || event.type === "assistant_completed") {
+    return true;
   }
   if (hasToolActivity(event)) {
     return true;
@@ -208,7 +205,11 @@ function assistantMessageKey(event: ChatEvent) {
 }
 
 function isOutputDelta(event: ChatEvent) {
-  return event.delta_kind === "output" || event.delta_kind === "";
+  return event.delta_kind === "output" || event.delta_kind === "" || event.delta_kind === undefined;
+}
+
+function isAssistantTextDelta(event: ChatEvent) {
+  return event.type === "assistant_text_delta" && isOutputDelta(event);
 }
 
 function hasToolActivity(event: ChatEvent) {

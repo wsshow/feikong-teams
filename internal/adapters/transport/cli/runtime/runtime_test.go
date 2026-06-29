@@ -224,7 +224,7 @@ func TestRuntimeMemberWaitingStatusSurvivesMemberEvents(t *testing.T) {
 		Question:  "Choose one",
 	})
 	model.applyEvent(events.Event{
-		Type:         events.EventMessageDelta,
+		Type:         events.EventAssistantText,
 		DeltaKind:    events.DeltaReasoning,
 		Content:      "thinking",
 		MemberCallID: "member-1",
@@ -553,8 +553,8 @@ func TestRuntimeReasoningChunksAreMerged(t *testing.T) {
 		exitSignals: make(chan os.Signal, 1),
 	})
 
-	model.applyEvent(events.Event{Type: events.EventMessageDelta, DeltaKind: events.DeltaReasoning, Content: "用户"})
-	model.applyEvent(events.Event{Type: events.EventMessageDelta, DeltaKind: events.DeltaReasoning, Content: "问好"})
+	model.applyEvent(events.Event{Type: events.EventAssistantReasoning, DeltaKind: events.DeltaReasoning, Content: "用户"})
+	model.applyEvent(events.Event{Type: events.EventAssistantReasoning, DeltaKind: events.DeltaReasoning, Content: "问好"})
 
 	var reasoningBlocks []runtimeBlock
 	for _, block := range model.blocks {
@@ -632,7 +632,7 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 	secondIndex := 1
 
 	model.applyEvent(events.Event{
-		Type:      events.EventToolStart,
+		Type:      events.EventToolCallStarted,
 		AgentName: "coordinator",
 		ToolCalls: []domainmessage.ToolCall{
 			{
@@ -654,7 +654,7 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 		},
 	})
 	model.applyEvent(events.Event{
-		Type:         events.EventMessageDelta,
+		Type:         events.EventAssistantText,
 		DeltaKind:    events.DeltaOutput,
 		AgentName:    "researcher",
 		Content:      "second output",
@@ -662,7 +662,7 @@ func TestRuntimeParallelSameAgentMembersDoNotMix(t *testing.T) {
 		MemberName:   "researcher",
 	})
 	model.applyEvent(events.Event{
-		Type:         events.EventMessageDelta,
+		Type:         events.EventAssistantText,
 		DeltaKind:    events.DeltaOutput,
 		AgentName:    "researcher",
 		Content:      "first output",
@@ -698,7 +698,7 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 	callIndex := 0
 
 	model.applyEvent(events.Event{
-		Type:          events.EventMessageDelta,
+		Type:          events.EventAssistantText,
 		DeltaKind:     events.DeltaToolArgs,
 		ToolName:      "ask_fkagent_researcher",
 		ToolCallID:    "call_full",
@@ -706,7 +706,7 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 		Content:       "{",
 	})
 	model.applyEvent(events.Event{
-		Type:          events.EventMessageDelta,
+		Type:          events.EventAssistantText,
 		DeltaKind:     events.DeltaToolArgs,
 		ToolName:      "ask_fkagent_researcher",
 		ToolCallID:    "call_full",
@@ -718,7 +718,7 @@ func TestRuntimeAgentMemberStartsAfterCompleteToolCall(t *testing.T) {
 	}
 
 	model.applyEvent(events.Event{
-		Type:      events.EventToolStart,
+		Type:      events.EventToolCallStarted,
 		AgentName: "coordinator",
 		ToolCalls: []domainmessage.ToolCall{{
 			ID:    "call_full",
@@ -748,7 +748,7 @@ func TestRuntimeUnnamedAgentArgsDeltaDoesNotRenderToolBlock(t *testing.T) {
 	blockCount := len(model.blocks)
 
 	model.applyEvent(events.Event{
-		Type:        events.EventMessageDelta,
+		Type:        events.EventAssistantText,
 		DeltaKind:   events.DeltaToolArgs,
 		ToolCallRef: "tool|stream|seq:1|coordinator|idx:0",
 		Content:     `{"request":"partial`,

@@ -211,9 +211,7 @@ func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) (
 				events[eventIndex].ToolCall.Arguments = ""
 				events[eventIndex].ToolCall.Result = ""
 			}
-			if events[eventIndex].Action != nil {
-				events[eventIndex].Action.Detail = ""
-			}
+			events[eventIndex].Detail = ""
 		}
 		messages[msgIndex].Events = events
 	}

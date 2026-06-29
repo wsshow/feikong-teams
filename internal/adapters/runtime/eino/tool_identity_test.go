@@ -22,7 +22,7 @@ func TestToolIdentityAttachMapsUnknownResultIDToPendingCall(t *testing.T) {
 	tracker.rememberResult(call.Function.Name, call.ID)
 
 	event := &domainevent.Event{
-		Type:       domainevent.TypeToolEnd,
+		Type:       domainevent.TypeToolCallCompleted,
 		ToolCallID: "provider-real-id",
 		ToolName:   "echo",
 	}

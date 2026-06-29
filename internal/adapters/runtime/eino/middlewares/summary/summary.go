@@ -55,11 +55,15 @@ func handleSummaryCallback(ctx context.Context, after adk.ChatModelAgentState) e
 		cb(summaryText)
 	}
 	_ = events.DispatchEvent(ctx, events.Event{
-		Type:       events.EventAction,
-		AgentName:  "系统",
-		ActionType: events.ActionContextCompress,
-		Content:    "对话上下文已压缩，旧消息已被总结摘要替代",
-		Detail:     summaryText,
+		Type:      events.EventSystemNotice,
+		AgentName: "系统",
+		Content:   "对话上下文已压缩，旧消息已被总结摘要替代",
+		Detail:    summaryText,
+		Notice: &events.NoticePayload{
+			Level:   "info",
+			Code:    "context_compress",
+			Message: "对话上下文已压缩，旧消息已被总结摘要替代",
+		},
 	})
 	return nil
 }

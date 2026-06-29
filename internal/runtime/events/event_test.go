@@ -24,7 +24,7 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 	})
 
 	go func() {
-		firstDone <- DispatchEvent(slowCtx, Event{Type: EventMessageDelta, Content: "slow"})
+		firstDone <- DispatchEvent(slowCtx, Event{Type: EventAssistantText, Content: "slow"})
 	}()
 
 	select {
@@ -34,7 +34,7 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 	}
 
 	go func() {
-		fastDone <- DispatchEvent(fastCtx, Event{Type: EventMessageDelta, Content: "fast"})
+		fastDone <- DispatchEvent(fastCtx, Event{Type: EventAssistantText, Content: "fast"})
 	}()
 
 	select {
@@ -53,7 +53,7 @@ func TestDispatchEventDoesNotSerializeCallbacksGlobally(t *testing.T) {
 }
 
 func TestNormalizeEventFillsCommonMetadata(t *testing.T) {
-	event := NormalizeEvent(Event{Type: EventMessageDelta, RunID: "run_1", Content: "hello"})
+	event := NormalizeEvent(Event{Type: EventAssistantText, RunID: "run_1", Content: "hello"})
 	if event.EventID == "" {
 		t.Fatal("event id was not set")
 	}
@@ -69,7 +69,7 @@ func TestNormalizeEventFillsCommonMetadata(t *testing.T) {
 }
 
 func TestIsMemberEventUsesMemberCallID(t *testing.T) {
-	event := NormalizeEvent(Event{Type: EventMessageDelta, MemberCallID: "call_1"})
+	event := NormalizeEvent(Event{Type: EventAssistantText, MemberCallID: "call_1"})
 	if !IsMemberEvent(event) {
 		t.Fatal("member event was not detected")
 	}
@@ -89,7 +89,7 @@ func TestDispatchEventInvokesHooksBeforeCallback(t *testing.T) {
 		got = event
 		return nil
 	})
-	if err := DispatchEvent(ctx, Event{Type: EventMessageDelta, Content: "original"}); err != nil {
+	if err := DispatchEvent(ctx, Event{Type: EventAssistantText, Content: "original"}); err != nil {
 		t.Fatalf("dispatch event: %v", err)
 	}
 	if got.Content != "hooked" {
@@ -109,7 +109,7 @@ func TestDispatchEventHookCanSkipCallback(t *testing.T) {
 		called = true
 		return nil
 	})
-	if err := DispatchEvent(ctx, Event{Type: EventMessageDelta, Content: "hello"}); err != nil {
+	if err := DispatchEvent(ctx, Event{Type: EventAssistantText, Content: "hello"}); err != nil {
 		t.Fatalf("dispatch event: %v", err)
 	}
 	if called {
@@ -132,7 +132,7 @@ func TestDispatchAdapterAndNonInteractiveContext(t *testing.T) {
 		return nil
 	})
 	sink := Dispatch(ctx)
-	if err := sink(Event{Type: EventMessageDelta, Content: "hello"}); err != nil {
+	if err := sink(Event{Type: EventAssistantText, Content: "hello"}); err != nil {
 		t.Fatalf("dispatch sink: %v", err)
 	}
 	if got.Content != "hello" || got.EventID == "" {
@@ -145,7 +145,7 @@ func TestDispatchEventReturnsCallbackErrors(t *testing.T) {
 	ctx := WithCallback(context.Background(), func(event Event) error {
 		return callbackErr
 	})
-	if err := DispatchEvent(ctx, Event{Type: EventMessageDelta}); !errors.Is(err, callbackErr) {
+	if err := DispatchEvent(ctx, Event{Type: EventAssistantText}); !errors.Is(err, callbackErr) {
 		t.Fatalf("callback error = %v, want %v", err, callbackErr)
 	}
 }

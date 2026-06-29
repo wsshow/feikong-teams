@@ -74,14 +74,14 @@ func TestToolCallsFromEventPrependsSingleToolCall(t *testing.T) {
 
 func TestValidateEventContractRequiresStableToolIdentity(t *testing.T) {
 	if err := ValidateEventContract(Event{
-		Type:     EventToolStart,
+		Type:     EventToolCallStarted,
 		ToolName: "search",
 	}); err == nil {
 		t.Fatalf("tool_start without identity should fail")
 	}
 
 	if err := ValidateEventContract(Event{
-		Type:        EventToolStart,
+		Type:        EventToolCallStarted,
 		ToolCallID:  "call_1",
 		ToolCallRef: "tool_call:call_1",
 		ToolName:    "search",
@@ -92,8 +92,9 @@ func TestValidateEventContractRequiresStableToolIdentity(t *testing.T) {
 
 func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 	if err := ValidateEventContract(Event{
-		Type: EventMessageEnd,
-		Role: message.RoleAssistant,
+		Type:      EventAssistantCompleted,
+		MessageID: "msg_1",
+		Role:      message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			ID: "call_1",
 			Function: message.FunctionCall{
@@ -105,8 +106,9 @@ func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 	}
 
 	if err := ValidateEventContract(Event{
-		Type: EventMessageEnd,
-		Role: message.RoleAssistant,
+		Type:      EventAssistantCompleted,
+		MessageID: "msg_1",
+		Role:      message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			ID: "call_1",
 			Function: message.FunctionCall{
@@ -121,11 +123,10 @@ func TestValidateEventContractRequiresMessageEndToolCallRefs(t *testing.T) {
 
 func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing.T) {
 	invalidEvents := []Event{
-		{Type: EventToolUpdate, ToolCallID: "call_1"},
-		{Type: EventToolEnd, ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, DeltaKind: DeltaToolArgs, ToolCallID: "call_1"},
-		{Type: EventMessageDelta, DeltaKind: DeltaToolResult, ToolCallRef: "ref_1"},
-		{Type: EventMessageEnd, Role: message.RoleTool, ToolCallID: "call_1"},
+		{Type: EventToolCallResult, ToolCallID: "call_1"},
+		{Type: EventToolCallCompleted, ToolCallRef: "ref_1"},
+		{Type: EventToolCallArguments, DeltaKind: DeltaToolArgs, ToolCallID: "call_1"},
+		{Type: EventToolCallResult, DeltaKind: DeltaToolResult, ToolCallRef: "ref_1"},
 	}
 	for i, event := range invalidEvents {
 		if err := ValidateEventContract(event); err == nil {
@@ -134,12 +135,10 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 	}
 
 	validEvents := []Event{
-		{Type: EventToolUpdate, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventToolEnd, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, Role: message.RoleAssistant, DeltaKind: DeltaToolArgs, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, Role: message.RoleTool, DeltaKind: DeltaToolResult, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageEnd, Role: message.RoleTool, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventMessageDelta, Role: message.RoleAssistant, DeltaKind: DeltaOutput},
+		{Type: EventToolCallResult, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventToolCallCompleted, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventToolCallArguments, ToolName: "search", DeltaKind: DeltaToolArgs, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventAssistantText, MessageID: "msg_1", Role: message.RoleAssistant, DeltaKind: DeltaOutput},
 	}
 	for i, event := range validEvents {
 		if err := ValidateEventContract(event); err != nil {
@@ -150,8 +149,9 @@ func TestValidateEventContractRequiresToolIdentityForUpdatesAndDeltas(t *testing
 
 func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T) {
 	if err := ValidateEventContract(Event{
-		Type: EventMessageEnd,
-		Role: message.RoleAssistant,
+		Type:      EventAssistantCompleted,
+		MessageID: "msg_1",
+		Role:      message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			Function: message.FunctionCall{Name: "continue_output"},
 		}},
@@ -160,8 +160,9 @@ func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T)
 	}
 
 	if err := ValidateEventContract(Event{
-		Type: EventMessageEnd,
-		Role: message.RoleAssistant,
+		Type:      EventAssistantCompleted,
+		MessageID: "msg_1",
+		Role:      message.RoleAssistant,
 		ToolCalls: []message.ToolCall{{
 			Function: message.FunctionCall{Name: "search"},
 		}},
@@ -174,12 +175,12 @@ func TestValidateEventContractSkipsInternalToolCallsAndRequiresIDs(t *testing.T)
 func TestValidateEventContractRequiresCorePayloadFields(t *testing.T) {
 	invalidEvents := []Event{
 		{},
-		{Type: EventTurnStart, RunID: "run_1"},
-		{Type: EventMessageStart, Content: "hello"},
-		{Type: EventToolStart, ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventAction, Content: "paused"},
+		{Type: EventTurnStarted, RunID: "run_1"},
+		{Type: EventAssistantStarted, Content: "hello"},
+		{Type: EventToolCallStarted, ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventSystemNotice},
 		{Type: EventError},
-		{Type: EventUsage},
+		{Type: EventUsageReported},
 	}
 	for i, event := range invalidEvents {
 		if err := ValidateEventContract(event); err == nil {
@@ -188,12 +189,12 @@ func TestValidateEventContractRequiresCorePayloadFields(t *testing.T) {
 	}
 
 	validEvents := []Event{
-		{Type: EventTurnStart, RunID: "run_1", TurnID: "turn_1"},
-		{Type: EventMessageStart, Role: message.RoleAssistant},
-		{Type: EventToolStart, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
-		{Type: EventAction, ActionType: ActionInterrupted},
+		{Type: EventTurnStarted, RunID: "run_1", TurnID: "turn_1"},
+		{Type: EventAssistantStarted, MessageID: "msg_1", Role: message.RoleAssistant},
+		{Type: EventToolCallStarted, ToolName: "search", ToolCallID: "call_1", ToolCallRef: "ref_1"},
+		{Type: EventSystemNotice, Content: "paused"},
 		{Type: EventError, Error: "boom"},
-		{Type: EventUsage, TotalTokens: 1},
+		{Type: EventUsageReported, TotalTokens: 1},
 	}
 	for i, event := range validEvents {
 		if err := ValidateEventContract(event); err != nil {

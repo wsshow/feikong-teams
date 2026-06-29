@@ -41,7 +41,7 @@ func TestRunTurnDelegatesToRunnerAndPublishesEvents(t *testing.T) {
 	if runner.opts.RunID != "run-1" || runner.opts.CheckpointID != "session-1" {
 		t.Fatalf("run options = %#v", runner.opts)
 	}
-	if len(gotEvents) != 1 || gotEvents[0].Type != event.TypeMessageEnd {
+	if len(gotEvents) != 1 || gotEvents[0].Type != event.TypeAssistantCompleted {
 		t.Fatalf("events = %#v, want message_end", gotEvents)
 	}
 }
@@ -125,13 +125,13 @@ func (r *fakeRunner) Run(ctx context.Context, input message.TurnInput, opts runt
 	opts = opts.WithDefaults(opts.CheckpointID)
 	if opts.Sink != nil {
 		if err := opts.Sink(event.Event{
-			Type:    event.TypeMessageEnd,
+			Type:    event.TypeAssistantCompleted,
 			Content: "done",
 		}); err != nil {
 			return nil, err
 		}
 	}
-	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeMessageEnd}}, nil
+	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeAssistantCompleted}}, nil
 }
 
 type contextProbeRunner struct {
@@ -165,5 +165,5 @@ func (r *contextProbeRunner) Run(ctx context.Context, input message.TurnInput, o
 		return nil, err
 	}
 	r.askAnswer = resp.FreeText
-	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeMessageEnd}}, nil
+	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeAssistantCompleted}}, nil
 }

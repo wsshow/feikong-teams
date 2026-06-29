@@ -27,14 +27,14 @@ type markdownCollector struct {
 
 func (c *markdownCollector) handle(e event.Event) error {
 	switch e.Type {
-	case event.TypeMessageDelta:
+	case event.TypeAssistantText:
 		c.writeMessageDelta(e)
-	case event.TypeToolStart:
+	case event.TypeToolCallStarted:
 		c.writeToolStart(e)
-	case event.TypeToolEnd:
+	case event.TypeToolCallCompleted:
 		c.writeToolEnd(e)
-	case event.TypeAction:
-		c.writeAction(e)
+	case event.TypeSystemNotice:
+		c.writeNotice(e)
 	case event.TypeError:
 		c.flushStream()
 		fmt.Fprintf(&c.buf, "\n\n**Error [%s]**: %s", displayAgent(e.AgentName), e.Error)
@@ -123,9 +123,8 @@ func (c *markdownCollector) writeToolEnd(e event.Event) {
 	c.lastAgent = ""
 }
 
-func (c *markdownCollector) writeAction(e event.Event) {
-	switch e.ActionType {
-	case event.ActionTransfer:
+func (c *markdownCollector) writeNotice(e event.Event) {
+	if e.Notice != nil && e.Notice.Code == "transfer" {
 		c.flushStream()
 		fmt.Fprintf(&c.buf, "\n\n> **[%s]** -> %s", displayAgent(e.AgentName), e.Content)
 		c.lastAgent = ""

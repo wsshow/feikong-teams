@@ -11,13 +11,13 @@ import (
 func TestMarkdownCollectorCollectsOutputDeltas(t *testing.T) {
 	callback, result := newMarkdownCollector()
 
-	if err := callback(event.Event{Type: event.TypeMessageDelta, AgentName: "tasker", Content: "hello ", DeltaKind: event.DeltaOutput}); err != nil {
+	if err := callback(event.Event{Type: event.TypeAssistantText, AgentName: "tasker", Content: "hello ", DeltaKind: event.DeltaOutput}); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	if err := callback(event.Event{Type: event.TypeMessageDelta, AgentName: "tasker", Content: "world", DeltaKind: event.DeltaOutput}); err != nil {
+	if err := callback(event.Event{Type: event.TypeAssistantText, AgentName: "tasker", Content: "world", DeltaKind: event.DeltaOutput}); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	if err := callback(event.Event{Type: event.TypeMessageDelta, AgentName: "tasker", Content: "hidden", DeltaKind: event.DeltaReasoning}); err != nil {
+	if err := callback(event.Event{Type: event.TypeAssistantReasoning, AgentName: "tasker", Content: "hidden", DeltaKind: event.DeltaReasoning}); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 
@@ -44,9 +44,9 @@ func TestMarkdownCollectorCollectsToolsActionsAndErrors(t *testing.T) {
 		},
 	}
 	events := []event.Event{
-		{Type: event.TypeToolStart, AgentName: "tasker", ToolCall: &toolCall},
-		{Type: event.TypeToolEnd, ToolCallID: "call-1", Content: `{"message":"found 3 results"}`},
-		{Type: event.TypeAction, AgentName: "tasker", ActionType: event.ActionTransfer, Content: "researcher"},
+		{Type: event.TypeToolCallStarted, AgentName: "tasker", ToolCall: &toolCall},
+		{Type: event.TypeToolCallCompleted, ToolCallID: "call-1", Content: `{"message":"found 3 results"}`},
+		{Type: event.TypeSystemNotice, AgentName: "tasker", Content: "researcher", Notice: &event.NoticePayload{Code: "transfer"}},
 		{Type: event.TypeError, AgentName: "tasker", Error: "failed"},
 	}
 	for _, e := range events {

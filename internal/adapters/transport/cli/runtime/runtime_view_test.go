@@ -7,14 +7,14 @@ import (
 
 func TestRuntimeDeltaMergeKeepsSameMessageTogether(t *testing.T) {
 	base := events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		DeltaKind: events.DeltaOutput,
 		AgentName: "assistant",
 		MessageID: "msg-1",
 		Content:   "hel",
 	}
 	next := events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		DeltaKind: events.DeltaOutput,
 		AgentName: "assistant",
 		MessageID: "msg-1",
@@ -32,14 +32,14 @@ func TestRuntimeDeltaMergeKeepsSameMessageTogether(t *testing.T) {
 
 func TestRuntimeDeltaMergeRejectsDifferentMessages(t *testing.T) {
 	base := events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		DeltaKind: events.DeltaOutput,
 		AgentName: "assistant",
 		MessageID: "msg-1",
 		Content:   "one",
 	}
 	next := events.Event{
-		Type:      events.EventMessageDelta,
+		Type:      events.EventAssistantText,
 		DeltaKind: events.DeltaOutput,
 		AgentName: "assistant",
 		MessageID: "msg-2",

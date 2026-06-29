@@ -378,18 +378,12 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			appchat.WithRunID(currentRunID),
 			appchat.NonInteractive(),
 			appchat.OnEvent(func(event events.Event) error {
-				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
-					return nil
-				}
 				data := rt.convertEventToMap(event)
 				data["session_id"] = sessionID
 				stream.Publish(taskstream.Event(data))
 				return nil
 			}),
 			appchat.WithEventRecorderFunc(func(event events.Event) {
-				if event.Type == events.EventAction && event.ActionType == events.ActionInterrupted {
-					return
-				}
 				recorder.RecordEvent(event)
 			}),
 			appchat.WithHistory(recorder),
@@ -718,25 +712,17 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 			info := askInterrupt.Info
 			askID := askInterrupt.ID
 			memberEvent := askInterrupt.Event
-			askEvent := memberEvent
-			askEvent.Type = events.EventAction
-			askEvent.ActionType = events.ActionAskQuestions
-			askEvent.Content = info.Question
-			askEvent.Detail = askID
+			askEvent := askRequestedEvent(memberEvent, askID, info)
+			askEvent = events.NormalizeEvent(askEvent)
 			recorder.RecordEvent(askEvent)
-			stream.Publish(taskstream.Event(attachMemberPayload(taskstream.NewEvent(events.NotifyAskQuestions, sessionID).
-				With("ask_id", askID).
-				With("question", info.Question).
-				With("options", info.Options).
-				With("multi_select", info.MultiSelect), memberEvent)))
+			askPayload := taskstream.Event(convertEventToMapWithResolver(askEvent, nil)).
+				With("session_id", sessionID)
+			stream.Publish(askPayload)
 
 			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
-				answerEvent := memberEvent
-				answerEvent.Type = events.EventAction
-				answerEvent.ActionType = events.ActionAskResponse
-				answerEvent.Content = askResponseText(result)
-				answerEvent.Detail = askID
+				answerEvent := askAnsweredEvent(memberEvent, askID, askResponseFromResult(askID, result), askResponseText(result))
+				answerEvent = events.NormalizeEvent(answerEvent)
 				recorder.RecordEvent(answerEvent)
 			}
 			return result, err
@@ -749,9 +735,11 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
 		recorder.RecordEvent(events.Event{
-			Type:       events.EventAction,
-			ActionType: events.ActionApprovalRequired,
-			Content:    msg,
+			Type:    events.EventApprovalRequested,
+			Content: msg,
+			Approval: &events.ApprovalPayload{
+				Message: msg,
+			},
 		})
 		stream.Publish(taskstream.NewEvent(events.NotifyApprovalRequired, sessionID).With("message", msg))
 
@@ -759,9 +747,11 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
 				recorder.RecordEvent(events.Event{
-					Type:       events.EventAction,
-					ActionType: events.ActionApprovalDecision,
-					Content:    text,
+					Type:    events.EventApprovalAnswered,
+					Content: text,
+					Approval: &events.ApprovalPayload{
+						Decision: text,
+					},
 				})
 			}
 		}
