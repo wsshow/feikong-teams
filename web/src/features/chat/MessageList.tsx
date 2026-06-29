@@ -32,7 +32,8 @@ interface AskActivity {
 type MessageRenderPart =
   | { type: "reasoning"; content: string }
   | { type: "text"; content: string }
-  | { type: "ask"; ask: AskActivity };
+  | { type: "ask"; ask: AskActivity }
+  | { type: "tool"; tool: ToolActivity };
 
 export function MessageList() {
   const dispatch = useAppDispatch();
@@ -93,11 +94,15 @@ export function MessageList() {
             return <MemberActivityBlock key={message.id} member={member} />;
           }
           const messageTools = toolEventsByMessageID.get(message.id) || [];
+          for (const tool of messageTools) {
+            renderedToolKeys.add(toolActivityKey(tool));
+          }
           return (
             <div key={message.id} className="space-y-3">
               <MessageRow
                 message={message}
                 asks={askActivities}
+                tools={messageTools}
                 reasoningBlocks={reasoningByMessage.get(message.id) || reasoningContentBlocks(message.reasoningContent)}
                 sessionID={activeSessionID}
                 onAskAnswered={(ask, selected, freeText) => {
@@ -114,14 +119,6 @@ export function MessageList() {
                   }));
                 }}
               />
-              {messageTools.length ? (
-                <ActivityList
-                  tools={messageTools}
-                  memberByCallID={memberByCallID}
-                  nestedMemberIDs={nestedMemberIDs}
-                  renderedToolKeys={renderedToolKeys}
-                />
-              ) : null}
             </div>
           );
         })}
@@ -182,12 +179,14 @@ export function chatMessageElementID(messageID: string) {
 function MessageRow({
   message,
   asks,
+  tools,
   reasoningBlocks,
   sessionID,
   onAskAnswered,
 }: {
   message: ChatViewMessage;
   asks: AskActivity[];
+  tools: ToolActivity[];
   reasoningBlocks?: string[];
   sessionID?: string;
   onAskAnswered: (ask: AskActivity, selected: string[], freeText: string) => void;
@@ -215,23 +214,25 @@ function MessageRow({
     );
   }
 
-  const parts = assistantMessageParts(message, asks, reasoningBlocks);
+  const parts = assistantMessageParts(message, asks, tools, reasoningBlocks);
   const textParts = parts.filter((part): part is { type: "text"; content: string } => part.type === "text");
   const copyContent = textParts.map((part) => part.content).join("");
 
   return (
     <article id={chatMessageElementID(message.id)} className="message-row group w-full scroll-mt-8">
       {message.agent ? <div className="mb-2 text-sm text-muted-foreground">{message.agent}</div> : null}
-      {parts.map((part, index) => (
-        <MessagePart
-          key={`${message.id}-part-${index}`}
-          part={part}
-          sessionID={sessionID}
-          onAskAnswered={(selected, freeText) => {
-            if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
-          }}
-        />
-      ))}
+      <div className="space-y-3">
+        {parts.map((part, index) => (
+          <MessagePart
+            key={`${message.id}-part-${index}`}
+            part={part}
+            sessionID={sessionID}
+            onAskAnswered={(selected, freeText) => {
+              if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
+            }}
+          />
+        ))}
+      </div>
       {hasContent || copyContent ? <MessageActions content={copyContent || message.content} /> : null}
     </article>
   );
@@ -247,9 +248,10 @@ function MessagePart({
   onAskAnswered: (selected: string[], freeText: string) => void;
 }) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
+  if (part.type === "tool") return <ToolCallCard tool={part.tool} />;
   if (part.type === "ask") {
     return (
-      <div className="my-4">
+      <div>
         <AskTimelineItem ask={part.ask} sessionID={part.ask.sessionID || sessionID} onAnswered={onAskAnswered} />
       </div>
     );
@@ -265,7 +267,7 @@ function MessagePart({
 function ReasoningBlock({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mb-4 text-sm">
+    <div className="text-sm">
       <button
         className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
         onClick={() => setOpen(!open)}
@@ -284,19 +286,36 @@ function ReasoningBlock({ content }: { content: string }) {
   );
 }
 
-function assistantMessageParts(message: ChatViewMessage, asks: AskActivity[], fallbackReasoningBlocks?: string[]) {
+function assistantMessageParts(
+  message: ChatViewMessage,
+  asks: AskActivity[],
+  tools: ToolActivity[],
+  fallbackReasoningBlocks?: string[],
+) {
   const parts: MessageRenderPart[] = [];
+  const renderedTools = new Set<string>();
   for (const event of message.events || []) {
     if (event.type === "message_delta" && event.delta_kind === "reasoning" && event.role !== "tool") {
       appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || event.delta || ""));
       continue;
     }
-    if (event.type === "message_delta" && (event.delta_kind === "output" || event.delta_kind === "") && event.role !== "tool") {
+    if (event.type === "message_delta" && (event.delta_kind === "output" || event.delta_kind === "" || !event.delta_kind) && event.role !== "tool") {
       appendMessagePart(parts, "text", String(event.content || event.delta || ""));
       continue;
     }
     const ask = askFromToolEvent(event, asks);
-    if (ask) parts.push({ type: "ask", ask });
+    if (ask) {
+      parts.push({ type: "ask", ask });
+      continue;
+    }
+    const tool = toolFromEvent(event, tools);
+    if (tool) {
+      const key = toolActivityKey(tool);
+      if (!renderedTools.has(key)) {
+        parts.push({ type: "tool", tool });
+        renderedTools.add(key);
+      }
+    }
   }
 
   if (!parts.length) {
@@ -309,14 +328,14 @@ function assistantMessageParts(message: ChatViewMessage, asks: AskActivity[], fa
   if (!hasTextPart && message.content.trim()) {
     parts.push({ type: "text", content: message.content });
   }
-  return parts.filter((part) => part.type === "ask" || part.content.trim());
+  return parts.filter((part) => part.type === "ask" || part.type === "tool" || part.content.trim());
 }
 
 function appendMessagePart(parts: MessageRenderPart[], type: "reasoning" | "text", content: string) {
   if (!content) return;
   const previous = parts[parts.length - 1];
   if (previous?.type === type) {
-    previous.content = appendText(previous.content, content);
+    previous.content += content;
     return;
   }
   parts.push({ type, content });
@@ -832,6 +851,31 @@ function askFromToolEvent(event: ChatEvent, asks: AskActivity[]) {
     };
   }
   return undefined;
+}
+
+function toolFromEvent(event: ChatEvent, tools: ToolActivity[]) {
+  if (!hasToolEvent(event)) return undefined;
+  const directTools = [...(event.tool_calls || []), event.tool_call].filter(Boolean) as ToolCallDTO[];
+  for (const directTool of directTools) {
+    if (directTool.name === "ask_questions") continue;
+    const directKey = toolKey(directTool, event);
+    const matched = tools.find((tool) => toolActivityKey(tool) === directKey || tool.ref === directTool.ref || tool.id === directTool.id);
+    if (matched) return matched;
+    return {
+      ...directTool,
+      ref: directTool.ref || event.tool_call_ref,
+      id: directTool.id || event.tool_call_id,
+      status: event.type === "message_end" ? "completed" : "running",
+      message_id: event.message_id,
+    };
+  }
+  const key = event.tool_call_ref || event.tool_call_id || event.tool_name;
+  if (!key) return undefined;
+  return tools.find((tool) => tool.ref === key || tool.id === key || tool.name === key);
+}
+
+function hasToolEvent(event: ChatEvent) {
+  return Boolean(event.tool_calls?.length || event.tool_call || event.tool_name || event.tool_call_ref || event.tool_call_id);
 }
 
 function findMatchingAsk(question: string, asks: AskActivity[], sequence?: number) {
