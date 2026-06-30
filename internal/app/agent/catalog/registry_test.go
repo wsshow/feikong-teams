@@ -10,7 +10,7 @@ import (
 
 func TestGetRegistryReturnsCopy(t *testing.T) {
 	registry := newTestRegistry([]AgentInfo{
-		{Name: "coder", Description: "code"},
+		{Name: "coder", Description: "code", Aliases: []string{"小码"}},
 		{Name: "researcher", Description: "research"},
 	})
 
@@ -19,10 +19,14 @@ func TestGetRegistryReturnsCopy(t *testing.T) {
 		t.Fatalf("registry length = %d, want 2", len(got))
 	}
 	got[0].Name = "mutated"
+	got[0].Aliases[0] = "mutated"
 
 	again := registry.List()
 	if again[0].Name != "coder" {
 		t.Fatalf("registry was mutated through returned slice: %v", again)
+	}
+	if again[0].Aliases[0] != "小码" {
+		t.Fatalf("registry aliases were mutated through returned slice: %v", again[0].Aliases)
 	}
 }
 
@@ -46,13 +50,15 @@ func TestGetAgentByNameFindsNameAndAlias(t *testing.T) {
 func TestGetTeamAgentsCreatesAgentsInRegistryOrder(t *testing.T) {
 	registry := newTestRegistry([]AgentInfo{
 		{
-			Name: "coder",
+			Name:       "coder",
+			TeamMember: true,
 			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				return fakeAgent{name: "coder"}, nil
 			},
 		},
 		{
-			Name: "researcher",
+			Name:       "researcher",
+			TeamMember: true,
 			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				return fakeAgent{name: "researcher"}, nil
 			},
@@ -71,10 +77,38 @@ func TestGetTeamAgentsCreatesAgentsInRegistryOrder(t *testing.T) {
 	}
 }
 
+func TestGetTeamAgentsSkipsNonTeamMembers(t *testing.T) {
+	registry := newTestRegistry([]AgentInfo{
+		{
+			Name: "coordinator",
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
+				t.Fatal("coordinator should not be created as a team member")
+				return nil, nil
+			},
+		},
+		{
+			Name:       "coder",
+			TeamMember: true,
+			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
+				return fakeAgent{name: "coder"}, nil
+			},
+		},
+	})
+
+	team, err := registry.TeamAgents(context.Background())
+	if err != nil {
+		t.Fatalf("GetTeamAgents() error = %v", err)
+	}
+	if len(team) != 1 || team[0].Name() != "coder" {
+		t.Fatalf("team = %#v, want only coder", team)
+	}
+}
+
 func TestGetTeamAgentsReturnsCreatorError(t *testing.T) {
 	registry := newTestRegistry([]AgentInfo{
 		{
-			Name: "broken",
+			Name:       "broken",
+			TeamMember: true,
 			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				return nil, fmt.Errorf("create failed")
 			},

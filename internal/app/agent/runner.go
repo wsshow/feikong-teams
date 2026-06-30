@@ -45,7 +45,13 @@ func buildAgentTools(ctx context.Context, subAgents []runtimeport.Agent) ([]runt
 	usedNames := make(map[string]bool, len(subAgents))
 	var registerDisplay runtimeport.AgentToolDisplayFunc
 	if registry, ok := toolmeta.RegistryFromContext(ctx); ok {
-		registerDisplay = registry.RegisterAgentToolDisplay
+		displayNames := agentDisplayNamesByName(ctx)
+		registerDisplay = func(toolName, displayName string) {
+			if mapped := displayNames[displayName]; mapped != "" {
+				displayName = mapped
+			}
+			registry.RegisterAgentToolDisplay(toolName, displayName)
+		}
 	}
 	return engine.NewAgentTools(ctx, subAgents, runtimeport.AgentToolConfig{
 		ToolName: func(displayName string, index int) string {
@@ -53,6 +59,21 @@ func buildAgentTools(ctx context.Context, subAgents []runtimeport.Agent) ([]runt
 		},
 		RegisterDisplay: registerDisplay,
 	})
+}
+
+func agentDisplayNamesByName(ctx context.Context) map[string]string {
+	infos, err := agents.List(ctx)
+	if err != nil {
+		return nil
+	}
+	result := make(map[string]string, len(infos))
+	for _, info := range infos {
+		if info.Name == "" || info.DisplayName == "" {
+			continue
+		}
+		result[info.Name] = info.DisplayName
+	}
+	return result
 }
 
 // resolveCustomModel 从配置文件解析自定义智能体的模型配置

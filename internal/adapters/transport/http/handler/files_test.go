@@ -54,8 +54,14 @@ func TestGetFilesAndSearchHandlers(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(workspace, "docs"), 0755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
+	if err := os.Mkdir(filepath.Join(workspace, "docs", "guide"), 0755); err != nil {
+		t.Fatalf("mkdir docs guide: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("note"), 0644); err != nil {
 		t.Fatalf("write note: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "docs", "guide", "intro.md"), []byte("intro"), 0644); err != nil {
+		t.Fatalf("write nested intro: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(workspace, ".secret"), []byte("secret"), 0644); err != nil {
 		t.Fatalf("write hidden: %v", err)
@@ -92,6 +98,15 @@ func TestGetFilesAndSearchHandlers(t *testing.T) {
 	decodeRawData(t, resp, &results)
 	if len(results) != 1 || results[0].Name != "note.txt" {
 		t.Fatalf("unexpected search results: %#v", results)
+	}
+
+	resp = performRequest(router, http.MethodGet, "/search?q=docs/guide", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("path search status = %d: %s", resp.Code, resp.Body.String())
+	}
+	decodeRawData(t, resp, &results)
+	if len(results) != 2 || results[0].Path != "docs/guide" || results[1].Path != "docs/guide/intro.md" {
+		t.Fatalf("unexpected path search results: %#v", results)
 	}
 
 	resp = performRequest(router, http.MethodGet, "/search?q=", nil)

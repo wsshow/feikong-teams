@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, FileText, Plus, Send, Square, X } from "lucide-react";
+import { Bot, ChevronDown, FileText, Folder, Plus, Send, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
@@ -11,6 +11,8 @@ const modeOptions = [
   { value: "roundtable", label: "圆桌" },
   { value: "custom", label: "自定义" },
 ] as const;
+
+const referenceResultLimit = 50;
 
 export interface ChatComposerProps {
   value: string;
@@ -54,20 +56,25 @@ export function ChatComposer({
   const maxTextareaHeight = isHero ? 440 : 280;
   const [trigger, setTrigger] = useState<ReferenceTrigger | undefined>();
   const [activeReferenceIndex, setActiveReferenceIndex] = useState(0);
+  const fileReferenceQuery = trigger?.kind === "file" ? trigger.query : undefined;
   const filteredAgents = useMemo(() => {
     if (trigger?.kind !== "agent") return [];
     const query = trigger.query.toLowerCase();
     return agents
       .filter((agent) => {
-        const text = `${agent.name} ${agent.description || ""} ${agent.role || ""}`.toLowerCase();
+        const text = `${agent.name} ${agent.display_name || ""} ${(agent.aliases || []).join(" ")} ${agent.description || ""} ${agent.role || ""}`.toLowerCase();
         return text.includes(query);
       })
       .slice(0, 8);
   }, [agents, trigger]);
+  const selectedAgentInfo = useMemo(
+    () => resolveAgentInfo(selectedAgent || "", agents),
+    [agents, selectedAgent],
+  );
   const referenceOptions = useMemo<ReferenceOption[]>(() => {
     if (!trigger) return [];
     if (trigger.kind === "file") {
-      return fileSuggestions.slice(0, 10).map((file) => ({
+      return fileSuggestions.slice(0, referenceResultLimit).map((file) => ({
         kind: "file" as const,
         key: file.path,
         label: file.path,
@@ -77,14 +84,14 @@ export function ChatComposer({
     return filteredAgents.map((agent) => ({
       kind: "agent" as const,
       key: agent.name,
-      label: agent.name,
+      label: agentDisplayName(agent),
       agent,
     }));
   }, [fileSuggestions, filteredAgents, trigger]);
 
   useEffect(() => {
-    if (trigger?.kind === "file") onReferenceQuery?.(trigger.query);
-  }, [onReferenceQuery, trigger]);
+    if (fileReferenceQuery !== undefined) onReferenceQuery?.(fileReferenceQuery);
+  }, [fileReferenceQuery, onReferenceQuery]);
 
   useEffect(() => {
     setActiveReferenceIndex(0);
@@ -246,13 +253,14 @@ export function ChatComposer({
             <Plus className="h-4 w-4" />
           </Button>
           {selectedAgent ? (
-            <AgentTargetChip agent={selectedAgent} onClear={() => onAgentChange?.("")} />
+            <AgentTargetChip agent={selectedAgent} agentInfo={selectedAgentInfo} onClear={() => onAgentChange?.("")} />
           ) : null}
         </div>
         <div className="flex min-w-0 items-center gap-3">
           <ModePicker
             mode={mode}
             selectedAgent={selectedAgent}
+            selectedAgentInfo={selectedAgentInfo}
             open={modeMenuOpen}
             onOpenChange={setModeMenuOpen}
             onModeChange={onModeChange}
@@ -292,25 +300,50 @@ function ReferenceMenu({
 }) {
   const isFile = trigger.kind === "file";
   const emptyText = isFile ? "没有匹配文件" : "没有匹配智能体";
+  const activeItemRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const visibleFiles = files.slice(0, referenceResultLimit);
+  const showLoading = Boolean(loading && (!isFile || visibleFiles.length === 0));
+
+  useEffect(() => {
+    const menu = menuRef.current;
+    const item = activeItemRef.current;
+    if (!menu || !item) return;
+    const itemTop = item.offsetTop;
+    const itemBottom = itemTop + item.offsetHeight;
+    const visibleTop = menu.scrollTop;
+    const visibleBottom = visibleTop + menu.clientHeight;
+    if (itemTop < visibleTop) {
+      menu.scrollTop = itemTop;
+      return;
+    }
+    if (itemBottom > visibleBottom) {
+      menu.scrollTop = itemBottom - menu.clientHeight;
+    }
+  }, [activeIndex, agents.length, isFile, visibleFiles.length]);
 
   return (
-    <div className="sketch-surface absolute bottom-[calc(100%+0.75rem)] left-0 z-40 max-h-64 w-[min(32rem,100%)] overflow-y-auto rounded-xl bg-card p-1.5 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]">
+    <div
+      ref={menuRef}
+      className="sketch-surface absolute bottom-[calc(100%+0.75rem)] left-0 z-40 max-h-64 w-[min(32rem,100%)] overflow-y-auto rounded-xl bg-card p-1.5 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
+    >
       {isFile ? (
         <>
-          {loading ? <div className="px-3 py-2 text-muted-foreground">搜索文件中...</div> : null}
-          {!loading && files.length === 0 ? <div className="px-3 py-2 text-muted-foreground">{emptyText}</div> : null}
-          {files.slice(0, 10).map((file, index) => (
+          {showLoading ? <div className="px-3 py-2 text-muted-foreground">搜索文件中...</div> : null}
+          {!loading && visibleFiles.length === 0 ? <div className="px-3 py-2 text-muted-foreground">{emptyText}</div> : null}
+          {visibleFiles.map((file, index) => (
             <button
               key={file.path}
+              ref={index === activeIndex ? activeItemRef : undefined}
               type="button"
               className={cn(
                 "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-accent/65",
                 index === activeIndex && "bg-accent/70 text-foreground",
               )}
-              onMouseEnter={() => onActiveIndexChange(index)}
+              onMouseMove={() => onActiveIndexChange(index)}
               onClick={() => onSelectFile(file.path)}
             >
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {file.is_dir ? <Folder className="h-4 w-4 shrink-0 text-muted-foreground" /> : <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
               <span className="min-w-0 flex-1 truncate">{file.path}</span>
             </button>
           ))}
@@ -321,17 +354,21 @@ function ReferenceMenu({
           {agents.map((agent, index) => (
             <button
               key={agent.name}
+              ref={index === activeIndex ? activeItemRef : undefined}
               type="button"
               className={cn(
                 "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-accent/65",
                 index === activeIndex && "bg-accent/70 text-foreground",
               )}
-              onMouseEnter={() => onActiveIndexChange(index)}
+              onMouseMove={() => onActiveIndexChange(index)}
               onClick={() => onSelectAgent(agent.name)}
             >
               <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{agent.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{agentDisplayName(agent)}</span>
+                  {agent.builtin ? <BuiltinAgentBadge /> : null}
+                </span>
                 {agent.description ? <span className="block truncate text-xs text-muted-foreground">{agent.description}</span> : null}
               </span>
             </button>
@@ -342,7 +379,7 @@ function ReferenceMenu({
   );
 }
 
-function AgentTargetChip({ agent, onClear }: { agent: string; onClear: () => void }) {
+function AgentTargetChip({ agent, agentInfo, onClear }: { agent: string; agentInfo?: AgentInfo; onClear: () => void }) {
   return (
     <span className="group inline-flex h-9 max-w-[15rem] items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/65 hover:text-foreground">
       <span className="relative h-4 w-4 shrink-0">
@@ -356,7 +393,34 @@ function AgentTargetChip({ agent, onClear }: { agent: string; onClear: () => voi
           <X className="h-4 w-4" />
         </button>
       </span>
-      <span className="min-w-0 truncate">{agent}</span>
+      <span className="min-w-0 truncate">{agentInfo ? agentDisplayName(agentInfo) : agent}</span>
+      {agentInfo?.builtin ? <BuiltinAgentBadge /> : null}
+    </span>
+  );
+}
+
+function agentDisplayName(agent: AgentInfo) {
+  return agent.display_name || agent.name;
+}
+
+function resolveAgentInfo(name: string, agents: AgentInfo[]) {
+  const key = normalizeAgentKey(name);
+  if (!key) return undefined;
+  return agents.find((agent) => {
+    if (normalizeAgentKey(agent.name) === key) return true;
+    if (normalizeAgentKey(agent.display_name || "") === key) return true;
+    return (agent.aliases || []).some((alias) => normalizeAgentKey(alias) === key);
+  });
+}
+
+function normalizeAgentKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function BuiltinAgentBadge() {
+  return (
+    <span className="shrink-0 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
+      内置
     </span>
   );
 }
@@ -364,18 +428,20 @@ function AgentTargetChip({ agent, onClear }: { agent: string; onClear: () => voi
 function ModePicker({
   mode,
   selectedAgent,
+  selectedAgentInfo,
   open,
   onOpenChange,
   onModeChange,
 }: {
   mode: string;
   selectedAgent?: string;
+  selectedAgentInfo?: AgentInfo;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onModeChange: (mode: string) => void;
 }) {
   const selected = modeOptions.find((option) => option.value === mode) || modeOptions[0];
-  const label = selectedAgent ? `智能体 · ${selectedAgent}` : `${selected.label} · ${selected.value}`;
+  const label = selectedAgent ? `智能体 · ${selectedAgentInfo ? agentDisplayName(selectedAgentInfo) : selectedAgent}` : `${selected.label} · ${selected.value}`;
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

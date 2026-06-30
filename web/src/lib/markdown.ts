@@ -14,10 +14,16 @@ marked.use(markedKatex({
 export function renderMarkdown(value?: string) {
   if (!value) return "";
   try {
-    return marked.parse(normalizeMathDelimiters(value)) as string;
+    return withCodeCopyButtons(marked.parse(normalizeMathDelimiters(value)) as string);
   } catch {
     return escapeHTML(value).replace(/\n/g, "<br />");
   }
+}
+
+function withCodeCopyButtons(html: string) {
+  return html.replace(/<pre><code([^>]*)>([\s\S]*?)<\/code><\/pre>/g, (_match, attrs: string, code: string) => (
+    `<div class="markdown-code-block"><button class="markdown-code-copy" type="button" data-markdown-copy title="复制代码" aria-label="复制代码">复制</button><pre><code${attrs}>${code}</code></pre></div>`
+  ));
 }
 
 function normalizeMathDelimiters(value: string) {

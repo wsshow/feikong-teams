@@ -12,8 +12,11 @@ export interface VersionInfo {
 
 export interface AgentInfo {
   name: string;
+  display_name?: string;
   description?: string;
   role?: string;
+  aliases?: string[];
+  builtin?: boolean;
 }
 
 export interface ProviderInfo {

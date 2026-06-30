@@ -60,6 +60,7 @@ export interface ChatEvent {
   turn_id?: string;
   event_id?: string;
   sequence?: number;
+  display_order?: number;
   created_at?: string;
   agent_name?: string;
   role?: string;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarClock, FolderOpen, Settings, Sparkles } from "lucide-react";
+import { CalendarClock, FolderOpen, Settings, Share2, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
@@ -207,6 +207,7 @@ function ChatHome() {
     { label: "文件", icon: FolderOpen, panel: "files", path: "/files" },
     { label: "任务", icon: CalendarClock, panel: "schedules", path: "/schedules" },
     { label: "技能", icon: Sparkles, panel: "skills", path: "/skills" },
+    { label: "分享", icon: Share2, panel: "shares", path: "/shares" },
     { label: "配置", icon: Settings, panel: "config", path: "/config" },
   ];
 

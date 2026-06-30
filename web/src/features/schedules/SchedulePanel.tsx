@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
-import { renderMarkdown } from "@/lib/markdown";
+import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { cn } from "@/lib/cn";
 import { formatTime, shortID } from "@/lib/format";
 import type { ScheduleHistoryEntry, ScheduleTask, ScheduleTaskPayload } from "@/types/schedules";
@@ -512,10 +512,7 @@ function TaskDetail({
               {loading ? (
                 <div className="text-sm text-muted-foreground">正在加载结果</div>
               ) : (
-                <div
-                  className="prose message-prose w-full max-w-none text-base leading-8"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(result || "暂无结果") }}
-                />
+                <MarkdownContent className="text-base leading-8" content={result || "暂无结果"} />
               )}
             </div>
           </div>

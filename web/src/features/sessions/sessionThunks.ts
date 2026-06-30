@@ -43,7 +43,7 @@ function historyToMessages(messages: AgentMessage[]): ChatViewMessage[] {
       hidden: isMember,
     };
   });
-  return placeMemberMessagesAfterParent(viewMessages);
+  return assignHistoryDisplayOrder(placeMemberMessagesAfterParent(viewMessages));
 }
 
 function isHistoryUserMessage(message: AgentMessage) {
@@ -83,6 +83,17 @@ function placeMemberMessagesAfterParent(messages: ChatViewMessage[]) {
     else result.push(message);
   }
   return result;
+}
+
+function assignHistoryDisplayOrder(messages: ChatViewMessage[]) {
+  let order = 0;
+  return messages.map((message) => ({
+    ...message,
+    events: message.events.map((event) => ({
+      ...event,
+      display_order: order++,
+    })),
+  }));
 }
 
 function findParentToolMessageIndex(messages: ChatViewMessage[], event?: ChatEvent) {
@@ -133,7 +144,7 @@ function historyEventsToChatEvents(messageID: string, message: AgentMessage): Ch
   return (message.events || []).flatMap((event, index): ChatEvent | ChatEvent[] => {
     const base = {
       ...common,
-      sequence: event.sequence || index,
+      sequence: event.sequence,
       created_at: message.start_time || message.end_time,
     };
     if (event.type === "text") {
@@ -182,7 +193,7 @@ function historyEventsToChatEvents(messageID: string, message: AgentMessage): Ch
         },
         {
           ...base,
-          sequence: (event.sequence || index) + 0.1,
+          sequence: event.sequence === undefined ? undefined : event.sequence + 0.1,
           type: "tool_call_completed",
           tool_name: event.tool_call.name,
           tool_display_name: event.tool_call.display_name,

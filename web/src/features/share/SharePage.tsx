@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { accessPublicShare, getPublicShareInfo, type SessionShare } from "@/api/shares";
 import { APIError } from "@/api/client";
 import type { SessionDetail } from "@/types/chat";
-import { renderMarkdown } from "@/lib/markdown";
+import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
@@ -111,15 +111,9 @@ export function SharePage() {
             {detail.messages?.map((message, index) => (
               <div key={index} className="rounded-md border border-border bg-card/70 p-4">
                 <div className="mb-2 text-xs text-muted-foreground">{message.agent_name || message.role}</div>
-                <div
-                  className="prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{
-                    __html: renderMarkdown(
-                      (message.events || []).map((event) => event.content || event.tool_call?.result || "").join("\n") ||
-                        message.content ||
-                        "",
-                    ),
-                  }}
+                <MarkdownContent
+                  className="prose-sm"
+                  content={(message.events || []).map((event) => event.content || event.tool_call?.result || "").join("\n") || message.content || ""}
                 />
               </div>
             ))}

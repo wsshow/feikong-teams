@@ -7,12 +7,15 @@ export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?:
   const [open, setOpen] = useState(false);
   const isRunning = tool.status === "running" || tool.status === "pending";
   const isError = tool.status === "error";
-  const title = (tool.display_name || tool.name || "tool").toUpperCase();
+  const title = tool.display_name || tool.name || "tool";
+  const isAgentDispatch = isAgentDispatchTool(tool);
+  const showArguments = Boolean(tool.arguments);
+  const showResult = Boolean(tool.result && !(isAgentDispatch && children));
   return (
     <div className="text-sm">
       <button
         className={cn(
-          "flex items-center gap-3 rounded-lg px-2 py-2 text-left tracking-[0.12em] transition-colors hover:bg-muted/70",
+          "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/70",
           isError ? "text-destructive" : isRunning ? "text-amber-600" : "text-muted-foreground",
         )}
         onClick={() => setOpen(!open)}
@@ -27,14 +30,14 @@ export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?:
       {open ? (
         <div className="ml-7 space-y-2 border-l border-border/60 pl-4 pt-2">
           {tool.member_name || tool.target ? <div className="text-xs text-muted-foreground">{tool.member_name || tool.target}</div> : null}
-          {tool.arguments ? (
+          {showArguments ? (
             <pre className="max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
-              {formatArgs(tool.arguments)}
+              {formatArgs(tool.arguments || "")}
             </pre>
           ) : null}
-          {tool.result ? (
+          {showResult ? (
             <pre className="max-h-56 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg bg-muted/45 p-3 text-xs leading-5 text-foreground">
-              {formatResult(tool.result)}
+              {formatResult(tool.result || "")}
             </pre>
           ) : null}
           {children}
@@ -42,6 +45,10 @@ export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?:
       ) : null}
     </div>
   );
+}
+
+function isAgentDispatchTool(tool: ToolCallDTO) {
+  return tool.kind === "agent" || tool.name?.startsWith("ask_fkagent_");
 }
 
 function formatArgs(value: string) {

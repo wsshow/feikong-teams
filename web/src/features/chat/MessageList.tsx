@@ -1,17 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
-import { Check, ChevronRight, CircleHelp, Copy, GitBranch, Send } from "lucide-react";
+import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, GitBranch, Send } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
 import { submitAskResponse } from "@/api/stream";
+import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { renderMarkdown } from "@/lib/markdown";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
 import type { ChatEvent, ToolCallDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
+import type { AgentInfo } from "@/types/api";
 
 type ToolActivity = ToolCallDTO & { message_id?: string };
 interface AskActivity {
@@ -33,7 +34,25 @@ type MessageRenderPart =
   | { type: "reasoning"; content: string }
   | { type: "text"; content: string }
   | { type: "ask"; ask: AskActivity }
-  | { type: "tool"; tool: ToolActivity };
+  | { type: "tool"; tool: ToolActivity; member?: MemberActivity };
+
+interface TimelineMessageNode {
+  message: ChatViewMessage;
+  parts: MessageRenderPart[];
+  showAgentLabel: boolean;
+  order: number;
+}
+
+type TimelineItem =
+  | { kind: "message"; node: TimelineMessageNode; order: number }
+  | { kind: "member"; member: MemberActivity; order: number };
+
+interface TimelineModel {
+  items: TimelineItem[];
+  messages: ChatViewMessage[];
+  trailingAsks: AskActivity[];
+  trailingTools: MessageRenderPart[];
+}
 
 export function MessageList() {
   const dispatch = useAppDispatch();
@@ -43,33 +62,34 @@ export function MessageList() {
   const statusText = useAppSelector((state) => state.chat.statusText);
   const error = useAppSelector((state) => state.chat.error);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
+  const agents = useAppSelector((state) => state.app.agents);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
   const previousMessageCountRef = useRef(0);
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
-  const displayEvents = eventsForDisplay(messages, events);
-  const reasoningByMessage = collectReasoningBlocks(displayEvents);
-  const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
-  const memberEvents = collectMemberActivities(displayEvents);
-  const askActivities = collectAskActivities(displayEvents, submittedAskIDs);
-  const memberByCallID = new Map(memberEvents.map((member) => [member.id, member]));
-  const memberByMessageID = mapMembersByMessageID(memberEvents);
-  const timelineMessages = dedupeAdjacentSystemMessages(
-    messages.filter((message) => shouldShowTimelineItem(message, reasoningByMessage, memberByMessageID)),
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const displayEvents = useMemo(() => eventsForDisplay(messages, events), [messages, events]);
+  const timeline = useMemo(
+    () => buildTimelineModel(messages, displayEvents, submittedAskIDs),
+    [messages, displayEvents, submittedAskIDs],
   );
-  const inlineAskIDs = collectInlineAskIDs(timelineMessages, askActivities);
-  const trailingAsks = askActivities.filter((ask) => !inlineAskIDs.has(ask.id));
-  const nestedMemberIDs = new Set<string>();
-  const renderedToolKeys = new Set<string>();
-  const toolEventsByMessageID = groupToolsByMessageID(toolEvents);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [timelineMessages, askActivities.length, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
+    if (!stickToBottomRef.current) return;
+    scrollToBottom();
+  }, [timeline.items, timeline.trailingAsks.length, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
+
+  useEffect(() => {
+    stickToBottomRef.current = true;
+    setShowJumpToBottom(false);
+    requestAnimationFrame(scrollToBottom);
+  }, [activeSessionID]);
 
   useEffect(() => {
     const previous = previousMessageCountRef.current;
-    previousMessageCountRef.current = timelineMessages.length;
-    if (timelineMessages.length <= previous) return;
+    previousMessageCountRef.current = timeline.messages.length;
+    if (timeline.messages.length <= previous) return;
     anime({
       targets: ".message-row:last-of-type",
       opacity: [0, 1],
@@ -77,92 +97,119 @@ export function MessageList() {
       duration: 180,
       easing: "easeOutQuad",
     });
-  }, [timelineMessages.length]);
+  }, [timeline.messages.length]);
 
-  if (timelineMessages.length === 0 && displayEvents.length === 0 && !isProcessing && !error) {
+  if (timeline.messages.length === 0 && displayEvents.length === 0 && !isProcessing && !error) {
     return <div className="min-h-0 flex-1" />;
   }
 
+  function scrollToBottom() {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  function handleScroll() {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const atBottom = isNearScrollBottom(scroll);
+    stickToBottomRef.current = atBottom;
+    setShowJumpToBottom(!atBottom);
+  }
+
+  function jumpToBottom() {
+    stickToBottomRef.current = true;
+    setShowJumpToBottom(false);
+    scrollToBottom();
+  }
+
   return (
-    <div className="chat-scroll chat-thread-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-8">
-      <div className="mx-auto w-full max-w-4xl space-y-6">
-        {timelineMessages.map((message) => {
-          if (message.hidden) {
-            const member = memberByMessageID.get(message.id);
-            if (!member || nestedMemberIDs.has(member.id)) return null;
-            nestedMemberIDs.add(member.id);
-            return <MemberActivityBlock key={message.id} member={member} />;
-          }
-          const messageTools = toolEventsByMessageID.get(message.id) || [];
-          for (const tool of messageTools) {
-            renderedToolKeys.add(toolActivityKey(tool));
-          }
-          return (
-            <div key={message.id} className="space-y-3">
-              <MessageRow
-                message={message}
-                asks={askActivities}
-                tools={messageTools}
-                reasoningBlocks={reasoningByMessage.get(message.id) || reasoningContentBlocks(message.reasoningContent)}
-                sessionID={activeSessionID}
-                onAskAnswered={(ask, selected, freeText) => {
-                  setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-                  dispatch(chatActions.receiveEvent({
-                    type: "ask_answered",
-                    session_id: ask.sessionID || activeSessionID,
-                    ask_id: ask.id,
-                    detail: ask.id,
-                    selected,
-                    free_text: freeText,
-                    content: askResponseSummary(selected, freeText),
-                  }));
-                }}
-              />
+    <div className="relative min-h-0 flex-1">
+      <div ref={scrollRef} className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-6 py-8" onScroll={handleScroll}>
+        <div className="mx-auto w-full max-w-4xl space-y-6">
+          {timeline.items.map((item) => {
+            if (item.kind === "member") {
+              const member = item.member;
+              return <MemberActivityBlock key={`member-${member.id}`} member={member} agents={agents} />;
+            }
+            const { message, parts, showAgentLabel } = item.node;
+            if (message.hidden) return null;
+            return (
+              <div key={message.id} className="space-y-3">
+                <MessageRow
+                  message={message}
+                  parts={parts}
+                  sessionID={activeSessionID}
+                  agents={agents}
+                  showAgentLabel={showAgentLabel}
+                  onAskAnswered={(ask, selected, freeText) => {
+                    setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+                    dispatch(chatActions.receiveEvent({
+                      type: "ask_answered",
+                      session_id: ask.sessionID || activeSessionID,
+                      ask_id: ask.id,
+                      detail: ask.id,
+                      selected,
+                      free_text: freeText,
+                      content: askResponseSummary(selected, freeText),
+                    }));
+                  }}
+                />
+              </div>
+            );
+          })}
+          {timeline.trailingAsks.map((ask) => (
+            <AskTimelineItem
+              key={ask.id}
+              ask={ask}
+              sessionID={ask.sessionID || activeSessionID}
+              onAnswered={(selected, freeText) => {
+                setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+                dispatch(chatActions.receiveEvent({
+                  type: "ask_answered",
+                  session_id: ask.sessionID || activeSessionID,
+                  ask_id: ask.id,
+                  detail: ask.id,
+                  selected,
+                  free_text: freeText,
+                  content: askResponseSummary(selected, freeText),
+                }));
+              }}
+            />
+          ))}
+          {isProcessing ? (
+            <div className="message-row text-lg text-muted-foreground">
+              <div>
+                {loadingStatusText(statusText)}
+                <span className="ml-1 inline-flex w-8 justify-between align-middle">
+                  <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                  <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />
+                  <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                </span>
+              </div>
             </div>
-          );
-        })}
-        {trailingAsks.map((ask) => (
-          <AskTimelineItem
-            key={ask.id}
-            ask={ask}
-            sessionID={ask.sessionID || activeSessionID}
-            onAnswered={(selected, freeText) => {
-              setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-              dispatch(chatActions.receiveEvent({
-                type: "ask_answered",
-                session_id: ask.sessionID || activeSessionID,
-                ask_id: ask.id,
-                detail: ask.id,
-                selected,
-                free_text: freeText,
-                content: askResponseSummary(selected, freeText),
-              }));
-            }}
-          />
-        ))}
-        {isProcessing ? (
-          <div className="message-row text-lg text-muted-foreground">
-            <div>
-              {loadingStatusText(statusText)}
-              <span className="ml-1 inline-flex w-8 justify-between align-middle">
-                <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />
-                <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-              </span>
-            </div>
-          </div>
-        ) : null}
-        {error ? <div className="sketch-surface rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
-        <ActivityList
-          tools={toolEvents.filter((tool) => !renderedToolKeys.has(toolActivityKey(tool)))}
-          memberByCallID={memberByCallID}
-          nestedMemberIDs={nestedMemberIDs}
-          renderedToolKeys={renderedToolKeys}
-        />
-        <div ref={bottomRef} />
+          ) : null}
+          {error ? <div className="sketch-surface rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
+          <ActivityList tools={timeline.trailingTools} agents={agents} />
+          <div ref={bottomRef} />
+        </div>
       </div>
+      {showJumpToBottom ? (
+        <button
+          className="absolute bottom-4 left-1/2 z-20 flex h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground"
+          type="button"
+          onClick={jumpToBottom}
+        >
+          <ArrowDown className="h-4 w-4" />
+          回到底部
+        </button>
+      ) : null}
     </div>
   );
+}
+
+function isNearScrollBottom(element: HTMLElement) {
+  return element.scrollHeight - element.scrollTop - element.clientHeight < 48;
 }
 
 function loadingStatusText(statusText?: string) {
@@ -176,17 +223,17 @@ export function chatMessageElementID(messageID: string) {
 
 function MessageRow({
   message,
-  asks,
-  tools,
-  reasoningBlocks,
+  parts,
   sessionID,
+  agents,
+  showAgentLabel,
   onAskAnswered,
 }: {
   message: ChatViewMessage;
-  asks: AskActivity[];
-  tools: ToolActivity[];
-  reasoningBlocks?: string[];
+  parts: MessageRenderPart[];
   sessionID?: string;
+  agents: AgentInfo[];
+  showAgentLabel: boolean;
   onAskAnswered: (ask: AskActivity, selected: string[], freeText: string) => void;
 }) {
   const hasContent = Boolean(message.content.trim());
@@ -212,19 +259,23 @@ function MessageRow({
     );
   }
 
-  const parts = assistantMessageParts(message, asks, tools, reasoningBlocks);
   const textParts = parts.filter((part): part is { type: "text"; content: string } => part.type === "text");
   const copyContent = textParts.map((part) => part.content).join("");
 
   return (
     <article id={chatMessageElementID(message.id)} className="message-row group w-full scroll-mt-8">
-      {message.agent ? <div className="mb-2 text-sm text-muted-foreground">{message.agent}</div> : null}
+      {message.agent && showAgentLabel ? (
+        <div className="mb-2 text-sm text-muted-foreground">
+          <AgentNameLabel name={message.agent} agent={resolveAgentInfo(message.agent, agents)} />
+        </div>
+      ) : null}
       <div className="space-y-3">
         {parts.map((part, index) => (
           <MessagePart
             key={`${message.id}-part-${index}`}
             part={part}
             sessionID={sessionID}
+            agents={agents}
             onAskAnswered={(selected, freeText) => {
               if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
             }}
@@ -239,14 +290,22 @@ function MessageRow({
 function MessagePart({
   part,
   sessionID,
+  agents,
   onAskAnswered,
 }: {
   part: MessageRenderPart;
   sessionID?: string;
+  agents: AgentInfo[];
   onAskAnswered: (selected: string[], freeText: string) => void;
 }) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
-  if (part.type === "tool") return <ToolCallCard tool={part.tool} />;
+  if (part.type === "tool") {
+    return (
+      <ToolCallCard tool={part.tool}>
+        {part.member ? <MemberActivityDetails member={part.member} agents={agents} /> : null}
+      </ToolCallCard>
+    );
+  }
   if (part.type === "ask") {
     return (
       <div>
@@ -254,12 +313,7 @@ function MessagePart({
       </div>
     );
   }
-  return (
-    <div
-      className="prose message-prose w-full max-w-none text-lg leading-9"
-      dangerouslySetInnerHTML={{ __html: renderMarkdown(part.content) }}
-    />
-  );
+  return <MarkdownContent className="text-lg leading-9" content={part.content} />;
 }
 
 function ReasoningBlock({ content }: { content: string }) {
@@ -343,37 +397,29 @@ interface MemberActivity {
   id: string;
   name: string;
   eventCount: number;
-  preview: string;
-  reasoning: string;
+  toolCount: number;
+  firstOrder: number;
+  parts: MessageRenderPart[];
   tools: ToolActivity[];
   messageIDs: string[];
 }
 
 function ActivityList({
   tools,
-  memberByCallID,
-  nestedMemberIDs,
-  renderedToolKeys,
+  agents,
 }: {
-  tools: ToolActivity[];
-  memberByCallID: Map<string, MemberActivity>;
-  nestedMemberIDs: Set<string>;
-  renderedToolKeys: Set<string>;
+  tools: MessageRenderPart[];
+  agents: AgentInfo[];
 }) {
-  const visibleTools = tools.slice(-12).filter((tool) => !renderedToolKeys.has(toolActivityKey(tool)));
+  const visibleTools = tools.slice(-12);
   if (!visibleTools.length) return null;
   return (
     <div className="space-y-2">
-      {visibleTools.map((tool, index) => {
-        renderedToolKeys.add(toolActivityKey(tool));
-        const member = memberByCallID.get(tool.id || "") || memberByCallID.get(stripToolRef(tool.ref || ""));
-        if (member && nestedMemberIDs.has(member.id)) {
-          return <ToolCallCard key={`${tool.ref || tool.id || tool.name}-${index}`} tool={tool} />;
-        }
-        if (member) nestedMemberIDs.add(member.id);
+      {visibleTools.map((part, index) => {
+        if (part.type !== "tool") return null;
         return (
-          <ToolCallCard key={`${tool.ref || tool.id || tool.name}-${index}`} tool={tool}>
-            {member ? <MemberActivityDetails member={member} /> : null}
+          <ToolCallCard key={`${part.tool.ref || part.tool.id || part.tool.name}-${index}`} tool={part.tool}>
+            {part.member ? <MemberActivityDetails member={part.member} agents={agents} /> : null}
           </ToolCallCard>
         );
       })}
@@ -381,46 +427,125 @@ function ActivityList({
   );
 }
 
-function MemberActivityBlock({ member }: { member: MemberActivity }) {
+function memberForTool(tool: ToolActivity, memberByCallID: Map<string, MemberActivity>) {
+  const keys = uniqueStrings([
+    tool.id || "",
+    tool.ref || "",
+    stripToolRef(tool.ref || ""),
+    tool.name || "",
+  ].filter(Boolean));
+  for (const key of keys) {
+    const member = memberByCallID.get(key);
+    if (member) return member;
+  }
+  return undefined;
+}
+
+function buildMemberLookup(members: MemberActivity[]) {
+  const result = new Map<string, MemberActivity>();
+  for (const member of members) {
+    for (const key of memberLookupKeys(member.id)) {
+      result.set(key, member);
+    }
+  }
+  return result;
+}
+
+function memberIDsWithParentTools(members: MemberActivity[], tools: ToolActivity[]) {
+  const lookup = buildMemberLookup(members);
+  const result = new Set<string>();
+  for (const tool of tools) {
+    const member = memberForTool(tool, lookup);
+    if (member) result.add(member.id);
+  }
+  return result;
+}
+
+function memberLookupKeys(value: string) {
+  if (!value) return [];
+  return uniqueStrings(value.startsWith("tool_call:") ? [value, stripToolRef(value)] : [value, `tool_call:${value}`]);
+}
+
+function MemberActivityBlock({ member, agents }: { member: MemberActivity; agents: AgentInfo[] }) {
   const [open, setOpen] = useState(false);
-  const title = member.name.toUpperCase();
+  const agent = resolveAgentInfo(member.name, agents);
   return (
     <div className="text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left tracking-[0.12em] text-muted-foreground transition-colors hover:bg-muted/70"
+        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-muted-foreground transition-colors hover:bg-muted/70"
         onClick={() => setOpen(!open)}
         type="button"
       >
         <span className="h-2 w-2 rounded-full bg-muted-foreground/35" />
-        <span className="font-semibold">{title}</span>
+        <AgentNameLabel name={member.name} agent={agent} loud />
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
         <div className="ml-7 space-y-3 border-l border-border/60 pl-4 pt-2">
-          <MemberActivityDetails member={member} />
+          <MemberActivityDetails member={member} agents={agents} />
         </div>
       ) : null}
     </div>
   );
 }
 
-function MemberActivityDetails({ member }: { member: MemberActivity }) {
+function MemberActivityDetails({ member, agents }: { member: MemberActivity; agents: AgentInfo[] }) {
+  const agent = resolveAgentInfo(member.name, agents);
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <GitBranch className="h-3.5 w-3.5" />
-        <span>{member.name}</span>
-        <span>{member.eventCount} 个事件</span>
+        <AgentNameLabel name={member.name} agent={agent} />
+        <span>{member.toolCount ? `${member.toolCount} 个工具调用` : "暂无工具调用"}</span>
       </div>
-      {member.reasoning ? <ReasoningBlock content={member.reasoning} /> : null}
-      {member.tools.map((tool, index) => (
-        <ToolCallCard key={`${tool.ref || tool.id || tool.name}-${index}`} tool={tool} />
+      {member.parts.map((part, index) => (
+        <MemberActivityPart key={`${member.id}-part-${index}`} part={part} />
       ))}
-      {member.preview ? (
-        <div className="prose message-prose w-full max-w-none text-base leading-8" dangerouslySetInnerHTML={{ __html: renderMarkdown(member.preview) }} />
-      ) : null}
     </div>
   );
+}
+
+function MemberActivityPart({ part }: { part: MessageRenderPart }) {
+  if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
+  if (part.type === "tool") return <ToolCallCard tool={part.tool} />;
+  if (part.type === "text") return <MarkdownContent className="text-base leading-8" content={part.content} />;
+  return null;
+}
+
+function AgentNameLabel({ name, agent, loud = false }: { name: string; agent?: AgentInfo; loud?: boolean }) {
+  const label = agentDisplayName(agent, name);
+  return (
+    <span className={cn("inline-flex min-w-0 items-center gap-2", loud && "font-semibold tracking-normal")}>
+      <span className="truncate">{label}</span>
+      {agent?.builtin ? <BuiltinAgentBadge /> : null}
+    </span>
+  );
+}
+
+function BuiltinAgentBadge() {
+  return (
+    <span className="shrink-0 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
+      内置
+    </span>
+  );
+}
+
+function resolveAgentInfo(name: string, agents: AgentInfo[]) {
+  const key = normalizeAgentKey(name);
+  if (!key) return undefined;
+  return agents.find((agent) => {
+    if (normalizeAgentKey(agent.name) === key) return true;
+    if (normalizeAgentKey(agent.display_name || "") === key) return true;
+    return (agent.aliases || []).some((alias) => normalizeAgentKey(alias) === key);
+  });
+}
+
+function agentDisplayName(agent: AgentInfo | undefined, fallback: string) {
+  return agent?.display_name || agent?.name || fallback;
+}
+
+function normalizeAgentKey(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function MessageActions({ content, align = "left", time }: { content: string; align?: "left" | "right"; time?: string }) {
@@ -608,6 +733,87 @@ function AskTimelineItem({
   return <AskPanel ask={ask} sessionID={sessionID} onAnswered={onAnswered} />;
 }
 
+function buildTimelineModel(
+  messages: ChatViewMessage[],
+  displayEvents: ChatEvent[],
+  submittedAskIDs: Set<string>,
+): TimelineModel {
+  const reasoningByMessage = collectReasoningBlocks(displayEvents);
+  const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
+  const memberActivities = collectMemberActivities(displayEvents);
+  const askActivities = collectAskActivities(displayEvents, submittedAskIDs);
+  const memberLookup = buildMemberLookup(memberActivities);
+  const attachedMemberIDs = new Set<string>();
+  const renderedToolKeys = new Set<string>();
+  const memberByMessageID = mapMembersByMessageID(memberActivities);
+  const toolEventsByMessageID = groupToolsByMessageID(toolEvents);
+  const baseMessages = dedupeAdjacentSystemMessages(
+    messages.filter((message) => !message.hidden && shouldShowTimelineItem(message, reasoningByMessage, memberByMessageID)),
+  );
+  const messageNodes = baseMessages.map((message, index) => {
+    const messageTools = toolEventsByMessageID.get(message.id) || [];
+    const parts = message.role === "assistant"
+      ? attachMembersToParts(
+          assistantMessageParts(
+            message,
+            askActivities,
+            messageTools,
+            reasoningByMessage.get(message.id) || reasoningContentBlocks(message.reasoningContent),
+          ),
+          memberLookup,
+          attachedMemberIDs,
+        )
+      : [];
+    for (const part of parts) {
+      if (part.type === "tool") renderedToolKeys.add(toolActivityKey(part.tool));
+    }
+    return {
+      message,
+      parts,
+      showAgentLabel: false,
+      order: messageOrder(message, index),
+    };
+  });
+  const trailingTools = attachMembersToParts(
+    toolEvents
+      .filter((tool) => !renderedToolKeys.has(toolActivityKey(tool)))
+      .map((tool): MessageRenderPart => ({ type: "tool", tool })),
+    memberLookup,
+    attachedMemberIDs,
+  );
+  for (const part of trailingTools) {
+    if (part.type === "tool") renderedToolKeys.add(toolActivityKey(part.tool));
+  }
+  const fallbackMembers = memberActivities.filter((member) => !attachedMemberIDs.has(member.id));
+  const items = orderedTimelineItems(messageNodes, fallbackMembers);
+  const timelineMessages = items.filter((item) => item.kind === "message").map((item) => item.node.message);
+  const agentLabelMessageIDs = visibleAgentLabelMessageIDs(timelineMessages);
+  for (const item of items) {
+    if (item.kind === "message") item.node.showAgentLabel = agentLabelMessageIDs.has(item.node.message.id);
+  }
+  const inlineAskIDs = collectInlineAskIDsFromItems(items);
+  return {
+    items,
+    messages: timelineMessages,
+    trailingAsks: askActivities.filter((ask) => !inlineAskIDs.has(ask.id)),
+    trailingTools,
+  };
+}
+
+function attachMembersToParts(
+  parts: MessageRenderPart[],
+  memberLookup: Map<string, MemberActivity>,
+  attachedMemberIDs: Set<string>,
+) {
+  return parts.map((part) => {
+    if (part.type !== "tool") return part;
+    const member = memberForTool(part.tool, memberLookup);
+    if (!member || attachedMemberIDs.has(member.id)) return part;
+    attachedMemberIDs.add(member.id);
+    return { ...part, member };
+  });
+}
+
 function toolEventsKey(events: Array<{ tool_calls?: unknown[]; tool_call?: unknown; tool_call_ref?: string; type?: string }>) {
   return events
     .map((event) => `${event.type}:${event.tool_call_ref || ""}:${event.tool_calls?.length || 0}:${event.tool_call ? 1 : 0}`)
@@ -673,6 +879,48 @@ function dedupeAdjacentSystemMessages(messages: ChatViewMessage[]) {
   });
 }
 
+function visibleAgentLabelMessageIDs(messages: ChatViewMessage[]) {
+  const result = new Set<string>();
+  let previousAgent = "";
+  for (const message of messages) {
+    if (message.hidden) continue;
+    if (message.role === "user" || message.role === "system") {
+      previousAgent = "";
+      continue;
+    }
+    if (message.role !== "assistant" || !message.agent) continue;
+    const currentAgent = normalizeAgentKey(message.agent);
+    if (currentAgent !== previousAgent) {
+      result.add(message.id);
+      previousAgent = currentAgent;
+    }
+  }
+  return result;
+}
+
+function orderedTimelineItems(messages: TimelineMessageNode[], members: MemberActivity[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  for (const node of messages) {
+    items.push({ kind: "message", node, order: node.order });
+  }
+  for (const member of members) {
+    items.push({ kind: "member", member, order: member.firstOrder });
+  }
+  return items.sort((left, right) => {
+    if (left.order !== right.order) return left.order - right.order;
+    if (left.kind === right.kind) return 0;
+    return left.kind === "message" ? -1 : 1;
+  });
+}
+
+function messageOrder(message: ChatViewMessage, fallback: number) {
+  const sequences = (message.events || [])
+    .map((event, index) => eventOrder(event, index))
+    .filter((sequence) => Number.isFinite(sequence));
+  if (sequences.length) return Math.min(...sequences);
+  return fallback + 0.5;
+}
+
 function mapMembersByMessageID(members: MemberActivity[]) {
   const result = new Map<string, MemberActivity>();
   for (const member of members) {
@@ -692,12 +940,12 @@ function groupToolsByMessageID(tools: ToolActivity[]) {
   return result;
 }
 
-function collectInlineAskIDs(messages: ChatViewMessage[], asks: AskActivity[]) {
+function collectInlineAskIDsFromItems(items: TimelineItem[]) {
   const ids = new Set<string>();
-  for (const message of messages) {
-    for (const event of message.events || []) {
-      const ask = askFromToolEvent(event, asks);
-      if (ask) ids.add(ask.id);
+  for (const item of items) {
+    if (item.kind !== "message") continue;
+    for (const part of item.node.parts) {
+      if (part.type === "ask") ids.add(part.ask.id);
     }
   }
   return ids;
@@ -988,34 +1236,112 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
   return order.map((key) => result.get(key)!).filter((tool) => tool.name && tool.name !== "tool");
 }
 
+type OrderedChatEvent = { event: ChatEvent; order: number };
+
 function collectMemberActivities(events: ChatEvent[]) {
-  const grouped = new Map<string, ChatEvent[]>();
-  for (const event of events) {
-    if (!isMemberActivityEvent(event)) continue;
-    const id = event.member_call_id || event.member_name || event.agent_name || "member";
-    grouped.set(id, [...(grouped.get(id) || []), event]);
-  }
+  const grouped = new Map<string, OrderedChatEvent[]>();
+  events.forEach((event, index) => {
+    if (!isMemberActivityEvent(event)) return;
+    const id = memberActivityID(event);
+    grouped.set(id, [...(grouped.get(id) || []), { event, order: eventOrder(event, index) }]);
+  });
   return Array.from(grouped.entries())
-    .map(([id, memberEvents]) => {
-      let preview = "";
-      let reasoning = "";
-      for (const event of memberEvents) {
-        const content = String(event.content || "");
-        if (!content) continue;
-        if (isReasoningDelta(event)) reasoning = appendText(reasoning, content);
-        if (isTextDelta(event)) preview = appendText(preview, content);
-      }
+    .map(([id, orderedEvents]) => {
+      const memberEvents = orderedEvents
+        .slice()
+        .sort((left, right) => left.order - right.order)
+        .map((item) => item.event);
+      const tools = collectToolActivities(memberEvents, { includeMemberEvents: true });
+      const parts = memberMessageParts(memberEvents, tools);
       return {
         id,
         name: memberEvents.find((event) => event.member_name)?.member_name || memberEvents[0]?.agent_name || "子智能体",
         eventCount: memberEvents.length,
-        preview,
-        reasoning,
-        tools: collectToolActivities(memberEvents, { includeMemberEvents: true }),
+        toolCount: tools.length,
+        firstOrder: Math.min(...orderedEvents.map((item) => item.order)),
+        parts,
+        tools,
         messageIDs: uniqueStrings(memberEvents.map((event) => event.message_id).filter(Boolean) as string[]),
       };
     })
-    .filter((member) => member.preview || member.reasoning || member.tools.length || member.eventCount > 1);
+    .filter((member) => member.parts.length);
+}
+
+function memberActivityID(event: ChatEvent) {
+  return event.member_call_id || event.parent_tool_call_id || event.member_name || event.agent_name || event.message_id || "member";
+}
+
+function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
+  const parts: MessageRenderPart[] = [];
+  const renderedTools = new Set<string>();
+  let seenText = "";
+  let reasoningOpen = false;
+  let textOpen = false;
+
+  for (const event of events) {
+    if (isReasoningDelta(event) && event.role !== "tool") {
+      appendSequencedTextPart(parts, "reasoning", String(event.reasoning_content || event.content || ""), reasoningOpen);
+      reasoningOpen = true;
+      textOpen = false;
+      continue;
+    }
+    reasoningOpen = false;
+
+    if (isTextDelta(event) && event.role !== "tool") {
+      const content = String(event.content || "");
+      appendSequencedTextPart(parts, "text", content, textOpen);
+      seenText = appendText(seenText, content);
+      textOpen = true;
+      continue;
+    }
+    textOpen = false;
+
+    const tool = toolFromEvent(event, tools);
+    if (tool) {
+      const key = toolActivityKey(tool);
+      if (!renderedTools.has(key)) {
+        parts.push({ type: "tool", tool });
+        renderedTools.add(key);
+      }
+    }
+
+    if (isAssistantCompleted(event)) {
+      const content = completedTextDelta(String(event.content || ""), seenText);
+      if (content && !seenText.includes(content)) {
+        appendSequencedTextPart(parts, "text", content, false);
+        seenText = appendText(seenText, content);
+      }
+    }
+  }
+
+  return parts.filter((part) => part.type === "ask" || part.type === "tool" || part.content.trim());
+}
+
+function appendSequencedTextPart(parts: MessageRenderPart[], type: "reasoning" | "text", content: string, mergeWithPrevious: boolean) {
+  if (!content) return;
+  const previous = parts[parts.length - 1];
+  if (mergeWithPrevious && previous?.type === type) {
+    previous.content = appendText(previous.content, content);
+    return;
+  }
+  parts.push({ type, content });
+}
+
+function eventOrder(event: ChatEvent, fallback: number) {
+  const sequence = Number(event.sequence);
+  if (Number.isFinite(sequence)) return sequence;
+  const displayOrder = Number(event.display_order);
+  if (Number.isFinite(displayOrder)) return displayOrder;
+  const streamID = Number(event.stream_event_id);
+  if (Number.isFinite(streamID)) return streamID;
+  return fallback + 0.5;
+}
+
+function completedTextDelta(content: string, seenText: string) {
+  if (!content || !seenText) return content;
+  if (seenText.includes(content)) return "";
+  if (content.startsWith(seenText)) return content.slice(seenText.length);
+  return content;
 }
 
 function uniqueStrings(values: string[]) {

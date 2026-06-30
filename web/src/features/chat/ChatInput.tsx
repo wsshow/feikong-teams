@@ -23,6 +23,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const referenceRequestID = useRef(0);
+  const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
 
   async function submit() {
     const message = value.trim();
@@ -95,14 +96,21 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
   }
 
   const queryReferences = useCallback(async (query: string) => {
+    const keyword = query.trim();
+    const cached = fileSuggestionCache.current.get(keyword);
+    if (cached) {
+      setFileSuggestions(cached);
+      setReferenceLoading(false);
+      return;
+    }
     const requestID = referenceRequestID.current + 1;
     referenceRequestID.current = requestID;
     setReferenceLoading(true);
     dispatch(chatActions.setError(undefined));
     try {
-      const keyword = query.trim();
-      const files = keyword ? await searchFiles(keyword) : await listFiles("");
+      const files = await fileReferenceSuggestions(keyword);
       if (referenceRequestID.current === requestID) {
+        fileSuggestionCache.current.set(keyword, files || []);
         setFileSuggestions(files || []);
       }
     } catch {
@@ -167,4 +175,36 @@ function resetOffset(sessionID: string) {
   const offsets = readJSON<Record<string, number>>(storageKeys.streamOffsets, {});
   delete offsets[sessionID];
   writeJSON(storageKeys.streamOffsets, offsets);
+}
+
+async function fileReferenceSuggestions(query: string) {
+  const normalized = query.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized) return listFiles("");
+
+  const slashIndex = normalized.lastIndexOf("/");
+  if (slashIndex < 0) return searchFiles(normalized);
+
+  const parent = normalized.slice(0, slashIndex).replace(/\/+$/, "");
+  const leaf = normalized.slice(slashIndex + 1).toLowerCase();
+  const listed = await listFiles(parent).catch(() => [] as FileEntry[]);
+  const filtered = leaf
+    ? listed.filter((file) => file.name.toLowerCase().includes(leaf) || file.path.toLowerCase().includes(normalized.toLowerCase()))
+    : listed;
+
+  if (leaf) {
+    const searched = await searchFiles(normalized).catch(() => []);
+    return mergeFileSuggestions([...filtered, ...searched]);
+  }
+  return filtered;
+}
+
+function mergeFileSuggestions(files: FileEntry[]) {
+  const seen = new Set<string>();
+  const result: FileEntry[] = [];
+  for (const file of files) {
+    if (!file.path || seen.has(file.path)) continue;
+    seen.add(file.path);
+    result.push(file);
+  }
+  return result;
 }

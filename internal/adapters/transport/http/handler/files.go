@@ -138,7 +138,7 @@ func GetFilesHandler() gin.HandlerFunc {
 	}
 }
 
-// SearchFilesHandler 递归搜索文件名
+// SearchFilesHandler 递归搜索文件名和相对路径
 func SearchFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		_, absBase, err := getWorkspaceDir()
@@ -153,7 +153,7 @@ func SearchFilesHandler() gin.HandlerFunc {
 			return
 		}
 
-		queryLower := strings.ToLower(query)
+		queryLower := strings.ToLower(filepath.ToSlash(query))
 		const maxResults = 100
 
 		const maxDepth = 10
@@ -178,19 +178,20 @@ func SearchFilesHandler() gin.HandlerFunc {
 			if err != nil || rel == "." {
 				return nil
 			}
+			relPath := filepath.ToSlash(rel)
 			// 限制搜索深度
 			if d.IsDir() && strings.Count(rel, string(os.PathSeparator)) >= maxDepth {
 				return filepath.SkipDir
 			}
 
-			if strings.Contains(strings.ToLower(d.Name()), queryLower) {
+			if strings.Contains(strings.ToLower(d.Name()), queryLower) || strings.Contains(strings.ToLower(relPath), queryLower) {
 				info, err := d.Info()
 				if err != nil {
 					return nil
 				}
 				results = append(results, FileInfo{
 					Name:    d.Name(),
-					Path:    rel,
+					Path:    relPath,
 					IsDir:   d.IsDir(),
 					Size:    info.Size(),
 					ModTime: info.ModTime().Unix(),
@@ -208,7 +209,7 @@ func SearchFilesHandler() gin.HandlerFunc {
 			if results[i].IsDir != results[j].IsDir {
 				return results[i].IsDir
 			}
-			return results[i].Name < results[j].Name
+			return results[i].Path < results[j].Path
 		})
 
 		OK(c, results)

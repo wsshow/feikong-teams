@@ -9,8 +9,10 @@ import (
 // AgentInfoResponse 智能体信息响应
 type AgentInfoResponse struct {
 	Name        string   `json:"name"`
+	DisplayName string   `json:"display_name,omitempty"`
 	Description string   `json:"description"`
 	Aliases     []string `json:"aliases,omitempty"`
+	Builtin     bool     `json:"builtin,omitempty"`
 }
 
 // GetAgentsHandler 获取所有可用智能体
@@ -30,8 +32,10 @@ func (rt *Runtime) GetAgentsHandler() gin.HandlerFunc {
 		for _, agent := range registry {
 			agentList = append(agentList, AgentInfoResponse{
 				Name:        agent.Name,
+				DisplayName: agent.DisplayName,
 				Description: agent.Description,
 				Aliases:     agent.Aliases,
+				Builtin:     agent.Builtin,
 			})
 		}
 

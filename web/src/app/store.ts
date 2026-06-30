@@ -98,8 +98,8 @@ const chatSlice = createSlice({
         }
       }
       if (isMemberActivityEvent(event)) {
-        const key = event.message_id || event.member_call_id || event.member_name || event.agent_name || "member";
-        const id = event.message_id || `member-${key}`;
+        const key = event.member_call_id || event.parent_tool_call_id || event.member_name || event.agent_name || event.message_id || "member";
+        const id = `member-${key}`;
         let message = state.messages.find((item) => item.id === id);
         if (!message) {
           message = {
@@ -222,7 +222,7 @@ function isMemberActivityEvent(event: ChatEvent) {
 
 function findParentToolMessageIndex(messages: ChatViewMessage[], event: ChatEvent) {
   const refs = new Set(
-    [event.parent_tool_call_id, event.member_call_id, event.tool_call_id, event.tool_call_ref]
+    [event.parent_tool_call_id, event.member_call_id, event.tool_call_id, event.tool_call_ref, event.member_tool_name]
       .filter(Boolean)
       .flatMap((value) => {
         const ref = String(value);

@@ -5,6 +5,7 @@ import (
 	"fkteams/internal/app/agent/catalog/analyst"
 	assistantagent "fkteams/internal/app/agent/catalog/assistant"
 	"fkteams/internal/app/agent/catalog/coder"
+	"fkteams/internal/app/agent/catalog/coordinator"
 	"fkteams/internal/app/agent/catalog/custom"
 	"fkteams/internal/app/agent/catalog/researcher"
 	"fkteams/internal/app/agent/catalog/visitor"
@@ -18,8 +19,11 @@ import (
 // AgentInfo 智能体信息。
 type AgentInfo struct {
 	Name        string
+	DisplayName string
 	Description string
 	Aliases     []string
+	Builtin     bool
+	TeamMember  bool
 	Creator     func(ctx context.Context) (runtimeport.Agent, error)
 }
 
@@ -74,7 +78,9 @@ func (r *Registry) List() []AgentInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	result := make([]AgentInfo, len(r.agents))
-	copy(result, r.agents)
+	for i := range r.agents {
+		result[i] = *cloneAgentInfo(r.agents[i])
+	}
 	return result
 }
 
@@ -108,6 +114,9 @@ func (r *Registry) TeamAgents(ctx context.Context) ([]runtimeport.Agent, error) 
 	infos := r.List()
 	subAgents := make([]runtimeport.Agent, 0, len(infos))
 	for _, agentInfo := range infos {
+		if !agentInfo.TeamMember {
+			continue
+		}
 		agent, err := agentInfo.Creator(ctx)
 		if err != nil {
 			return nil, err
@@ -187,34 +196,42 @@ func buildRegistry() []AgentInfo {
 
 	type agentCreator struct {
 		name        string
+		displayName string
 		description string
 		aliases     []string
+		teamMember  bool
 		creator     func(ctx context.Context) (runtimeport.Agent, error)
 	}
 
 	creators := []agentCreator{
-		{name: "coder", description: "软件工程师，负责代码实现、调试、重构和工程验证。", aliases: []string{"小码"}, creator: coder.NewAgent},
+		{name: "coordinator", displayName: "协调者", description: "核心工程智能体，直接完成常规工程任务，并按需指派专业成员。", aliases: []string{"小队长"}, creator: func(ctx context.Context) (runtimeport.Agent, error) {
+			return coordinator.NewAgent(ctx)
+		}},
+		{name: "coder", displayName: "代码工程师", description: "软件工程师，负责代码实现、调试、重构和工程验证。", aliases: []string{"小码"}, teamMember: true, creator: coder.NewAgent},
 	}
 
 	if cfg.Agents.Researcher {
-		creators = append(creators, agentCreator{name: "researcher", description: "网络研究员，负责检索、抓取、交叉验证和整理时效信息。", aliases: []string{"小搜"}, creator: researcher.NewAgent})
+		creators = append(creators, agentCreator{name: "researcher", displayName: "研究员", description: "网络研究员，负责检索、抓取、交叉验证和整理时效信息。", aliases: []string{"小搜"}, teamMember: true, creator: researcher.NewAgent})
 	}
 	if cfg.Agents.Analyst {
-		creators = append(creators, agentCreator{name: "analyst", description: "数据分析师，负责使用表格、脚本和文档工具提取洞察。", aliases: []string{"小析"}, creator: analyst.NewAgent})
+		creators = append(creators, agentCreator{name: "analyst", displayName: "数据分析师", description: "数据分析师，负责使用表格、脚本和文档工具提取洞察。", aliases: []string{"小析"}, teamMember: true, creator: analyst.NewAgent})
 	}
 	if cfg.Agents.SSHVisitor.Enabled {
-		creators = append(creators, agentCreator{name: "remote", description: "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。", aliases: []string{"小访", "visitor"}, creator: visitor.NewAgent})
+		creators = append(creators, agentCreator{name: "remote", displayName: "远程运维", description: "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。", aliases: []string{"小访", "visitor"}, teamMember: true, creator: visitor.NewAgent})
 	}
 	if cfg.Agents.Assistant {
-		creators = append(creators, agentCreator{name: "generalist", description: "通用执行助手，负责综合命令、文件、搜索和文档工具完成开放任务。", aliases: []string{"小助", "assistant"}, creator: assistantagent.NewAgent})
+		creators = append(creators, agentCreator{name: "generalist", displayName: "通用助手", description: "通用执行助手，负责综合命令、文件、搜索和文档工具完成开放任务。", aliases: []string{"小助", "assistant"}, teamMember: true, creator: assistantagent.NewAgent})
 	}
 
 	entries := make([]AgentInfo, 0, len(creators)+len(cfg.Custom.Agents))
 	for _, c := range creators {
 		entries = append(entries, AgentInfo{
 			Name:        c.name,
+			DisplayName: c.displayName,
 			Description: c.description,
 			Aliases:     append([]string(nil), c.aliases...),
+			Builtin:     true,
+			TeamMember:  c.teamMember,
 			Creator:     c.creator,
 		})
 	}
@@ -243,6 +260,7 @@ func appendCustomAgents(entries []AgentInfo, cfg *config.Config) []AgentInfo {
 		entries = append(entries, AgentInfo{
 			Name:        agentCfg.Name,
 			Description: agentCfg.Desc,
+			TeamMember:  true,
 			Creator: func(ctx context.Context) (runtimeport.Agent, error) {
 				mc := config.Get().ResolveModel(agentCfg.Model)
 				var model custom.Model

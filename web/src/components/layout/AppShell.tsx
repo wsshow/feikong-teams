@@ -1,4 +1,4 @@
-import { ChevronDown, Menu, Share2 } from "lucide-react";
+import { Menu, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
@@ -38,10 +38,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu className="h-4 w-4" />
             </Button>
-            <button className="flex min-w-0 items-center gap-2 text-left text-base font-semibold" type="button">
+            <div className="min-w-0 text-base font-semibold">
               <span className="truncate">{title}</span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
+            </div>
           </div>
           <button
             className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
