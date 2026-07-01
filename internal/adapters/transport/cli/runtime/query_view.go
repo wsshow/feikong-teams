@@ -36,7 +36,7 @@ func NewTerminalQueryView() *TerminalQueryView {
 
 func (v *TerminalQueryView) Start(input string) {
 	fmt.Println()
-	spinner, _ := pterm.DefaultSpinner.Start("思考中...")
+	spinner, _ := pterm.DefaultSpinner.Start("执行中...")
 	v.spinner = spinner
 	v.stopSpinner = sync.OnceFunc(func() { spinner.Stop() })
 }

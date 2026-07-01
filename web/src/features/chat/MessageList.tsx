@@ -233,7 +233,7 @@ function isNearScrollBottom(element: HTMLElement) {
 }
 
 function loadingStatusText(statusText?: string) {
-  if (!statusText || statusText === "处理中" || statusText === "开始处理您的请求...") return "思考中";
+  if (!statusText || statusText === "处理中" || statusText === "开始处理您的请求...") return "执行中";
   return statusText;
 }
 

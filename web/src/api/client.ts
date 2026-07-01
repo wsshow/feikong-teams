@@ -20,13 +20,13 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 
   const response = await fetch(path, { ...init, headers });
-  if (response.status === 401) {
-    setAuthToken("");
-    window.dispatchEvent(new CustomEvent("fkteams:auth-expired"));
-    throw new APIError("unauthorized", 401);
-  }
   if (!response.ok) {
-    throw new APIError(response.statusText || "request failed", response.status);
+    const message = await responseErrorMessage(response);
+    if (response.status === 401) {
+      setAuthToken("");
+      window.dispatchEvent(new CustomEvent("fkteams:auth-expired"));
+    }
+    throw new APIError(message, response.status);
   }
 
   const payload = (await response.json()) as APIResponse<T>;
@@ -34,6 +34,46 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     throw new APIError(payload.message || "request failed", response.status);
   }
   return payload.data;
+}
+
+async function responseErrorMessage(response: Response) {
+  const fallback = httpStatusMessage(response.status, response.statusText);
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await response.text().catch(() => "");
+    return text.trim() || fallback;
+  }
+  try {
+    const payload = (await response.json()) as Partial<APIResponse<unknown>>;
+    return payload.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function httpStatusMessage(status: number, statusText: string) {
+  switch (status) {
+    case 400:
+      return "请求参数错误";
+    case 401:
+      return "未登录或登录已过期";
+    case 403:
+      return "没有权限执行此操作";
+    case 404:
+      return "资源不存在";
+    case 409:
+      return "请求状态冲突";
+    case 413:
+      return "请求内容过大";
+    case 500:
+      return "服务器内部错误";
+    case 502:
+    case 503:
+    case 504:
+      return "服务暂时不可用";
+    default:
+      return statusText || "请求失败";
+  }
 }
 
 export function get<T>(path: string) {

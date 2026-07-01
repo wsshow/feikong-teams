@@ -46,7 +46,7 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runtimeQueryStartedMsg:
 		m.running = true
 		m.cancelling = false
-		m.status = "思考中..."
+		m.status = "执行中..."
 		m.activeOutput = -1
 		m.activeReason = -1
 		return m, nil

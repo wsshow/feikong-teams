@@ -438,11 +438,11 @@ func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 
 		stream := rt.Streams.Get(sessionID)
 		if stream == nil {
-			Fail(c, http.StatusNotFound, "no task found for this session")
+			Fail(c, http.StatusNotFound, "当前会话没有正在执行的任务")
 			return
 		}
 		if stream.Status() != "processing" {
-			Fail(c, http.StatusConflict, fmt.Sprintf("task is not running, current status: %s", stream.Status()))
+			Fail(c, http.StatusConflict, "任务已结束，无法取消")
 			return
 		}
 
