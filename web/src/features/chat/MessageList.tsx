@@ -352,12 +352,7 @@ function MessagePart({
       </div>
     );
   }
-  if (part.streaming) return <StreamingTextContent className="text-lg leading-9" content={part.content} />;
   return <MarkdownContent className="text-lg leading-9" content={part.content} />;
-}
-
-function StreamingTextContent({ content, className }: { content: string; className?: string }) {
-  return <div className={cn("whitespace-pre-wrap break-words", className)}>{content}</div>;
 }
 
 function ReasoningBlock({ content, disclosureID }: { content: string; disclosureID: string }) {
@@ -575,7 +570,6 @@ function MemberActivityDetails({ member, agents }: { member: MemberActivity; age
 function MemberActivityPart({ part, disclosureID }: { part: MessageRenderPart; disclosureID: string }) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
   if (part.type === "tool") return <ToolCallCard tool={part.tool} disclosureID={disclosureID} />;
-  if (part.type === "text" && part.streaming) return <StreamingTextContent className="text-base leading-8" content={part.content} />;
   if (part.type === "text") return <MarkdownContent className="text-base leading-8" content={part.content} />;
   return null;
 }

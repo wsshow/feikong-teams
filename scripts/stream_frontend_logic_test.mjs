@@ -26,7 +26,7 @@ try {
   if (start.status !== "processing") throw new Error(`stream did not start processing: ${JSON.stringify(start)}`);
 
   console.log(`session_id=${start.session_id}`);
-  await subscribeStream(start.session_id, 0, (event) => {
+  await subscribeUntilTerminal(start.session_id, 0, (event) => {
     receiveEvent(event);
     if (event.stream_event_id !== undefined && Number(event.stream_event_id) % 100 === 0) {
       process.stdout.write(".");
@@ -58,6 +58,22 @@ async function post(path, body) {
     throw new Error(`POST ${path} failed: HTTP ${response.status} ${JSON.stringify(payload)}`);
   }
   return payload.data;
+}
+
+async function subscribeUntilTerminal(sessionID, initialOffset, onEvent, signal) {
+  let offset = initialOffset;
+  for (;;) {
+    await subscribeStream(sessionID, offset, (event) => {
+      if (event.stream_event_id !== undefined) {
+        offset = Math.max(offset, Number(event.stream_event_id) + 1);
+      }
+      onEvent(event);
+    }, signal);
+    if (state.events.some((event) => event.type === "processing_end" || event.type === "cancelled" || event.type === "error")) {
+      return;
+    }
+    await sleep(250);
+  }
 }
 
 async function subscribeStream(sessionID, offset, onEvent, signal) {
@@ -98,6 +114,10 @@ async function subscribeStream(sessionID, offset, onEvent, signal) {
 
 function isSSECloseError(error) {
   return error instanceof TypeError && String(error.message || "").includes("terminated");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function receiveEvent(event) {
