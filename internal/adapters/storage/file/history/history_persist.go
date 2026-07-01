@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,32 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 
 func LoadTranscriptFromFile(filePath string) ([]TranscriptEvent, error) {
 	return loadTranscript(filePath)
+}
+
+type SessionTranscriptRecord struct {
+	Event  TranscriptEvent
+	Member *SubagentMetadata
+}
+
+func LoadSessionTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord, error) {
+	mainEvents, err := loadTranscript(filepath.Join(sessionDir, TranscriptFileName))
+	if err != nil {
+		return nil, err
+	}
+	records := make([]SessionTranscriptRecord, 0, len(mainEvents))
+	for _, event := range mainEvents {
+		records = append(records, SessionTranscriptRecord{Event: event})
+	}
+	records = append(records, loadSubagentTranscriptRecords(sessionDir)...)
+	sort.SliceStable(records, func(i, j int) bool {
+		left := records[i].Event.At
+		right := records[j].Event.At
+		if left.IsZero() || right.IsZero() {
+			return false
+		}
+		return left.Before(right)
+	})
+	return records, nil
 }
 
 func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []AgentMessage {
@@ -154,11 +181,41 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 }
 
 func projectSubagentTranscriptFiles(sessionDir string) []AgentMessage {
+	records := loadSubagentTranscriptRecords(sessionDir)
+	messages := make([]AgentMessage, 0, len(records))
+	eventsByParent := make(map[string][]TranscriptEvent)
+	metadataByParent := make(map[string]SubagentMetadata)
+	var parents []string
+	for _, record := range records {
+		if record.Member == nil {
+			continue
+		}
+		key := record.Member.AgentRunID
+		if key == "" {
+			key = record.Member.ParentCallID
+		}
+		if _, ok := eventsByParent[key]; !ok {
+			parents = append(parents, key)
+		}
+		eventsByParent[key] = append(eventsByParent[key], record.Event)
+		metadataByParent[key] = *record.Member
+	}
+	for _, key := range parents {
+		events := eventsByParent[key]
+		msg := projectSubagentTranscript(events, metadataByParent[key])
+		if len(msg.Events) > 0 {
+			messages = append(messages, msg)
+		}
+	}
+	return messages
+}
+
+func loadSubagentTranscriptRecords(sessionDir string) []SessionTranscriptRecord {
 	matches, err := filepath.Glob(filepath.Join(sessionDir, subagentsDirName, "*", TranscriptFileName))
 	if err != nil || len(matches) == 0 {
 		return nil
 	}
-	messages := make([]AgentMessage, 0, len(matches))
+	records := make([]SessionTranscriptRecord, 0)
 	for _, filePath := range matches {
 		metadata, err := loadSubagentMetadata(filepath.Join(filepath.Dir(filePath), "metadata.json"))
 		if err != nil {
@@ -168,12 +225,12 @@ func projectSubagentTranscriptFiles(sessionDir string) []AgentMessage {
 		if err != nil {
 			continue
 		}
-		msg := projectSubagentTranscript(events, metadata)
-		if len(msg.Events) > 0 {
-			messages = append(messages, msg)
+		for _, event := range events {
+			member := metadata
+			records = append(records, SessionTranscriptRecord{Event: event, Member: &member})
 		}
 	}
-	return messages
+	return records
 }
 
 func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetadata) AgentMessage {

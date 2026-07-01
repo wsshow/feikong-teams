@@ -193,8 +193,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		sessionDir := rt.sessionDirPath(sessionID)
 		meta, metaErr := eventlog.LoadMetadata(sessionDir)
 
-		transcriptFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
-		transcript, err := eventlog.LoadTranscriptFromFile(transcriptFile)
+		transcript, err := eventlog.LoadSessionTranscriptRecords(sessionDir)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				if !activeTask && metaErr != nil {
@@ -219,7 +218,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 			"session_id":    sessionID,
 			"current_agent": currentAgent,
 			"favorite":      favorite,
-			"events":        rt.transcriptToChatEvents(sessionID, transcript),
+			"events":        rt.transcriptRecordsToChatEvents(sessionID, transcript),
 			"active_task":   activeTask,
 		})
 	}

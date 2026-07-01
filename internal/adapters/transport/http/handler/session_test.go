@@ -146,6 +146,109 @@ func TestGetSessionReturnsEventsInHistoryOrder(t *testing.T) {
 	}
 }
 
+func TestGetSessionIncludesSubagentTranscriptEvents(t *testing.T) {
+	rt := newTestRuntime(t)
+	gin.SetMode(gin.TestMode)
+
+	sessionID := "subagent-session"
+	sessionDir := rt.sessionDirPath(sessionID)
+	if err := eventlog.SaveMetadata(sessionDir, &eventlog.SessionMetadata{
+		ID:           sessionID,
+		Title:        "subagent",
+		Status:       "idle",
+		CurrentAgent: "coordinator",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}); err != nil {
+		t.Fatalf("save metadata: %v", err)
+	}
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	recorder := eventlog.NewHistoryRecorder()
+	recorder.SetSessionDir(sessionDir)
+	recorder.RecordEvent(eventlog.Event{
+		Type:      runtimeevents.EventUserMessage,
+		CreatedAt: now,
+		Content:   "查资料",
+	})
+	recorder.RecordEvent(eventlog.Event{
+		Type:       eventlog.EventToolCallStarted,
+		CreatedAt:  now.Add(time.Second),
+		AgentName:  "coordinator",
+		ToolCallID: "call_1",
+		ToolName:   "ask_fkagent_researcher",
+		ToolArgs:   `{"task":"查资料"}`,
+	})
+	recorder.RecordEvent(eventlog.Event{
+		Type:           runtimeevents.EventAssistantCompleted,
+		CreatedAt:      now.Add(2 * time.Second),
+		AgentName:      "researcher",
+		Content:        "子智能体结果",
+		MemberCallID:   "call_1",
+		MemberToolName: "ask_fkagent_researcher",
+		MemberName:     "researcher",
+	})
+	recorder.RecordEvent(eventlog.Event{
+		Type:       eventlog.EventToolCallCompleted,
+		CreatedAt:  now.Add(3 * time.Second),
+		AgentName:  "coordinator",
+		ToolCallID: "call_1",
+		ToolName:   "ask_fkagent_researcher",
+		Content:    "子智能体结果",
+	})
+	if err := recorder.SaveToFile(filepath.Join(sessionDir, eventlog.TranscriptFileName)); err != nil {
+		t.Fatalf("save history: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/sessions/:sessionID", rt.GetSessionHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+sessionID, nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var got Response
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	data, ok := got.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected response data object, got %#v", got.Data)
+	}
+	gotEvents, ok := data["events"].([]any)
+	if !ok {
+		t.Fatalf("expected events array, got %#v", data["events"])
+	}
+	var memberEvent map[string]any
+	for _, raw := range gotEvents {
+		event, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("event should be object, got %#v", raw)
+		}
+		if event["content"] == "子智能体结果" && event["member_call_id"] == "call_1" {
+			memberEvent = event
+			break
+		}
+	}
+	if memberEvent == nil {
+		t.Fatalf("missing subagent member event: %#v", gotEvents)
+	}
+	if memberEvent["type"] != string(runtimeevents.EventAssistantCompleted) {
+		t.Fatalf("member event type = %#v, want assistant_completed", memberEvent["type"])
+	}
+	if memberEvent["is_member_event"] != true {
+		t.Fatalf("member event should be marked as member event: %#v", memberEvent)
+	}
+	if memberEvent["member_tool_name"] != "ask_fkagent_researcher" || memberEvent["member_name"] != "researcher" {
+		t.Fatalf("member metadata mismatch: %#v", memberEvent)
+	}
+	if memberEvent["parent_tool_call_id"] != "call_1" {
+		t.Fatalf("parent tool call id = %#v, want call_1", memberEvent["parent_tool_call_id"])
+	}
+}
+
 func TestTranscriptToChatEventsUsesAppendOrder(t *testing.T) {
 	rt := newTestRuntime(t)
 	transcript := []eventlog.TranscriptEvent{

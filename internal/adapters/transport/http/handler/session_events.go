@@ -9,13 +9,23 @@ import (
 )
 
 func (rt *Runtime) transcriptToChatEvents(sessionID string, transcript []eventlog.TranscriptEvent) []map[string]any {
+	records := make([]eventlog.SessionTranscriptRecord, 0, len(transcript))
+	for _, item := range transcript {
+		records = append(records, eventlog.SessionTranscriptRecord{Event: item})
+	}
+	return rt.transcriptRecordsToChatEvents(sessionID, records)
+}
+
+func (rt *Runtime) transcriptRecordsToChatEvents(sessionID string, transcript []eventlog.SessionTranscriptRecord) []map[string]any {
 	result := make([]map[string]any, 0, len(transcript))
 	turn := 0
-	for index, item := range transcript {
-		if item.Type == eventlog.TranscriptUserMessage {
+	for index, record := range transcript {
+		item := record.Event
+		if item.Type == eventlog.TranscriptUserMessage && record.Member == nil {
 			turn++
 		}
 		for _, event := range transcriptEventToRuntimeEvents(item, transcriptRuntimeTurnID(sessionID, turn)) {
+			attachTranscriptMember(&event, record.Member)
 			event.Sequence = int64(len(result) + 1)
 			payload := rt.convertEventToMap(event)
 			payload["session_id"] = sessionID
@@ -37,6 +47,17 @@ func (rt *Runtime) transcriptToChatEvents(sessionID string, transcript []eventlo
 		}
 	}
 	return result
+}
+
+func attachTranscriptMember(event *events.Event, metadata *eventlog.SubagentMetadata) {
+	if event == nil || metadata == nil || metadata.ParentCallID == "" {
+		return
+	}
+	event.MemberCallID = metadata.ParentCallID
+	event.MemberToolName = metadata.ToolName
+	event.MemberName = metadata.Agent
+	event.ParentToolCallID = metadata.ParentCallID
+	event.ParentToolName = metadata.ToolName
 }
 
 func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string) []events.Event {
