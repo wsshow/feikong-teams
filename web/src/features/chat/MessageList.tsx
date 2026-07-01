@@ -469,18 +469,18 @@ function MemberActivityBlock({ member, agents }: { member: MemberActivity; agent
   const [open, setOpen] = useState(false);
   const agent = resolveAgentInfo(member.name, agents);
   return (
-    <div className="text-sm">
+    <div className="-ml-2 text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
+        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-muted-foreground transition-colors hover:bg-muted/70"
         onClick={() => setOpen(!open)}
         type="button"
       >
-        <span className="h-2 w-2 rounded-full bg-amber-400" />
+        <span className="h-2 w-2 rounded-full bg-muted-foreground/35" />
         <AgentNameLabel name={member.name} agent={agent} loud />
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
-        <div className="ml-7 space-y-3 border-l border-amber-200/70 pl-4 pt-2">
+        <div className="ml-7 space-y-3 border-l border-border/60 pl-4 pt-2">
           <MemberActivityDetails member={member} agents={agents} />
         </div>
       ) : null}
@@ -1100,11 +1100,13 @@ function toolFromEvent(event: ChatEvent, tools: ToolActivity[]) {
     const directKey = toolKey(directTool, event);
     const matched = tools.find((tool) => toolActivityKey(tool) === directKey || tool.ref === directTool.ref || tool.id === directTool.id);
     if (matched) return matched;
+    const result = eventToolResultContent(event);
     return {
       ...directTool,
       ref: directTool.ref || event.tool_call_ref,
       id: directTool.id || event.tool_call_id,
-      status: isAssistantCompleted(event) ? "completed" : "running",
+      status: isAssistantCompleted(event) || isToolCompleted(event) ? "completed" : "running",
+      result: directTool.result || result || undefined,
       message_id: event.message_id,
     };
   }
@@ -1135,6 +1137,10 @@ function isToolCompleted(event: ChatEvent) {
 
 function isToolResultEvent(event: ChatEvent) {
   return event.type === "tool_call_result_delta" || event.type === "tool_call_completed" || event.delta_kind === "tool_result";
+}
+
+function eventToolResultContent(event: ChatEvent) {
+  return String(event.tool_result || ((isToolResultEvent(event) || event.role === "tool") ? event.content : "") || "");
 }
 
 function findMatchingAsk(question: string, asks: AskActivity[], sequence?: number) {
@@ -1184,6 +1190,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         id: tool.id || event.tool_call_id,
         status: isAssistantCompleted(event) ? "completed" : "pending",
         member_name: event.member_name || tool.member_name,
+        result: tool.result || eventToolResultContent(event) || undefined,
         message_id: event.message_id,
       });
     }
@@ -1196,6 +1203,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         id: event.tool_call.id || event.tool_call_id,
         status: isAssistantCompleted(event) ? "completed" : "pending",
         member_name: event.member_name || event.tool_call.member_name,
+        result: event.tool_call.result || eventToolResultContent(event) || undefined,
         message_id: event.message_id,
       });
     }
@@ -1215,7 +1223,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
       });
       const next = result.get(key)!;
       const argsContent = String(event.tool_args || (event.delta_kind === "tool_args" ? event.content : "") || "");
-      const resultContent = String(event.tool_result || ((isToolResultEvent(event) || event.role === "tool") ? event.content : "") || "");
+      const resultContent = eventToolResultContent(event);
       if (event.delta_kind === "tool_args" && argsContent) {
         next.arguments = appendText(next.arguments, argsContent);
       }
@@ -1272,13 +1280,16 @@ function memberActivityID(event: ChatEvent) {
 function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
   const parts: MessageRenderPart[] = [];
   const renderedTools = new Set<string>();
+  let seenReasoning = "";
   let seenText = "";
   let reasoningOpen = false;
   let textOpen = false;
 
   for (const event of events) {
     if (isReasoningDelta(event) && event.role !== "tool") {
-      appendSequencedTextPart(parts, "reasoning", String(event.reasoning_content || event.content || ""), reasoningOpen);
+      const content = String(event.reasoning_content || event.content || "");
+      appendSequencedTextPart(parts, "reasoning", content, reasoningOpen);
+      seenReasoning = appendText(seenReasoning, content);
       reasoningOpen = true;
       textOpen = false;
       continue;
@@ -1304,6 +1315,11 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
     }
 
     if (isAssistantCompleted(event)) {
+      const reasoning = completedTextDelta(String(event.reasoning_content || ""), seenReasoning);
+      if (reasoning && !seenReasoning.includes(reasoning)) {
+        appendSequencedTextPart(parts, "reasoning", reasoning, false);
+        seenReasoning = appendText(seenReasoning, reasoning);
+      }
       const content = completedTextDelta(String(event.content || ""), seenText);
       if (content && !seenText.includes(content)) {
         appendSequencedTextPart(parts, "text", content, false);
