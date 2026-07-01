@@ -69,27 +69,35 @@ async function subscribeStream(sessionID, offset, onEvent, signal) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() || "";
-    for (const chunk of chunks) {
-      const lines = chunk.split("\n");
-      const idLine = lines.find((part) => part.startsWith("id:"));
-      const dataLines = lines.filter((part) => part.startsWith("data:"));
-      if (dataLines.length === 0) continue;
-      const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
-      if (!raw || raw === "[DONE]") continue;
-      const event = JSON.parse(raw);
-      if (idLine && event.stream_event_id === undefined) {
-        const id = Number(idLine.replace(/^id:\s*/, ""));
-        if (Number.isFinite(id)) event.stream_event_id = id;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+      for (const chunk of chunks) {
+        const lines = chunk.split("\n");
+        const idLine = lines.find((part) => part.startsWith("id:"));
+        const dataLines = lines.filter((part) => part.startsWith("data:"));
+        if (dataLines.length === 0) continue;
+        const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
+        if (!raw || raw === "[DONE]") continue;
+        const event = JSON.parse(raw);
+        if (idLine && event.stream_event_id === undefined) {
+          const id = Number(idLine.replace(/^id:\s*/, ""));
+          if (Number.isFinite(id)) event.stream_event_id = id;
+        }
+        onEvent(event);
       }
-      onEvent(event);
     }
+  } catch (error) {
+    if (!isSSECloseError(error)) throw error;
   }
+}
+
+function isSSECloseError(error) {
+  return error instanceof TypeError && String(error.message || "").includes("terminated");
 }
 
 function receiveEvent(event) {
@@ -120,6 +128,7 @@ function analyzeEvents(events, state) {
   const terminalEvents = [];
   const completedMemberIDs = completedMemberCallIDs(events);
   const memberPartIssues = analyzeMemberRenderParts(events);
+  const memberTextMismatches = analyzeMemberCompletedText(events);
 
   for (const event of events) {
     if (event.type === "processing_end" || event.type === "cancelled" || event.type === "error") terminalEvents.push(event);
@@ -193,6 +202,7 @@ function analyzeEvents(events, state) {
     members,
     memberToolEventCount: memberToolEvents.length,
     memberPartIssues,
+    memberTextMismatches,
     unscopedToolResults: unscopedToolResults.map((event) => ({
       type: event.type,
       stream_event_id: event.stream_event_id,
@@ -246,6 +256,7 @@ function printReport(report) {
     memberCount: report.members.length,
     memberToolEventCount: report.memberToolEventCount,
     memberPartIssueCount: report.memberPartIssues.length,
+    memberTextMismatchCount: report.memberTextMismatches.length,
     unscopedToolResultCount: report.unscopedToolResults.length,
     members: report.members.map((member) => ({
       id: member.id,
@@ -260,6 +271,7 @@ function printReport(report) {
     })),
     unscopedToolResults: report.unscopedToolResults.slice(0, 10),
     memberPartIssues: report.memberPartIssues.slice(0, 10),
+    memberTextMismatches: report.memberTextMismatches.slice(0, 10),
   }, null, 2));
 }
 
@@ -277,7 +289,60 @@ function assertReport(report) {
   }
   if (report.unscopedToolResults.length > 0) failures.push(`found ${report.unscopedToolResults.length} unscoped non-agent tool result events`);
   if (report.memberPartIssues.length > 0) failures.push(`found ${report.memberPartIssues.length} member render part issues`);
+  if (report.memberTextMismatches.length > 0) failures.push(`found ${report.memberTextMismatches.length} member text delta/completed mismatches`);
   if (failures.length) throw new Error(failures.join("; "));
+}
+
+function analyzeMemberCompletedText(events) {
+  const byKey = new Map();
+  for (const event of events) {
+    if (!isMemberActivityEvent(event) || !event.message_id || event.role === "tool") continue;
+    const memberID = memberActivityID(event);
+    const key = `${memberID}:${event.message_id}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        member_id: memberID,
+        message_id: event.message_id,
+        text_delta: "",
+        reasoning_delta: "",
+        completed_text: "",
+        completed_reasoning: "",
+      });
+    }
+    const item = byKey.get(key);
+    if (event.type === "assistant_text_delta") item.text_delta += String(event.content || "");
+    if (event.type === "assistant_reasoning_delta") item.reasoning_delta += String(event.reasoning_content || event.content || "");
+    if (event.type === "assistant_completed") {
+      item.completed_text = String(event.content || "");
+      item.completed_reasoning = String(event.reasoning_content || "");
+    }
+  }
+  const mismatches = [];
+  for (const item of byKey.values()) {
+    if (item.text_delta && item.completed_text && item.text_delta !== item.completed_text) {
+      mismatches.push({
+        kind: "text",
+        member_id: item.member_id,
+        message_id: item.message_id,
+        delta_len: item.text_delta.length,
+        completed_len: item.completed_text.length,
+        delta_sample: item.text_delta.slice(0, 120),
+        completed_sample: item.completed_text.slice(0, 120),
+      });
+    }
+    if (item.reasoning_delta && item.completed_reasoning && item.reasoning_delta !== item.completed_reasoning) {
+      mismatches.push({
+        kind: "reasoning",
+        member_id: item.member_id,
+        message_id: item.message_id,
+        delta_len: item.reasoning_delta.length,
+        completed_len: item.completed_reasoning.length,
+        delta_sample: item.reasoning_delta.slice(0, 120),
+        completed_sample: item.completed_reasoning.slice(0, 120),
+      });
+    }
+  }
+  return mismatches;
 }
 
 function analyzeMemberRenderParts(events) {

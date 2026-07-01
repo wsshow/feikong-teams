@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, GitBranch, Send } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
 import { chatMessageElementID } from "./dom";
+import { useDisclosureState } from "./disclosureState";
 import type { ChatEvent, ToolCallDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 import type { AgentInfo } from "@/types/api";
@@ -145,6 +146,7 @@ export function MessageList() {
                 <div key={`tool-${toolActivityKey(item.part.tool)}`} className={cn(spacing, "space-y-3")}>
                   <MessagePart
                     part={item.part}
+                    disclosureID={`timeline:${toolActivityKey(item.part.tool)}`}
                     sessionID={activeSessionID}
                     agents={agents}
                     onAskAnswered={() => {}}
@@ -202,13 +204,9 @@ export function MessageList() {
           <ActivityList tools={timeline.trailingTools} agents={agents} />
           {isProcessing ? (
             <div className="message-row mt-6 text-lg text-muted-foreground">
-              <div>
+              <div className="flex items-center">
                 {loadingStatusText(statusText)}
-                <span className="ml-1 inline-flex w-8 justify-between align-middle">
-                  <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                  <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />
-                  <i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                </span>
+                <ThinkingDots />
               </div>
             </div>
           ) : null}
@@ -235,8 +233,18 @@ function isNearScrollBottom(element: HTMLElement) {
 }
 
 function loadingStatusText(statusText?: string) {
-  if (!statusText || statusText === "处理中" || statusText === "开始处理您的请求...") return "思考中...";
+  if (!statusText || statusText === "处理中" || statusText === "开始处理您的请求...") return "思考中";
   return statusText;
+}
+
+function ThinkingDots() {
+  return (
+    <span className="ml-2 inline-flex items-center gap-1" aria-hidden="true">
+      <i className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.24s]" />
+      <i className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/45 [animation-delay:-0.12s]" />
+      <i className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/30" />
+    </span>
+  );
 }
 
 function MessageRow({
@@ -290,17 +298,21 @@ function MessageRow({
         </div>
       ) : null}
       <div className="space-y-3">
-        {parts.map((part, index) => (
+        {parts.map((part, index) => {
+          const key = messagePartKey(part, message.id, index);
+          return (
           <MessagePart
-            key={messagePartKey(part, message.id, index)}
+            key={key}
             part={part}
+            disclosureID={key}
             sessionID={sessionID}
             agents={agents}
             onAskAnswered={(selected, freeText) => {
               if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
             }}
           />
-        ))}
+          );
+        })}
       </div>
       {showCopyAction && (hasContent || copyContent) ? <MessageActions content={copyContent || message.content} compact /> : null}
     </article>
@@ -309,20 +321,23 @@ function MessageRow({
 
 function MessagePart({
   part,
+  disclosureID,
   sessionID,
   agents,
   onAskAnswered,
 }: {
   part: MessageRenderPart;
+  disclosureID: string;
   sessionID?: string;
   agents: AgentInfo[];
   onAskAnswered: (selected: string[], freeText: string) => void;
 }) {
-  if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
+  if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
   if (part.type === "tool") {
     const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
     return (
       <ToolCallCard
+        disclosureID={disclosureID}
         tool={part.tool}
         title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
       >
@@ -345,13 +360,20 @@ function StreamingTextContent({ content, className }: { content: string; classNa
   return <div className={cn("whitespace-pre-wrap break-words", className)}>{content}</div>;
 }
 
-function ReasoningBlock({ content }: { content: string }) {
-  const [open, setOpen] = useState(false);
+function ReasoningBlock({ content, disclosureID }: { content: string; disclosureID: string }) {
+  const [open, toggleOpen] = useDisclosureState(disclosureID);
+
+  function handleToggle(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleOpen();
+  }
+
   return (
     <div className="-ml-2 text-sm">
       <button
         className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
         type="button"
       >
         <span className="h-2 w-2 rounded-full bg-amber-400" />
@@ -454,6 +476,7 @@ function ActivityList({
         return (
           <ToolCallCard
             key={`${part.tool.ref || part.tool.id || part.tool.name}-${index}`}
+            disclosureID={`activity:${toolActivityKey(part.tool)}:${index}`}
             tool={part.tool}
             title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
           >
@@ -503,13 +526,20 @@ function memberLookupKeys(value: string) {
 }
 
 function MemberActivityBlock({ member, agents }: { member: MemberActivity; agents: AgentInfo[] }) {
-  const [open, setOpen] = useState(false);
+  const [open, toggleOpen] = useDisclosureState(`member:${member.id}`);
   const agent = resolveAgentInfo(member.name, agents);
+
+  function handleToggle(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleOpen();
+  }
+
   return (
     <div className="-ml-2 text-sm">
       <button
         className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-muted-foreground transition-colors hover:bg-muted/70"
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
         type="button"
       >
         <span className="h-2 w-2 rounded-full bg-muted-foreground/35" />
@@ -534,16 +564,17 @@ function MemberActivityDetails({ member, agents }: { member: MemberActivity; age
         <AgentNameLabel name={member.name} agent={agent} />
         <span>{member.toolCount ? `${member.toolCount} 个工具调用` : "暂无工具调用"}</span>
       </div>
-      {member.parts.map((part, index) => (
-        <MemberActivityPart key={messagePartKey(part, member.id, index)} part={part} />
-      ))}
+      {member.parts.map((part, index) => {
+        const key = messagePartKey(part, member.id, index);
+        return <MemberActivityPart key={key} part={part} disclosureID={key} />;
+      })}
     </div>
   );
 }
 
-function MemberActivityPart({ part }: { part: MessageRenderPart }) {
-  if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
-  if (part.type === "tool") return <ToolCallCard tool={part.tool} />;
+function MemberActivityPart({ part, disclosureID }: { part: MessageRenderPart; disclosureID: string }) {
+  if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
+  if (part.type === "tool") return <ToolCallCard tool={part.tool} disclosureID={disclosureID} />;
   if (part.type === "text" && part.streaming) return <StreamingTextContent className="text-base leading-8" content={part.content} />;
   if (part.type === "text") return <MarkdownContent className="text-base leading-8" content={part.content} />;
   return null;
@@ -1585,6 +1616,5 @@ function canonicalToolRef(value?: string) {
 function appendText(left = "", right = "") {
   if (!right) return left;
   if (!left) return right;
-  if (left.includes(right)) return left;
   return left + right;
 }

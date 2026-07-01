@@ -1,16 +1,34 @@
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type MouseEvent, type ReactNode } from "react";
 import type { ToolCallDTO } from "@/types/events";
 import { cn } from "@/lib/cn";
+import { useDisclosureState } from "./disclosureState";
 
-export function ToolCallCard({ tool, title, children }: { tool: ToolCallDTO; title?: ReactNode; children?: ReactNode }) {
-  const [open, setOpen] = useState(false);
+export function ToolCallCard({
+  tool,
+  title,
+  children,
+  disclosureID,
+}: {
+  tool: ToolCallDTO;
+  title?: ReactNode;
+  children?: ReactNode;
+  disclosureID?: string;
+}) {
+  const [open, toggleOpen] = useDisclosureState(disclosureID || tool.ref || tool.id || tool.name || "tool");
   const isRunning = tool.status === "running" || tool.status === "pending";
   const isError = tool.status === "error";
   const label = title || tool.display_name || tool.name || "tool";
   const isAgentDispatch = isAgentDispatchTool(tool);
   const showArguments = Boolean(tool.arguments);
   const showResult = Boolean(tool.result && !(isAgentDispatch && children));
+
+  function handleToggle(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleOpen();
+  }
+
   return (
     <div className="-ml-2 text-sm">
       <button
@@ -18,7 +36,7 @@ export function ToolCallCard({ tool, title, children }: { tool: ToolCallDTO; tit
           "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/70",
           isError ? "text-destructive" : "text-muted-foreground",
         )}
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
         type="button"
       >
         <span
