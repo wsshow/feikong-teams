@@ -5,7 +5,8 @@ import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
 import { cn } from "@/lib/cn";
 import { pushAppPath } from "@/lib/navigation";
-import { chatMessageElementID, MessageList } from "./MessageList";
+import { MessageList } from "./MessageList";
+import { chatMessageElementID } from "./dom";
 import { QueuePanel } from "./QueuePanel";
 import { ChatInput } from "./ChatInput";
 

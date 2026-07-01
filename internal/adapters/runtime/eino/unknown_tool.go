@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	runtimeport "fkteams/internal/ports/runtime"
+
 	"github.com/cloudwego/eino/compose"
 )
 
@@ -15,6 +17,7 @@ type unknownToolReport struct {
 	ToolName   string
 	ToolArgs   string
 	ToolResult string
+	Scope      MemberScope
 }
 
 type unknownToolRecorder struct {
@@ -40,6 +43,15 @@ func recordUnknownToolResult(ctx context.Context, report unknownToolReport) {
 	}
 	if report.ToolCallID == "" {
 		report.ToolCallID = compose.GetToolCallID(ctx)
+	}
+	if report.Scope.CallID == "" {
+		if metadata, ok := runtimeport.InterruptMetadataFromContext(ctx); ok && metadata.MemberCallID != "" {
+			report.Scope = MemberScope{
+				CallID:   metadata.MemberCallID,
+				ToolName: metadata.MemberToolName,
+				Name:     metadata.MemberName,
+			}
+		}
 	}
 	recorder.add(report)
 }

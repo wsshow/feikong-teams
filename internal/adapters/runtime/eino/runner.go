@@ -209,7 +209,8 @@ func (c *converter) flushUnknownToolReports() error {
 			ToolArgs:   report.ToolArgs,
 			ToolResult: normalizeToolResultContent(report.ToolResult),
 		})
-		c.identities.attach(&nEvent, MemberScope{})
+		report.Scope.apply(&nEvent, c)
+		c.identities.attach(&nEvent, report.Scope)
 		if nEvent.ToolCallID == "" || nEvent.ToolCallRef == "" {
 			pending = append(pending, report)
 			continue

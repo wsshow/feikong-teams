@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
+import { chatMessageElementID } from "./dom";
 import type { ChatEvent, ToolCallDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 import type { AgentInfo } from "@/types/api";
@@ -31,8 +32,8 @@ interface AskActivity {
 }
 
 type MessageRenderPart =
-  | { type: "reasoning"; content: string }
-  | { type: "text"; content: string }
+  | { type: "reasoning"; content: string; key?: string; streaming?: boolean }
+  | { type: "text"; content: string; key?: string; streaming?: boolean }
   | { type: "ask"; ask: AskActivity }
   | { type: "tool"; tool: ToolActivity; member?: MemberActivity };
 
@@ -73,8 +74,8 @@ export function MessageList() {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
   const timeline = useMemo(
-    () => buildTimelineModel(messages, displayEvents, submittedAskIDs),
-    [messages, displayEvents, submittedAskIDs],
+    () => buildTimelineModel(messages, displayEvents, submittedAskIDs, isProcessing),
+    [messages, displayEvents, submittedAskIDs, isProcessing],
   );
 
   useEffect(() => {
@@ -238,10 +239,6 @@ function loadingStatusText(statusText?: string) {
   return statusText;
 }
 
-export function chatMessageElementID(messageID: string) {
-  return `chat-message-${messageID.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-}
-
 function MessageRow({
   message,
   parts,
@@ -277,6 +274,7 @@ function MessageRow({
         <div className="max-w-[78%] rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
           <div className="whitespace-pre-wrap">{message.content}</div>
         </div>
+        <MessageActions align="right" content={message.content} time={message.createdAt} />
       </article>
     );
   }
@@ -294,7 +292,7 @@ function MessageRow({
       <div className="space-y-3">
         {parts.map((part, index) => (
           <MessagePart
-            key={`${message.id}-part-${index}`}
+            key={messagePartKey(part, message.id, index)}
             part={part}
             sessionID={sessionID}
             agents={agents}
@@ -339,7 +337,12 @@ function MessagePart({
       </div>
     );
   }
+  if (part.streaming) return <StreamingTextContent className="text-lg leading-9" content={part.content} />;
   return <MarkdownContent className="text-lg leading-9" content={part.content} />;
+}
+
+function StreamingTextContent({ content, className }: { content: string; className?: string }) {
+  return <div className={cn("whitespace-pre-wrap break-words", className)}>{content}</div>;
 }
 
 function ReasoningBlock({ content }: { content: string }) {
@@ -369,16 +372,17 @@ function assistantMessageParts(
   asks: AskActivity[],
   tools: ToolActivity[],
   fallbackReasoningBlocks?: string[],
+  isProcessing = false,
 ) {
   const parts: MessageRenderPart[] = [];
   const renderedTools = new Set<string>();
   for (const event of message.events || []) {
     if (isReasoningDelta(event) && event.role !== "tool") {
-      appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || ""));
+      appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || ""), textPartKey(event, "reasoning"), isProcessing && isStreamEvent(event));
       continue;
     }
     if (isTextDelta(event) && event.role !== "tool") {
-      appendMessagePart(parts, "text", String(event.content || ""));
+      appendMessagePart(parts, "text", String(event.content || ""), textPartKey(event, "text"), isProcessing && isStreamEvent(event));
       continue;
     }
     const ask = askFromToolEvent(event, asks);
@@ -404,19 +408,21 @@ function assistantMessageParts(
 
   const hasTextPart = parts.some((part) => part.type === "text" && part.content.trim());
   if (!hasTextPart && message.content.trim()) {
-    parts.push({ type: "text", content: message.content });
+    parts.push({ type: "text", content: message.content, key: `${message.id}:text:fallback` });
   }
   return parts.filter((part) => part.type === "ask" || part.type === "tool" || part.content.trim());
 }
 
-function appendMessagePart(parts: MessageRenderPart[], type: "reasoning" | "text", content: string) {
+function appendMessagePart(parts: MessageRenderPart[], type: "reasoning" | "text", content: string, key?: string, streaming = false) {
   if (!content) return;
   const previous = parts[parts.length - 1];
-  if (previous?.type === type) {
+  if (previous?.type === type && (!key || !previous.key || previous.key === key)) {
     previous.content += content;
+    previous.key = previous.key || key;
+    previous.streaming = previous.streaming || streaming;
     return;
   }
-  parts.push({ type, content });
+  parts.push({ type, content, key, streaming });
 }
 
 interface MemberActivity {
@@ -529,7 +535,7 @@ function MemberActivityDetails({ member, agents }: { member: MemberActivity; age
         <span>{member.toolCount ? `${member.toolCount} 个工具调用` : "暂无工具调用"}</span>
       </div>
       {member.parts.map((part, index) => (
-        <MemberActivityPart key={`${member.id}-part-${index}`} part={part} />
+        <MemberActivityPart key={messagePartKey(part, member.id, index)} part={part} />
       ))}
     </div>
   );
@@ -538,6 +544,7 @@ function MemberActivityDetails({ member, agents }: { member: MemberActivity; age
 function MemberActivityPart({ part }: { part: MessageRenderPart }) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
   if (part.type === "tool") return <ToolCallCard tool={part.tool} />;
+  if (part.type === "text" && part.streaming) return <StreamingTextContent className="text-base leading-8" content={part.content} />;
   if (part.type === "text") return <MarkdownContent className="text-base leading-8" content={part.content} />;
   return null;
 }
@@ -778,10 +785,11 @@ function buildTimelineModel(
   messages: ChatViewMessage[],
   displayEvents: ChatEvent[],
   submittedAskIDs: Set<string>,
+  isProcessing: boolean,
 ): TimelineModel {
   const reasoningByMessage = collectReasoningBlocks(displayEvents);
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
-  const memberActivities = collectMemberActivities(displayEvents);
+  const memberActivities = collectMemberActivities(displayEvents, isProcessing);
   const askActivities = collectAskActivities(displayEvents, submittedAskIDs);
   const memberLookup = buildMemberLookup(memberActivities);
   const attachedMemberIDs = new Set<string>();
@@ -800,6 +808,7 @@ function buildTimelineModel(
             askActivities,
             messageTools,
             reasoningByMessage.get(message.id) || reasoningContentBlocks(message.reasoningContent),
+            isProcessing,
           ),
           memberLookup,
           attachedMemberIDs,
@@ -829,7 +838,7 @@ function buildTimelineModel(
   const fallbackMembers = memberActivities.filter((member) => !attachedMemberIDs.has(member.id));
   const timelineTools = trailingTools.filter((part): part is Extract<MessageRenderPart, { type: "tool" }> => part.type === "tool");
   const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools);
-  markFinalAssistantCopyActions(items);
+  markFinalAssistantCopyActions(items, isProcessing);
   const timelineMessages = items.filter((item) => item.kind === "message").map((item) => item.node.message);
   const agentLabelMessageIDs = visibleAgentLabelMessageIDs(timelineMessages);
   for (const item of items) {
@@ -972,10 +981,10 @@ function timelineItemSpacingClass(items: TimelineItem[], index: number) {
   return "mt-6";
 }
 
-function markFinalAssistantCopyActions(items: TimelineItem[]) {
+function markFinalAssistantCopyActions(items: TimelineItem[], suppressCurrentTurn: boolean) {
   let candidate: TimelineMessageNode | undefined;
-  const flush = () => {
-    if (candidate) candidate.showCopyAction = true;
+  const flush = (suppress = false) => {
+    if (candidate && !suppress) candidate.showCopyAction = true;
     candidate = undefined;
   };
   for (const item of items) {
@@ -989,7 +998,7 @@ function markFinalAssistantCopyActions(items: TimelineItem[]) {
       candidate = item.node;
     }
   }
-  flush();
+  flush(suppressCurrentTurn);
 }
 
 function hasCopyableAssistantText(node: TimelineMessageNode) {
@@ -1359,8 +1368,9 @@ function terminalToolStatus(events: ChatEvent[]) {
 
 type OrderedChatEvent = { event: ChatEvent; order: number };
 
-function collectMemberActivities(events: ChatEvent[]) {
+function collectMemberActivities(events: ChatEvent[], isProcessing: boolean) {
   const grouped = new Map<string, OrderedChatEvent[]>();
+  const completedMemberIDs = completedMemberCallIDs(events);
   events.forEach((event, index) => {
     if (!isMemberActivityEvent(event)) return;
     const id = memberActivityID(event);
@@ -1373,11 +1383,11 @@ function collectMemberActivities(events: ChatEvent[]) {
         .sort((left, right) => left.order - right.order)
         .map((item) => item.event);
       const tools = collectToolActivities(memberEvents, { includeMemberEvents: true });
-      const parts = memberMessageParts(memberEvents, tools);
+      const parts = memberMessageParts(memberEvents, tools, isProcessing);
       return {
         id,
         name: memberEvents.find((event) => event.member_name)?.member_name || memberEvents[0]?.agent_name || "子智能体",
-        completed: memberEvents.some(isAgentCompleted) || memberEvents.some((event) => event.type === "processing_end"),
+        completed: completedMemberIDs.has(stripToolRef(id)) || memberEvents.some(isAgentCompleted) || memberEvents.some((event) => event.type === "processing_end"),
         eventCount: memberEvents.length,
         toolCount: tools.length,
         firstOrder: Math.min(...orderedEvents.map((item) => item.order)),
@@ -1389,6 +1399,38 @@ function collectMemberActivities(events: ChatEvent[]) {
     .filter((member) => member.parts.length);
 }
 
+function completedMemberCallIDs(events: ChatEvent[]) {
+  const result = new Set<string>();
+  for (const event of events) {
+    if (!isToolCompleted(event)) continue;
+    if (isAgentDispatchToolEvent(event)) {
+      for (const key of toolIdentityKeys(event.tool_call_ref || event.tool_call_id)) {
+        result.add(stripToolRef(key));
+      }
+    }
+    for (const tool of event.tool_calls || []) {
+      if (!isAgentDispatchToolDTO(tool)) continue;
+      for (const key of toolIdentityKeys(tool.ref || tool.id)) {
+        result.add(stripToolRef(key));
+      }
+    }
+    if (event.tool_call && isAgentDispatchToolDTO(event.tool_call)) {
+      for (const key of toolIdentityKeys(event.tool_call.ref || event.tool_call.id)) {
+        result.add(stripToolRef(key));
+      }
+    }
+  }
+  return result;
+}
+
+function isAgentDispatchToolEvent(event: ChatEvent) {
+  return event.tool_kind === "agent" || Boolean(event.tool_name?.startsWith("ask_fkagent_"));
+}
+
+function isAgentDispatchToolDTO(tool: ToolCallDTO) {
+  return tool.kind === "agent" || Boolean(tool.name?.startsWith("ask_fkagent_"));
+}
+
 function memberActivityID(event: ChatEvent) {
   if (event.member_call_id) return event.member_call_id;
   if (event.parent_tool_call_id) return event.parent_tool_call_id;
@@ -1397,19 +1439,20 @@ function memberActivityID(event: ChatEvent) {
   return eventDisplayKey(event);
 }
 
-function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
+function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], isProcessing = false) {
   const parts: MessageRenderPart[] = [];
   const renderedTools = new Set<string>();
-  let seenReasoning = "";
-  let seenText = "";
+  const seenReasoningDeltaKeys = new Set<string>();
+  const seenTextDeltaKeys = new Set<string>();
   let reasoningOpen = false;
   let textOpen = false;
 
   for (const event of events) {
     if (isReasoningDelta(event) && event.role !== "tool") {
       const content = String(event.reasoning_content || event.content || "");
-      appendSequencedTextPart(parts, "reasoning", content, reasoningOpen);
-      seenReasoning = appendText(seenReasoning, content);
+      const key = textPartKey(event, "reasoning");
+      appendSequencedTextPart(parts, "reasoning", content, reasoningOpen, key, isProcessing && isStreamEvent(event));
+      seenReasoningDeltaKeys.add(key);
       reasoningOpen = true;
       textOpen = false;
       continue;
@@ -1418,8 +1461,9 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
 
     if (isTextDelta(event) && event.role !== "tool") {
       const content = String(event.content || "");
-      appendSequencedTextPart(parts, "text", content, textOpen);
-      seenText = appendText(seenText, content);
+      const key = textPartKey(event, "text");
+      appendSequencedTextPart(parts, "text", content, textOpen, key, isProcessing && isStreamEvent(event));
+      seenTextDeltaKeys.add(key);
       textOpen = true;
       continue;
     }
@@ -1435,15 +1479,15 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
     }
 
     if (isAssistantCompleted(event)) {
-      const reasoning = completedTextDelta(String(event.reasoning_content || ""), seenReasoning);
-      if (reasoning && !seenReasoning.includes(reasoning)) {
-        appendSequencedTextPart(parts, "reasoning", reasoning, false);
-        seenReasoning = appendText(seenReasoning, reasoning);
+      const reasoningKey = textPartKey(event, "reasoning");
+      const reasoning = seenReasoningDeltaKeys.has(reasoningKey) ? "" : String(event.reasoning_content || "");
+      if (reasoning) {
+        appendSequencedTextPart(parts, "reasoning", reasoning, false, reasoningKey);
       }
-      const content = completedTextDelta(String(event.content || ""), seenText);
-      if (content && !seenText.includes(content)) {
-        appendSequencedTextPart(parts, "text", content, false);
-        seenText = appendText(seenText, content);
+      const textKey = textPartKey(event, "text");
+      const content = seenTextDeltaKeys.has(textKey) ? "" : String(event.content || "");
+      if (content) {
+        appendSequencedTextPart(parts, "text", content, false, textKey);
       }
     }
   }
@@ -1451,27 +1495,31 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[]) {
   return parts.filter((part) => part.type === "ask" || part.type === "tool" || part.content.trim());
 }
 
-function appendSequencedTextPart(parts: MessageRenderPart[], type: "reasoning" | "text", content: string, mergeWithPrevious: boolean) {
+function appendSequencedTextPart(
+  parts: MessageRenderPart[],
+  type: "reasoning" | "text",
+  content: string,
+  mergeWithPrevious: boolean,
+  key?: string,
+  streaming = false,
+) {
   if (!content) return;
   const previous = parts[parts.length - 1];
-  if (mergeWithPrevious && previous?.type === type) {
+  if (mergeWithPrevious && previous?.type === type && (!key || !previous.key || previous.key === key)) {
     previous.content = appendText(previous.content, content);
+    previous.key = previous.key || key;
+    previous.streaming = previous.streaming || streaming;
     return;
   }
-  parts.push({ type, content });
+  parts.push({ type, content, key, streaming });
 }
 
 function eventOrder(event: ChatEvent, fallback: number) {
+  const streamEventID = Number(event.stream_event_id);
+  if (Number.isFinite(streamEventID)) return streamEventID;
   const sequence = Number(event.sequence);
   if (Number.isFinite(sequence)) return sequence;
   return fallback + 0.5;
-}
-
-function completedTextDelta(content: string, seenText: string) {
-  if (!content || !seenText) return content;
-  if (seenText.includes(content)) return "";
-  if (content.startsWith(seenText)) return content.slice(seenText.length);
-  return content;
 }
 
 function uniqueStrings(values: string[]) {
@@ -1488,6 +1536,34 @@ function stripToolRef(ref: string) {
 
 function toolActivityKey(tool: ToolActivity) {
   return canonicalToolRef(tool.ref || tool.id) || `${tool.message_id || "tool"}:${tool.index ?? ""}`;
+}
+
+function messagePartKey(part: MessageRenderPart, ownerID: string, index: number) {
+  if (part.type === "tool") return `${ownerID}:tool:${toolActivityKey(part.tool)}`;
+  if (part.type === "ask") return `${ownerID}:ask:${part.ask.id}`;
+  return `${part.key || `${ownerID}:${part.type}`}:${index}`;
+}
+
+function textPartKey(event: ChatEvent, type: "reasoning" | "text") {
+  if (event.message_id) {
+    return [
+      type,
+      event.member_call_id || event.parent_tool_call_id || "",
+      event.message_id,
+    ].filter(Boolean).join(":");
+  }
+  return [
+    type,
+    event.member_call_id || event.parent_tool_call_id || "",
+    event.message_id || "",
+    event.stream_id || "",
+    event.block_id || "",
+    event.block_type || "",
+  ].filter(Boolean).join(":") || `${type}:${eventDisplayKey(event)}`;
+}
+
+function isStreamEvent(event: ChatEvent) {
+  return event.stream_event_id !== undefined;
 }
 
 function toolKey(tool: ToolCallDTO, event: ChatEvent) {
