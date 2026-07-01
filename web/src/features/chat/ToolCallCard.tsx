@@ -3,11 +3,11 @@ import { type ReactNode, useState } from "react";
 import type { ToolCallDTO } from "@/types/events";
 import { cn } from "@/lib/cn";
 
-export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?: ReactNode }) {
+export function ToolCallCard({ tool, title, children }: { tool: ToolCallDTO; title?: ReactNode; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const isRunning = tool.status === "running" || tool.status === "pending";
   const isError = tool.status === "error";
-  const title = tool.display_name || tool.name || "tool";
+  const label = title || tool.display_name || tool.name || "tool";
   const isAgentDispatch = isAgentDispatchTool(tool);
   const runningTone = "text-amber-600";
   const runningDotTone = "bg-amber-400";
@@ -26,7 +26,7 @@ export function ToolCallCard({ tool, children }: { tool: ToolCallDTO; children?:
         <span
           className={cn("h-2 w-2 rounded-full", isError ? "bg-destructive" : isRunning ? runningDotTone : "bg-muted-foreground/35")}
         />
-        <span className="font-semibold">{title}</span>
+        <span className="font-semibold">{label}</span>
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (

@@ -262,7 +262,7 @@ function memberActivityKey(event: ChatEvent) {
 
 function findParentToolMessageIndex(messages: ChatViewMessage[], event: ChatEvent) {
   const refs = new Set(
-    [event.parent_tool_call_id, event.member_call_id, event.tool_call_id, event.tool_call_ref, event.member_tool_name]
+    [event.parent_tool_call_id, event.member_call_id, event.tool_call_id, event.tool_call_ref]
       .filter(Boolean)
       .flatMap((value) => {
         const ref = String(value);
@@ -270,26 +270,25 @@ function findParentToolMessageIndex(messages: ChatViewMessage[], event: ChatEven
       }),
   );
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messageHasToolRef(messages[i], refs, event.member_tool_name)) return i;
+    if (messageHasToolRef(messages[i], refs)) return i;
   }
   return -1;
 }
 
-function messageHasToolRef(message: ChatViewMessage, refs: Set<string>, memberToolName?: string) {
+function messageHasToolRef(message: ChatViewMessage, refs: Set<string>) {
   for (const event of message.events || []) {
     for (const tool of event.tool_calls || []) {
-      if (toolMatchesParent(tool, refs, memberToolName)) return true;
+      if (toolMatchesParent(tool, refs)) return true;
     }
-    if (event.tool_call && toolMatchesParent(event.tool_call, refs, memberToolName)) return true;
+    if (event.tool_call && toolMatchesParent(event.tool_call, refs)) return true;
     if (event.tool_call_id && refs.has(event.tool_call_id)) return true;
     if (event.tool_call_ref && refs.has(event.tool_call_ref)) return true;
-    if (memberToolName && event.tool_name === memberToolName) return true;
   }
   return false;
 }
 
-function toolMatchesParent(tool: { id?: string; ref?: string; name?: string }, refs: Set<string>, memberToolName?: string) {
-  return Boolean((tool.id && refs.has(tool.id)) || (tool.ref && refs.has(tool.ref)) || (memberToolName && tool.name === memberToolName));
+function toolMatchesParent(tool: { id?: string; ref?: string }, refs: Set<string>) {
+  return Boolean((tool.id && refs.has(tool.id)) || (tool.ref && refs.has(tool.ref)));
 }
 
 const sessionsSlice = createSlice({
@@ -303,6 +302,23 @@ const sessionsSlice = createSlice({
     setSessions(state, action: PayloadAction<SessionSummary[]>) {
       state.items = action.payload;
       state.loading = false;
+    },
+    upsertSession(state, action: PayloadAction<SessionSummary>) {
+      const next = action.payload;
+      const index = state.items.findIndex((item) => item.session_id === next.session_id);
+      if (index < 0) {
+        state.items.unshift(next);
+        return;
+      }
+      const current = state.items[index];
+      state.items[index] = {
+        ...current,
+        ...next,
+        title: next.title || current.title,
+        status: next.status || current.status,
+        mod_time: next.mod_time || current.mod_time,
+        updated_at: next.updated_at || current.updated_at,
+      };
     },
     setSessionsLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	"fkteams/internal/app/chat/taskstream"
 
 	"github.com/gin-gonic/gin"
 )
@@ -91,6 +92,29 @@ func TestSessionCRUDHandlers(t *testing.T) {
 	}
 	if list.Sessions[0].SessionID != "session-1" || list.Sessions[0].Title != "新标题" || list.Sessions[0].CurrentAgent != "coder" || !list.Sessions[0].Favorite {
 		t.Fatalf("listed session = %#v", list.Sessions[0])
+	}
+
+	stream := rt.Streams.Register(taskstream.StreamConfig{
+		SessionID: "session-1",
+		Cancel:    func() {},
+	})
+	stream.SetStatus("completed")
+	resp = performRequest(router, http.MethodGet, "/sessions", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list sessions with completed stream status = %d: %s", resp.Code, resp.Body.String())
+	}
+	decodeRawData(t, resp, &list)
+	if list.Sessions[0].ActiveTask {
+		t.Fatalf("completed stream should not mark session active: %#v", list.Sessions[0])
+	}
+	stream.SetStatus("processing")
+	resp = performRequest(router, http.MethodGet, "/sessions", nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list sessions with processing stream status = %d: %s", resp.Code, resp.Body.String())
+	}
+	decodeRawData(t, resp, &list)
+	if !list.Sessions[0].ActiveTask || list.Sessions[0].Status != "processing" {
+		t.Fatalf("processing stream should mark session active: %#v", list.Sessions[0])
 	}
 
 	resp = performRequest(router, http.MethodDelete, "/sessions/session-1", nil)

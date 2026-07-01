@@ -14,7 +14,7 @@ import type { ChatEvent, ToolCallDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 import type { AgentInfo } from "@/types/api";
 
-type ToolActivity = ToolCallDTO & { message_id?: string };
+type ToolActivity = ToolCallDTO & { message_id?: string; order?: number };
 interface AskActivity {
   id: string;
   sessionID?: string;
@@ -40,12 +40,14 @@ interface TimelineMessageNode {
   message: ChatViewMessage;
   parts: MessageRenderPart[];
   showAgentLabel: boolean;
+  showCopyAction: boolean;
   order: number;
 }
 
 type TimelineItem =
   | { kind: "message"; node: TimelineMessageNode; order: number }
-  | { kind: "member"; member: MemberActivity; order: number };
+  | { kind: "member"; member: MemberActivity; order: number }
+  | { kind: "tool"; part: Extract<MessageRenderPart, { type: "tool" }>; order: number };
 
 interface TimelineModel {
   items: TimelineItem[];
@@ -126,22 +128,40 @@ export function MessageList() {
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scrollRef} className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-6 py-8" onScroll={handleScroll}>
-        <div className="mx-auto w-full max-w-4xl space-y-6">
-          {timeline.items.map((item) => {
+        <div className="mx-auto w-full max-w-4xl">
+          {timeline.items.map((item, index) => {
+            const spacing = timelineItemSpacingClass(timeline.items, index);
             if (item.kind === "member") {
               const member = item.member;
-              return <MemberActivityBlock key={`member-${member.id}`} member={member} agents={agents} />;
+              return (
+                <div key={`member-${member.id}`} className={spacing}>
+                  <MemberActivityBlock member={member} agents={agents} />
+                </div>
+              );
+            }
+            if (item.kind === "tool") {
+              return (
+                <div key={`tool-${toolActivityKey(item.part.tool)}`} className={cn(spacing, "space-y-3")}>
+                  <MessagePart
+                    part={item.part}
+                    sessionID={activeSessionID}
+                    agents={agents}
+                    onAskAnswered={() => {}}
+                  />
+                </div>
+              );
             }
             const { message, parts, showAgentLabel } = item.node;
             if (message.hidden) return null;
             return (
-              <div key={message.id} className="space-y-3">
+              <div key={message.id} className={cn(spacing, "space-y-3")}>
                 <MessageRow
                   message={message}
                   parts={parts}
                   sessionID={activeSessionID}
                   agents={agents}
                   showAgentLabel={showAgentLabel}
+                  showCopyAction={item.node.showCopyAction}
                   onAskAnswered={(ask, selected, freeText) => {
                     setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
                     dispatch(chatActions.receiveEvent({
@@ -158,28 +178,29 @@ export function MessageList() {
               </div>
             );
           })}
-          {timeline.trailingAsks.map((ask) => (
-            <AskTimelineItem
-              key={ask.id}
-              ask={ask}
-              sessionID={ask.sessionID || activeSessionID}
-              onAnswered={(selected, freeText) => {
-                setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-                dispatch(chatActions.receiveEvent({
-                  type: "ask_answered",
-                  session_id: ask.sessionID || activeSessionID,
-                  ask_id: ask.id,
-                  detail: ask.id,
-                  selected,
-                  free_text: freeText,
-                  content: askResponseSummary(selected, freeText),
-                }));
-              }}
-            />
+          {timeline.trailingAsks.map((ask, index) => (
+            <div key={ask.id} className={index === 0 && timeline.items.length === 0 ? "" : "mt-6"}>
+              <AskTimelineItem
+                ask={ask}
+                sessionID={ask.sessionID || activeSessionID}
+                onAnswered={(selected, freeText) => {
+                  setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+                  dispatch(chatActions.receiveEvent({
+                    type: "ask_answered",
+                    session_id: ask.sessionID || activeSessionID,
+                    ask_id: ask.id,
+                    detail: ask.id,
+                    selected,
+                    free_text: freeText,
+                    content: askResponseSummary(selected, freeText),
+                  }));
+                }}
+              />
+            </div>
           ))}
           <ActivityList tools={timeline.trailingTools} agents={agents} />
           {isProcessing ? (
-            <div className="message-row text-lg text-muted-foreground">
+            <div className="message-row mt-6 text-lg text-muted-foreground">
               <div>
                 {loadingStatusText(statusText)}
                 <span className="ml-1 inline-flex w-8 justify-between align-middle">
@@ -190,7 +211,7 @@ export function MessageList() {
               </div>
             </div>
           ) : null}
-          {error ? <div className="sketch-surface rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
+          {error ? <div className="sketch-surface mt-4 rounded-md border-destructive/50 px-4 py-3 text-sm text-destructive">{error}</div> : null}
           <div ref={bottomRef} />
         </div>
       </div>
@@ -227,6 +248,7 @@ function MessageRow({
   sessionID,
   agents,
   showAgentLabel,
+  showCopyAction,
   onAskAnswered,
 }: {
   message: ChatViewMessage;
@@ -234,6 +256,7 @@ function MessageRow({
   sessionID?: string;
   agents: AgentInfo[];
   showAgentLabel: boolean;
+  showCopyAction: boolean;
   onAskAnswered: (ask: AskActivity, selected: string[], freeText: string) => void;
 }) {
   const hasContent = Boolean(message.content.trim());
@@ -254,7 +277,6 @@ function MessageRow({
         <div className="max-w-[78%] rounded-2xl bg-muted px-5 py-4 text-lg leading-8 text-foreground">
           <div className="whitespace-pre-wrap">{message.content}</div>
         </div>
-        <MessageActions align="right" content={message.content} time={message.createdAt} />
       </article>
     );
   }
@@ -282,7 +304,7 @@ function MessageRow({
           />
         ))}
       </div>
-      {hasContent || copyContent ? <MessageActions content={copyContent || message.content} /> : null}
+      {showCopyAction && (hasContent || copyContent) ? <MessageActions content={copyContent || message.content} compact /> : null}
     </article>
   );
 }
@@ -300,8 +322,12 @@ function MessagePart({
 }) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} />;
   if (part.type === "tool") {
+    const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
     return (
-      <ToolCallCard tool={part.tool}>
+      <ToolCallCard
+        tool={part.tool}
+        title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
+      >
         {part.member ? <MemberActivityDetails member={part.member} agents={agents} /> : null}
       </ToolCallCard>
     );
@@ -396,6 +422,7 @@ function appendMessagePart(parts: MessageRenderPart[], type: "reasoning" | "text
 interface MemberActivity {
   id: string;
   name: string;
+  completed: boolean;
   eventCount: number;
   toolCount: number;
   firstOrder: number;
@@ -417,8 +444,13 @@ function ActivityList({
     <div className="space-y-2">
       {visibleTools.map((part, index) => {
         if (part.type !== "tool") return null;
+        const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
         return (
-          <ToolCallCard key={`${part.tool.ref || part.tool.id || part.tool.name}-${index}`} tool={part.tool}>
+          <ToolCallCard
+            key={`${part.tool.ref || part.tool.id || part.tool.name}-${index}`}
+            tool={part.tool}
+            title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
+          >
             {part.member ? <MemberActivityDetails member={part.member} agents={agents} /> : null}
           </ToolCallCard>
         );
@@ -431,7 +463,6 @@ function memberForTool(tool: ToolActivity, memberByCallID: Map<string, MemberAct
   const keys = uniqueStrings([
     ...toolIdentityKeys(tool.ref),
     ...toolIdentityKeys(tool.id),
-    tool.name || "",
   ].filter(Boolean));
   for (const key of keys) {
     const member = memberByCallID.get(key);
@@ -547,7 +578,17 @@ function normalizeAgentKey(value: string) {
   return value.trim().toLowerCase();
 }
 
-function MessageActions({ content, align = "left", time }: { content: string; align?: "left" | "right"; time?: string }) {
+function MessageActions({
+  content,
+  align = "left",
+  time,
+  compact = false,
+}: {
+  content: string;
+  align?: "left" | "right";
+  time?: string;
+  compact?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copyContent() {
@@ -560,6 +601,7 @@ function MessageActions({ content, align = "left", time }: { content: string; al
     <div
       className={cn(
         "flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+        compact && "mt-1 h-0 overflow-visible",
         copied && "opacity-100",
         align === "right" && "justify-end",
       )}
@@ -770,6 +812,7 @@ function buildTimelineModel(
       message,
       parts,
       showAgentLabel: false,
+      showCopyAction: false,
       order: messageOrder(message, index),
     };
   });
@@ -784,7 +827,9 @@ function buildTimelineModel(
     if (part.type === "tool") renderedToolKeys.add(toolActivityKey(part.tool));
   }
   const fallbackMembers = memberActivities.filter((member) => !attachedMemberIDs.has(member.id));
-  const items = orderedTimelineItems(messageNodes, fallbackMembers);
+  const timelineTools = trailingTools.filter((part): part is Extract<MessageRenderPart, { type: "tool" }> => part.type === "tool");
+  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools);
+  markFinalAssistantCopyActions(items);
   const timelineMessages = items.filter((item) => item.kind === "message").map((item) => item.node.message);
   const agentLabelMessageIDs = visibleAgentLabelMessageIDs(timelineMessages);
   for (const item of items) {
@@ -795,7 +840,7 @@ function buildTimelineModel(
     items,
     messages: timelineMessages,
     trailingAsks: askActivities.filter((ask) => !inlineAskIDs.has(ask.id)),
-    trailingTools,
+    trailingTools: [],
   };
 }
 
@@ -809,7 +854,10 @@ function attachMembersToParts(
     const member = memberForTool(part.tool, memberLookup);
     if (!member || attachedMemberIDs.has(member.id)) return part;
     attachedMemberIDs.add(member.id);
-    return { ...part, member };
+    const status = member.completed && (part.tool.status === "pending" || part.tool.status === "running")
+      ? "completed"
+      : part.tool.status;
+    return { ...part, tool: { ...part.tool, status }, member };
   });
 }
 
@@ -891,10 +939,17 @@ function visibleAgentLabelMessageIDs(messages: ChatViewMessage[]) {
   return result;
 }
 
-function orderedTimelineItems(messages: TimelineMessageNode[], members: MemberActivity[]): TimelineItem[] {
+function orderedTimelineItems(
+  messages: TimelineMessageNode[],
+  members: MemberActivity[],
+  tools: Array<Extract<MessageRenderPart, { type: "tool" }>>,
+): TimelineItem[] {
   const items: TimelineItem[] = [];
   for (const node of messages) {
     items.push({ kind: "message", node, order: node.order });
+  }
+  for (const part of tools) {
+    items.push({ kind: "tool", part, order: part.tool.order ?? Number.MAX_SAFE_INTEGER });
   }
   for (const member of members) {
     items.push({ kind: "member", member, order: member.firstOrder });
@@ -904,6 +959,42 @@ function orderedTimelineItems(messages: TimelineMessageNode[], members: MemberAc
     if (left.kind === right.kind) return 0;
     return left.kind === "message" ? -1 : 1;
   });
+}
+
+function timelineItemSpacingClass(items: TimelineItem[], index: number) {
+  if (index <= 0) return "";
+  const previous = items[index - 1];
+  const current = items[index];
+  if (!previous || !current) return "mt-6";
+  if (current.kind === "tool") return previous.kind === "message" ? "mt-2" : "mt-2";
+  if (previous.kind === "tool" && current.kind === "message") return "mt-5";
+  if (current.kind === "member" || previous.kind === "member") return "mt-3";
+  return "mt-6";
+}
+
+function markFinalAssistantCopyActions(items: TimelineItem[]) {
+  let candidate: TimelineMessageNode | undefined;
+  const flush = () => {
+    if (candidate) candidate.showCopyAction = true;
+    candidate = undefined;
+  };
+  for (const item of items) {
+    if (item.kind !== "message") continue;
+    const message = item.node.message;
+    if (message.role === "user") {
+      flush();
+      continue;
+    }
+    if (message.role === "assistant" && hasCopyableAssistantText(item.node)) {
+      candidate = item.node;
+    }
+  }
+  flush();
+}
+
+function hasCopyableAssistantText(node: TimelineMessageNode) {
+  if (node.message.content.trim()) return true;
+  return node.parts.some((part) => part.type === "text" && part.content.trim());
 }
 
 function messageOrder(message: ChatViewMessage, fallback: number) {
@@ -1131,6 +1222,10 @@ function isAssistantCompleted(event: ChatEvent) {
   return event.type === "assistant_completed";
 }
 
+function isAgentCompleted(event: ChatEvent) {
+  return event.type === "agent_completed";
+}
+
 function isToolCompleted(event: ChatEvent) {
   return event.type === "tool_call_completed";
 }
@@ -1165,6 +1260,7 @@ function parseToolJSON(value: unknown) {
 function collectToolActivities(events: ChatEvent[], options: { includeMemberEvents?: boolean } = {}): ToolActivity[] {
   const result = new Map<string, ToolActivity>();
   const order: string[] = [];
+  const streamTerminalStatus = terminalToolStatus(events);
   const upsert = (key: string, patch: Partial<ToolActivity>) => {
     if (!result.has(key)) {
       result.set(key, {
@@ -1173,18 +1269,21 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         name: patch.name || "tool",
         status: "pending",
         message_id: patch.message_id,
+        order: patch.order,
       });
       order.push(key);
     }
     const current = result.get(key)!;
     for (const [field, value] of Object.entries(patch)) {
       if (value === undefined || value === "") continue;
+      if (field === "order" && Number.isFinite(current.order)) continue;
       (current as unknown as Record<string, unknown>)[field] = value;
     }
   };
 
-  for (const event of events) {
-    if (!options.includeMemberEvents && isMemberActivityEvent(event)) continue;
+  events.forEach((event, index) => {
+    if (!options.includeMemberEvents && isMemberActivityEvent(event)) return;
+    const orderValue = eventOrder(event, index);
     for (const tool of event.tool_calls || []) {
       if (tool.name === "ask_questions") continue;
       const key = toolKey(tool, event);
@@ -1196,10 +1295,10 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         member_name: event.member_name || tool.member_name,
         result: tool.result || eventToolResultContent(event) || undefined,
         message_id: event.message_id,
+        order: orderValue,
       });
     }
-    if (event.tool_call) {
-      if (event.tool_call.name === "ask_questions") continue;
+    if (event.tool_call && event.tool_call.name !== "ask_questions") {
       const key = toolKey(event.tool_call, event);
       upsert(key, {
         ...event.tool_call,
@@ -1209,6 +1308,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         member_name: event.member_name || event.tool_call.member_name,
         result: event.tool_call.result || eventToolResultContent(event) || undefined,
         message_id: event.message_id,
+        order: orderValue,
       });
     }
     if (event.tool_name || event.tool_call_ref || event.tool_call_id) {
@@ -1224,6 +1324,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         member_name: event.member_name || current?.member_name,
         status: isToolCompleted(event) ? "completed" : event.type === "tool_call_failed" || event.type === "error" ? "error" : current?.status || "running",
         message_id: event.message_id || current?.message_id,
+        order: orderValue,
       });
       const next = result.get(key)!;
       const argsContent = String(event.tool_args || (event.delta_kind === "tool_args" ? event.content : "") || "");
@@ -1238,8 +1339,22 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         next.result = event.type === "tool_call_completed" ? resultContent : appendText(next.result, resultContent);
       }
     }
-  }
-  return order.map((key) => result.get(key)!).filter((tool) => tool.name && tool.name !== "tool");
+  });
+  return order
+    .map((key) => {
+      const tool = result.get(key)!;
+      if (streamTerminalStatus && (tool.status === "pending" || tool.status === "running")) {
+        return { ...tool, status: streamTerminalStatus };
+      }
+      return tool;
+    })
+    .filter((tool) => tool.name && tool.name !== "tool");
+}
+
+function terminalToolStatus(events: ChatEvent[]) {
+  if (events.some((event) => event.type === "error")) return "error";
+  if (events.some((event) => event.type === "processing_end" || event.type === "cancelled")) return "completed";
+  return "";
 }
 
 type OrderedChatEvent = { event: ChatEvent; order: number };
@@ -1262,6 +1377,7 @@ function collectMemberActivities(events: ChatEvent[]) {
       return {
         id,
         name: memberEvents.find((event) => event.member_name)?.member_name || memberEvents[0]?.agent_name || "子智能体",
+        completed: memberEvents.some(isAgentCompleted) || memberEvents.some((event) => event.type === "processing_end"),
         eventCount: memberEvents.length,
         toolCount: tools.length,
         firstOrder: Math.min(...orderedEvents.map((item) => item.order)),

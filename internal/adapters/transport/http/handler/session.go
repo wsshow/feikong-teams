@@ -90,13 +90,18 @@ func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 				favorite = meta.Favorite
 			}
 
+			activeTask := rt.sessionHasProcessingStream(sessionID)
+			if activeTask {
+				status = "processing"
+			}
+
 			files = append(files, SessionInfo{
 				SessionID:    sessionID,
 				Title:        title,
 				Status:       status,
 				CurrentAgent: currentAgent,
 				Favorite:     favorite,
-				ActiveTask:   rt.Streams.Get(sessionID) != nil,
+				ActiveTask:   activeTask,
 				Size:         size,
 				ModTime:      modTime,
 			})
@@ -104,6 +109,11 @@ func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
 
 		OK(c, gin.H{"sessions": files})
 	}
+}
+
+func (rt *Runtime) sessionHasProcessingStream(sessionID string) bool {
+	stream := rt.Streams.Get(sessionID)
+	return stream != nil && stream.Status() == "processing"
 }
 
 // CreateSessionHandler 创建新会话（仅创建元数据目录）

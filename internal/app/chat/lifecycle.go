@@ -78,7 +78,7 @@ func (l *SessionLifecycle) MarkProcessing(ctx context.Context, sessionID, titleS
 		TitleSource:        titleSource,
 		Status:             SessionStatusProcessing,
 		DefaultTitle:       "未命名会话",
-		CreateIfMissing:    false,
+		CreateIfMissing:    true,
 		UpdateDefaultTitle: true,
 	})
 }

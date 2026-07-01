@@ -36,6 +36,15 @@ const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
   { key: "config", label: "配置", icon: Settings },
 ] as const;
 
+const sessionStatusLabels: Record<string, string> = {
+  active: "活跃",
+  processing: "进行中",
+  completed: "已完成",
+  cancelled: "已取消",
+  canceled: "已取消",
+  error: "失败",
+};
+
 export function Sidebar() {
   const dispatch = useAppDispatch();
   const [openMenuID, setOpenMenuID] = useState("");
@@ -223,12 +232,12 @@ export function Sidebar() {
                         </div>
                         <div className="mt-1 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
                           <span className="truncate">{formatTime(session.mod_time || session.updated_at)}</span>
-                          {session.status ? (
-                            <>
-                              <span>·</span>
-                              <span className="truncate">{session.status}</span>
-                            </>
-                          ) : null}
+	                          {session.status ? (
+	                            <>
+	                              <span>·</span>
+	                              <span className="truncate">{sessionStatusLabel(session.status)}</span>
+	                            </>
+	                          ) : null}
                         </div>
                       </button>
                       <button
@@ -287,6 +296,10 @@ export function Sidebar() {
       />
     </>
   );
+}
+
+function sessionStatusLabel(status: string) {
+  return sessionStatusLabels[status.toLowerCase()] || status;
 }
 
 function SessionDeleteDialog({

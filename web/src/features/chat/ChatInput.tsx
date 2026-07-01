@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { chatActions } from "@/app/store";
+import { chatActions, sessionsActions } from "@/app/store";
 import { sendSteering, startStream, stopStream } from "@/api/chat";
 import { listFiles, searchFiles } from "@/api/files";
 import { subscribeStream } from "@/api/stream";
@@ -48,6 +48,15 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
         agent_name: currentAgent || undefined,
       });
       if (result.status === "queued") return;
+      const now = new Date().toISOString();
+      dispatch(sessionsActions.upsertSession({
+        session_id: result.session_id,
+        title: message,
+        status: "processing",
+        active_task: true,
+        mod_time: now,
+        updated_at: now,
+      }));
       dispatch(chatActions.setRunningSession(result.session_id));
       dispatch(chatActions.setActiveSession(result.session_id));
       pushAppPath(chatPath(result.session_id));
