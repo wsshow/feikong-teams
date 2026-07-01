@@ -1176,7 +1176,11 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
       });
       order.push(key);
     }
-    Object.assign(result.get(key)!, patch);
+    const current = result.get(key)!;
+    for (const [field, value] of Object.entries(patch)) {
+      if (value === undefined || value === "") continue;
+      (current as unknown as Record<string, unknown>)[field] = value;
+    }
   };
 
   for (const event of events) {
