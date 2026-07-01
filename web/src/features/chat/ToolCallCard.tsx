@@ -9,8 +9,6 @@ export function ToolCallCard({ tool, title, children }: { tool: ToolCallDTO; tit
   const isError = tool.status === "error";
   const label = title || tool.display_name || tool.name || "tool";
   const isAgentDispatch = isAgentDispatchTool(tool);
-  const runningTone = "text-amber-600";
-  const runningDotTone = "bg-amber-400";
   const showArguments = Boolean(tool.arguments);
   const showResult = Boolean(tool.result && !(isAgentDispatch && children));
   return (
@@ -18,13 +16,13 @@ export function ToolCallCard({ tool, title, children }: { tool: ToolCallDTO; tit
       <button
         className={cn(
           "flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/70",
-          isError ? "text-destructive" : isRunning ? runningTone : "text-muted-foreground",
+          isError ? "text-destructive" : "text-muted-foreground",
         )}
         onClick={() => setOpen(!open)}
         type="button"
       >
         <span
-          className={cn("h-2 w-2 rounded-full", isError ? "bg-destructive" : isRunning ? runningDotTone : "bg-muted-foreground/35")}
+          className={cn("h-2 w-2 rounded-full", isError ? "bg-destructive" : "bg-muted-foreground/35", isRunning && "animate-pulse")}
         />
         <span className="font-semibold">{label}</span>
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
