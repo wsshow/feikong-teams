@@ -1,23 +1,25 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+
 	"fkteams/internal/app/tools/attachment"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/resources"
 	"fkteams/internal/runtime/toolpolicy"
-	"fmt"
 )
 
 type BuiltinCapability struct {
 	Name     string
-	Provider func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error)
+	Provider func(ctx ToolResolveContext) ([]runtimeport.Tool, error)
 }
 
 var builtinCapabilities = []BuiltinCapability{
 	{
 		Name: "session_attachment",
-		Provider: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-			return attachment.GetTools()
+		Provider: func(ctx ToolResolveContext) ([]runtimeport.Tool, error) {
+			return attachment.GetTools(ctx.HistoryReader)
 		},
 	},
 }
@@ -30,17 +32,21 @@ func BuiltinCapabilityNames() []string {
 	return names
 }
 
-func GetBuiltinCapabilityTools() ([]runtimeport.Tool, error) {
-	return GetBuiltinCapabilityToolsWithCleaner(nil)
+func GetBuiltinCapabilityTools(ctx context.Context) ([]runtimeport.Tool, error) {
+	return GetBuiltinCapabilityToolsWithCleaner(ctx, nil)
 }
 
-func GetBuiltinCapabilityToolsWithCleaner(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+func GetBuiltinCapabilityToolsWithCleaner(ctx context.Context, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+	resolveCtx := ToolResolveContext{Cleaner: cleaner}
+	if registry, ok := RegistryFromContext(ctx); ok {
+		resolveCtx = registry.ResolveContext(cleaner)
+	}
 	var result []runtimeport.Tool
 	for _, capability := range builtinCapabilities {
 		if capability.Provider == nil {
 			return nil, fmt.Errorf("builtin capability %s provider is nil", capability.Name)
 		}
-		resolved, err := capability.Provider(cleaner)
+		resolved, err := capability.Provider(resolveCtx)
 		if err != nil {
 			return nil, fmt.Errorf("init builtin capability %s: %w", capability.Name, err)
 		}

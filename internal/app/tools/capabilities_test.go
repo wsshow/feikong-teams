@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	domainhistory "fkteams/internal/domain/history"
 	"fkteams/internal/runtime/toolpolicy"
 	"slices"
 	"testing"
@@ -24,7 +25,10 @@ func TestSessionAttachmentIsBuiltinCapabilityNotConfigurableTool(t *testing.T) {
 }
 
 func TestBuiltinCapabilityToolsRequirePolicies(t *testing.T) {
-	capabilityTools, err := GetBuiltinCapabilityTools()
+	ctx := WithRegistry(context.Background(), NewToolGroupRegistry(ToolResolveContext{
+		HistoryReader: fakeCapabilityHistoryReader{},
+	}))
+	capabilityTools, err := GetBuiltinCapabilityTools(ctx)
 	if err != nil {
 		t.Fatalf("get builtin capability tools: %v", err)
 	}
@@ -43,4 +47,10 @@ func TestBuiltinCapabilityToolsRequirePolicies(t *testing.T) {
 	if err := toolpolicy.ClassifyTools(capabilityTools); err != nil {
 		t.Fatalf("classify builtin capability tools: %v", err)
 	}
+}
+
+type fakeCapabilityHistoryReader struct{}
+
+func (fakeCapabilityHistoryReader) LoadSessionMessages(context.Context, string) ([]domainhistory.AgentMessage, error) {
+	return nil, nil
 }

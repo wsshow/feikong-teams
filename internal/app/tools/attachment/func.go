@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
@@ -56,19 +55,8 @@ type AttachmentDetail struct {
 	DataURLTruncate bool   `json:"data_url_truncated,omitempty"`
 }
 
-var (
-	readerMu             sync.RWMutex
-	sessionMessageReader storageport.SessionMessageReader
-)
-
-func SetSessionMessageReader(reader storageport.SessionMessageReader) {
-	readerMu.Lock()
-	defer readerMu.Unlock()
-	sessionMessageReader = reader
-}
-
-func List(ctx context.Context, _ *ListRequest) (*ListResponse, error) {
-	messages, err := loadCurrentSessionMessages(ctx)
+func List(ctx context.Context, reader storageport.SessionMessageReader, _ *ListRequest) (*ListResponse, error) {
+	messages, err := loadCurrentSessionMessages(ctx, reader)
 	if err != nil {
 		return &ListResponse{ErrorMessage: err.Error()}, nil
 	}
@@ -80,11 +68,11 @@ func List(ctx context.Context, _ *ListRequest) (*ListResponse, error) {
 	return &ListResponse{Attachments: attachments, Total: len(attachments)}, nil
 }
 
-func Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
+func Read(ctx context.Context, reader storageport.SessionMessageReader, req *ReadRequest) (*ReadResponse, error) {
 	if req == nil || strings.TrimSpace(req.AttachmentID) == "" {
 		return &ReadResponse{ErrorMessage: "attachment_id is required"}, nil
 	}
-	messages, err := loadCurrentSessionMessages(ctx)
+	messages, err := loadCurrentSessionMessages(ctx, reader)
 	if err != nil {
 		return &ReadResponse{ErrorMessage: err.Error()}, nil
 	}
@@ -105,14 +93,11 @@ func Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
 	return &ReadResponse{Attachment: &detail}, nil
 }
 
-func loadCurrentSessionMessages(ctx context.Context) ([]domainhistory.AgentMessage, error) {
+func loadCurrentSessionMessages(ctx context.Context, reader storageport.SessionMessageReader) ([]domainhistory.AgentMessage, error) {
 	sessionID, ok := session.IDFromContext(ctx)
 	if !ok || strings.TrimSpace(sessionID) == "" {
 		return nil, fmt.Errorf("session_id is not available in context")
 	}
-	readerMu.RLock()
-	reader := sessionMessageReader
-	readerMu.RUnlock()
 	if reader == nil {
 		return nil, fmt.Errorf("session message reader is not initialized")
 	}

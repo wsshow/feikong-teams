@@ -6,11 +6,21 @@ import (
 	"sync"
 
 	runtimeport "fkteams/internal/ports/runtime"
+	storageport "fkteams/internal/ports/storage"
 	toolport "fkteams/internal/ports/tools"
 	"fkteams/internal/runtime/resources"
 )
 
-type ToolGroupFactory func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error)
+type ToolResolveContext struct {
+	WorkspaceDir  string
+	SessionsDir   string
+	RuntimeDir    string
+	Cleaner       *resources.Cleaner
+	Config        any
+	HistoryReader storageport.SessionMessageReader
+}
+
+type ToolGroupFactory func(ctx ToolResolveContext) ([]runtimeport.Tool, error)
 
 type ToolGroupRegistration struct {
 	Info    ToolGroupInfo
@@ -23,6 +33,7 @@ type ToolGroupRegistry struct {
 	groups      map[string]toolGroupEntry
 	frozen      bool
 	mcpProvider toolport.MCPProvider
+	resolveCtx  ToolResolveContext
 }
 
 type toolGroupEntry struct {
@@ -32,8 +43,12 @@ type toolGroupEntry struct {
 
 type registryContextKey struct{}
 
-func NewToolGroupRegistry() *ToolGroupRegistry {
-	return &ToolGroupRegistry{groups: make(map[string]toolGroupEntry)}
+func NewToolGroupRegistry(resolveContext ...ToolResolveContext) *ToolGroupRegistry {
+	var ctx ToolResolveContext
+	if len(resolveContext) > 0 {
+		ctx = resolveContext[0]
+	}
+	return &ToolGroupRegistry{groups: make(map[string]toolGroupEntry), resolveCtx: ctx}
 }
 
 func WithRegistry(ctx context.Context, registry *ToolGroupRegistry) context.Context {
@@ -105,11 +120,25 @@ func (r *ToolGroupRegistry) Resolve(name string, cleaner *resources.Cleaner) ([]
 	if !ok {
 		return nil, false, nil
 	}
-	tools, err := entry.factory(cleaner)
+	resolveCtx := r.ResolveContext(cleaner)
+	tools, err := entry.factory(resolveCtx)
 	if err != nil {
 		return nil, true, err
 	}
 	return tools, true, nil
+}
+
+func (r *ToolGroupRegistry) ResolveContext(cleaner *resources.Cleaner) ToolResolveContext {
+	if r == nil {
+		return ToolResolveContext{Cleaner: cleaner}
+	}
+	r.mu.RLock()
+	ctx := r.resolveCtx
+	r.mu.RUnlock()
+	if cleaner != nil {
+		ctx.Cleaner = cleaner
+	}
+	return ctx
 }
 
 func (r *ToolGroupRegistry) Names() []string {

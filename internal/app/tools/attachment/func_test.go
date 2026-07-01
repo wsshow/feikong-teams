@@ -18,18 +18,17 @@ func (r fakeSessionMessageReader) LoadSessionMessages(context.Context, string) (
 	return r.messages, nil
 }
 
-func installFakeReader(t *testing.T, messages []domainhistory.AgentMessage) {
+func fakeReader(t *testing.T, messages []domainhistory.AgentMessage) fakeSessionMessageReader {
 	t.Helper()
-	SetSessionMessageReader(fakeSessionMessageReader{messages: messages})
-	t.Cleanup(func() { SetSessionMessageReader(nil) })
+	return fakeSessionMessageReader{messages: messages}
 }
 
 func TestListAndReadSessionAttachments(t *testing.T) {
 	sessionID := "attachment-test-session"
-	installFakeReader(t, []domainhistory.AgentMessage{messageWithImageAttachment()})
+	reader := fakeReader(t, []domainhistory.AgentMessage{messageWithImageAttachment()})
 	ctx := session.WithID(context.Background(), sessionID)
 
-	list, err := List(ctx, &ListRequest{})
+	list, err := List(ctx, reader, &ListRequest{})
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
@@ -40,7 +39,7 @@ func TestListAndReadSessionAttachments(t *testing.T) {
 		t.Fatalf("attachment id = %q, want stable id", list.Attachments[0].ID)
 	}
 
-	read, err := Read(ctx, &ReadRequest{AttachmentID: list.Attachments[0].ID, IncludeDataURL: true})
+	read, err := Read(ctx, reader, &ReadRequest{AttachmentID: list.Attachments[0].ID, IncludeDataURL: true})
 	if err != nil {
 		t.Fatalf("Read returned error: %v", err)
 	}
@@ -54,10 +53,10 @@ func TestListAndReadSessionAttachments(t *testing.T) {
 
 func TestReadSessionAttachmentDefaultsToMetadataOnly(t *testing.T) {
 	sessionID := "attachment-test-metadata-only"
-	installFakeReader(t, []domainhistory.AgentMessage{messageWithImageAttachment()})
+	reader := fakeReader(t, []domainhistory.AgentMessage{messageWithImageAttachment()})
 	ctx := session.WithID(context.Background(), sessionID)
 
-	read, err := Read(ctx, &ReadRequest{AttachmentID: "history:000000:00:01"})
+	read, err := Read(ctx, reader, &ReadRequest{AttachmentID: "history:000000:00:01"})
 	if err != nil {
 		t.Fatalf("Read returned error: %v", err)
 	}

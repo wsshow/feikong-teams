@@ -127,7 +127,7 @@ func (r Resolver) Resolve(ctx context.Context, def Definition) (*ResolvedAgent, 
 func (r Resolver) resolveTools(ctx context.Context, def Definition, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 	toolList := append([]runtimeport.Tool(nil), def.Tools...)
 	if profileIncludesWorkspace(def.Profile) {
-		builtinTools, err := tools.GetBuiltinCapabilityToolsWithCleaner(cleaner)
+		builtinTools, err := tools.GetBuiltinCapabilityToolsWithCleaner(ctx, cleaner)
 		if err != nil {
 			return nil, err
 		}

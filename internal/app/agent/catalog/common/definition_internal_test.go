@@ -6,7 +6,6 @@ import (
 
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/resources"
 	"fkteams/internal/testmodel"
 )
 
@@ -24,7 +23,7 @@ func TestDefinitionBuildDoesNotMutateResolvedTools(t *testing.T) {
 			Category:    "Test",
 			Builtin:     true,
 		},
-		Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+		Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 			return []runtimeport.Tool{registryTestTool{}}, nil
 		},
 	}); err != nil {

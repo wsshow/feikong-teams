@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/resources"
 )
 
 type registryTestTool struct{}
@@ -45,7 +44,7 @@ func newTestRegistry(t *testing.T) *ToolGroupRegistry {
 			Category:    "Test",
 			Builtin:     true,
 		},
-		Factory: func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+		Factory: func(ToolResolveContext) ([]runtimeport.Tool, error) {
 			return []runtimeport.Tool{registryTestTool{}}, nil
 		},
 	})
@@ -65,7 +64,7 @@ func TestToolGroupRegistryRejectsDuplicateAndResolves(t *testing.T) {
 			Category:    "Test",
 			Builtin:     true,
 		},
-		Factory: func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
+		Factory: func(ToolResolveContext) ([]runtimeport.Tool, error) {
 			return []runtimeport.Tool{registryTestTool{}}, nil
 		},
 	}

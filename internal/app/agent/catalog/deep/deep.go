@@ -14,7 +14,7 @@ import (
 
 func NewAgent(ctx context.Context, subAgents []runtimeport.Agent) (runtimeport.Agent, error) {
 
-	toolList, err := tools.GetBuiltinCapabilityTools()
+	toolList, err := tools.GetBuiltinCapabilityTools(ctx)
 	if err != nil {
 		return nil, err
 	}

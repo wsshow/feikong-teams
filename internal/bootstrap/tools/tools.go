@@ -22,10 +22,8 @@ import (
 	"fkteams/internal/app/config"
 	apptools "fkteams/internal/app/tools"
 	"fkteams/internal/app/tools/ask"
-	"fkteams/internal/app/tools/attachment"
 	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
-	"fkteams/internal/runtime/resources"
 )
 
 func runtimeDir() string {
@@ -34,8 +32,16 @@ func runtimeDir() string {
 
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
 func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegistry, error) {
-	registry := apptools.NewToolGroupRegistry()
-	attachment.SetSessionMessageReader(eventlog.NewSessionMessageReader(appdata.SessionsDir(), eventlog.NewSessionHistoryManager()))
+	cfg := config.Get()
+	sessionsDir := appdata.SessionsDir()
+	resolveCtx := apptools.ToolResolveContext{
+		WorkspaceDir:  appdata.WorkspaceDir(),
+		SessionsDir:   sessionsDir,
+		RuntimeDir:    runtimeDir(),
+		Config:        cfg,
+		HistoryReader: eventlog.NewSessionMessageReader(sessionsDir, eventlog.NewSessionHistoryManager()),
+	}
+	registry := apptools.NewToolGroupRegistry(resolveCtx)
 	if mcpProvider == nil {
 		mcpProvider = mcpadapter.NewProvider()
 	}
@@ -51,8 +57,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"file_read", "file_write", "file_search", "file_list"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-				fileTools, err := filetool.NewFileTools(appdata.WorkspaceDir())
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				fileTools, err := filetool.NewFileTools(ctx.WorkspaceDir)
 				if err != nil {
 					return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 				}
@@ -68,8 +74,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"todo_add", "todo_update", "todo_list"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-				todoTools, err := todotool.NewTodoTools(appdata.SessionsDir())
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				todoTools, err := todotool.NewTodoTools(ctx.SessionsDir)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 				}
@@ -85,7 +91,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"ask_questions"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				return ask.GetTools()
 			},
 		},
@@ -121,8 +127,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"uv_python"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-				uvTools, err := uvtool.NewUVTools(runtimeDir(), appdata.WorkspaceDir())
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				uvTools, err := uvtool.NewUVTools(ctx.RuntimeDir, ctx.WorkspaceDir)
 				if err != nil {
 					return nil, fmt.Errorf("初始化 uv 工具失败: %w", err)
 				}
@@ -138,8 +144,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"bun_javascript"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-				bunTools, err := buntool.NewBunTools(runtimeDir(), appdata.WorkspaceDir())
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				bunTools, err := buntool.NewBunTools(ctx.RuntimeDir, ctx.WorkspaceDir)
 				if err != nil {
 					return nil, fmt.Errorf("初始化 bun 工具失败: %w", err)
 				}
@@ -155,8 +161,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"excel_create", "excel_read", "excel_write", "excel_style"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-				excelTools, err := exceltool.NewExcelTools(appdata.WorkspaceDir())
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				excelTools, err := exceltool.NewExcelTools(ctx.WorkspaceDir)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
 				}
@@ -172,7 +178,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"search"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				return searchtool.GetTools()
 			},
 		},
@@ -185,7 +191,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"fetch"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				return fetchtool.GetTools()
 			},
 		},
@@ -198,7 +204,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"doc_info", "doc_smart_read", "doc_read_pages", "doc_read_lines"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				return doctool.GetTools()
 			},
 		},
@@ -211,8 +217,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"git_status", "git_diff", "git_log", "git_commit"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
-				gitTools, err := gittool.NewGitTools(appdata.WorkspaceDir())
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				gitTools, err := gittool.NewGitTools(ctx.WorkspaceDir)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Git工具失败: %w", err)
 				}
@@ -228,8 +234,12 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir"},
 			},
-			Factory: func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
-				sshCfg := config.Get().Agents.SSHVisitor
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				cfg, ok := ctx.Config.(*config.Config)
+				if !ok || cfg == nil {
+					return nil, fmt.Errorf("config is not available for SSH tools")
+				}
+				sshCfg := cfg.Agents.SSHVisitor
 				host := sshCfg.Host
 				username := sshCfg.Username
 				password := sshCfg.Password
@@ -240,8 +250,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				if err != nil {
 					return nil, fmt.Errorf("初始化 SSH 工具失败: %w", err)
 				}
-				if cleaner != nil {
-					cleaner.Add(func() error {
+				if ctx.Cleaner != nil {
+					ctx.Cleaner.Add(func() error {
 						sshTools.Close()
 						return nil
 					})
@@ -258,7 +268,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				Builtin:       true,
 				IncludedTools: []string{"schedule_add", "schedule_list", "schedule_cancel", "schedule_delete"},
 			},
-			Factory: func(*resources.Cleaner) ([]runtimeport.Tool, error) {
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				return schedulertool.NewTools(nil).GetTools()
 			},
 		},
@@ -274,14 +284,14 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 }
 
 func commandToolGroup(mode commandtool.ApprovalMode) apptools.ToolGroupFactory {
-	return func(cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
-		if cleaner != nil {
-			cleaner.Add(func() error {
+	return func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+		if ctx.Cleaner != nil {
+			ctx.Cleaner.Add(func() error {
 				commandtool.TerminateAll()
-				commandtool.CleanupTempFiles(appdata.WorkspaceDir())
+				commandtool.CleanupTempFiles(ctx.WorkspaceDir)
 				return nil
 			})
 		}
-		return commandtool.NewCommandTools(appdata.WorkspaceDir(), commandtool.WithApprovalMode(mode)).GetTools()
+		return commandtool.NewCommandTools(ctx.WorkspaceDir, commandtool.WithApprovalMode(mode)).GetTools()
 	}
 }
