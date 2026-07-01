@@ -298,21 +298,24 @@ function MessageRow({
         </div>
       ) : null}
       <div className="space-y-3">
-        {parts.map((part, index) => {
-          const key = messagePartKey(part, message.id, index);
-          return (
-          <MessagePart
-            key={key}
-            part={part}
-            disclosureID={key}
-            sessionID={sessionID}
-            agents={agents}
-            onAskAnswered={(selected, freeText) => {
-              if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
-            }}
-          />
-          );
-        })}
+        {(() => {
+          const partKeys = new Map<string, number>();
+          return parts.map((part) => {
+            const key = nextRepeatedKey(partKeys, messagePartKey(part, message.id));
+            return (
+              <MessagePart
+                key={key}
+                part={part}
+                disclosureID={key}
+                sessionID={sessionID}
+                agents={agents}
+                onAskAnswered={(selected, freeText) => {
+                  if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
+                }}
+              />
+            );
+          });
+        })()}
       </div>
       {showCopyAction && (hasContent || copyContent) ? <MessageActions content={copyContent || message.content} compact /> : null}
     </article>
@@ -465,13 +468,14 @@ function ActivityList({
   if (!visibleTools.length) return null;
   return (
     <div className="space-y-2">
-      {visibleTools.map((part, index) => {
+      {visibleTools.map((part) => {
         if (part.type !== "tool") return null;
         const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
+        const key = `activity:${toolActivityKey(part.tool)}`;
         return (
           <ToolCallCard
-            key={`${part.tool.ref || part.tool.id || part.tool.name}-${index}`}
-            disclosureID={`activity:${toolActivityKey(part.tool)}:${index}`}
+            key={key}
+            disclosureID={key}
             tool={part.tool}
             title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
           >
@@ -559,10 +563,13 @@ function MemberActivityDetails({ member, agents }: { member: MemberActivity; age
         <AgentNameLabel name={member.name} agent={agent} />
         <span>{member.toolCount ? `${member.toolCount} 个工具调用` : "暂无工具调用"}</span>
       </div>
-      {member.parts.map((part, index) => {
-        const key = messagePartKey(part, member.id, index);
-        return <MemberActivityPart key={key} part={part} disclosureID={key} />;
-      })}
+      {(() => {
+        const partKeys = new Map<string, number>();
+        return member.parts.map((part) => {
+          const key = nextRepeatedKey(partKeys, messagePartKey(part, member.id));
+          return <MemberActivityPart key={key} part={part} disclosureID={key} />;
+        });
+      })()}
     </div>
   );
 }
@@ -812,6 +819,7 @@ function buildTimelineModel(
   submittedAskIDs: Set<string>,
   isProcessing: boolean,
 ): TimelineModel {
+  const eventOrders = eventOrderMap(displayEvents);
   const reasoningByMessage = collectReasoningBlocks(displayEvents);
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
   const memberActivities = collectMemberActivities(displayEvents, isProcessing);
@@ -847,7 +855,7 @@ function buildTimelineModel(
       parts,
       showAgentLabel: false,
       showCopyAction: false,
-      order: messageOrder(message, index),
+      order: messageOrder(message, index, eventOrders),
     };
   });
   const trailingTools = attachMembersToParts(
@@ -1031,12 +1039,21 @@ function hasCopyableAssistantText(node: TimelineMessageNode) {
   return node.parts.some((part) => part.type === "text" && part.content.trim());
 }
 
-function messageOrder(message: ChatViewMessage, fallback: number) {
+function messageOrder(message: ChatViewMessage, fallback: number, eventOrders: Map<string, number>) {
   const sequences = (message.events || [])
-    .map((event, index) => eventOrder(event, index))
-    .filter((sequence) => Number.isFinite(sequence));
+    .map((event) => eventOrders.get(eventDisplayKey(event)))
+    .filter((sequence): sequence is number => sequence !== undefined && Number.isFinite(sequence));
   if (sequences.length) return Math.min(...sequences);
   return fallback + 0.5;
+}
+
+function eventOrderMap(events: ChatEvent[]) {
+  const result = new Map<string, number>();
+  events.forEach((event, index) => {
+    const key = eventDisplayKey(event);
+    if (!result.has(key)) result.set(key, index);
+  });
+  return result;
 }
 
 function mapMembersByMessageID(members: MemberActivity[]) {
@@ -1539,12 +1556,8 @@ function appendSequencedTextPart(
   parts.push({ type, content, key, streaming });
 }
 
-function eventOrder(event: ChatEvent, fallback: number) {
-  const streamEventID = Number(event.stream_event_id);
-  if (Number.isFinite(streamEventID)) return streamEventID;
-  const sequence = Number(event.sequence);
-  if (Number.isFinite(sequence)) return sequence;
-  return fallback + 0.5;
+function eventOrder(_event: ChatEvent, fallback: number) {
+  return fallback;
 }
 
 function uniqueStrings(values: string[]) {
@@ -1563,10 +1576,25 @@ function toolActivityKey(tool: ToolActivity) {
   return canonicalToolRef(tool.ref || tool.id) || `${tool.message_id || "tool"}:${tool.index ?? ""}`;
 }
 
-function messagePartKey(part: MessageRenderPart, ownerID: string, index: number) {
+function messagePartKey(part: MessageRenderPart, ownerID: string) {
   if (part.type === "tool") return `${ownerID}:tool:${toolActivityKey(part.tool)}`;
   if (part.type === "ask") return `${ownerID}:ask:${part.ask.id}`;
-  return `${part.key || `${ownerID}:${part.type}`}:${index}`;
+  if (part.key) return `${ownerID}:${part.key}`;
+  return `${ownerID}:${part.type}:${stableTextHash(part.content)}`;
+}
+
+function nextRepeatedKey(seen: Map<string, number>, base: string) {
+  const count = seen.get(base) || 0;
+  seen.set(base, count + 1);
+  return count === 0 ? base : `${base}:${count + 1}`;
+}
+
+function stableTextHash(value: string) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function textPartKey(event: ChatEvent, type: "reasoning" | "text") {
