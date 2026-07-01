@@ -21,9 +21,12 @@ func NewAgent(ctx context.Context, member config.TeamMember) (runtimeport.Agent,
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 
-	return common.NewAgentBuilder(member.Name, member.Desc).
-		WithInstruction(discussantPrompt).
-		WithModel(chatModel).
-		WithSummary().
-		Build(ctx)
+	return common.BuildAgent(ctx, common.Definition{
+		Name:          member.Name,
+		Description:   member.Desc,
+		Instruction:   discussantPrompt,
+		Profile:       common.ProfileWorkspace,
+		Model:         chatModel,
+		EnableSummary: true,
+	})
 }

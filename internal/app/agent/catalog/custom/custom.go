@@ -25,12 +25,14 @@ type Config struct {
 }
 
 func NewAgent(ctx context.Context, cfg Config) (runtimeport.Agent, error) {
-	builder := common.NewAgentBuilder(cfg.Name, cfg.Description).
-		WithInstruction(cfg.SystemPrompt).
-		WithTools(cfg.Tools...).
-		WithToolNames(cfg.ToolNames...).
-		WithSummary().
-		WithSkills()
+	def := common.Definition{
+		Name:        cfg.Name,
+		Description: cfg.Description,
+		Instruction: cfg.SystemPrompt,
+		Profile:     common.ProfileFull,
+		Tools:       cfg.Tools,
+		ToolNames:   cfg.ToolNames,
+	}
 
 	if cfg.Model.Name != "" || cfg.Model.BaseURL != "" {
 		chatModel, err := common.NewChatModelWithConfig(ctx, &modelregistry.Config{
@@ -42,8 +44,8 @@ func NewAgent(ctx context.Context, cfg Config) (runtimeport.Agent, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
-		builder = builder.WithModel(chatModel)
+		def.Model = chatModel
 	}
 
-	return builder.Build(ctx)
+	return common.BuildAgent(ctx, def)
 }

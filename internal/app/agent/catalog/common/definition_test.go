@@ -14,7 +14,7 @@ import (
 	"fkteams/internal/testmodel"
 )
 
-func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
+func TestDefinitionRunsWithInjectedTestModel(t *testing.T) {
 	defaults, err := bootstrapruntimes.NewDefaults()
 	if err != nil {
 		t.Fatalf("runtime engine: %v", err)
@@ -23,11 +23,16 @@ func TestAgentBuilderRunsWithInjectedTestModel(t *testing.T) {
 	ctx := runtimeport.WithRuntime(context.Background(), engine)
 	cm := testmodel.New().EnqueueStream(testmodel.AssistantMessage("builder-ok"))
 
-	agent, err := agentscommon.NewAgentBuilder("builder_test", "builder test agent").
-		WithModel(cm).
-		WithInstruction("you are a {role}").
-		WithTemplateVar("role", "tester").
-		Build(ctx)
+	agent, err := agentscommon.BuildAgent(ctx, agentscommon.Definition{
+		Name:        "builder_test",
+		Description: "builder test agent",
+		Instruction: "you are a {role}",
+		Profile:     agentscommon.ProfileWorkspace,
+		Model:       cm,
+		TemplateVars: map[string]any{
+			"role": "tester",
+		},
+	})
 	if err != nil {
 		t.Fatalf("build agent: %v", err)
 	}
