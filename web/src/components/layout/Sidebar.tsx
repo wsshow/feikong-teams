@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import type { RefObject } from "react";
 import { appActions, chatActions, type AppPanel } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
@@ -45,9 +46,13 @@ const sessionStatusLabels: Record<string, string> = {
   error: "失败",
 };
 
+const sessionMenuWidth = 176;
+const sessionMenuHeight = 190;
+
 export function Sidebar() {
   const dispatch = useAppDispatch();
   const [openMenuID, setOpenMenuID] = useState("");
+  const [sessionMenuPosition, setSessionMenuPosition] = useState<{ top: number; left: number } | undefined>();
   const [deleteTarget, setDeleteTarget] = useState<{ session_id: string; title?: string } | null>(null);
   const [shareTarget, setShareTarget] = useState<{ session_id: string; title?: string } | null>(null);
   const [deletingSessionID, setDeletingSessionID] = useState("");
@@ -66,16 +71,41 @@ export function Sidebar() {
     return text.includes(searchQuery.toLowerCase());
   });
   const groups = groupSessions(sortedSessions);
+  const openMenuSession = sortedSessions.find((session) => session.session_id === openMenuID);
 
   useEffect(() => {
     if (!openMenuID) return;
     function closeMenuOnOutsidePointer(event: PointerEvent) {
       if (sessionMenuRef.current?.contains(event.target as Node)) return;
-      setOpenMenuID("");
+      if (event.target instanceof Element && event.target.closest(`[data-session-menu-trigger="${openMenuID}"]`)) return;
+      closeSessionMenu();
     }
     document.addEventListener("pointerdown", closeMenuOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeMenuOnOutsidePointer);
   }, [openMenuID]);
+
+  function closeSessionMenu() {
+    setOpenMenuID("");
+    setSessionMenuPosition(undefined);
+  }
+
+  function toggleSessionMenu(sessionID: string, trigger: HTMLElement) {
+    if (openMenuID === sessionID) {
+      closeSessionMenu();
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(8, rect.right - sessionMenuWidth),
+      Math.max(8, window.innerWidth - sessionMenuWidth - 8),
+    );
+    const top = Math.min(
+      Math.max(8, rect.bottom + 4),
+      Math.max(8, window.innerHeight - sessionMenuHeight - 8),
+    );
+    setSessionMenuPosition({ top, left });
+    setOpenMenuID(sessionID);
+  }
 
   function closeMobileSidebar() {
     if (window.matchMedia("(max-width: 767px)").matches) {
@@ -84,7 +114,7 @@ export function Sidebar() {
   }
 
   function handleNewSession() {
-    setOpenMenuID("");
+    closeSessionMenu();
     dispatch(appActions.setActivePanel("chat"));
     dispatch(chatActions.setActiveSession(""));
     dispatch(chatActions.clearMessages());
@@ -93,13 +123,14 @@ export function Sidebar() {
   }
 
   function switchPanel(panel: (typeof panels)[number]) {
+    closeSessionMenu();
     dispatch(appActions.setActivePanel(panel.key));
     pushAppPath(panelPath(panel.key));
     closeMobileSidebar();
   }
 
   function openSession(sessionID: string) {
-    setOpenMenuID("");
+    closeSessionMenu();
     dispatch(appActions.setActivePanel("chat"));
     dispatch(chatActions.setActiveSession(sessionID));
     pushAppPath(chatPath(sessionID));
@@ -108,7 +139,7 @@ export function Sidebar() {
 
   async function toggleFavorite(session: { session_id: string; favorite?: boolean }) {
     await favoriteSession(session.session_id, !session.favorite);
-    setOpenMenuID("");
+    closeSessionMenu();
     dispatch(loadSessions());
   }
 
@@ -118,17 +149,17 @@ export function Sidebar() {
     const nextTitle = title.trim();
     if (!nextTitle) return;
     await renameSession(session.session_id, nextTitle);
-    setOpenMenuID("");
+    closeSessionMenu();
     dispatch(loadSessions());
   }
 
   function requestDelete(session: { session_id: string; title?: string }) {
-    setOpenMenuID("");
+    closeSessionMenu();
     setDeleteTarget(session);
   }
 
   function requestShare(session: { session_id: string; title?: string }) {
-    setOpenMenuID("");
+    closeSessionMenu();
     setShareTarget(session);
   }
 
@@ -223,7 +254,7 @@ export function Sidebar() {
           <div className="px-3 pb-1">
             <div className="text-xs text-muted-foreground">最近会话</div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+          <div className="min-h-0 flex-1 overflow-auto px-2 pb-2" onScroll={closeSessionMenu}>
             {sortedSessions.length === 0 ? (
               <div className="px-2 py-8 text-base text-muted-foreground">暂无会话</div>
             ) : (
@@ -233,7 +264,6 @@ export function Sidebar() {
                   {group.sessions.map((session) => (
                     <div
                       key={session.session_id}
-                      ref={openMenuID === session.session_id ? sessionMenuRef : undefined}
                       className={cn(
                         "group relative mb-1 flex w-full items-start gap-1 rounded-xl py-2 pl-2.5 pr-1.5 text-base transition-colors hover:bg-card/70",
                         activeSessionID === session.session_id && "bg-card/80 text-accent-foreground",
@@ -260,24 +290,16 @@ export function Sidebar() {
                         </div>
                       </button>
                       <button
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
                         aria-label="会话操作"
+                        data-session-menu-trigger={session.session_id}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setOpenMenuID(openMenuID === session.session_id ? "" : session.session_id);
+                          toggleSessionMenu(session.session_id, event.currentTarget);
                         }}
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {openMenuID === session.session_id ? (
-                        <SessionMenu
-                          favorite={Boolean(session.favorite)}
-                          onToggleFavorite={() => void toggleFavorite(session)}
-                          onRename={() => void handleRename(session)}
-                          onShare={() => requestShare(session)}
-                          onDelete={() => requestDelete(session)}
-                        />
-                      ) : null}
                     </div>
                   ))}
                 </section>
@@ -313,6 +335,17 @@ export function Sidebar() {
         onClose={() => setShareTarget(null)}
         onCreated={() => dispatch(loadSessions())}
       />
+      {openMenuSession && sessionMenuPosition ? (
+        <SessionMenu
+          menuRef={sessionMenuRef}
+          position={sessionMenuPosition}
+          favorite={Boolean(openMenuSession.favorite)}
+          onToggleFavorite={() => void toggleFavorite(openMenuSession)}
+          onRename={() => void handleRename(openMenuSession)}
+          onShare={() => requestShare(openMenuSession)}
+          onDelete={() => requestDelete(openMenuSession)}
+        />
+      ) : null}
     </>
   );
 }
@@ -437,12 +470,16 @@ function SessionSearchDialog({
 }
 
 function SessionMenu({
+  menuRef,
+  position,
   favorite,
   onToggleFavorite,
   onRename,
   onShare,
   onDelete,
 }: {
+  menuRef: RefObject<HTMLDivElement | null>;
+  position: { top: number; left: number };
   favorite: boolean;
   onToggleFavorite: () => void;
   onRename: () => void;
@@ -450,7 +487,11 @@ function SessionMenu({
   onDelete: () => void;
 }) {
   return (
-    <div className="sketch-surface absolute right-1 top-9 z-40 w-44 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]">
+    <div
+      ref={menuRef}
+      className="sketch-surface fixed z-50 w-44 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]"
+      style={{ top: position.top, left: position.left }}
+    >
       <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-accent/65" onClick={onToggleFavorite}>
         <Star className={cn("h-4 w-4", favorite && "fill-foreground")} />
         {favorite ? "取消收藏" : "收藏"}
