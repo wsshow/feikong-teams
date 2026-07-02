@@ -11,6 +11,7 @@ import (
 	"fkteams/internal/app/agent/catalog/researcher"
 	"fkteams/internal/app/agent/catalog/visitor"
 	"fkteams/internal/app/config"
+	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
@@ -291,8 +292,8 @@ func builtinAgentSpecs() []builtinAgentSpec {
 			displayName: "远程运维",
 			aliases:     []string{"小访", "visitor"},
 			teamMember:  true,
-			definition: func(cfg *config.Config) common.Definition {
-				return visitor.DefaultDefinition(cfg.Agents.SSHVisitor.Host, cfg.Agents.SSHVisitor.Username)
+			definition: func(*config.Config) common.Definition {
+				return visitor.DefaultDefinition("", "")
 			},
 		},
 		{
@@ -343,6 +344,7 @@ func ConfigItems(cfg *config.Config) []config.AgentConfig {
 		if item.ID == "" || seen[item.ID] {
 			continue
 		}
+		item = cloneAgentConfig(item)
 		item.Builtin = false
 		item.TeamMember = true
 		result = append(result, item)
@@ -368,6 +370,10 @@ func mergeAgentConfig(base, override config.AgentConfig) config.AgentConfig {
 	}
 	if override.Tools != nil {
 		base.Tools = append([]string(nil), override.Tools...)
+	}
+	if override.SSH != nil {
+		ssh := *override.SSH
+		base.SSH = &ssh
 	}
 	return base
 }
@@ -412,6 +418,16 @@ func applyAgentConfig(def *common.Definition, cfg config.AgentConfig) {
 }
 
 func buildConfiguredDefinition(ctx context.Context, cfg *config.Config, def common.Definition, agentCfg config.AgentConfig) (runtimeport.Agent, error) {
+	if agentCfg.SSH != nil {
+		applySSHConfigToDefinition(&def, agentCfg.SSH)
+		ctx = apptools.WithResolveContextPatch(ctx, apptools.ToolResolveContext{
+			SSH: &apptools.SSHConfig{
+				Host:     agentCfg.SSH.Host,
+				Username: agentCfg.SSH.Username,
+				Password: agentCfg.SSH.Password,
+			},
+		})
+	}
 	if agentCfg.ModelID != "" {
 		modelCfg := cfg.ResolveModel(agentCfg.ModelID)
 		if modelCfg == nil {
@@ -429,6 +445,26 @@ func buildConfiguredDefinition(ctx context.Context, cfg *config.Config, def comm
 		def.Model = chatModel
 	}
 	return common.BuildAgent(ctx, def)
+}
+
+func applySSHConfigToDefinition(def *common.Definition, ssh *config.AgentSSH) {
+	if def == nil || ssh == nil {
+		return
+	}
+	if def.TemplateVars == nil {
+		def.TemplateVars = make(map[string]any)
+	}
+	def.TemplateVars["ssh_host"] = ssh.Host
+	def.TemplateVars["ssh_username"] = ssh.Username
+}
+
+func cloneAgentConfig(item config.AgentConfig) config.AgentConfig {
+	item.Tools = append([]string(nil), item.Tools...)
+	if item.SSH != nil {
+		ssh := *item.SSH
+		item.SSH = &ssh
+	}
+	return item
 }
 
 func customAgentInfo(cfg *config.Config, agentCfg config.AgentConfig) AgentInfo {
@@ -450,6 +486,15 @@ func customAgentInfo(cfg *config.Config, agentCfg config.AgentConfig) AgentInfo 
 		ModelID:     agentCfg.ModelID,
 		ToolNames:   append([]string(nil), agentCfg.Tools...),
 		Creator: func(ctx context.Context) (runtimeport.Agent, error) {
+			if agentCfg.SSH != nil {
+				ctx = apptools.WithResolveContextPatch(ctx, apptools.ToolResolveContext{
+					SSH: &apptools.SSHConfig{
+						Host:     agentCfg.SSH.Host,
+						Username: agentCfg.SSH.Username,
+						Password: agentCfg.SSH.Password,
+					},
+				})
+			}
 			return custom.NewAgent(ctx, custom.Config{
 				Name:        agentID,
 				Description: agentCfg.Description,

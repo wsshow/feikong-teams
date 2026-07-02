@@ -26,7 +26,15 @@ func TestGetConfigHandlerMasksSensitiveFields(t *testing.T) {
 			Password: "password",
 			Secret:   "auth-secret",
 		}},
-		Agents: config.Agents{SSHVisitor: config.SSHVisitor{Password: "ssh-password"}},
+		Agents: config.Agents{
+			Items: []config.AgentConfig{{
+				ID:      "remote-prod",
+				Name:    "生产服务器",
+				Enabled: true,
+				Tools:   []string{"ssh"},
+				SSH:     &config.AgentSSH{Host: "prod:22", Username: "root", Password: "prod-password"},
+			}},
+		},
 		Channels: config.Channels{
 			QQ:      config.ChannelQQ{AppSecret: "qq-secret"},
 			Discord: config.ChannelDiscord{Token: "discord-secret"},
@@ -48,8 +56,9 @@ func TestGetConfigHandlerMasksSensitiveFields(t *testing.T) {
 	if got.Server.Auth.Password != sensitivePassword || got.Server.Auth.Secret != sensitivePassword {
 		t.Fatalf("auth sensitive fields were not masked: %#v", got.Server.Auth)
 	}
-	if got.Agents.SSHVisitor.Password != sensitivePassword {
-		t.Fatalf("ssh password was not masked: %#v", got.Agents.SSHVisitor)
+	gotAgent := findAgentConfigForTest(got.Agents.Items, "remote-prod")
+	if gotAgent == nil || gotAgent.SSH == nil || gotAgent.SSH.Password != sensitivePassword {
+		t.Fatalf("agent ssh password was not masked: %#v", got.Agents.Items)
 	}
 	if got.Channels.QQ.AppSecret != sensitivePassword {
 		t.Fatalf("qq secret was not masked: %#v", got.Channels.QQ)
@@ -74,7 +83,15 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 			Password: "old-password",
 			Secret:   "old-secret",
 		}},
-		Agents: config.Agents{SSHVisitor: config.SSHVisitor{Password: "old-ssh"}},
+		Agents: config.Agents{
+			Items: []config.AgentConfig{{
+				ID:      "remote-prod",
+				Name:    "生产服务器",
+				Enabled: true,
+				Tools:   []string{"ssh"},
+				SSH:     &config.AgentSSH{Host: "prod:22", Username: "root", Password: "old-prod-ssh"},
+			}},
+		},
 		Channels: config.Channels{
 			QQ:      config.ChannelQQ{AppSecret: "old-qq"},
 			Discord: config.ChannelDiscord{Token: "old-discord"},
@@ -94,7 +111,15 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 			Password: sensitivePassword,
 			Secret:   sensitivePassword,
 		}},
-		Agents: config.Agents{SSHVisitor: config.SSHVisitor{Password: sensitivePassword}},
+		Agents: config.Agents{
+			Items: []config.AgentConfig{{
+				ID:      "remote-prod",
+				Name:    "生产服务器",
+				Enabled: true,
+				Tools:   []string{"ssh"},
+				SSH:     &config.AgentSSH{Host: "prod:22", Username: "root", Password: sensitivePassword},
+			}},
+		},
 		Channels: config.Channels{
 			QQ:      config.ChannelQQ{AppSecret: sensitivePassword},
 			Discord: config.ChannelDiscord{Token: maskAPIKey("old-discord")},
@@ -124,12 +149,22 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 	if got.Server.Auth.Password != "old-password" || got.Server.Auth.Secret != "old-secret" {
 		t.Fatalf("auth sensitive fields were not restored: %#v", got.Server.Auth)
 	}
-	if got.Agents.SSHVisitor.Password != "old-ssh" {
-		t.Fatalf("ssh password was not restored: %#v", got.Agents.SSHVisitor)
+	gotAgent := findAgentConfigForTest(got.Agents.Items, "remote-prod")
+	if gotAgent == nil || gotAgent.SSH == nil || gotAgent.SSH.Password != "old-prod-ssh" {
+		t.Fatalf("agent ssh password was not restored: %#v", got.Agents.Items)
 	}
 	if got.Channels.QQ.AppSecret != "old-qq" || got.Channels.Discord.Token != "old-discord" {
 		t.Fatalf("channel secrets were not restored: %#v", got.Channels)
 	}
+}
+
+func findAgentConfigForTest(items []config.AgentConfig, id string) *config.AgentConfig {
+	for i := range items {
+		if items[i].ID == id {
+			return &items[i]
+		}
+	}
+	return nil
 }
 
 func TestUpdateConfigHandlerRejectsDuplicateModelNames(t *testing.T) {

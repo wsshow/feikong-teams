@@ -80,8 +80,8 @@ type Server struct {
 
 // ==================== 智能体 ====================
 
-// SSHVisitor SSH 远程访问能力配置。
-type SSHVisitor struct {
+// AgentSSH 描述智能体专属 SSH 连接信息。
+type AgentSSH struct {
 	Host     string `toml:"host" json:"host"`
 	Username string `toml:"username" json:"username"`
 	Password string `toml:"password" json:"password"`
@@ -89,21 +89,21 @@ type SSHVisitor struct {
 
 // AgentConfig 描述一个可全局调用的智能体配置。
 type AgentConfig struct {
-	ID          string   `toml:"id" json:"id"`
-	Name        string   `toml:"name" json:"name"`
-	Description string   `toml:"description" json:"description"`
-	Prompt      string   `toml:"prompt" json:"prompt"`
-	ModelID     string   `toml:"model_id,omitempty" json:"model_id,omitempty"`
-	Tools       []string `toml:"tools,omitempty" json:"tools"`
-	Enabled     bool     `toml:"enabled" json:"enabled"`
-	Builtin     bool     `toml:"-" json:"builtin,omitempty"`
-	TeamMember  bool     `toml:"-" json:"team_member,omitempty"`
+	ID          string    `toml:"id" json:"id"`
+	Name        string    `toml:"name" json:"name"`
+	Description string    `toml:"description" json:"description"`
+	Prompt      string    `toml:"prompt" json:"prompt"`
+	ModelID     string    `toml:"model_id,omitempty" json:"model_id,omitempty"`
+	Tools       []string  `toml:"tools,omitempty" json:"tools"`
+	SSH         *AgentSSH `toml:"ssh,omitempty" json:"ssh,omitempty"`
+	Enabled     bool      `toml:"enabled" json:"enabled"`
+	Builtin     bool      `toml:"-" json:"builtin,omitempty"`
+	TeamMember  bool      `toml:"-" json:"team_member,omitempty"`
 }
 
 // Agents 全局智能体目录配置。
 type Agents struct {
-	Items      []AgentConfig `toml:"items" json:"items"`
-	SSHVisitor SSHVisitor    `toml:"ssh_visitor" json:"ssh_visitor"`
+	Items []AgentConfig `toml:"items" json:"items"`
 }
 
 // ==================== 通道 ====================
@@ -545,7 +545,12 @@ func GenerateExample() error {
 					Description: "远程运维专家，负责通过 SSH 管理服务器、执行命令和传输文件。",
 					Prompt:      "",
 					Tools:       []string{"ssh"},
-					Enabled:     false,
+					SSH: &AgentSSH{
+						Host:     "ip:port",
+						Username: "your_ssh_user",
+						Password: "your_ssh_password",
+					},
+					Enabled: false,
 				},
 				{
 					ID:          "generalist",
@@ -555,11 +560,6 @@ func GenerateExample() error {
 					Tools:       []string{"command", "file", "search", "fetch", "ask", "doc"},
 					Enabled:     false,
 				},
-			},
-			SSHVisitor: SSHVisitor{
-				Host:     "",
-				Username: "",
-				Password: "",
 			},
 		},
 		Channels: Channels{

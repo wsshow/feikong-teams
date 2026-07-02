@@ -30,7 +30,7 @@ export interface ServerConfig {
   auth?: ServerAuthConfig;
 }
 
-export interface SSHVisitorConfig {
+export interface AgentSSHConfig {
   host?: string;
   username?: string;
   password?: string;
@@ -43,6 +43,7 @@ export interface AgentConfig {
   prompt?: string;
   model_id?: string;
   tools?: string[];
+  ssh?: AgentSSHConfig;
   enabled?: boolean;
   builtin?: boolean;
   team_member?: boolean;
@@ -50,7 +51,6 @@ export interface AgentConfig {
 
 export interface AgentsConfig {
   items?: AgentConfig[];
-  ssh_visitor?: SSHVisitorConfig;
 }
 
 export interface ChannelQQConfig {

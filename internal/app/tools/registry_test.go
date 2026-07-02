@@ -74,7 +74,38 @@ func TestToolGroupRegistryRejectsDuplicateAndResolves(t *testing.T) {
 	if err := registry.Register(reg); err == nil {
 		t.Fatal("expected duplicate registration error")
 	}
-	resolved, ok, err := registry.Resolve("demo", nil)
+	resolved, ok, err := registry.Resolve(context.Background(), "demo", nil)
+	if err != nil {
+		t.Fatalf("resolve demo: %v", err)
+	}
+	if !ok || len(resolved) != 1 {
+		t.Fatalf("resolve demo = ok:%v tools:%d, want one tool", ok, len(resolved))
+	}
+}
+
+func TestToolGroupRegistryResolveUsesContextPatch(t *testing.T) {
+	registry := NewToolGroupRegistry(ToolResolveContext{Config: "base"})
+	err := registry.Register(ToolGroupRegistration{
+		Info: ToolGroupInfo{
+			Name:        "demo",
+			DisplayName: "Demo",
+			Description: "Demo tools",
+			Category:    "Test",
+			Builtin:     true,
+		},
+		Factory: func(ctx ToolResolveContext) ([]runtimeport.Tool, error) {
+			if ctx.Config != "agent" {
+				t.Fatalf("config = %#v, want agent override", ctx.Config)
+			}
+			return []runtimeport.Tool{registryTestTool{}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("register demo: %v", err)
+	}
+
+	ctx := WithResolveContextPatch(context.Background(), ToolResolveContext{Config: "agent"})
+	resolved, ok, err := registry.Resolve(ctx, "demo", nil)
 	if err != nil {
 		t.Fatalf("resolve demo: %v", err)
 	}

@@ -37,7 +37,6 @@ import type {
   MCPServerConfig,
   ModelConfig,
   ServerAuthConfig,
-  SSHVisitorConfig,
   TeamMemberConfig,
   ToolInfo,
 } from "@/types/config";
@@ -312,7 +311,6 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
 
 function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
   const agents = draft.agents || {};
-  const ssh = agents.ssh_visitor || {};
   const agentItems = agents.items || [];
   const roundtable = draft.roundtable || {};
   const tools = useAppSelector((state) => state.config.tools);
@@ -384,16 +382,6 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
         </PanelBody>
       </Panel>
       <div className="space-y-4">
-        <Panel>
-          <PanelHeader>
-            <SectionTitle icon={Server} title="SSH 远程访问" description="remote 智能体和 ssh 工具使用这组连接信息。" />
-          </PanelHeader>
-          <PanelBody className="space-y-4">
-            <TextField label="主机" value={ssh.host} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { host: value }))} />
-            <TextField label="用户名" value={ssh.username} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { username: value }))} />
-            <TextField label="密码" type="password" value={ssh.password} onChange={(value) => updateDraft((next) => setSSHVisitor(next, { password: value }))} />
-          </PanelBody>
-        </Panel>
         <Panel>
           <PanelHeader className="flex items-center justify-between">
           <SectionTitle icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。" />
@@ -722,6 +710,8 @@ function AgentCatalogEditor({
   toolOptions: ToolSelectOption[];
   onChange: (value: AgentConfig) => void;
 }) {
+  const usesSSH = (agent.tools || []).includes("ssh");
+  const ssh = agent.ssh || {};
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -741,7 +731,23 @@ function AgentCatalogEditor({
         <ModelSelect label="模型 ID（可选）" value={agent.model_id} modelIDs={["", ...modelIDs]} onChange={(value) => onChange({ ...agent, model_id: value })} />
       </div>
       <TextField label="描述" value={agent.description} onChange={(value) => onChange({ ...agent, description: value })} />
-      <ToolSelectField tools={agent.tools || []} options={toolOptions} onChange={(tools) => onChange({ ...agent, tools })} />
+      <ToolSelectField
+        tools={agent.tools || []}
+        options={toolOptions}
+        onChange={(tools) => onChange({ ...agent, tools, ssh: tools.includes("ssh") ? agent.ssh : undefined })}
+      />
+      {usesSSH ? (
+        <div className="grid gap-3 rounded-xl border border-border/75 bg-background/45 p-3 md:grid-cols-3">
+          <TextField label="SSH 主机" value={ssh.host} placeholder="ip:port" onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), host: value } })} />
+          <TextField label="SSH 用户名" value={ssh.username} onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), username: value } })} />
+          <TextField
+            label="SSH 密码"
+            type="password"
+            value={ssh.password}
+            onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), password: value } })}
+          />
+        </div>
+      ) : null}
       <Field label="系统提示词">
         <Textarea className="min-h-56 text-sm" value={agent.prompt || ""} onChange={(event) => onChange({ ...agent, prompt: event.target.value })} />
       </Field>
@@ -1389,10 +1395,6 @@ function setAgents(config: AppConfig, patch: AppConfig["agents"]) {
   config.agents = { ...(config.agents || {}), ...patch };
 }
 
-function setSSHVisitor(config: AppConfig, patch: Partial<SSHVisitorConfig>) {
-  config.agents = { ...(config.agents || {}), ssh_visitor: { ...(config.agents?.ssh_visitor || {}), ...patch } };
-}
-
 function setQQ(config: AppConfig, patch: Partial<ChannelQQConfig>) {
   config.channels = { ...(config.channels || {}), qq: { ...(config.channels?.qq || {}), ...patch } };
 }
@@ -1413,7 +1415,6 @@ function normalizeConfig(config: AppConfig): AppConfig {
   next.memory = next.memory || {};
   next.agents = next.agents || {};
   next.agents.items = next.agents.items || [];
-  next.agents.ssh_visitor = next.agents.ssh_visitor || {};
   next.channels = next.channels || {};
   next.channels.qq = next.channels.qq || {};
   next.channels.discord = next.channels.discord || {};

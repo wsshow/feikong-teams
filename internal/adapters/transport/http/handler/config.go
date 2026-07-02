@@ -56,11 +56,8 @@ func GetConfigHandler() gin.HandlerFunc {
 			resp.Server.Auth.Secret = sensitivePassword
 		}
 
-		// 脱敏 SSH
-		if resp.Agents.SSHVisitor.Password != "" {
-			resp.Agents.SSHVisitor.Password = sensitivePassword
-		}
 		resp.Agents.Items = agents.ConfigItems(cfg)
+		maskAgentSSHPasswords(resp.Agents.Items)
 
 		// 脱敏 Channels
 		if resp.Channels.QQ.AppSecret != "" {
@@ -126,9 +123,7 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		if newCfg.Server.Auth.Secret == sensitivePassword {
 			newCfg.Server.Auth.Secret = oldCfg.Server.Auth.Secret
 		}
-		if newCfg.Agents.SSHVisitor.Password == sensitivePassword {
-			newCfg.Agents.SSHVisitor.Password = oldCfg.Agents.SSHVisitor.Password
-		}
+		restoreAgentSSHPasswords(newCfg.Agents.Items, oldCfg)
 		if newCfg.Channels.QQ.AppSecret == sensitivePassword {
 			newCfg.Channels.QQ.AppSecret = oldCfg.Channels.QQ.AppSecret
 		}
@@ -160,6 +155,35 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		resetMemoryLLM(rt.withRuntimeContext(c.Request.Context()), state)
 
 		OK(c, gin.H{"auth_changed": authChanged})
+	}
+}
+
+func maskAgentSSHPasswords(items []config.AgentConfig) {
+	for i := range items {
+		if items[i].SSH != nil && items[i].SSH.Password != "" {
+			items[i].SSH.Password = sensitivePassword
+		}
+	}
+}
+
+func restoreAgentSSHPasswords(items []config.AgentConfig, oldCfg *config.Config) {
+	if oldCfg == nil {
+		return
+	}
+	oldItems := agents.ConfigItems(oldCfg)
+	oldByID := make(map[string]config.AgentConfig, len(oldItems))
+	for _, item := range oldItems {
+		if item.ID != "" {
+			oldByID[item.ID] = item
+		}
+	}
+	for i := range items {
+		if items[i].SSH == nil || items[i].SSH.Password != sensitivePassword {
+			continue
+		}
+		if oldItem, ok := oldByID[items[i].ID]; ok && oldItem.SSH != nil {
+			items[i].SSH.Password = oldItem.SSH.Password
+		}
 	}
 }
 

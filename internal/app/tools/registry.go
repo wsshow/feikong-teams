@@ -17,8 +17,17 @@ type ToolResolveContext struct {
 	RuntimeDir    string
 	Cleaner       *resources.Cleaner
 	Config        any
+	SSH           *SSHConfig
 	HistoryReader storageport.SessionMessageReader
 }
+
+type SSHConfig struct {
+	Host     string
+	Username string
+	Password string
+}
+
+type resolveContextPatchKey struct{}
 
 type ToolGroupFactory func(ctx ToolResolveContext) ([]runtimeport.Tool, error)
 
@@ -42,6 +51,24 @@ type toolGroupEntry struct {
 }
 
 type registryContextKey struct{}
+
+func WithResolveContextPatch(ctx context.Context, patch ToolResolveContext) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if existing, ok := resolveContextPatchFromContext(ctx); ok {
+		patch = mergeResolveContext(existing, patch)
+	}
+	return context.WithValue(ctx, resolveContextPatchKey{}, patch)
+}
+
+func resolveContextPatchFromContext(ctx context.Context) (ToolResolveContext, bool) {
+	if ctx == nil {
+		return ToolResolveContext{}, false
+	}
+	patch, ok := ctx.Value(resolveContextPatchKey{}).(ToolResolveContext)
+	return patch, ok
+}
 
 func NewToolGroupRegistry(resolveContext ...ToolResolveContext) *ToolGroupRegistry {
 	var ctx ToolResolveContext
@@ -110,7 +137,7 @@ func (r *ToolGroupRegistry) Register(reg ToolGroupRegistration) error {
 	return nil
 }
 
-func (r *ToolGroupRegistry) Resolve(name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, bool, error) {
+func (r *ToolGroupRegistry) Resolve(ctx context.Context, name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, bool, error) {
 	if r == nil {
 		return nil, false, fmt.Errorf("tool group registry is nil")
 	}
@@ -120,7 +147,7 @@ func (r *ToolGroupRegistry) Resolve(name string, cleaner *resources.Cleaner) ([]
 	if !ok {
 		return nil, false, nil
 	}
-	resolveCtx := r.ResolveContext(cleaner)
+	resolveCtx := r.ResolveContextFor(ctx, cleaner)
 	tools, err := entry.factory(resolveCtx)
 	if err != nil {
 		return nil, true, err
@@ -129,16 +156,48 @@ func (r *ToolGroupRegistry) Resolve(name string, cleaner *resources.Cleaner) ([]
 }
 
 func (r *ToolGroupRegistry) ResolveContext(cleaner *resources.Cleaner) ToolResolveContext {
+	return r.ResolveContextFor(context.Background(), cleaner)
+}
+
+func (r *ToolGroupRegistry) ResolveContextFor(ctx context.Context, cleaner *resources.Cleaner) ToolResolveContext {
 	if r == nil {
 		return ToolResolveContext{Cleaner: cleaner}
 	}
 	r.mu.RLock()
-	ctx := r.resolveCtx
+	resolveCtx := r.resolveCtx
 	r.mu.RUnlock()
 	if cleaner != nil {
-		ctx.Cleaner = cleaner
+		resolveCtx.Cleaner = cleaner
 	}
-	return ctx
+	if patch, ok := resolveContextPatchFromContext(ctx); ok {
+		resolveCtx = mergeResolveContext(resolveCtx, patch)
+	}
+	return resolveCtx
+}
+
+func mergeResolveContext(base, patch ToolResolveContext) ToolResolveContext {
+	if patch.WorkspaceDir != "" {
+		base.WorkspaceDir = patch.WorkspaceDir
+	}
+	if patch.SessionsDir != "" {
+		base.SessionsDir = patch.SessionsDir
+	}
+	if patch.RuntimeDir != "" {
+		base.RuntimeDir = patch.RuntimeDir
+	}
+	if patch.Cleaner != nil {
+		base.Cleaner = patch.Cleaner
+	}
+	if patch.Config != nil {
+		base.Config = patch.Config
+	}
+	if patch.SSH != nil {
+		base.SSH = patch.SSH
+	}
+	if patch.HistoryReader != nil {
+		base.HistoryReader = patch.HistoryReader
+	}
+	return base
 }
 
 func (r *ToolGroupRegistry) Names() []string {

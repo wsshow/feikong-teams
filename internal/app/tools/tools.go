@@ -27,7 +27,7 @@ func (r *ToolGroupRegistry) GetToolsByName(ctx context.Context, name string) ([]
 }
 
 func (r *ToolGroupRegistry) GetToolsByNameWithCleaner(ctx context.Context, name string, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
-	if resolved, ok, err := r.Resolve(name, cleaner); ok || err != nil {
+	if resolved, ok, err := r.Resolve(ctx, name, cleaner); ok || err != nil {
 		return resolved, err
 	}
 	if name, ok := strings.CutPrefix(name, "mcp-"); ok {

@@ -39,7 +39,7 @@ func GetBuiltinCapabilityTools(ctx context.Context) ([]runtimeport.Tool, error) 
 func GetBuiltinCapabilityToolsWithCleaner(ctx context.Context, cleaner *resources.Cleaner) ([]runtimeport.Tool, error) {
 	resolveCtx := ToolResolveContext{Cleaner: cleaner}
 	if registry, ok := RegistryFromContext(ctx); ok {
-		resolveCtx = registry.ResolveContext(cleaner)
+		resolveCtx = registry.ResolveContextFor(ctx, cleaner)
 	}
 	var result []runtimeport.Tool
 	for _, capability := range builtinCapabilities {

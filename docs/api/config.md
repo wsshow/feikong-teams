@@ -5,7 +5,7 @@
 获取当前配置。响应会对敏感字段脱敏：
 
 - `models[].api_key` 永远返回空字符串，并用 `models[].has_api_key` 标识是否已配置。
-- `server.auth.password`、`server.auth.secret`、`agents.ssh_visitor.password`、`channels.qq.app_secret` 返回 `"***"`。
+- `server.auth.password`、`server.auth.secret`、`agents.items[].ssh.password`、`channels.qq.app_secret` 返回 `"***"`。
 - `channels.discord.token` 只保留末 4 位。
 - `agents.items` 返回合并后的全局智能体目录，包含内置智能体的名称、描述、工具和提示词。
 
@@ -46,7 +46,7 @@
 | ---- | ------------ |
 | `models[].api_key` | 提交空字符串时按 `original_id` 或 `id` 还原旧密钥 |
 | `server.auth.password` / `server.auth.secret` | 提交 `"***"` 时保留旧值 |
-| `agents.ssh_visitor.password` | 提交 `"***"` 时保留旧值 |
+| `agents.items[].ssh.password` | 提交 `"***"` 时保留旧值 |
 | `channels.qq.app_secret` | 提交 `"***"` 时保留旧值 |
 | `channels.discord.token` | 提交掩码值（包含 `**`）时保留旧值 |
 

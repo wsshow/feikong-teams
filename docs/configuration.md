@@ -90,13 +90,18 @@ model_id = "main"
 tools = ["file", "command", "search"]
 enabled = true
 
-[agents.ssh_visitor]
-host = "ip:port"
-username = "your_ssh_user"
-password = "your_ssh_password"
+[[agents.items]]
+id = "remote-prod"
+name = "生产服务器"
+description = "通过 SSH 管理生产服务器"
+prompt = ""
+model_id = "main"
+tools = ["ssh"]
+ssh = { host = "ip:port", username = "your_ssh_user", password = "your_ssh_password" }
+enabled = true
 ```
 
-`agents.items` 是全局智能体目录。内置智能体使用稳定 `id` 覆盖默认名称、描述、提示词、模型和工具；非内置 `id` 会作为用户新增智能体注册，可在聊天 `@`、`agent` 子命令和团队模式中使用。`remote` 智能体启用时会读取 `[agents.ssh_visitor]` 的连接信息。
+`agents.items` 是全局智能体目录。内置智能体使用稳定 `id` 覆盖默认名称、描述、提示词、模型和工具；非内置 `id` 会作为用户新增智能体注册，可在聊天 `@`、`agent` 子命令和团队模式中使用。需要 SSH 能力的智能体在自身条目中配置 `ssh`，因此可以同时配置多个面向不同服务器的远程智能体。
 
 ## 圆桌讨论
 

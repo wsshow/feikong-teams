@@ -235,16 +235,15 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				IncludedTools: []string{"ssh_execute", "ssh_upload", "ssh_download", "ssh_list_dir"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				cfg, ok := ctx.Config.(*config.Config)
-				if !ok || cfg == nil {
-					return nil, fmt.Errorf("config is not available for SSH tools")
+				sshCfg := ctx.SSH
+				if sshCfg == nil {
+					return nil, fmt.Errorf("SSH 连接信息未配置，请在当前智能体的 ssh 配置中设置 host, username, password")
 				}
-				sshCfg := cfg.Agents.SSHVisitor
 				host := sshCfg.Host
 				username := sshCfg.Username
 				password := sshCfg.Password
 				if host == "" || username == "" || password == "" {
-					return nil, fmt.Errorf("SSH 连接信息未配置，请在配置文件 [agents.ssh_visitor] 中设置 host, username, password")
+					return nil, fmt.Errorf("SSH 连接信息未配置，请在当前智能体的 ssh 配置中设置 host, username, password")
 				}
 				sshTools, err := sshtool.NewSSHTools(host, username, password)
 				if err != nil {
