@@ -22,15 +22,29 @@ interface AskActivity {
   sessionID?: string;
   messageID?: string;
   sequence?: number;
+  order?: number;
   question: string;
   options: string[];
   multiSelect: boolean;
   selected: string[];
   freeText: string;
   answered: boolean;
+  anchored?: boolean;
+  memberID?: string;
   memberName?: string;
   toolName?: string;
 }
+
+interface AskToolAnchor {
+  question: string;
+  order: number;
+  messageID?: string;
+  memberID?: string;
+  memberName?: string;
+  toolName?: string;
+}
+
+type AskAnsweredHandler = (ask: AskActivity, selected: string[], freeText: string) => void;
 
 type MessageRenderPart =
   | { type: "reasoning"; content: string; key?: string; streaming?: boolean }
@@ -49,7 +63,8 @@ interface TimelineMessageNode {
 type TimelineItem =
   | { kind: "message"; node: TimelineMessageNode; order: number }
   | { kind: "member"; member: MemberActivity; order: number }
-  | { kind: "tool"; part: Extract<MessageRenderPart, { type: "tool" }>; order: number };
+  | { kind: "tool"; part: Extract<MessageRenderPart, { type: "tool" }>; order: number }
+  | { kind: "ask"; ask: AskActivity; order: number };
 
 interface TimelineModel {
   items: TimelineItem[];
@@ -69,6 +84,7 @@ export function MessageList() {
   const errorSuggestions = useAppSelector((state) => state.chat.errorSuggestions);
   const technicalError = useAppSelector((state) => state.chat.technicalError);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
+  const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
   const agents = useAppSelector((state) => state.app.agents);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +93,7 @@ export function MessageList() {
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
+  const canAnswerAsk = Boolean(isProcessing && activeSessionID && (!runningSessionID || runningSessionID === activeSessionID));
   const timeline = useMemo(
     () => buildTimelineModel(messages, displayEvents, submittedAskIDs, isProcessing),
     [messages, displayEvents, submittedAskIDs, isProcessing],
@@ -130,6 +147,19 @@ export function MessageList() {
     scrollToBottom();
   }
 
+  function handleAskAnswered(ask: AskActivity, selected: string[], freeText: string) {
+    setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
+    dispatch(chatActions.receiveEvent({
+      type: "ask_answered",
+      session_id: ask.sessionID || activeSessionID,
+      ask_id: ask.id,
+      detail: ask.id,
+      selected,
+      free_text: freeText,
+      content: askResponseSummary(selected, freeText),
+    }));
+  }
+
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scrollRef} className="chat-scroll chat-thread-scroll h-full overflow-x-hidden overflow-y-auto px-6 py-8" onScroll={handleScroll}>
@@ -140,7 +170,13 @@ export function MessageList() {
               const member = item.member;
               return (
                 <div key={`member-${member.id}`} className={spacing}>
-                  <MemberActivityBlock member={member} agents={agents} />
+                  <MemberActivityBlock
+                    member={member}
+                    agents={agents}
+                    sessionID={activeSessionID}
+                    canAnswerAsk={canAnswerAsk}
+                    onAskAnswered={handleAskAnswered}
+                  />
                 </div>
               );
             }
@@ -152,7 +188,20 @@ export function MessageList() {
                     disclosureID={`timeline:${toolActivityKey(item.part.tool)}`}
                     sessionID={activeSessionID}
                     agents={agents}
-                    onAskAnswered={() => {}}
+                    canAnswerAsk={canAnswerAsk}
+                    onAskAnswered={handleAskAnswered}
+                  />
+                </div>
+              );
+            }
+            if (item.kind === "ask") {
+              return (
+                <div key={`ask-${item.ask.id}`} className={spacing}>
+                  <AskTimelineItem
+                    ask={item.ask}
+                    sessionID={item.ask.sessionID || activeSessionID}
+                    canAnswer={canAnswerAsk}
+                    onAnswered={(selected, freeText) => handleAskAnswered(item.ask, selected, freeText)}
                   />
                 </div>
               );
@@ -168,18 +217,8 @@ export function MessageList() {
                   agents={agents}
                   showAgentLabel={showAgentLabel}
                   showCopyAction={item.node.showCopyAction}
-                  onAskAnswered={(ask, selected, freeText) => {
-                    setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-                    dispatch(chatActions.receiveEvent({
-                      type: "ask_answered",
-                      session_id: ask.sessionID || activeSessionID,
-                      ask_id: ask.id,
-                      detail: ask.id,
-                      selected,
-                      free_text: freeText,
-                      content: askResponseSummary(selected, freeText),
-                    }));
-                  }}
+                  canAnswerAsk={canAnswerAsk}
+                  onAskAnswered={handleAskAnswered}
                 />
               </div>
             );
@@ -189,6 +228,7 @@ export function MessageList() {
               <AskTimelineItem
                 ask={ask}
                 sessionID={ask.sessionID || activeSessionID}
+                canAnswer={canAnswerAsk}
                 onAnswered={(selected, freeText) => {
                   setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
                   dispatch(chatActions.receiveEvent({
@@ -204,7 +244,13 @@ export function MessageList() {
               />
             </div>
           ))}
-          <ActivityList tools={timeline.trailingTools} agents={agents} />
+          <ActivityList
+            tools={timeline.trailingTools}
+            agents={agents}
+            sessionID={activeSessionID}
+            canAnswerAsk={canAnswerAsk}
+            onAskAnswered={handleAskAnswered}
+          />
           {isProcessing ? (
             <div className="message-row mt-6 text-lg text-muted-foreground">
               <div className="flex items-center">
@@ -299,6 +345,7 @@ function MessageRow({
   agents,
   showAgentLabel,
   showCopyAction,
+  canAnswerAsk,
   onAskAnswered,
 }: {
   message: ChatViewMessage;
@@ -307,6 +354,7 @@ function MessageRow({
   agents: AgentInfo[];
   showAgentLabel: boolean;
   showCopyAction: boolean;
+  canAnswerAsk: boolean;
   onAskAnswered: (ask: AskActivity, selected: string[], freeText: string) => void;
 }) {
   const hasContent = Boolean(message.content.trim());
@@ -360,9 +408,8 @@ function MessageRow({
                 disclosureID={key}
                 sessionID={sessionID}
                 agents={agents}
-                onAskAnswered={(selected, freeText) => {
-                  if (part.type === "ask") onAskAnswered(part.ask, selected, freeText);
-                }}
+                canAnswerAsk={canAnswerAsk}
+                onAskAnswered={onAskAnswered}
               />
             );
           });
@@ -441,13 +488,15 @@ function MessagePart({
   disclosureID,
   sessionID,
   agents,
+  canAnswerAsk,
   onAskAnswered,
 }: {
   part: MessageRenderPart;
   disclosureID: string;
   sessionID?: string;
   agents: AgentInfo[];
-  onAskAnswered: (selected: string[], freeText: string) => void;
+  canAnswerAsk: boolean;
+  onAskAnswered: AskAnsweredHandler;
 }) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
   if (part.type === "tool") {
@@ -458,14 +507,27 @@ function MessagePart({
         tool={part.tool}
         title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
       >
-        {part.member ? <MemberActivityDetails member={part.member} agents={agents} /> : null}
+        {part.member ? (
+          <MemberActivityDetails
+            member={part.member}
+            agents={agents}
+            sessionID={sessionID}
+            canAnswerAsk={canAnswerAsk}
+            onAskAnswered={onAskAnswered}
+          />
+        ) : null}
       </ToolCallCard>
     );
   }
   if (part.type === "ask") {
     return (
       <div>
-        <AskTimelineItem ask={part.ask} sessionID={part.ask.sessionID || sessionID} onAnswered={onAskAnswered} />
+        <AskTimelineItem
+          ask={part.ask}
+          sessionID={part.ask.sessionID || sessionID}
+          canAnswer={canAnswerAsk}
+          onAnswered={(selected, freeText) => onAskAnswered(part.ask, selected, freeText)}
+        />
       </div>
     );
   }
@@ -574,9 +636,15 @@ interface MemberActivity {
 function ActivityList({
   tools,
   agents,
+  sessionID,
+  canAnswerAsk,
+  onAskAnswered,
 }: {
   tools: MessageRenderPart[];
   agents: AgentInfo[];
+  sessionID?: string;
+  canAnswerAsk: boolean;
+  onAskAnswered: AskAnsweredHandler;
 }) {
   const visibleTools = tools.slice(-12);
   if (!visibleTools.length) return null;
@@ -593,7 +661,15 @@ function ActivityList({
             tool={part.tool}
             title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
           >
-            {part.member ? <MemberActivityDetails member={part.member} agents={agents} /> : null}
+            {part.member ? (
+              <MemberActivityDetails
+                member={part.member}
+                agents={agents}
+                sessionID={sessionID}
+                canAnswerAsk={canAnswerAsk}
+                onAskAnswered={onAskAnswered}
+              />
+            ) : null}
           </ToolCallCard>
         );
       })}
@@ -638,7 +714,19 @@ function memberLookupKeys(value: string) {
   return uniqueStrings(toolIdentityKeys(value));
 }
 
-function MemberActivityBlock({ member, agents }: { member: MemberActivity; agents: AgentInfo[] }) {
+function MemberActivityBlock({
+  member,
+  agents,
+  sessionID,
+  canAnswerAsk,
+  onAskAnswered,
+}: {
+  member: MemberActivity;
+  agents: AgentInfo[];
+  sessionID?: string;
+  canAnswerAsk: boolean;
+  onAskAnswered: AskAnsweredHandler;
+}) {
   const [open, toggleOpen] = useDisclosureState(`member:${member.id}`);
   const agent = resolveAgentInfo(member.name, agents);
 
@@ -661,14 +749,32 @@ function MemberActivityBlock({ member, agents }: { member: MemberActivity; agent
       </button>
       {open ? (
         <div className="ml-7 space-y-3 border-l border-border/60 pl-4 pt-2">
-          <MemberActivityDetails member={member} agents={agents} />
+          <MemberActivityDetails
+            member={member}
+            agents={agents}
+            sessionID={sessionID}
+            canAnswerAsk={canAnswerAsk}
+            onAskAnswered={onAskAnswered}
+          />
         </div>
       ) : null}
     </div>
   );
 }
 
-function MemberActivityDetails({ member, agents }: { member: MemberActivity; agents: AgentInfo[] }) {
+function MemberActivityDetails({
+  member,
+  agents,
+  sessionID,
+  canAnswerAsk,
+  onAskAnswered,
+}: {
+  member: MemberActivity;
+  agents: AgentInfo[];
+  sessionID?: string;
+  canAnswerAsk: boolean;
+  onAskAnswered: AskAnsweredHandler;
+}) {
   const agent = resolveAgentInfo(member.name, agents);
   return (
     <div className="space-y-3">
@@ -681,16 +787,47 @@ function MemberActivityDetails({ member, agents }: { member: MemberActivity; age
         const partKeys = new Map<string, number>();
         return member.parts.map((part) => {
           const key = nextRepeatedKey(partKeys, messagePartKey(part, member.id));
-          return <MemberActivityPart key={key} part={part} disclosureID={key} />;
+          return (
+            <MemberActivityPart
+              key={key}
+              part={part}
+              disclosureID={key}
+              sessionID={sessionID}
+              canAnswerAsk={canAnswerAsk}
+              onAskAnswered={onAskAnswered}
+            />
+          );
         });
       })()}
     </div>
   );
 }
 
-function MemberActivityPart({ part, disclosureID }: { part: MessageRenderPart; disclosureID: string }) {
+function MemberActivityPart({
+  part,
+  disclosureID,
+  sessionID,
+  canAnswerAsk,
+  onAskAnswered,
+}: {
+  part: MessageRenderPart;
+  disclosureID: string;
+  sessionID?: string;
+  canAnswerAsk: boolean;
+  onAskAnswered: AskAnsweredHandler;
+}) {
   if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
   if (part.type === "tool") return <ToolCallCard tool={part.tool} disclosureID={disclosureID} />;
+  if (part.type === "ask") {
+    return (
+      <AskTimelineItem
+        ask={part.ask}
+        sessionID={part.ask.sessionID || sessionID}
+        canAnswer={canAnswerAsk}
+        onAnswered={(selected, freeText) => onAskAnswered(part.ask, selected, freeText)}
+      />
+    );
+  }
   if (part.type === "text") return <MarkdownContent className="text-base leading-8" content={part.content} />;
   return null;
 }
@@ -778,10 +915,12 @@ function MessageActions({
 function AskPanel({
   ask,
   sessionID,
+  canAnswer,
   onAnswered,
 }: {
   ask: AskActivity;
   sessionID?: string;
+  canAnswer: boolean;
   onAnswered: (selected: string[], freeText: string) => void;
 }) {
   const [selected, setSelected] = useState<string[]>(ask.selected);
@@ -789,7 +928,15 @@ function AskPanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const hasOptions = ask.options.length > 0;
-  const canSubmit = Boolean(sessionID && ask.id && !ask.answered && !submitting && (hasOptions ? selected.length > 0 || freeText.trim() : freeText.trim()));
+  const disabledReason = !canAnswer ? "当前任务已结束，无法继续提交回答。" : "";
+  const canSubmit = Boolean(
+    canAnswer &&
+      sessionID &&
+      ask.id &&
+      !ask.answered &&
+      !submitting &&
+      (hasOptions ? selected.length > 0 || freeText.trim() : freeText.trim()),
+  );
 
   function toggleOption(option: string) {
     setSelected((current) => {
@@ -818,9 +965,7 @@ function AskPanel({
       <div className="mb-3 flex items-start gap-3">
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted-foreground">
-            {ask.memberName || ask.toolName ? `${ask.memberName || ask.toolName} · ask_questions` : "ask_questions"}
-          </div>
+          <div className="text-xs text-muted-foreground">{askTitle(ask)}</div>
           <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">{ask.question}</div>
         </div>
       </div>
@@ -832,7 +977,8 @@ function AskPanel({
               <label
                 key={option}
                 className={cn(
-                  "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                  "flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                  canAnswer && !ask.answered ? "cursor-pointer" : "cursor-not-allowed opacity-65",
                   checked ? "border-primary/55 bg-primary/10 text-foreground" : "border-border bg-background/60 hover:bg-muted/65",
                 )}
               >
@@ -841,6 +987,7 @@ function AskPanel({
                   type={ask.multiSelect ? "checkbox" : "radio"}
                   name={`ask-${ask.id}`}
                   checked={checked}
+                  disabled={!canAnswer || ask.answered || submitting}
                   onChange={() => toggleOption(option)}
                 />
                 <span className="min-w-0 break-words">{option}</span>
@@ -852,7 +999,7 @@ function AskPanel({
       <Textarea
         className="min-h-20 resize-y"
         value={freeText}
-        disabled={ask.answered || submitting}
+        disabled={!canAnswer || ask.answered || submitting}
         placeholder={hasOptions ? "补充说明" : "输入回答"}
         onChange={(event) => setFreeText(event.target.value)}
         onKeyDown={(event) => {
@@ -864,7 +1011,7 @@ function AskPanel({
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
-          {ask.answered ? `已回答：${askResponseSummary(ask.selected, ask.freeText) || "空回答"}` : error}
+          {ask.answered ? `已回答：${askResponseSummary(ask.selected, ask.freeText) || "空回答"}` : disabledReason || error}
         </div>
         <Button type="button" size="sm" onClick={() => void submit()} disabled={!canSubmit}>
           <Send className="h-4 w-4" />
@@ -882,9 +1029,7 @@ function AskRecord({ ask }: { ask: AskActivity }) {
       <div className="flex items-start gap-3">
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted-foreground">
-            {ask.memberName || ask.toolName ? `${ask.memberName || ask.toolName} · ask_questions` : "ask_questions"}
-          </div>
+          <div className="text-xs text-muted-foreground">{askTitle(ask)}</div>
           <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">{ask.question}</div>
           {ask.options.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -917,14 +1062,21 @@ function AskRecord({ ask }: { ask: AskActivity }) {
 function AskTimelineItem({
   ask,
   sessionID,
+  canAnswer,
   onAnswered,
 }: {
   ask: AskActivity;
   sessionID?: string;
+  canAnswer: boolean;
   onAnswered: (selected: string[], freeText: string) => void;
 }) {
   if (ask.answered) return <AskRecord ask={ask} />;
-  return <AskPanel ask={ask} sessionID={sessionID} onAnswered={onAnswered} />;
+  return <AskPanel ask={ask} sessionID={sessionID} canAnswer={canAnswer} onAnswered={onAnswered} />;
+}
+
+function askTitle(ask: AskActivity) {
+  if (ask.memberName) return `${ask.memberName} · ask_questions`;
+  return "ask_questions";
 }
 
 function buildTimelineModel(
@@ -936,8 +1088,9 @@ function buildTimelineModel(
   const eventOrders = eventOrderMap(displayEvents);
   const reasoningByMessage = collectReasoningBlocks(displayEvents);
   const toolEvents = collectToolActivities(displayEvents, { includeMemberEvents: false });
-  const memberActivities = collectMemberActivities(displayEvents, isProcessing);
-  const askActivities = collectAskActivities(displayEvents, submittedAskIDs);
+  const askToolAnchors = collectAskToolAnchors(displayEvents);
+  const askActivities = collectAskActivities(displayEvents, submittedAskIDs, askToolAnchors);
+  const memberActivities = collectMemberActivities(displayEvents, isProcessing, askActivities);
   const memberLookup = buildMemberLookup(memberActivities);
   const attachedMemberIDs = new Set<string>();
   const renderedToolKeys = new Set<string>();
@@ -984,18 +1137,20 @@ function buildTimelineModel(
   }
   const fallbackMembers = memberActivities.filter((member) => !attachedMemberIDs.has(member.id));
   const timelineTools = trailingTools.filter((part): part is Extract<MessageRenderPart, { type: "tool" }> => part.type === "tool");
-  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools);
+  const inlineAskIDs = unionSets(collectInlineAskIDsFromMessageNodes(messageNodes), collectInlineAskIDsFromMembers(memberActivities));
+  const timelineAsks = askActivities.filter((ask) => !ask.memberID && !inlineAskIDs.has(ask.id));
+  const items = orderedTimelineItems(messageNodes, fallbackMembers, timelineTools, timelineAsks);
   markFinalAssistantCopyActions(items, isProcessing);
   const timelineMessages = items.filter((item) => item.kind === "message").map((item) => item.node.message);
   const agentLabelMessageIDs = visibleAgentLabelMessageIDs(timelineMessages);
   for (const item of items) {
     if (item.kind === "message") item.node.showAgentLabel = agentLabelMessageIDs.has(item.node.message.id);
   }
-  const inlineAskIDs = collectInlineAskIDsFromItems(items);
+  const renderedAskIDs = unionSets(collectInlineAskIDsFromItems(items), collectInlineAskIDsFromMembers(memberActivities));
   return {
     items,
     messages: timelineMessages,
-    trailingAsks: askActivities.filter((ask) => !inlineAskIDs.has(ask.id)),
+    trailingAsks: askActivities.filter((ask) => !renderedAskIDs.has(ask.id)),
     trailingTools: [],
   };
 }
@@ -1099,6 +1254,7 @@ function orderedTimelineItems(
   messages: TimelineMessageNode[],
   members: MemberActivity[],
   tools: Array<Extract<MessageRenderPart, { type: "tool" }>>,
+  asks: AskActivity[],
 ): TimelineItem[] {
   const items: TimelineItem[] = [];
   for (const node of messages) {
@@ -1110,11 +1266,29 @@ function orderedTimelineItems(
   for (const member of members) {
     items.push({ kind: "member", member, order: member.firstOrder });
   }
+  for (const ask of asks) {
+    items.push({ kind: "ask", ask, order: ask.order ?? Number.MAX_SAFE_INTEGER });
+  }
   return items.sort((left, right) => {
     if (left.order !== right.order) return left.order - right.order;
     if (left.kind === right.kind) return 0;
-    return left.kind === "message" ? -1 : 1;
+    return timelineKindPriority(left.kind) - timelineKindPriority(right.kind);
   });
+}
+
+function timelineKindPriority(kind: TimelineItem["kind"]) {
+  switch (kind) {
+    case "message":
+      return 0;
+    case "tool":
+      return 1;
+    case "ask":
+      return 2;
+    case "member":
+      return 3;
+    default:
+      return 4;
+  }
 }
 
 function timelineItemSpacingClass(items: TimelineItem[], index: number) {
@@ -1123,7 +1297,9 @@ function timelineItemSpacingClass(items: TimelineItem[], index: number) {
   const current = items[index];
   if (!previous || !current) return "mt-6";
   if (current.kind === "tool") return previous.kind === "message" ? "mt-2" : "mt-2";
+  if (current.kind === "ask") return previous.kind === "tool" ? "mt-2" : "mt-3";
   if (previous.kind === "tool" && current.kind === "message") return "mt-5";
+  if (previous.kind === "ask" && current.kind === "message") return "mt-5";
   if (current.kind === "member" || previous.kind === "member") return "mt-3";
   return "mt-6";
 }
@@ -1189,15 +1365,47 @@ function groupToolsByMessageID(tools: ToolActivity[]) {
   return result;
 }
 
+function collectInlineAskIDsFromMessageNodes(nodes: TimelineMessageNode[]) {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    for (const part of node.parts) {
+      if (part.type === "ask") ids.add(part.ask.id);
+    }
+  }
+  return ids;
+}
+
+function collectInlineAskIDsFromMembers(members: MemberActivity[]) {
+  const ids = new Set<string>();
+  for (const member of members) {
+    for (const part of member.parts) {
+      if (part.type === "ask") ids.add(part.ask.id);
+    }
+  }
+  return ids;
+}
+
 function collectInlineAskIDsFromItems(items: TimelineItem[]) {
   const ids = new Set<string>();
   for (const item of items) {
+    if (item.kind === "ask") {
+      ids.add(item.ask.id);
+      continue;
+    }
     if (item.kind !== "message") continue;
     for (const part of item.node.parts) {
       if (part.type === "ask") ids.add(part.ask.id);
     }
   }
   return ids;
+}
+
+function unionSets<T>(...sets: Array<Set<T>>) {
+  const result = new Set<T>();
+  for (const set of sets) {
+    for (const item of set) result.add(item);
+  }
+  return result;
 }
 
 function collectReasoningBlocks(events: ChatEvent[]) {
@@ -1246,37 +1454,43 @@ function reasoningKeys(event: ChatEvent) {
   return keys;
 }
 
-function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>) {
+function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>, anchors: AskToolAnchor[]) {
   const asks = new Map<string, AskActivity>();
   const answered = new Map<string, { selected: string[]; freeText: string }>();
   let latestAskID = "";
 
-  for (const event of events) {
+  events.forEach((event, index) => {
     if (isAskQuestionEvent(event)) {
       const id = askEventID(event) || `ask-${asks.size + 1}`;
       latestAskID = id;
       const existing = asks.get(id);
+      const question = String(event.question || event.content || existing?.question || "");
+      const memberID = memberActivityIDIfPresent(event);
+      const anchor = matchingAskToolAnchor(question, anchors, eventOrder(event, index), memberID);
       asks.set(id, {
         id,
         sessionID: event.session_id || existing?.sessionID,
-        messageID: event.message_id || existing?.messageID,
+        messageID: anchor?.messageID || event.message_id || existing?.messageID,
         sequence: event.sequence ?? existing?.sequence,
-        question: String(event.question || event.content || existing?.question || ""),
+        order: anchor?.order ?? existing?.order ?? eventOrder(event, index),
+        question,
         options: askOptions(event.options) || existing?.options || [],
         multiSelect: Boolean(event.multi_select ?? existing?.multiSelect),
         selected: existing?.selected || [],
         freeText: existing?.freeText || "",
         answered: submittedAskIDs.has(id) || existing?.answered || false,
-        memberName: event.member_name || existing?.memberName,
-        toolName: event.tool_name || existing?.toolName,
+        anchored: Boolean(anchor) || existing?.anchored,
+        memberID: anchor?.memberID || memberID || existing?.memberID,
+        memberName: anchor?.memberName || event.member_name || existing?.memberName,
+        toolName: anchor?.toolName || event.tool_name || existing?.toolName,
       });
     }
     if (isAskResponseEvent(event)) {
       const id = askEventID(event) || latestAskID;
-      if (!id) continue;
+      if (!id) return;
       answered.set(id, parseAskResponse(event));
     }
-  }
+  });
 
   for (const [id, response] of answered) {
     const ask = asks.get(id);
@@ -1290,6 +1504,53 @@ function collectAskActivities(events: ChatEvent[], submittedAskIDs: Set<string>)
     if (ask) ask.answered = true;
   }
   return Array.from(asks.values()).filter((ask) => ask.question.trim());
+}
+
+function collectAskToolAnchors(events: ChatEvent[]) {
+  const anchors: AskToolAnchor[] = [];
+  events.forEach((event, index) => {
+    const order = eventOrder(event, index) + 0.1;
+    const seen = new Set<string>();
+    const addAnchor = (question: string, toolName?: string) => {
+      if (!question) return;
+      const key = `${question}:${toolName || ""}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      anchors.push({
+        question,
+        order,
+        messageID: event.message_id,
+        memberID: memberActivityIDIfPresent(event),
+        memberName: event.member_name,
+        toolName,
+      });
+    };
+    const tools = [...(event.tool_calls || []), event.tool_call].filter(Boolean) as ToolCallDTO[];
+    for (const tool of tools) {
+      if (tool.name !== "ask_questions") continue;
+      addAnchor(askQuestionFromArgs(tool.arguments), tool.display_name || tool.name);
+    }
+    if (event.tool_name === "ask_questions") {
+      addAnchor(askQuestionFromArgs(event.tool_args), event.tool_display_name || event.tool_name);
+    }
+  });
+  return anchors;
+}
+
+function askQuestionFromArgs(value: unknown) {
+  const args = parseToolJSON(value);
+  return String(args.question || "").trim();
+}
+
+function matchingAskToolAnchor(question: string, anchors: AskToolAnchor[], order: number, memberID?: string) {
+  const sameQuestion = anchors.filter((anchor) => {
+    if (anchor.question.trim() !== question.trim()) return false;
+    return memberID ? anchor.memberID === memberID : !anchor.memberID;
+  });
+  if (!sameQuestion.length) return undefined;
+  return sameQuestion
+    .slice()
+    .sort((left, right) => Math.abs(left.order - order) - Math.abs(right.order - order))[0];
 }
 
 function isAskQuestionEvent(event: ChatEvent) {
@@ -1327,7 +1588,7 @@ function askFromToolEvent(event: ChatEvent, asks: AskActivity[]) {
     const result = parseToolJSON(tool.result);
     const question = String(args.question || "");
     if (!question.trim()) continue;
-    const matched = findMatchingAsk(question, asks, event.sequence);
+    const matched = findMatchingAsk(question, asks, event.sequence, memberActivityIDIfPresent(event));
     const selected = askOptions(result.selected) || matched?.selected || [];
     const freeText = String(result.free_text || result.answer || matched?.freeText || "");
     return {
@@ -1335,6 +1596,7 @@ function askFromToolEvent(event: ChatEvent, asks: AskActivity[]) {
       sessionID: matched?.sessionID || event.session_id,
       messageID: event.message_id,
       sequence: event.sequence,
+      order: matched?.order,
       question,
       options: askOptions(args.options) || matched?.options || [],
       multiSelect: Boolean(args.multi_select ?? matched?.multiSelect),
@@ -1345,7 +1607,46 @@ function askFromToolEvent(event: ChatEvent, asks: AskActivity[]) {
       toolName: matched?.toolName || tool.display_name || tool.name,
     };
   }
+  if (event.tool_name === "ask_questions") {
+    const args = parseToolJSON(event.tool_args);
+    const result = parseToolJSON(event.tool_result);
+    const question = String(args.question || "");
+    if (!question.trim()) return undefined;
+    const matched = findMatchingAsk(question, asks, event.sequence, memberActivityIDIfPresent(event));
+    const selected = askOptions(result.selected) || matched?.selected || [];
+    const freeText = String(result.free_text || result.answer || matched?.freeText || "");
+    return {
+      id: matched?.id || event.tool_call_id || event.tool_call_ref || `ask-${event.message_id || ""}-${event.sequence ?? ""}`,
+      sessionID: matched?.sessionID || event.session_id,
+      messageID: event.message_id,
+      sequence: event.sequence,
+      order: matched?.order,
+      question,
+      options: askOptions(args.options) || matched?.options || [],
+      multiSelect: Boolean(args.multi_select ?? matched?.multiSelect),
+      selected,
+      freeText,
+      answered: Boolean(matched?.answered || selected.length || freeText.trim() || event.tool_result),
+      memberID: matched?.memberID || memberActivityIDIfPresent(event),
+      memberName: matched?.memberName || event.member_name,
+      toolName: matched?.toolName || event.tool_display_name || event.tool_name,
+    };
+  }
   return undefined;
+}
+
+function askFromAskEvent(event: ChatEvent, asks: AskActivity[]) {
+  if (!isAskQuestionEvent(event)) return undefined;
+  const id = askEventID(event);
+  if (id) {
+    const byID = asks.find((ask) => ask.id === id);
+    if (byID) return byID.anchored ? undefined : byID;
+  }
+  const question = String(event.question || event.content || "").trim();
+  if (!question) return undefined;
+  const order = typeof event.sequence === "number" ? event.sequence : undefined;
+  const matched = findMatchingAsk(question, asks, order, memberActivityIDIfPresent(event));
+  return matched?.anchored ? undefined : matched;
 }
 
 function toolFromEvent(event: ChatEvent, tools: ToolActivity[]) {
@@ -1403,8 +1704,11 @@ function eventToolResultContent(event: ChatEvent) {
   return String(event.tool_result || ((isToolResultEvent(event) || event.role === "tool") ? event.content : "") || "");
 }
 
-function findMatchingAsk(question: string, asks: AskActivity[], sequence?: number) {
-  const sameQuestion = asks.filter((ask) => ask.question.trim() === question.trim());
+function findMatchingAsk(question: string, asks: AskActivity[], sequence?: number, memberID?: string) {
+  const sameQuestion = asks.filter((ask) => {
+    if (ask.question.trim() !== question.trim()) return false;
+    return memberID ? ask.memberID === memberID : !ask.memberID;
+  });
   if (!sameQuestion.length) return undefined;
   if (sequence === undefined) return sameQuestion[0];
   return sameQuestion
@@ -1524,7 +1828,7 @@ function terminalToolStatus(events: ChatEvent[]) {
 
 type OrderedChatEvent = { event: ChatEvent; order: number };
 
-function collectMemberActivities(events: ChatEvent[], isProcessing: boolean) {
+function collectMemberActivities(events: ChatEvent[], isProcessing: boolean, asks: AskActivity[]) {
   const grouped = new Map<string, OrderedChatEvent[]>();
   const completedMemberIDs = completedMemberCallIDs(events);
   events.forEach((event, index) => {
@@ -1539,7 +1843,7 @@ function collectMemberActivities(events: ChatEvent[], isProcessing: boolean) {
         .sort((left, right) => left.order - right.order)
         .map((item) => item.event);
       const tools = collectToolActivities(memberEvents, { includeMemberEvents: true });
-      const parts = memberMessageParts(memberEvents, tools, isProcessing);
+      const parts = memberMessageParts(memberEvents, tools, asks, isProcessing);
       return {
         id,
         name: memberEvents.find((event) => event.member_name)?.member_name || memberEvents[0]?.agent_name || "子智能体",
@@ -1595,9 +1899,15 @@ function memberActivityID(event: ChatEvent) {
   return eventDisplayKey(event);
 }
 
-function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], isProcessing = false) {
+function memberActivityIDIfPresent(event: ChatEvent) {
+  if (!isMemberActivityEvent(event)) return undefined;
+  return memberActivityID(event);
+}
+
+function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], asks: AskActivity[], isProcessing = false) {
   const parts: MessageRenderPart[] = [];
   const renderedTools = new Set<string>();
+  const renderedAsks = new Set<string>();
   const seenReasoningDeltaKeys = new Set<string>();
   const seenTextDeltaKeys = new Set<string>();
   let reasoningOpen = false;
@@ -1624,6 +1934,13 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], isProces
       continue;
     }
     textOpen = false;
+
+    const ask = askFromToolEvent(event, asks) || askFromAskEvent(event, asks);
+    if (ask && !renderedAsks.has(ask.id)) {
+      parts.push({ type: "ask", ask });
+      renderedAsks.add(ask.id);
+      continue;
+    }
 
     const tool = toolFromEvent(event, tools);
     if (tool) {
