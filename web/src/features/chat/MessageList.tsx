@@ -861,12 +861,20 @@ function resolveAgentInfo(name: string, agents: AgentInfo[]) {
 }
 
 function agentDisplayName(agent: AgentInfo | undefined, fallback: string) {
-  return agent?.display_name || agent?.name || fallback;
+  return agent?.display_name || agent?.name || runtimeAgentDisplayName(fallback) || fallback;
 }
 
 function normalizeAgentKey(value: string) {
   return value.trim().toLowerCase();
 }
+
+function runtimeAgentDisplayName(name: string) {
+  return runtimeAgentDisplayNames[normalizeAgentKey(name)];
+}
+
+const runtimeAgentDisplayNames: Record<string, string> = {
+  deep_researcher: "深度研究员",
+};
 
 function MessageActions({
   content,

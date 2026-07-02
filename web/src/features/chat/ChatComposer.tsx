@@ -645,12 +645,12 @@ function ModePicker({
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
-        <div className="sketch-surface absolute bottom-10 right-0 z-40 w-36 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]">
+        <div className="sketch-surface absolute bottom-10 right-0 z-40 flex w-36 flex-col gap-1.5 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]">
           {modeOptions.map((option) => (
             <button
               key={option.value}
               className={cn(
-                "flex h-9 w-full items-center rounded-lg px-3 text-left hover:bg-accent/65",
+                "flex h-9 w-full items-center rounded-lg px-3 text-left transition-colors hover:bg-accent/65",
                 option.value === mode && "bg-muted text-foreground",
               )}
               type="button"
