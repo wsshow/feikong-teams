@@ -10,6 +10,7 @@ export const loadSessions = createAsyncThunk("sessions/load", async (_, { dispat
 
 export const loadSessionDetail = createAsyncThunk("sessions/detail", async (sessionID: string, { dispatch }) => {
   const detail = await getSession(sessionID);
+  dispatch(chatActions.setActiveSession(sessionID));
   dispatch(chatActions.clearMessages());
   for (const event of detail.events || []) {
     dispatch(chatActions.receiveEvent(event));
@@ -20,5 +21,4 @@ export const loadSessionDetail = createAsyncThunk("sessions/detail", async (sess
   } else {
     dispatch(chatActions.setProcessing(false));
   }
-  dispatch(chatActions.setActiveSession(sessionID));
 });

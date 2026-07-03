@@ -61,9 +61,10 @@ const chatSlice = createSlice({
       state.technicalError = undefined;
       state.statusText = undefined;
     },
-    appendUserMessage(state, action: PayloadAction<{ id: string; content: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
+    appendUserMessage(state, action: PayloadAction<{ id: string; content: string; sessionID?: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
       const event: ChatEvent = {
         type: "user_message",
+        session_id: action.payload.sessionID || state.activeSessionID,
         event_id: `local:${action.payload.id}`,
         content: action.payload.content,
         content_parts: action.payload.contentParts,
@@ -81,6 +82,14 @@ const chatSlice = createSlice({
     },
     receiveEvent(state, action: PayloadAction<ChatEvent>) {
       const event = { ...action.payload };
+      if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
+        if ((event.type === "processing_end" || event.type === "cancelled" || event.type === "error") && state.runningSessionID === event.session_id) {
+          state.isProcessing = false;
+          state.runningSessionID = "";
+        }
+        return;
+      }
+      if (state.events.some((item) => sameEventIdentity(item, event))) return;
       state.events.push(event);
       if (event.type === "queue_updated" && Array.isArray(event.queue)) {
         state.queue = event.queue;

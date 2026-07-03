@@ -87,6 +87,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 			stream.POST("/queue/:sessionID/:queueID/move", runtime.StreamQueueMoveHandler())
 			stream.POST("/stop/:sessionID", runtime.StreamStopHandler())
 			stream.GET("/subscribe/:sessionID", runtime.StreamSubscribeHandler())
+			stream.GET("/snapshot/:sessionID", runtime.StreamSnapshotHandler())
 			stream.GET("/status/:sessionID", runtime.StreamStatusHandler())
 			stream.GET("/events/:sessionID", runtime.StreamEventsHandler())
 			stream.POST("/approval", runtime.StreamApprovalHandler())

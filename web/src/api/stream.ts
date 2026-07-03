@@ -3,7 +3,43 @@ import { authToken } from "@/lib/storage";
 import { del, get, patch, post } from "./client";
 
 export function streamStatus(sessionID: string) {
-  return get<{ status: string }>(`/api/fkteams/stream/status/${encodeURIComponent(sessionID)}`);
+  return get<{
+    status: string;
+    has_task?: boolean;
+    event_count?: number;
+    session_id?: string;
+    mode?: string;
+    agent_name?: string;
+    created_at?: string;
+    finished_at?: string;
+  }>(`/api/fkteams/stream/status/${encodeURIComponent(sessionID)}`);
+}
+
+export interface StreamSnapshot {
+  session_id: string;
+  status: string;
+  has_task?: boolean;
+  mode?: string;
+  agent_name?: string;
+  event_count: number;
+  next_offset: number;
+  snapshot_offset?: number;
+  more_available?: boolean;
+  limit?: number;
+  queue?: QueueItem[];
+  events?: ChatEvent[];
+  created_at?: string;
+  finished_at?: string;
+}
+
+export function streamSnapshot(sessionID: string, options?: { offset?: number; limit?: number }) {
+  const params = new URLSearchParams();
+  if (options?.offset !== undefined) params.set("offset", String(options.offset));
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return get<StreamSnapshot>(
+    `/api/fkteams/stream/snapshot/${encodeURIComponent(sessionID)}${query ? `?${query}` : ""}`,
+  );
 }
 
 export function streamQueue(sessionID: string) {
@@ -79,7 +115,8 @@ export async function subscribeStream(
       const dataLines = lines.filter((part) => part.startsWith("data:"));
       if (dataLines.length === 0) continue;
       const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
-      if (!raw || raw === "[DONE]") continue;
+      if (!raw) continue;
+      if (raw === "[DONE]") return;
       const event = JSON.parse(raw) as ChatEvent;
       if (idLine && event.stream_event_id === undefined) {
         const id = Number(idLine.replace(/^id:\s*/, ""));

@@ -25,11 +25,14 @@ export function ChatPage() {
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
   const hasConversation = messages.length > 0 || events.length > 0 || queue.length > 0 || isProcessing || Boolean(error);
   const currentSessionIsRunning = Boolean(isProcessing && runningSessionID === activeSessionID);
+  const currentViewBelongsToActiveSession = Boolean(
+    activeSessionID && events.some((event) => event.session_id === activeSessionID),
+  );
   const isLoadingSession = Boolean(
     activeSessionID &&
       activeSessionID !== loadedSessionID &&
       failedSessionID !== activeSessionID &&
-      !currentSessionIsRunning,
+      !(currentSessionIsRunning && currentViewBelongsToActiveSession),
   );
 
   useEffect(() => {
@@ -38,7 +41,7 @@ export function ChatPage() {
       setFailedSessionID("");
       return;
     }
-    if (currentSessionIsRunning) {
+    if (currentSessionIsRunning && currentViewBelongsToActiveSession) {
       setLoadedSessionID(activeSessionID);
       return;
     }
@@ -60,7 +63,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionID, loadedSessionID, currentSessionIsRunning, dispatch]);
+  }, [activeSessionID, loadedSessionID, currentSessionIsRunning, currentViewBelongsToActiveSession, dispatch]);
 
   useEffect(() => {
     dispatch(chatActions.setConnectionState("connected"));

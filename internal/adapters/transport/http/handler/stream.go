@@ -522,6 +522,15 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			flusher.Flush()
 			return err == nil
 		}
+		writeDone := func() {
+			_, _ = fmt.Fprint(flusher, "data: [DONE]\n\n")
+			flusher.Flush()
+		}
+
+		if stream.IsDone() && offset == 0 {
+			writeDone()
+			return
+		}
 
 		for {
 			events := stream.EventsSince(offset)
@@ -535,8 +544,11 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			if stream.IsDone() {
 				// 任务已结束，最后再读一次确保不丢失尾部事件
 				for _, e := range stream.EventsSince(offset) {
-					writeSSE(e)
+					if !writeSSE(e) {
+						return
+					}
 				}
+				writeDone()
 				return
 			}
 
@@ -552,6 +564,70 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 // StreamStatusHandler 获取流式任务状态。
 func StreamStatusHandler() gin.HandlerFunc {
 	return NewRuntime().StreamStatusHandler()
+}
+
+// StreamSnapshotHandler 返回运行中任务的轻量快照，供新连接先同步缓存再追实时事件。
+func StreamSnapshotHandler() gin.HandlerFunc {
+	return NewRuntime().StreamSnapshotHandler()
+}
+
+func (rt *Runtime) StreamSnapshotHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("sessionID")
+		if !validateSessionID(sessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+
+		stream := rt.Streams.Get(sessionID)
+		if stream == nil {
+			Fail(c, http.StatusNotFound, "no active task for this session")
+			return
+		}
+
+		eventCount := stream.EventCount()
+		limit := parseSnapshotLimit(c.Query("limit"))
+		offset, hasOffset := parseOptionalOffset(c.Query("offset"))
+		if !hasOffset {
+			offset = snapshotTailOffset(eventCount, limit)
+		}
+
+		events := stream.EventsSince(offset)
+		if len(events) > limit {
+			events = events[:limit]
+		}
+
+		items := make([]taskstream.Event, 0, len(events))
+		nextOffset := uint64(eventCount)
+		if len(events) > 0 {
+			nextOffset = events[len(events)-1].ID + 1
+			for _, event := range events {
+				items = append(items, event.Data)
+			}
+		}
+
+		result := gin.H{
+			"session_id":      sessionID,
+			"status":          stream.Status(),
+			"has_task":        true,
+			"mode":            stream.Mode(),
+			"event_count":     eventCount,
+			"next_offset":     nextOffset,
+			"more_available":  nextOffset < uint64(eventCount),
+			"queue":           stream.QueueSnapshot(),
+			"events":          items,
+			"snapshot_offset": offset,
+			"limit":           limit,
+			"created_at":      stream.CreatedAt(),
+		}
+		if doneAt := stream.DoneAt(); !doneAt.IsZero() {
+			result["finished_at"] = doneAt
+		}
+		if stream.AgentName() != "" {
+			result["agent_name"] = stream.AgentName()
+		}
+		OK(c, result)
+	}
 }
 
 func (rt *Runtime) StreamStatusHandler() gin.HandlerFunc {
@@ -598,6 +674,42 @@ func (rt *Runtime) StreamStatusHandler() gin.HandlerFunc {
 			"updated_at": meta.UpdatedAt,
 		})
 	}
+}
+
+func parseSnapshotLimit(raw string) int {
+	const (
+		defaultLimit = 300
+		maxLimit     = 1000
+	)
+	if raw == "" {
+		return defaultLimit
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return defaultLimit
+	}
+	if parsed > maxLimit {
+		return maxLimit
+	}
+	return parsed
+}
+
+func parseOptionalOffset(raw string) (uint64, bool) {
+	if raw == "" {
+		return 0, false
+	}
+	parsed, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func snapshotTailOffset(eventCount, limit int) uint64 {
+	if eventCount <= limit {
+		return 0
+	}
+	return uint64(eventCount - limit)
 }
 
 // StreamApprovalHandler 提交 HITL 审批决定
