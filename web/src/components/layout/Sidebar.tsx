@@ -55,6 +55,8 @@ export function Sidebar() {
   const [sessionMenuPosition, setSessionMenuPosition] = useState<{ top: number; left: number } | undefined>();
   const [deleteTarget, setDeleteTarget] = useState<{ session_id: string; title?: string } | null>(null);
   const [shareTarget, setShareTarget] = useState<{ session_id: string; title?: string } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ session_id: string; title?: string } | null>(null);
+  const [renamingSessionID, setRenamingSessionID] = useState("");
   const [deletingSessionID, setDeletingSessionID] = useState("");
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -143,14 +145,23 @@ export function Sidebar() {
     dispatch(loadSessions());
   }
 
-  async function handleRename(session: { session_id: string; title?: string }) {
-    const title = window.prompt("重命名会话", session.title || "");
-    if (title === null) return;
+  function requestRename(session: { session_id: string; title?: string }) {
+    closeSessionMenu();
+    setRenameTarget(session);
+  }
+
+  async function confirmRename(title: string) {
+    if (!renameTarget || renamingSessionID) return;
     const nextTitle = title.trim();
     if (!nextTitle) return;
-    await renameSession(session.session_id, nextTitle);
-    closeSessionMenu();
-    dispatch(loadSessions());
+    setRenamingSessionID(renameTarget.session_id);
+    try {
+      await renameSession(renameTarget.session_id, nextTitle);
+      setRenameTarget(null);
+      dispatch(loadSessions());
+    } finally {
+      setRenamingSessionID("");
+    }
   }
 
   function requestDelete(session: { session_id: string; title?: string }) {
@@ -330,6 +341,14 @@ export function Sidebar() {
         }}
         onConfirm={() => void confirmDelete()}
       />
+      <SessionRenameDialog
+        session={renameTarget}
+        saving={Boolean(renameTarget && renamingSessionID === renameTarget.session_id)}
+        onCancel={() => {
+          if (!renamingSessionID) setRenameTarget(null);
+        }}
+        onConfirm={(title) => void confirmRename(title)}
+      />
       <SessionShareDialog
         session={shareTarget}
         onClose={() => setShareTarget(null)}
@@ -341,7 +360,7 @@ export function Sidebar() {
           position={sessionMenuPosition}
           favorite={Boolean(openMenuSession.favorite)}
           onToggleFavorite={() => void toggleFavorite(openMenuSession)}
-          onRename={() => void handleRename(openMenuSession)}
+          onRename={() => requestRename(openMenuSession)}
           onShare={() => requestShare(openMenuSession)}
           onDelete={() => requestDelete(openMenuSession)}
         />
@@ -352,6 +371,82 @@ export function Sidebar() {
 
 function sessionStatusLabel(status: string) {
   return sessionStatusLabels[status.toLowerCase()] || status;
+}
+
+function SessionRenameDialog({
+  session,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  session: { session_id: string; title?: string } | null;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: (title: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+
+  useEffect(() => {
+    setTitle(session?.title || "");
+  }, [session]);
+
+  if (!session) return null;
+
+  const trimmedTitle = title.trim();
+  const unchanged = trimmedTitle === (session.title || "").trim();
+
+  function submit() {
+    if (!trimmedTitle || unchanged || saving) return;
+    onConfirm(trimmedTitle);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-rename-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onCancel();
+      }}
+    >
+      <div className="sketch-surface w-full max-w-md rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+            <Pencil className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 id="session-rename-title" className="text-lg font-semibold text-foreground">
+              重命名会话
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              为「{session.title || shortID(session.session_id)}」设置一个更容易识别的名称。
+            </p>
+          </div>
+        </div>
+        <div className="mt-5">
+          <Input
+            autoFocus
+            value={title}
+            placeholder="会话名称"
+            onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !saving) onCancel();
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) submit();
+            }}
+          />
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={onCancel} disabled={saving}>
+            取消
+          </Button>
+          <Button onClick={submit} disabled={!trimmedTitle || unchanged || saving}>
+            {saving ? "保存中" : "保存"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SessionDeleteDialog({
