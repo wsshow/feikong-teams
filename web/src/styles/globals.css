@@ -698,7 +698,6 @@
       linear-gradient(180deg, hsl(204 54% 92% / 0.92), hsl(204 42% 89% / 0.78));
     color: hsl(218 34% 22%);
     font-weight: 700;
-    white-space: nowrap;
   }
 
   .prose tbody tr:nth-child(even) td {
@@ -783,8 +782,17 @@
 
     .prose th,
     .prose td {
-      min-width: 8rem;
-      padding: 0.48rem 0.58rem;
+      padding: 0.44rem 0.5rem;
+    }
+
+    .prose table {
+      table-layout: fixed;
+    }
+
+    .message-prose th,
+    .message-prose td {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .message-prose {

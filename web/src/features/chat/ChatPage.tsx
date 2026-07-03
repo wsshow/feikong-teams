@@ -191,7 +191,7 @@ function QuestionNavigator({
       {showMobileControls ? (
         <div
           ref={mobileRef}
-          className="fixed left-1/2 z-[35] -translate-x-1/2 xl:hidden"
+          className="absolute left-1/2 z-[35] -translate-x-1/2 xl:hidden"
           style={{ bottom: "calc(var(--app-keyboard-inset-bottom,0px) + var(--chat-dock-height,10rem) + 1rem)" }}
         >
           {mobileOpen && showMobileQuestion ? (
