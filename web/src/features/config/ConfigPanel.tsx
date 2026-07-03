@@ -14,11 +14,13 @@ import {
   Save,
   Search,
   Server,
+  Sparkles,
   Trash2,
   Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { generateAgentDrafts, rewriteText } from "@/api/ai";
 import { getConfig, getToolCatalog, saveConfig } from "@/api/config";
 import { listProviderModels } from "@/api/providers";
 import { configActions, appActions } from "@/app/store";
@@ -483,41 +485,79 @@ function ServerTab({ draft, updateDraft }: EditorProps) {
 }
 
 function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
+  const dispatch = useAppDispatch();
   const agents = draft.agents || {};
   const agentItems = agents.items || [];
   const tools = useAppSelector((state) => state.config.tools);
   const toolOptions = useMemo(() => buildToolOptions(tools, draft.tools?.mcp_servers || []), [draft.tools?.mcp_servers, tools]);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+
+  function appendAgents(items: AgentConfig[]) {
+    updateDraft((next) => {
+      const current = next.agents?.items || [];
+      const merged = [...current];
+      for (const item of items) {
+        merged.push({
+          ...item,
+          id: uniqueAgentID(merged, item.id || item.name || "agent"),
+          tools: item.tools || [],
+          enabled: item.enabled ?? true,
+        });
+      }
+      next.agents = { ...(next.agents || {}), items: merged };
+    });
+    dispatch(appActions.showToast(`${items.length} 个智能体草稿已添加`));
+  }
+
   return (
     <Panel>
       <SectionHeader icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。">
-        <Button
-          className="w-full sm:w-auto"
-          variant="outline"
-          onClick={() =>
-            updateDraft((next) => {
-              const items = next.agents?.items || [];
-              next.agents = {
-                ...(next.agents || {}),
-                items: [
-                  ...items,
-                  {
-                    id: uniqueAgentID(items, "agent"),
-                    name: "",
-                    description: "",
-                    prompt: "",
-                    model_id: modelIDs[0] || "",
-                    tools: [],
-                    enabled: true,
-                  },
-                ],
-              };
-            })
-          }
-        >
-          <Plus className="h-4 w-4" />
-          添加智能体
-        </Button>
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
+          <Button className="w-full sm:w-auto" variant="outline" onClick={() => setAssistantOpen(true)}>
+            <Sparkles className="h-4 w-4" />
+            AI 创建
+          </Button>
+          <Button
+            className="w-full sm:w-auto"
+            variant="outline"
+            onClick={() =>
+              updateDraft((next) => {
+                const items = next.agents?.items || [];
+                next.agents = {
+                  ...(next.agents || {}),
+                  items: [
+                    ...items,
+                    {
+                      id: uniqueAgentID(items, "agent"),
+                      name: "",
+                      description: "",
+                      prompt: "",
+                      model_id: modelIDs[0] || "",
+                      tools: [],
+                      enabled: true,
+                    },
+                  ],
+                };
+              })
+            }
+          >
+            <Plus className="h-4 w-4" />
+            添加智能体
+          </Button>
+        </div>
       </SectionHeader>
+      {assistantOpen ? (
+        <AgentDraftDialog
+          agents={agentItems}
+          modelIDs={modelIDs}
+          toolOptions={toolOptions}
+          onClose={() => setAssistantOpen(false)}
+          onApply={(items) => {
+            appendAgents(items);
+            setAssistantOpen(false);
+          }}
+        />
+      ) : null}
       <PanelBody className="grid gap-4 xl:grid-cols-2">
         {agentItems.map((agent, index) => (
           <ConfigCard
@@ -893,7 +933,13 @@ function AgentCatalogEditor({
         <TextField label="名称" value={agent.name} onChange={(value) => onChange({ ...agent, name: value })} />
         <ModelSelect label="模型 ID（可选）" value={agent.model_id} modelIDs={["", ...modelIDs]} onChange={(value) => onChange({ ...agent, model_id: value })} />
       </div>
-      <TextField label="描述" value={agent.description} onChange={(value) => onChange({ ...agent, description: value })} />
+      <AITextField
+        label="描述"
+        scenario="agent_description"
+        value={agent.description}
+        context={{ agent_id: agent.id, agent_name: agent.name }}
+        onChange={(value) => onChange({ ...agent, description: value })}
+      />
       <ToolSelectField
         tools={agent.tools || []}
         options={toolOptions}
@@ -911,9 +957,274 @@ function AgentCatalogEditor({
           />
         </div>
       ) : null}
-      <Field label="系统提示词">
+      <Field
+        label="系统提示词"
+        action={
+          <AIRewriteButton
+            scenario="agent_prompt"
+            value={agent.prompt || ""}
+            context={{ agent_id: agent.id, agent_name: agent.name, description: agent.description, tools: agent.tools || [] }}
+            onApply={(value) => onChange({ ...agent, prompt: value })}
+          />
+        }
+      >
         <Textarea className="min-h-56 text-sm" value={agent.prompt || ""} onChange={(event) => onChange({ ...agent, prompt: event.target.value })} />
       </Field>
+    </div>
+  );
+}
+
+function AgentDraftDialog({
+  agents,
+  modelIDs,
+  toolOptions,
+  onClose,
+  onApply,
+}: {
+  agents: AgentConfig[];
+  modelIDs: string[];
+  toolOptions: ToolSelectOption[];
+  onClose: () => void;
+  onApply: (agents: AgentConfig[]) => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const [drafts, setDrafts] = useState<AgentConfig[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generate() {
+    const trimmed = instruction.trim();
+    if (!trimmed || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const resp = await generateAgentDrafts({
+        instruction: trimmed,
+        existing_agents: agents.map((agent) => agent.id || agent.name || "").filter(Boolean),
+        available_tools: toolOptions.map((tool) => tool.name),
+        available_models: modelIDs,
+        default_model_id: modelIDs[0] || "",
+      });
+      const items = resp.agents || [];
+      setDrafts(items);
+      setSelected(new Set(items.map((agent) => agent.id || agent.name || "")));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  const selectedDrafts = drafts.filter((agent) => selected.has(agent.id || agent.name || ""));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6" role="dialog" aria-modal="true">
+      <div className="sketch-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+        <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 font-semibold">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI 创建智能体
+            </div>
+            <div className="mt-1 text-sm leading-6 text-muted-foreground">描述你需要的角色、数量、职责和工具偏好，生成后确认添加到当前配置草稿。</div>
+          </div>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="chat-scroll min-h-0 flex-1 overflow-auto p-4">
+          <div className="grid gap-4">
+            <Field label="创建要求">
+              <Textarea
+                className="min-h-28 text-sm"
+                value={instruction}
+                placeholder="例如：创建三个研发协作智能体，分别负责前端实现、后端接口和测试验收，提示词要明确边界和输出格式。"
+                onChange={(event) => setInstruction(event.target.value)}
+              />
+            </Field>
+            {error ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+            {drafts.length ? (
+              <div className="grid gap-3">
+                <div className="text-sm text-muted-foreground">生成结果</div>
+                {drafts.map((agent) => {
+                  const id = agent.id || agent.name || "";
+                  const checked = selected.has(id);
+                  return (
+                    <label key={id} className="flex cursor-pointer gap-3 rounded-xl border border-border/75 bg-background/45 p-3">
+                      <input className="mt-1 h-4 w-4 shrink-0 accent-primary" type="checkbox" checked={checked} onChange={() => toggle(id)} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="font-medium">{agent.name || id}</span>
+                          <Badge>{id}</Badge>
+                          {agent.model_id ? <Badge>{agent.model_id}</Badge> : null}
+                        </span>
+                        <span className="mt-1 block text-sm leading-6 text-muted-foreground">{agent.description}</span>
+                        {agent.tools?.length ? <span className="mt-2 block text-xs text-muted-foreground">工具：{agent.tools.join("、")}</span> : null}
+                        {agent.prompt ? <span className="mt-2 line-clamp-3 block text-xs leading-5 text-muted-foreground">{agent.prompt}</span> : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-border/70 p-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void generate()}>
+            <Sparkles className="h-4 w-4" />
+            {loading ? "生成中" : "生成草稿"}
+          </Button>
+          <Button disabled={!selectedDrafts.length || loading} onClick={() => onApply(selectedDrafts)}>
+            <Plus className="h-4 w-4" />
+            添加选中
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AITextField({
+  label,
+  scenario,
+  value,
+  context,
+  onChange,
+}: {
+  label: string;
+  scenario: string;
+  value?: string;
+  context?: Record<string, unknown>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label={label} action={<AIRewriteButton scenario={scenario} value={value || ""} context={context} onApply={onChange} />}>
+      <Input value={value || ""} onChange={(event) => onChange(event.target.value)} />
+    </Field>
+  );
+}
+
+function AIRewriteButton({
+  scenario,
+  value,
+  context,
+  onApply,
+}: {
+  scenario: string;
+  value: string;
+  context?: Record<string, unknown>;
+  onApply: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
+        <Sparkles className="h-4 w-4" />
+        AI 修改
+      </Button>
+      {open ? <AIRewriteDialog scenario={scenario} value={value} context={context} onApply={onApply} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function AIRewriteDialog({
+  scenario,
+  value,
+  context,
+  onApply,
+  onClose,
+}: {
+  scenario: string;
+  value: string;
+  context?: Record<string, unknown>;
+  onApply: (value: string) => void;
+  onClose: () => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const [result, setResult] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function runRewrite() {
+    const trimmed = instruction.trim();
+    if (!trimmed || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const resp = await rewriteText({ scenario, instruction: trimmed, text: value, context });
+      setResult(resp.text || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function apply() {
+    if (!result.trim()) return;
+    onApply(result);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6" role="dialog" aria-modal="true">
+      <div className="sketch-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+        <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
+          <div>
+            <div className="flex items-center gap-2 font-semibold">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI 修改
+            </div>
+            <div className="mt-1 text-sm leading-6 text-muted-foreground">输入修改要求，生成结果确认后再应用到字段。</div>
+          </div>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="chat-scroll min-h-0 flex-1 space-y-4 overflow-auto p-4">
+          <Field label="修改要求">
+            <Textarea className="min-h-24 text-sm" value={instruction} placeholder="例如：更专业、更简洁，并增加输出边界。" onChange={(event) => setInstruction(event.target.value)} />
+          </Field>
+          <Field label="当前内容">
+            <Textarea className="min-h-28 text-sm" value={value} readOnly />
+          </Field>
+          {error ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+          {result ? (
+            <Field label="生成结果">
+              <Textarea className="min-h-40 text-sm" value={result} onChange={(event) => setResult(event.target.value)} />
+            </Field>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-2 border-t border-border/70 p-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void runRewrite()}>
+            <Sparkles className="h-4 w-4" />
+            {loading ? "生成中" : "生成修改"}
+          </Button>
+          <Button disabled={!result.trim() || loading} onClick={apply}>
+            应用
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1244,12 +1555,15 @@ function SectionHeader({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, action, children }: { label: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <label className="block space-y-1.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
+    <div className="block space-y-1.5">
+      <span className="flex min-h-8 items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        {action ? <span className="shrink-0">{action}</span> : null}
+      </span>
       {children}
-    </label>
+    </div>
   );
 }
 

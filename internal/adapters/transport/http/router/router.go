@@ -65,6 +65,13 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 		// 来源图标代理
 		apiV1.GET("/favicon", runtime.FaviconHandler())
 
+		// AI 辅助 API
+		ai := apiV1.Group("/ai")
+		{
+			ai.POST("/agents/draft", runtime.GenerateAgentDraftsHandler())
+			ai.POST("/text/rewrite", runtime.RewriteTextHandler())
+		}
+
 		// 聊天 API
 		apiV1.POST("/chat", runtime.ChatHandlerWithState(state))
 
