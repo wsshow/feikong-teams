@@ -38,15 +38,17 @@ export function SessionShareDialog({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
 
+  const sessionID = session?.session_id || "";
+
   useEffect(() => {
-    if (!session) return;
+    if (!sessionID) return;
     setExpiresIn(7 * 24 * 3600);
     setPassword("");
     setAllowToolDetails(false);
     setCreatedShare(null);
     setCopied(false);
     setError("");
-  }, [session]);
+  }, [sessionID]);
 
   if (!session) return null;
 

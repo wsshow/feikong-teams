@@ -10,7 +10,7 @@ import { SessionShareDialog } from "./SessionShareDialog";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
   const toast = useAppSelector((state) => state.app.toast);
-  const [shareOpen, setShareOpen] = useState(false);
+  const [shareTarget, setShareTarget] = useState<{ session_id: string; title?: string } | null>(null);
   const activePanel = useAppSelector((state) => state.app.activePanel);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const sessions = useAppSelector((state) => state.sessions.items);
@@ -25,7 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [dispatch, toast]);
 
   useEffect(() => {
-    if (!canShareSession) setShareOpen(false);
+    if (!canShareSession) setShareTarget(null);
   }, [canShareSession]);
 
   return (
@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="分享会话"
               title="分享会话"
               type="button"
-              onClick={() => setShareOpen(true)}
+              onClick={() => setShareTarget({ session_id: activeSessionID, title: activeSession?.title })}
             >
               <Share2 className="h-4 w-4" />
             </button>
@@ -62,8 +62,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </main>
       <SessionShareDialog
-        session={shareOpen && activeSessionID ? { session_id: activeSessionID, title: activeSession?.title } : null}
-        onClose={() => setShareOpen(false)}
+        session={shareTarget}
+        onClose={() => setShareTarget(null)}
       />
       {toast ? (
         <div className="sketch-surface fixed bottom-4 left-4 right-4 z-50 rounded-md px-4 py-3 text-sm sm:left-auto sm:w-auto">
