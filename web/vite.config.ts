@@ -26,5 +26,24 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) return "vendor-react";
+          if (id.includes("/@reduxjs/") || id.includes("/react-redux/") || id.includes("/redux/")) return "vendor-state";
+          if (
+            id.includes("/marked/") ||
+            id.includes("/marked-katex-extension/") ||
+            id.includes("/katex/") ||
+            id.includes("/highlight.js/")
+          ) {
+            return "vendor-markdown";
+          }
+          if (id.includes("/lucide-react/")) return "vendor-icons";
+          return "vendor";
+        },
+      },
+    },
   },
 });

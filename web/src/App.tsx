@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Provider } from "react-redux";
 import { get } from "@/api/client";
 import { listAgents } from "@/api/agents";
@@ -6,18 +6,19 @@ import { appActions, chatActions } from "@/app/store";
 import { store } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { AppShell } from "@/components/layout/AppShell";
-import { ChatPage } from "@/features/chat/ChatPage";
-import { ConfigPanel } from "@/features/config/ConfigPanel";
-import { FileManager } from "@/features/files/FileManager";
-import { LoginPage } from "@/features/auth/LoginPage";
-import { PreviewPage } from "@/features/preview/PreviewPage";
-import { SchedulePanel } from "@/features/schedules/SchedulePanel";
-import { ShareManagerPanel } from "@/features/share/ShareManagerPanel";
-import { SharePage } from "@/features/share/SharePage";
-import { SkillPanel } from "@/features/skills/SkillPanel";
 import { loadSessions } from "@/features/sessions/sessionThunks";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import type { AgentInfo, VersionInfo } from "@/types/api";
+
+const ChatPage = lazy(() => import("@/features/chat/ChatPage").then((module) => ({ default: module.ChatPage })));
+const ConfigPanel = lazy(() => import("@/features/config/ConfigPanel").then((module) => ({ default: module.ConfigPanel })));
+const FileManager = lazy(() => import("@/features/files/FileManager").then((module) => ({ default: module.FileManager })));
+const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
+const PreviewPage = lazy(() => import("@/features/preview/PreviewPage").then((module) => ({ default: module.PreviewPage })));
+const SchedulePanel = lazy(() => import("@/features/schedules/SchedulePanel").then((module) => ({ default: module.SchedulePanel })));
+const ShareManagerPanel = lazy(() => import("@/features/share/ShareManagerPanel").then((module) => ({ default: module.ShareManagerPanel })));
+const SharePage = lazy(() => import("@/features/share/SharePage").then((module) => ({ default: module.SharePage })));
+const SkillPanel = lazy(() => import("@/features/skills/SkillPanel").then((module) => ({ default: module.SkillPanel })));
 
 export function App() {
   return (
@@ -29,9 +30,27 @@ export function App() {
 
 function Root() {
   const path = location.pathname;
-  if (path === "/login") return <LoginPage />;
-  if (path.startsWith("/p/")) return <PreviewPage />;
-  if (path.startsWith("/s/")) return <SharePage />;
+  if (path === "/login") {
+    return (
+      <Suspense fallback={<RouteLoading />}>
+        <LoginPage />
+      </Suspense>
+    );
+  }
+  if (path.startsWith("/p/")) {
+    return (
+      <Suspense fallback={<RouteLoading />}>
+        <PreviewPage />
+      </Suspense>
+    );
+  }
+  if (path.startsWith("/s/")) {
+    return (
+      <Suspense fallback={<RouteLoading />}>
+        <SharePage />
+      </Suspense>
+    );
+  }
   return (
     <AppShell>
       <Workspace />
@@ -72,19 +91,50 @@ function Workspace() {
     };
   }, [dispatch]);
 
-  switch (activePanel) {
-    case "config":
-      return <ConfigPanel />;
-    case "files":
-      return <FileManager />;
-    case "schedules":
-      return <SchedulePanel />;
-    case "shares":
-      return <ShareManagerPanel />;
-    case "skills":
-      return <SkillPanel />;
-    case "chat":
-    default:
-      return <ChatPage />;
-  }
+  const panel = (() => {
+    switch (activePanel) {
+      case "config":
+        return <ConfigPanel />;
+      case "files":
+        return <FileManager />;
+      case "schedules":
+        return <SchedulePanel />;
+      case "shares":
+        return <ShareManagerPanel />;
+      case "skills":
+        return <SkillPanel />;
+      case "chat":
+      default:
+        return <ChatPage />;
+    }
+  })();
+
+  return <Suspense fallback={<PanelLoading />}>{panel}</Suspense>;
+}
+
+function RouteLoading() {
+  return (
+    <div className="flex h-[var(--app-viewport-height,100dvh)] items-center justify-center px-4">
+      <LoadingSurface label="正在加载" />
+    </div>
+  );
+}
+
+function PanelLoading() {
+  return (
+    <div className="flex h-full items-center justify-center px-4">
+      <LoadingSurface label="正在打开" />
+    </div>
+  );
+}
+
+function LoadingSurface({ label }: { label: string }) {
+  return (
+    <div className="sketch-surface flex min-w-40 items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm text-muted-foreground">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary/70 [animation-delay:120ms]" />
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary/45 [animation-delay:240ms]" />
+      <span className="ml-1">{label}</span>
+    </div>
+  );
 }
