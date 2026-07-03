@@ -112,10 +112,16 @@ export function ChatComposer({
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (!value && editorText(editor)) {
+    if (editorText(editor) === value) return;
+    if (!value) {
       editor.replaceChildren();
       setTrigger(undefined);
+      return;
     }
+    editor.textContent = value;
+    setCaretTextOffset(editor, value.length);
+    setTrigger(undefined);
+    requestAnimationFrame(() => editor.focus());
   }, [value]);
 
   useEffect(() => {

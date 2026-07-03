@@ -199,6 +199,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 
 		stream := rt.Streams.Get(sessionID)
 		activeTask := stream != nil && stream.Status() == "processing"
+		queue := rt.queueForSessionResponse(sessionID, stream)
 
 		sessionDir := rt.sessionDirPath(sessionID)
 		meta, metaErr := eventlog.LoadMetadata(sessionDir)
@@ -229,6 +230,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 			"current_agent": currentAgent,
 			"favorite":      favorite,
 			"events":        rt.transcriptRecordsToChatEvents(sessionID, transcript),
+			"queue":         queue,
 			"active_task":   activeTask,
 		})
 	}

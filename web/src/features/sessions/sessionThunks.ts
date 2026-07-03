@@ -14,6 +14,7 @@ export const loadSessionDetail = createAsyncThunk("sessions/detail", async (sess
   for (const event of detail.events || []) {
     dispatch(chatActions.receiveEvent(event));
   }
+  dispatch(chatActions.setQueue(detail.queue || []));
   if (detail.active_task) {
     dispatch(chatActions.setRunningSession(sessionID));
   } else {

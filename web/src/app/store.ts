@@ -90,6 +90,9 @@ const chatSlice = createSlice({
         if (event.session_id) state.runningSessionID = event.session_id;
         state.statusText = String(event.message || event.content || "处理中");
       }
+      if (isModelResponseEvent(event)) {
+        state.statusText = undefined;
+      }
       if (event.type === "user_message") {
         const content = eventText(event);
         const contentParts = Array.isArray(event.content_parts) ? event.content_parts : [];
@@ -286,6 +289,13 @@ function isOutputDelta(event: ChatEvent) {
 
 function isAssistantTextDelta(event: ChatEvent) {
   return event.type === "assistant_text_delta" && isOutputDelta(event);
+}
+
+function isModelResponseEvent(event: ChatEvent) {
+  return event.type === "assistant_started" ||
+    event.type === "assistant_reasoning_delta" ||
+    event.type === "assistant_text_delta" ||
+    event.type === "assistant_completed";
 }
 
 function hasToolActivity(event: ChatEvent) {

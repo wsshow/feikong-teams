@@ -18,6 +18,7 @@ export interface SessionDetail {
   favorite?: boolean;
   active_task?: boolean;
   events?: ChatEvent[];
+  queue?: QueueItem[];
   message_count?: number;
   allow_tool_details?: boolean;
 }

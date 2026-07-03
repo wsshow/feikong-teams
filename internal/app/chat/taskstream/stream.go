@@ -364,6 +364,23 @@ func (s *Stream) QueueSnapshot() []QueuedMessage {
 	return s.queueSnapshotLocked()
 }
 
+func (s *Stream) RestoreQueue(queue []QueuedMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.steering = nil
+	s.followUps = nil
+	for _, msg := range queue {
+		msg = normalizeQueuedMessage(msg)
+		switch msg.Kind {
+		case QueueSteering:
+			s.steering = append(s.steering, msg)
+		default:
+			msg.Kind = QueueFollowUp
+			s.followUps = append(s.followUps, msg)
+		}
+	}
+}
+
 func (s *Stream) queueSnapshotLocked() []QueuedMessage {
 	queue := make([]QueuedMessage, 0, len(s.steering)+len(s.followUps))
 	queue = append(queue, s.steering...)

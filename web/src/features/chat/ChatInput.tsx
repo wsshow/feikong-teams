@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions } from "@/app/store";
-import { sendSteering, startStream, stopStream } from "@/api/chat";
+import { startStream, stopStream } from "@/api/chat";
 import { listFiles, searchFiles, uploadFile } from "@/api/files";
 import { subscribeStream } from "@/api/stream";
 import { readJSON, storageKeys, writeJSON } from "@/lib/storage";
@@ -86,7 +86,13 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
     }
     try {
       if (queueing && targetSessionID) {
-        const result = await sendSteering(targetSessionID, message, contents);
+        const result = await startStream({
+          session_id: targetSessionID,
+          message,
+          contents,
+          mode,
+          agent_name: currentAgent || undefined,
+        });
         if (Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
         ensureStreamSubscription(targetSessionID);
         return;
@@ -291,7 +297,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
       )}
     >
       <div className="mx-auto max-w-4xl">
-        <QueuePanel />
+        <QueuePanel onEditMessage={setValue} />
         <ChatComposer
           className="relative z-10 shadow-[0_12px_32px_hsl(218_30%_25%/0.12)]"
           value={value}

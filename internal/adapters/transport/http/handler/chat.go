@@ -102,6 +102,12 @@ func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskst
 	return queued
 }
 
+func (rt *Runtime) enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) taskstream.QueuedMessage {
+	queued := enqueueTaskMessage(stream, sessionID, kind, message, contents)
+	rt.persistQueueSnapshot(sessionID, stream)
+	return queued
+}
+
 func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
 	if stream == nil {
 		return
@@ -129,13 +135,16 @@ func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, qu
 	stream.Publish(payload)
 }
 
-func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string) runtimeport.SteeringSource {
+func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string, persistQueue func()) runtimeport.SteeringSource {
 	return func(context.Context) ([]domainmessage.Message, error) {
 		queued := stream.TakeSteeringMessages(1)
 		if len(queued) == 0 {
 			return nil, nil
 		}
 		publishQueueUpdated(stream, sessionID)
+		if persistQueue != nil {
+			persistQueue()
+		}
 		messages := make([]domainmessage.Message, 0, len(queued))
 		for _, msg := range queued {
 			message := msg.Message()

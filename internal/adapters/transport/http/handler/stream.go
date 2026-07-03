@@ -66,7 +66,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		}
 
 		if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-			queued := enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents)
+			queued := rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, req.Message, req.Contents)
 			OK(c, gin.H{
 				"session_id":   sessionID,
 				"status":       "queued",
@@ -108,6 +108,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			Mode:       mode,
 			AgentName:  req.AgentName,
 		})
+		rt.restorePersistentQueue(sessionID, stream)
 
 		rt.updateSessionTitleAndStatus(sessionID, userDisplayText, "processing")
 		initialRunID := newTurnRunID(sessionID)
@@ -119,9 +120,11 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		go rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
 
 		OK(c, gin.H{
-			"session_id": sessionID,
-			"status":     "processing",
-			"message":    "task started",
+			"session_id":   sessionID,
+			"status":       "processing",
+			"message":      "task started",
+			"queue":        stream.QueueSnapshot(),
+			"queued_count": stream.QueuedCount(),
 		})
 	}
 }
@@ -158,7 +161,7 @@ func (rt *Runtime) StreamSteerHandler() gin.HandlerFunc {
 			return
 		}
 
-		queued := enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
+		queued := rt.enqueueTaskMessage(stream, req.SessionID, taskstream.QueueSteering, req.Message, req.Contents)
 		OK(c, gin.H{
 			"session_id":   req.SessionID,
 			"status":       "queued",
@@ -178,14 +181,16 @@ func StreamQueueHandler() gin.HandlerFunc {
 func (rt *Runtime) StreamQueueHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
-		stream := rt.streamForQueueRequest(c, sessionID)
-		if stream == nil {
+		if !validateSessionID(sessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
 			return
 		}
+		stream := rt.Streams.Get(sessionID)
+		queue := rt.queueForSessionResponse(sessionID, stream)
 		OK(c, gin.H{
 			"session_id":   sessionID,
-			"queue":        stream.QueueSnapshot(),
-			"queued_count": stream.QueuedCount(),
+			"queue":        queue,
+			"queued_count": len(queue),
 		})
 	}
 }
@@ -199,10 +204,6 @@ func (rt *Runtime) StreamQueueUpdateHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := rt.streamForQueueRequest(c, sessionID)
-		if stream == nil {
-			return
-		}
 		var req StreamStartRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
@@ -213,12 +214,17 @@ func (rt *Runtime) StreamQueueUpdateHandler() gin.HandlerFunc {
 			return
 		}
 		queued := queuedChatMessage(taskstream.QueueFollowUp, req.Message, req.Contents)
+		stream, ok := rt.editQueue(c, sessionID)
+		if !ok {
+			return
+		}
 		updated, ok := stream.UpdateQueuedMessage(queueID, queued.Text, queued.Parts, queued.DisplayText)
 		if !ok {
 			Fail(c, http.StatusNotFound, "queued message not found")
 			return
 		}
 		publishQueueUpdated(stream, sessionID)
+		rt.persistQueueSnapshot(sessionID, stream)
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"queue_item": updated,
@@ -236,8 +242,8 @@ func (rt *Runtime) StreamQueueDeleteHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := rt.streamForQueueRequest(c, sessionID)
-		if stream == nil {
+		stream, editing := rt.editQueue(c, sessionID)
+		if !editing {
 			return
 		}
 		removed, ok := stream.RemoveQueuedMessage(queueID)
@@ -246,6 +252,7 @@ func (rt *Runtime) StreamQueueDeleteHandler() gin.HandlerFunc {
 			return
 		}
 		publishQueueUpdated(stream, sessionID)
+		rt.persistQueueSnapshot(sessionID, stream)
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"queue_item": removed,
@@ -271,8 +278,8 @@ func (rt *Runtime) StreamQueueKindHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := rt.streamForQueueRequest(c, sessionID)
-		if stream == nil {
+		stream, editing := rt.editQueue(c, sessionID)
+		if !editing {
 			return
 		}
 		var req StreamQueueKindRequest
@@ -291,6 +298,7 @@ func (rt *Runtime) StreamQueueKindHandler() gin.HandlerFunc {
 			return
 		}
 		publishQueueUpdated(stream, sessionID)
+		rt.persistQueueSnapshot(sessionID, stream)
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"queue_item": updated,
@@ -308,10 +316,6 @@ func (rt *Runtime) StreamQueueMoveHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("sessionID")
 		queueID := c.Param("queueID")
-		stream := rt.streamForQueueRequest(c, sessionID)
-		if stream == nil {
-			return
-		}
 		var req StreamQueueMoveRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
@@ -327,12 +331,17 @@ func (rt *Runtime) StreamQueueMoveHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "direction must be up or down")
 			return
 		}
+		stream, editing := rt.editQueue(c, sessionID)
+		if !editing {
+			return
+		}
 		moved, ok := stream.MoveQueuedMessage(queueID, direction)
 		if !ok {
 			Fail(c, http.StatusNotFound, "queued message not found")
 			return
 		}
 		publishQueueUpdated(stream, sessionID)
+		rt.persistQueueSnapshot(sessionID, stream)
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"queue_item": moved,
@@ -364,7 +373,9 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	if currentRunID == "" {
 		currentRunID = newTurnRunID(sessionID)
 	}
-	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
+	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID }, func() {
+		rt.persistQueueSnapshot(sessionID, stream)
+	})
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
 	chatService := appchat.NewService()
@@ -410,6 +421,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 		rt.saveTurnHistory(recorder, sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
+			rt.persistQueueSnapshot(sessionID, stream)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)

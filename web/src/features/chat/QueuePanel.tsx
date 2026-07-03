@@ -1,14 +1,13 @@
-import { ArrowDown, ArrowUp, CornerDownRight, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CornerDownRight, MessageSquare, MoreHorizontal, Pencil, Route, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions } from "@/app/store";
-import { changeQueueKind, deleteQueueItem, moveQueueItem, updateQueueItem } from "@/api/stream";
+import { changeQueueKind, deleteQueueItem, moveQueueItem } from "@/api/stream";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 import type { QueueItem } from "@/types/events";
 
-export function QueuePanel() {
+export function QueuePanel({ onEditMessage }: { onEditMessage: (message: string) => void }) {
   const dispatch = useAppDispatch();
   const sessionID = useAppSelector((state) => state.chat.activeSessionID);
   const queue = useAppSelector((state) => state.chat.queue);
@@ -45,6 +44,7 @@ export function QueuePanel() {
             sessionID={sessionID}
             menuOpen={openMenuID === item.queue_id}
             onToggleMenu={() => setOpenMenuID(openMenuID === item.queue_id ? "" : item.queue_id)}
+            onEditMessage={onEditMessage}
             onRefresh={refresh}
           />
         ))}
@@ -58,28 +58,34 @@ function QueueRow({
   sessionID,
   menuOpen,
   onToggleMenu,
+  onEditMessage,
   onRefresh,
 }: {
   item: QueueItem;
   sessionID: string;
   menuOpen: boolean;
   onToggleMenu: () => void;
+  onEditMessage: (message: string) => void;
   onRefresh: (action: Promise<{ queue: QueueItem[] }>) => void;
 }) {
   const isSteering = item.kind === "steering";
   const text = queueItemText(item);
 
+  async function editMessage() {
+    const result = await deleteQueueItem(sessionID, item.queue_id);
+    onEditMessage(text);
+    onRefresh(Promise.resolve(result));
+  }
+
   return (
     <div className="relative flex min-h-8 items-center gap-2 rounded-md px-1 sm:px-2">
-      <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" />
-      <Input
-        className="h-7 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm font-semibold text-foreground/76 shadow-none placeholder:text-muted-foreground/45 focus-visible:ring-0"
-        defaultValue={text}
+      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" />
+      <div
+        className="min-w-0 flex-1 truncate text-sm font-semibold leading-7 text-foreground/76"
         title={text}
-        onBlur={(event) => {
-          onRefresh(updateQueueItem(sessionID, item.queue_id, event.target.value));
-        }}
-      />
+      >
+        {text || "空消息"}
+      </div>
       <div className="flex shrink-0 items-center gap-1">
         <Button
           className={cn(
@@ -90,10 +96,10 @@ function QueueRow({
           variant="ghost"
           disabled={isSteering}
           onClick={() => onRefresh(changeQueueKind(sessionID, item.queue_id, "steering"))}
-          title={isSteering ? "已设为引导" : "设为引导"}
+          title={isSteering ? "已设为转向" : "设为转向"}
         >
-          <CornerDownRight className="h-3.5 w-3.5 transition-transform group-hover/button:translate-x-0.5" />
-          引导
+          <Route className="h-3.5 w-3.5 transition-transform group-hover/button:translate-x-0.5" />
+          转向
         </Button>
         <Button
           className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
@@ -117,6 +123,10 @@ function QueueRow({
       </div>
       {menuOpen ? (
         <div className="absolute bottom-[calc(100%+0.25rem)] right-2 z-50 w-32 overflow-hidden rounded-md border border-border bg-card py-1 text-sm shadow-[0_10px_24px_hsl(218_30%_25%/0.14)]">
+          <button className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted" type="button" onClick={() => void editMessage()}>
+            <Pencil className="h-3.5 w-3.5" />
+            编辑
+          </button>
           <button className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted" type="button" onClick={() => onRefresh(moveQueueItem(sessionID, item.queue_id, "up"))}>
             <ArrowUp className="h-3.5 w-3.5" />
             上移

@@ -298,7 +298,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	}
 
 	if existing := rt.Streams.Get(sessionID); existing != nil && existing.Status() == "processing" {
-		enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents)
+		rt.enqueueTaskMessage(existing, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents)
 		return
 	}
 
@@ -313,6 +313,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		Cancel:     taskCancel,
 		CleanupTTL: 5 * time.Minute,
 	})
+	rt.restorePersistentQueue(sessionID, stream)
 	// 绑定当前 WS 连接为 Push 订阅者
 	_, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
 		return writeJSON(event)
@@ -352,7 +353,9 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		return nil
 	}
 	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
-	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID })
+	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID }, func() {
+		rt.persistQueueSnapshot(sessionID, stream)
+	})
 	currentInput := turnInput
 	currentDisplayText := userDisplayText
 	rt.updateSessionTitleAndStatus(sessionID, currentDisplayText, "processing")
@@ -398,6 +401,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		rt.saveTurnHistory(recorder, sessionID)
 		if queued, ok := stream.DequeueNextMessage(); ok {
 			publishQueueUpdated(stream, sessionID)
+			rt.persistQueueSnapshot(sessionID, stream)
 			currentDisplayText = queued.DisplayText
 			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)
@@ -428,5 +432,5 @@ func (rt *Runtime) handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) er
 		_ = writeJSON(errorEventPayload(sessionID, "no running task to steer"))
 		return
 	}
-	enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents)
+	rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueSteering, wsMsg.Message, wsMsg.Contents)
 }
