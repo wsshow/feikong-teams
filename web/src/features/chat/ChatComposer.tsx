@@ -29,6 +29,7 @@ export interface ChatComposerProps {
   onValueChange: (value: string) => void;
   onModeChange: (mode: string) => void;
   onReferenceQuery?: (query: string) => void;
+  onReferenceOpenChange?: (open: boolean) => void;
   onFilesAdded?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   onAgentChange?: (agent: string) => void;
@@ -50,6 +51,7 @@ export function ChatComposer({
   onValueChange,
   onModeChange,
   onReferenceQuery,
+  onReferenceOpenChange,
   onFilesAdded,
   onRemoveAttachment,
   onAgentChange,
@@ -104,6 +106,10 @@ export function ChatComposer({
   useEffect(() => {
     if (fileReferenceQuery !== undefined) onReferenceQuery?.(fileReferenceQuery);
   }, [fileReferenceQuery, onReferenceQuery]);
+
+  useEffect(() => {
+    onReferenceOpenChange?.(Boolean(trigger));
+  }, [onReferenceOpenChange, trigger]);
 
   useEffect(() => {
     setActiveReferenceIndex(0);

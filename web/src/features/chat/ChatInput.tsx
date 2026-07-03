@@ -16,7 +16,15 @@ import type { FileEntry } from "@/types/files";
 
 const maxPastedImageBytes = 12 * 1024 * 1024;
 
-export function ChatInput({ variant = "dock", className }: { variant?: "dock" | "hero"; className?: string }) {
+export function ChatInput({
+  variant = "dock",
+  className,
+  onReferenceOpenChange,
+}: {
+  variant?: "dock" | "hero";
+  className?: string;
+  onReferenceOpenChange?: (open: boolean) => void;
+}) {
   const dispatch = useAppDispatch();
   const sessionID = useAppSelector((state) => state.chat.activeSessionID);
   const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
@@ -279,6 +287,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
         onValueChange={setValue}
         onModeChange={changeMode}
         onReferenceQuery={queryReferences}
+        onReferenceOpenChange={onReferenceOpenChange}
         onFilesAdded={(files) => void addAttachments(files)}
         onRemoveAttachment={removeAttachment}
         onAgentChange={changeAgent}
@@ -312,6 +321,7 @@ export function ChatInput({ variant = "dock", className }: { variant?: "dock" | 
           onValueChange={setValue}
           onModeChange={changeMode}
           onReferenceQuery={queryReferences}
+          onReferenceOpenChange={onReferenceOpenChange}
           onFilesAdded={(files) => void addAttachments(files)}
           onRemoveAttachment={removeAttachment}
           onAgentChange={changeAgent}

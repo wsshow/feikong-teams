@@ -1,4 +1,4 @@
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
@@ -83,7 +83,12 @@ interface TimelineModel {
   trailingTools: MessageRenderPart[];
 }
 
-export function MessageList() {
+interface JumpToBottomControls {
+  distanceFromBottom: number;
+  jump: () => void;
+}
+
+export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomControlsChange?: (controls: JumpToBottomControls) => void }) {
   const dispatch = useAppDispatch();
   const messages = useAppSelector((state) => state.chat.messages);
   const events = useAppSelector((state) => state.chat.events);
@@ -102,6 +107,7 @@ export function MessageList() {
   const previousMessageCountRef = useRef(0);
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const [scrollDistanceFromBottom, setScrollDistanceFromBottom] = useState(0);
   const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
   const canAnswerAsk = Boolean(isProcessing && activeSessionID && (!runningSessionID || runningSessionID === activeSessionID));
   const timeline = useMemo(
@@ -114,16 +120,37 @@ export function MessageList() {
     && item.error.title === errorTitle
   ));
 
+  const scrollToBottom = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    scroll.scrollTop = scroll.scrollHeight;
+    setScrollDistanceFromBottom(0);
+    setShowJumpToBottom(false);
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    stickToBottomRef.current = true;
+    scrollToBottom();
+  }, [scrollToBottom]);
+
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     scrollToBottom();
-  }, [timeline.items, timeline.trailingAsks.length, isProcessing, statusText, error, toolEventsKey(displayEvents)]);
+  }, [timeline.items, timeline.trailingAsks.length, isProcessing, statusText, error, scrollToBottom, toolEventsKey(displayEvents)]);
 
   useEffect(() => {
     stickToBottomRef.current = true;
     setShowJumpToBottom(false);
     requestAnimationFrame(scrollToBottom);
-  }, [activeSessionID]);
+  }, [activeSessionID, scrollToBottom]);
+
+  useEffect(() => {
+    onJumpToBottomControlsChange?.({ distanceFromBottom: scrollDistanceFromBottom, jump: jumpToBottom });
+  }, [jumpToBottom, onJumpToBottomControlsChange, scrollDistanceFromBottom]);
+
+  useEffect(() => {
+    return () => onJumpToBottomControlsChange?.({ distanceFromBottom: 0, jump: () => {} });
+  }, [onJumpToBottomControlsChange]);
 
   useEffect(() => {
     const previous = previousMessageCountRef.current;
@@ -142,24 +169,14 @@ export function MessageList() {
     return <div className="min-h-0 flex-1" />;
   }
 
-  function scrollToBottom() {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    scroll.scrollTop = scroll.scrollHeight;
-  }
-
   function handleScroll() {
     const scroll = scrollRef.current;
     if (!scroll) return;
-    const atBottom = isNearScrollBottom(scroll);
+    const distance = scrollDistanceToBottom(scroll);
+    const atBottom = distance < 48;
     stickToBottomRef.current = atBottom;
+    setScrollDistanceFromBottom(Math.round(distance));
     setShowJumpToBottom(!atBottom);
-  }
-
-  function jumpToBottom() {
-    stickToBottomRef.current = true;
-    setShowJumpToBottom(false);
-    scrollToBottom();
   }
 
   function handleAskAnswered(ask: AskActivity, selected: string[], freeText: string) {
@@ -304,7 +321,7 @@ export function MessageList() {
       </div>
       {showJumpToBottom ? (
         <button
-          className="absolute bottom-[calc(var(--chat-dock-height,10rem)+1rem)] left-1/2 z-40 flex h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground md:bottom-4 md:z-20"
+          className="absolute bottom-4 left-1/2 z-20 hidden h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground md:flex"
           type="button"
           onClick={jumpToBottom}
         >
@@ -353,8 +370,8 @@ function ErrorNotice({
   );
 }
 
-function isNearScrollBottom(element: HTMLElement) {
-  return element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+function scrollDistanceToBottom(element: HTMLElement) {
+  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
 }
 
 function loadingStatusText(statusText?: string) {
