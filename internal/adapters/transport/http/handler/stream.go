@@ -493,6 +493,8 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			return
 		}
 
+		clearSSEWriteDeadline(c.Writer)
+
 		// 解析起始 offset：优先 Last-Event-ID（SSE 标准重连机制），其次 query 参数
 		var offset uint64
 		if lastID := c.GetHeader("Last-Event-ID"); lastID != "" {
@@ -558,6 +560,12 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			case <-notify:
 			}
 		}
+	}
+}
+
+func clearSSEWriteDeadline(w http.ResponseWriter) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		log.Printf("[stream] clear SSE write deadline failed: %v", err)
 	}
 }
 
