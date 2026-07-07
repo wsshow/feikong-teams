@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { LoadingSurface } from "@/components/ui/loading-surface";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import type {
@@ -1031,7 +1032,12 @@ function AgentDraftDialog({
   const selectedDrafts = drafts.filter((agent) => selected.has(agent.id || agent.name || ""));
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6" role="dialog" aria-modal="true">
-      <div className="sketch-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+        {loading ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/75 backdrop-blur-[1px]">
+            <LoadingSurface label="正在生成智能体草稿" />
+          </div>
+        ) : null}
         <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 font-semibold">
@@ -1040,16 +1046,17 @@ function AgentDraftDialog({
             </div>
             <div className="mt-1 text-sm leading-6 text-muted-foreground">描述你需要的角色、数量、职责和工具偏好，生成后确认添加到当前配置草稿。</div>
           </div>
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭">
+          <Button size="icon" variant="ghost" disabled={loading} onClick={onClose} aria-label="关闭">
             <X className="h-4 w-4" />
           </Button>
         </div>
 
-        <div className="chat-scroll min-h-0 flex-1 overflow-auto p-4">
+        <div className={cn("chat-scroll min-h-0 flex-1 p-4", loading ? "overflow-hidden" : "overflow-auto")}>
           <div className="grid gap-4">
             <Field label="创建要求">
               <Textarea
                 className="min-h-28 text-sm"
+                disabled={loading}
                 value={instruction}
                 placeholder="例如：创建三个研发协作智能体，分别负责前端实现、后端接口和测试验收，提示词要明确边界和输出格式。"
                 onChange={(event) => setInstruction(event.target.value)}
@@ -1064,7 +1071,7 @@ function AgentDraftDialog({
                   const checked = selected.has(id);
                   return (
                     <label key={id} className="flex cursor-pointer gap-3 rounded-xl border border-border/75 bg-background/45 p-3">
-                      <input className="mt-1 h-4 w-4 shrink-0 accent-primary" type="checkbox" checked={checked} onChange={() => toggle(id)} />
+                      <input className="mt-1 h-4 w-4 shrink-0 accent-primary" type="checkbox" disabled={loading} checked={checked} onChange={() => toggle(id)} />
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="font-medium">{agent.name || id}</span>
@@ -1084,7 +1091,7 @@ function AgentDraftDialog({
         </div>
 
         <div className="flex flex-col gap-2 border-t border-border/70 p-4 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" disabled={loading} onClick={onClose}>
             取消
           </Button>
           <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void generate()}>

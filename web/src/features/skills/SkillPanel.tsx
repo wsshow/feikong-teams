@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
+import { LoadingSurface } from "@/components/ui/loading-surface";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import type { SkillCreateRequest, SkillFileEntry, SkillInfo } from "@/types/skills";
@@ -731,6 +732,8 @@ function CreateSkillDialog({
   onGenerateCreate: () => void;
   onCreate: () => void;
 }) {
+  const busy = generating || creating;
+
   function update<K extends keyof SkillCreateRequest>(key: K, value: SkillCreateRequest[K]) {
     const next = { ...draft, [key]: value };
     if (key === "name" && (!draft.slug || draft.slug === slugifySkill(draft.name))) {
@@ -743,12 +746,22 @@ function CreateSkillDialog({
   }
 
   return (
-    <Dialog open={open} title="新建技能" onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      title="新建技能"
+      closeDisabled={busy}
+      overlay={busy ? <LoadingSurface label={generating && creating ? "正在生成并创建技能" : generating ? "正在生成技能草稿" : "正在创建技能"} /> : undefined}
+      onOpenChange={(next) => {
+        if (busy && !next) return;
+        onOpenChange(next);
+      }}
+    >
       <div className="space-y-5">
         <div className="grid gap-3 rounded-lg border border-border/75 bg-card/60 p-3">
           <div className="text-sm font-medium">AI 创建</div>
           <Textarea
             className="min-h-24"
+            disabled={busy}
             value={aiInstruction}
             onChange={(event) => onInstructionChange(event.target.value)}
             placeholder="描述你想创建的技能，例如：帮我创建一个用于代码评审的技能，关注安全、测试和可维护性。"
@@ -768,28 +781,29 @@ function CreateSkillDialog({
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1 text-sm font-medium">
             <span>技能标识</span>
-            <Input value={draft.slug} onChange={(event) => update("slug", event.target.value)} placeholder="my_skill" />
+            <Input disabled={busy} value={draft.slug} onChange={(event) => update("slug", event.target.value)} placeholder="my_skill" />
           </label>
           <label className="space-y-1 text-sm font-medium">
             <span>技能名称</span>
-            <Input value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="我的技能" />
+            <Input disabled={busy} value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="我的技能" />
           </label>
         </div>
         <label className="space-y-1 text-sm font-medium">
           <span>描述</span>
-          <Input value={draft.description} onChange={(event) => update("description", event.target.value)} placeholder="一句话说明技能用途" />
+          <Input disabled={busy} value={draft.description} onChange={(event) => update("description", event.target.value)} placeholder="一句话说明技能用途" />
         </label>
         <label className="space-y-1 text-sm font-medium">
           <span>SKILL.md</span>
           <Textarea
             className="min-h-80 font-mono text-sm"
+            disabled={busy}
             value={draft.content}
             onChange={(event) => update("content", event.target.value)}
             spellCheck={false}
           />
         </label>
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
             取消
           </Button>
           <Button onClick={onCreate} disabled={creating || !draft.slug.trim() || !draft.name.trim() || !draft.content.trim()}>
