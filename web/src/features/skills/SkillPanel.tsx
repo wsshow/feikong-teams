@@ -438,7 +438,7 @@ export function SkillPanel() {
             setEntryDialogKind("directory");
             setEntryName("");
           }}
-          onDeleteFile={() => setDeleteFileTarget(activeFile)}
+          onDeleteEntry={setDeleteFileTarget}
           savingFile={savingFile}
         />
         <CreateSkillDialog
@@ -473,10 +473,10 @@ export function SkillPanel() {
         />
         <ConfirmDialog
           open={Boolean(deleteFileTarget)}
-          title="删除文件"
+          title="删除文件或目录"
           description={
             <>
-              文件或目录「<span className="font-medium text-foreground">{deleteFileTarget}</span>」将被删除，相关内容无法恢复。
+              「<span className="font-medium text-foreground">{deleteFileTarget}</span>」将被删除，相关内容无法恢复。
             </>
           }
           confirmLabel="确认删除"
@@ -622,7 +622,7 @@ function SkillDetail({
   onSaveFile,
   onCreateFile,
   onCreateDirectory,
-  onDeleteFile,
+  onDeleteEntry,
 }: {
   skill?: SkillInfo;
   installed: boolean;
@@ -641,7 +641,7 @@ function SkillDetail({
   onSaveFile: () => void;
   onCreateFile: () => void;
   onCreateDirectory: () => void;
-  onDeleteFile: () => void;
+  onDeleteEntry: (path: string) => void;
 }) {
   if (!skill) {
     return (
@@ -717,19 +717,33 @@ function SkillDetail({
               <div className="flex flex-wrap gap-2">
                 {files.map((file) => {
                   const Icon = file.is_dir ? Folder : FileText;
+                  const deletable = file.path !== "SKILL.md";
                   return (
-                    <button
+                    <div
                       key={file.path}
                       className={cn(
-                        "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm transition-colors hover:bg-accent/60",
+                        "inline-flex h-9 items-center overflow-hidden rounded-lg border text-sm transition-colors hover:bg-accent/60",
                         activeFile === file.path ? "border-primary/50 bg-primary/10 text-primary" : "border-border/75 bg-card/70",
                       )}
-                      onClick={() => (file.is_dir ? onOpenDirectory(file.path) : onOpenFile(file.path))}
                     >
-                      <Icon className="h-4 w-4" />
-                      <span>{file.name}</span>
-                      {file.size !== undefined && !file.is_dir ? <span className="text-xs text-muted-foreground">{formatSize(file.size)}</span> : null}
-                    </button>
+                      <button className="inline-flex h-full min-w-0 items-center gap-2 px-3" onClick={() => (file.is_dir ? onOpenDirectory(file.path) : onOpenFile(file.path))}>
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                        {file.size !== undefined && !file.is_dir ? <span className="shrink-0 text-xs text-muted-foreground">{formatSize(file.size)}</span> : null}
+                      </button>
+                      {deletable ? (
+                        <button
+                          className="flex h-full w-8 shrink-0 items-center justify-center border-l border-border/70 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`删除 ${file.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDeleteEntry(file.path);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
                   );
                 })}
                 {!files.length ? <div className="text-sm text-muted-foreground">暂无文件</div> : null}
@@ -746,12 +760,6 @@ function SkillDetail({
                         <Save className="h-4 w-4" />
                         保存
                       </Button>
-                      {activeFile !== "SKILL.md" ? (
-                        <Button size="sm" variant="ghost" onClick={onDeleteFile}>
-                          <Trash2 className="h-4 w-4" />
-                          删除
-                        </Button>
-                      ) : null}
                     </>
                   ) : null}
                 </div>
