@@ -575,6 +575,13 @@ func (s *runtimeMemberState) setStatusRunning() {
 	s.Status = "running"
 }
 
+func (s *runtimeMemberState) setStatusDone() {
+	if s == nil || s.hasPendingAsk() {
+		return
+	}
+	s.Status = "done"
+}
+
 func (m *runtimeModel) markMembersDirty() {
 	for _, member := range m.members {
 		member.markDirty()

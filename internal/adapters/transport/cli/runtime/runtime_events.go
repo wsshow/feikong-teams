@@ -150,7 +150,7 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 		if event.Content != "" && len(member.Blocks) == 0 {
 			member.appendOutput(agent, event.Content)
 		}
-		member.Status = "done"
+		member.setStatusDone()
 	case events.EventToolCallStarted:
 		member.ActiveOutput = -1
 		member.ActiveReason = -1
@@ -176,7 +176,7 @@ func (m *runtimeModel) applyMemberEvent(event events.Event) {
 			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockError, Title: agent, Content: msg})
 		}
 	case events.EventAgentCompleted:
-		member.Status = "done"
+		member.setStatusDone()
 	case events.EventSystemNotice:
 		if event.Content != "" {
 			member.markDirty()
@@ -210,9 +210,9 @@ func (m *runtimeModel) applyAgentToolResult(event events.Event) bool {
 	member.ActiveOutput = -1
 	member.ActiveReason = -1
 	if event.Type == events.EventToolCallResult {
-		member.Status = "running"
+		member.setStatusRunning()
 	} else {
-		member.Status = "done"
+		member.setStatusDone()
 	}
 	if event.Content != "" && len(member.Blocks) == 0 {
 		member.appendOutput(member.Name, event.Content)

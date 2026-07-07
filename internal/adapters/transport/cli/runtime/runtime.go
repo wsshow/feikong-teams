@@ -57,7 +57,12 @@ func (r *Runtime) Run() error {
 	defer resetTerminalModes()
 
 	view := &runtimeQueryView{}
-	askBroker := newRuntimeAskBroker(view.send)
+	askBroker := newRuntimeAskBroker(func(msg tea.Msg) {
+		if _, ok := msg.(runtimeAskPendingMsg); ok {
+			view.flushPending()
+		}
+		view.send(msg)
+	})
 	approvalBroker := newRuntimeApprovalBroker(view.send)
 	r.askBroker = askBroker
 	r.approval = approvalBroker

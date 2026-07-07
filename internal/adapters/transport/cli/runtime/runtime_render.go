@@ -204,6 +204,9 @@ func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtim
 	if block.Kind == runtimeBlockTool {
 		rendered := runtimeRenderToolBlock(block)
 		if askState := member.askForToolKey(block.ToolKey); askState != nil {
+			if m.memberView == member.Key && !askState.Answered {
+				return rendered
+			}
 			rendered += "\n" + m.renderAskPanel(*askState)
 		}
 		return rendered
@@ -266,6 +269,12 @@ func (m runtimeModel) renderBottom() string {
 	}
 	if m.ask != nil {
 		sb.WriteString(m.renderAskPanel(*m.ask))
+		if !strings.HasSuffix(sb.String(), "\n") {
+			sb.WriteString("\n")
+		}
+	}
+	if askState := m.currentMemberPendingAsk(); askState != nil {
+		sb.WriteString(m.renderAskPanel(*askState))
 		if !strings.HasSuffix(sb.String(), "\n") {
 			sb.WriteString("\n")
 		}

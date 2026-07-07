@@ -266,6 +266,107 @@ func TestRuntimeMemberAskSubmitDoesNotQueueSteering(t *testing.T) {
 	}
 }
 
+func TestRuntimeMemberAskSelectionKeysSubmitOption(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	broker := newRuntimeAskBroker(func(tea.Msg) {})
+	responseCh := make(chan *ask.AskResponse, 1)
+	broker.pending["ask-1"] = responseCh
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		askBroker:   broker,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.members["member-1"] = &runtimeMemberState{
+		Key:    "member-1",
+		Name:   "tester",
+		Status: "waiting",
+		PendingAsks: []runtimeAskState{{
+			ID:        "ask-1",
+			MemberKey: "member-1",
+			Question:  "Choose one",
+			Options:   []string{"A", "B"},
+		}},
+	}
+	model.memberView = "member-1"
+
+	updated, _ := model.Update(keyMsg("up", "", 0))
+	model = updated.(runtimeModel)
+	if got := model.members["member-1"].PendingAsks[0].SelectedIndex; got != 1 {
+		t.Fatalf("member ask up should select previous option, got %d", got)
+	}
+	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("member ask enter should not start a command")
+	}
+	if messages := executor.takeSteeringMessages(1); len(messages) != 0 {
+		t.Fatalf("member ask enter should not queue steering, got %#v", messages)
+	}
+	select {
+	case resp := <-responseCh:
+		if resp.AskID != "ask-1" || len(resp.Selected) != 1 || resp.Selected[0] != "B" {
+			t.Fatalf("unexpected member ask response: %#v", resp)
+		}
+	default:
+		t.Fatal("expected member ask response to be submitted")
+	}
+}
+
+func TestRuntimeMemberAskAllowsFreeTextInput(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	broker := newRuntimeAskBroker(func(tea.Msg) {})
+	responseCh := make(chan *ask.AskResponse, 1)
+	broker.pending["ask-1"] = responseCh
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		askBroker:   broker,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.members["member-1"] = &runtimeMemberState{
+		Key:    "member-1",
+		Name:   "tester",
+		Status: "waiting",
+		PendingAsks: []runtimeAskState{{
+			ID:        "ask-1",
+			MemberKey: "member-1",
+			Question:  "Choose one",
+			Options:   []string{"A", "B"},
+		}},
+	}
+	model.memberView = "member-1"
+
+	updated, _ := model.Update(keyMsg("", "O", 'O'))
+	model = updated.(runtimeModel)
+	if got := model.input.Value(); got != "O" {
+		t.Fatalf("member ask should accept free text input, got %q", got)
+	}
+	model.input.SetValue("Other")
+	model.input.CursorEnd()
+	updated, _ = model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+
+	select {
+	case resp := <-responseCh:
+		if resp.AskID != "ask-1" || resp.FreeText != "Other" {
+			t.Fatalf("unexpected member ask free text response: %#v", resp)
+		}
+	default:
+		t.Fatal("expected member ask free text response to be submitted")
+	}
+}
+
 func TestRuntimeRootAskSubmitDoesNotQueueSteering(t *testing.T) {
 	state := NewQueryState()
 	state.StartQuery()
@@ -423,6 +524,24 @@ func TestRuntimeMemberWaitingStatusSurvivesMemberEvents(t *testing.T) {
 	}
 	if member.Status != "waiting" {
 		t.Fatalf("pending ask member should stay waiting, got %q", member.Status)
+	}
+
+	model.applyEvent(events.Event{
+		Type:         events.EventAssistantCompleted,
+		MemberCallID: "member-1",
+		MemberName:   "tester",
+	})
+	if member.Status != "waiting" {
+		t.Fatalf("assistant completed should not finish pending ask member, got %q", member.Status)
+	}
+
+	model.applyEvent(events.Event{
+		Type:         events.EventAgentCompleted,
+		MemberCallID: "member-1",
+		MemberName:   "tester",
+	})
+	if member.Status != "waiting" {
+		t.Fatalf("agent completed should not finish pending ask member, got %q", member.Status)
 	}
 }
 

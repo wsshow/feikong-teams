@@ -257,16 +257,72 @@ func (m runtimeModel) submitAskResponse(resp *ask.AskResponse) bool {
 	return m.runtime.submitAsk(resp.AskID, resp)
 }
 
+func (m runtimeModel) updateCurrentMemberAsk(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	askState := m.currentMemberPendingAsk()
+	if askState == nil {
+		return m, nil
+	}
+	switch msg.String() {
+	case "ctrl+c":
+		m.submitAskResponse(&ask.AskResponse{AskID: askState.ID})
+		return m.startRuntimeCancel()
+	case "esc", "left":
+		m.memberView = ""
+		return m, nil
+	case "backspace":
+		if m.input.Value() == "" {
+			m.memberView = ""
+			return m, nil
+		}
+	case "up", "k":
+		if len(askState.Options) > 0 {
+			askState.SelectedIndex = (askState.SelectedIndex + len(askState.Options) - 1) % len(askState.Options)
+			if member := m.currentMember(); member != nil {
+				member.markDirty()
+			}
+		}
+		return m, nil
+	case "down", "j", "tab":
+		if len(askState.Options) > 0 {
+			askState.SelectedIndex = (askState.SelectedIndex + 1) % len(askState.Options)
+			if member := m.currentMember(); member != nil {
+				member.markDirty()
+			}
+		}
+		return m, nil
+	case "pgup":
+		m.scrollCurrentView(max(1, m.bodyHeight()/2))
+		return m, nil
+	case "pgdown":
+		m.scrollCurrentView(-max(1, m.bodyHeight()/2))
+		return m, nil
+	case "home":
+		m.setCurrentScrollOffset(tui.LineCount(m.transcriptText()))
+		return m, nil
+	case "end":
+		m.setCurrentScrollOffset(0)
+		return m, nil
+	case "enter":
+		return m.submitCurrentMemberAsk()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
 func (m runtimeModel) submitCurrentMemberAsk() (tea.Model, tea.Cmd) {
 	askState := m.currentMemberPendingAsk()
 	if askState == nil {
 		return m, nil
 	}
 	input := strings.TrimSpace(m.expandInput())
-	if input == "" {
-		return m, nil
+	var resp *ask.AskResponse
+	if input != "" {
+		resp = parseRuntimeAskResponse(*askState, input)
 	}
-	resp := parseRuntimeAskResponse(*askState, input)
+	if resp == nil && len(askState.Options) > 0 {
+		resp = parseRuntimeAskOptionResponse(*askState)
+	}
 	if resp == nil {
 		return m, nil
 	}

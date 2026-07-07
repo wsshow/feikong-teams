@@ -170,19 +170,20 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAsk(msg)
 		}
 		if m.memberView != "" {
+			if m.currentMemberPendingAsk() != nil {
+				return m.updateCurrentMemberAsk(msg)
+			}
 			switch msg.String() {
 			case "esc", "left":
 				m.memberView = ""
 				return m, nil
 			case "backspace":
-				if m.currentMemberPendingAsk() == nil || m.input.Value() == "" {
-					m.memberView = ""
-					return m, nil
-				}
+				m.memberView = ""
+				return m, nil
 			case "up":
 				m.scrollCurrentView(runtimeWheelLines)
 				return m, nil
-			case "down":
+			case "down", "tab":
 				m.scrollCurrentView(-runtimeWheelLines)
 				return m, nil
 			case "pgup":
@@ -198,12 +199,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setCurrentScrollOffset(0)
 				return m, nil
 			case "enter":
-				if m.currentMemberPendingAsk() != nil {
-					return m.submitCurrentMemberAsk()
-				}
 				return m, nil
 			}
-			if msg.String() != "ctrl+c" && m.currentMemberPendingAsk() == nil {
+			if msg.String() != "ctrl+c" {
 				return m, nil
 			}
 		}
