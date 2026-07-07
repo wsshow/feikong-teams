@@ -34,6 +34,7 @@ type Runtime struct {
 	runner      runtimeport.Runner
 	executor    *QueryExecutor
 	askBroker   *runtimeAskBroker
+	approval    *runtimeApprovalBroker
 	exitSignals chan os.Signal
 	program     *tea.Program
 }
@@ -57,10 +58,13 @@ func (r *Runtime) Run() error {
 
 	view := &runtimeQueryView{}
 	askBroker := newRuntimeAskBroker(view.send)
+	approvalBroker := newRuntimeApprovalBroker(view.send)
 	r.askBroker = askBroker
+	r.approval = approvalBroker
 	r.executor.SetApproveStores(r.session.ApproveStores)
 	r.executor.SetView(view)
 	r.executor.SetAskRuntimeHandler(askBroker.Handle)
+	view.approval = approvalBroker
 
 	model := newRuntimeModel(r)
 	p := tea.NewProgram(model)
@@ -112,6 +116,13 @@ func (r *Runtime) submitAsk(askID string, resp *ask.AskResponse) bool {
 		return false
 	}
 	return r.askBroker.Submit(askID, resp)
+}
+
+func (r *Runtime) submitApproval(id string, decision int) bool {
+	if r == nil || r.approval == nil {
+		return false
+	}
+	return r.approval.Submit(id, decision)
 }
 
 func (r *Runtime) requestExit() {

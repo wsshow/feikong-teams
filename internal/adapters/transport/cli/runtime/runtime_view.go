@@ -1,8 +1,10 @@
 package runtime
 
 import (
+	"context"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/runtime/events"
+	"fmt"
 	"sync"
 	"time"
 
@@ -12,10 +14,11 @@ import (
 const runtimeDeltaFlushInterval = 35 * time.Millisecond
 
 type runtimeQueryView struct {
-	program *tea.Program
-	mu      sync.Mutex
-	pending *events.Event
-	timer   *time.Timer
+	program  *tea.Program
+	mu       sync.Mutex
+	pending  *events.Event
+	timer    *time.Timer
+	approval *runtimeApprovalBroker
 }
 
 func (v *runtimeQueryView) Start(input string) {
@@ -56,6 +59,14 @@ func (v *runtimeQueryView) CancelRequested() {
 
 func (v *runtimeQueryView) AutoReject() {
 	v.send(runtimeStatusMsg{text: "非交互模式，自动拒绝危险命令"})
+}
+
+func (v *runtimeQueryView) PromptApproval(ctx context.Context, info string) (int, error) {
+	if v.approval == nil {
+		return 0, fmt.Errorf("approval broker is not initialized")
+	}
+	v.flushPending()
+	return v.approval.Handle(ctx, info)
 }
 
 func (v *runtimeQueryView) sendEvent(event events.Event) {

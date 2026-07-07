@@ -6,6 +6,7 @@ import (
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 	"os"
 	"strings"
@@ -100,6 +101,115 @@ func TestRuntimeEnterWhileRunningQueuesSteering(t *testing.T) {
 	messages := executor.takeSteeringMessages(1)
 	if len(messages) != 1 || messages[0].Content != "change direction" {
 		t.Fatalf("expected queued steering message, got %#v", messages)
+	}
+}
+
+func TestRuntimeApprovalSubmitDoesNotQueueSteering(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	executor := NewQueryExecutor(nil, state)
+	broker := newRuntimeApprovalBroker(func(tea.Msg) {})
+	responseCh := make(chan int, 1)
+	broker.pending["approval-1"] = responseCh
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		executor:    executor,
+		approval:    broker,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.approval = &runtimeApprovalState{ID: "approval-1", Info: "file_list", Selected: 0}
+	model.input.SetValue("should not steer")
+	model.input.CursorEnd()
+
+	updated, cmd := model.Update(keyMsg("enter", "", 0))
+	model = updated.(runtimeModel)
+	if cmd != nil {
+		t.Fatal("approval submit should not start a command")
+	}
+	if messages := executor.takeSteeringMessages(1); len(messages) != 0 {
+		t.Fatalf("approval submit should not queue steering, got %#v", messages)
+	}
+	select {
+	case decision := <-responseCh:
+		if decision != approval.ApproveOnce {
+			t.Fatalf("approval decision = %d, want %d", decision, approval.ApproveOnce)
+		}
+	default:
+		t.Fatal("expected approval decision to be submitted")
+	}
+}
+
+func TestRuntimeApprovalKeysDoNotNavigateHistory(t *testing.T) {
+	session := NewSession(ModeTeam, nil, nil)
+	session.InputHistory = []string{"old", "new"}
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.approval = &runtimeApprovalState{ID: "approval-1", Info: "file_list", Selected: 0}
+
+	updated, _ := model.Update(keyMsg("up", "", 0))
+	model = updated.(runtimeModel)
+	if got := model.input.Value(); got != "" {
+		t.Fatalf("approval up should not load history, got %q", got)
+	}
+	if got := model.approval.Selected; got != len(runtimeApprovalOptions())-1 {
+		t.Fatalf("approval up should wrap to last option, got %d", got)
+	}
+	updated, _ = model.Update(keyMsg("down", "", 0))
+	model = updated.(runtimeModel)
+	if got := model.approval.Selected; got != 0 {
+		t.Fatalf("approval down should move selection, got %d", got)
+	}
+}
+
+func TestRuntimeApprovalCtrlCRejectsAndCancels(t *testing.T) {
+	state := NewQueryState()
+	state.StartQuery()
+	cancelled := false
+	state.SetCancelFunc(func() { cancelled = true })
+	session := NewSession(ModeTeam, nil, nil)
+	session.queryState = state
+	broker := newRuntimeApprovalBroker(func(tea.Msg) {})
+	responseCh := make(chan int, 1)
+	broker.pending["approval-1"] = responseCh
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     session,
+		approval:    broker,
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.running = true
+	model.approval = &runtimeApprovalState{ID: "approval-1", Info: "file_list", Selected: 0}
+
+	updated, cmd := model.Update(ctrlCKeyMsg())
+	model = updated.(runtimeModel)
+	if cmd == nil {
+		t.Fatal("approval Ctrl+C should request cancellation")
+	}
+	msg := cmd()
+	if _, ok := msg.(runtimeCancellingMsg); !ok {
+		t.Fatalf("unexpected cancellation message: %T", msg)
+	}
+	if !cancelled {
+		t.Fatal("approval Ctrl+C should cancel the running query")
+	}
+	select {
+	case decision := <-responseCh:
+		if decision != approval.Reject {
+			t.Fatalf("approval decision = %d, want %d", decision, approval.Reject)
+		}
+	default:
+		t.Fatal("expected approval Ctrl+C to submit rejection")
+	}
+	if model.approval != nil {
+		t.Fatal("approval panel should be cleared after Ctrl+C")
 	}
 }
 

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/cli/eventview"
 	"fkteams/internal/runtime/events"
@@ -22,6 +23,10 @@ type QueryView interface {
 	Done(time.Duration)
 	CancelRequested()
 	AutoReject()
+}
+
+type approvalPromptView interface {
+	PromptApproval(context.Context, string) (int, error)
 }
 
 // TerminalQueryView 保留传统非交互输出方式，交互 TUI runtime 不再使用它。

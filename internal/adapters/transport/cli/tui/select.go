@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -164,11 +165,19 @@ func (m selectModel) View() tea.View {
 // SelectFromList 显示可过滤的选择列表，返回选中项的 Value
 // height 可选，默认 10 行
 func SelectFromList(title string, items []SelectItem, height ...int) (string, error) {
+	return SelectFromListContext(context.Background(), title, items, height...)
+}
+
+// SelectFromListContext 显示可过滤的选择列表，并在 context 取消时结束。
+func SelectFromListContext(ctx context.Context, title string, items []SelectItem, height ...int) (string, error) {
 	h := 10
 	if len(height) > 0 && height[0] > 0 {
 		h = height[0]
 	}
-	p := tea.NewProgram(newSelectModel(title, items, h))
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	p := tea.NewProgram(newSelectModel(title, items, h), tea.WithContext(ctx))
 	final, err := p.Run()
 	if err != nil {
 		return "", err

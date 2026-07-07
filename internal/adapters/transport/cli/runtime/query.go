@@ -277,11 +277,23 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	var handler runtimeport.InterruptHandler
 	if !e.autoReject {
-		handler = appchat.InfoInterruptHandler(func(info any) (any, bool) {
-			if askInfo, ok := info.(*ask.AskInfo); ok {
-				return e.promptAskQuestions(askInfo), true
+		handler = runtimeport.InterruptHandler(func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
+			targets := make(runtimeport.InterruptDecisions, len(interrupts))
+			for _, ic := range interrupts {
+				if !ic.IsRootCause {
+					continue
+				}
+				if askInfo, ok := ic.Info.(*ask.AskInfo); ok {
+					targets[ic.ID] = e.promptAskQuestions(askInfo)
+					continue
+				}
+				decision, err := e.promptApproval(ctx, ic.Info)
+				if err != nil {
+					return nil, err
+				}
+				targets[ic.ID] = decision
 			}
-			return e.promptApproval(), true
+			return targets, nil
 		})
 	}
 
@@ -357,34 +369,36 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 }
 
 // promptApproval 提示用户审批，返回审批决定
-func (e *QueryExecutor) promptApproval() int {
+func (e *QueryExecutor) promptApproval(ctx context.Context, info any) (int, error) {
 	if e.autoReject {
 		e.view.AutoReject()
-		return approval.Reject
+		return approval.Reject, nil
 	}
 
-	fmt.Println()
-	options := []string{
-		"允许一次",
-		"该会话允许该项",
-		"该会话允许所有",
-		"拒绝执行",
+	if promptView, ok := e.view.(approvalPromptView); ok {
+		return promptView.PromptApproval(ctx, fmt.Sprint(info))
 	}
-	selected, _ := pterm.DefaultInteractiveSelect.
-		WithDefaultText("请选择操作").
-		WithOptions(options).
-		Show()
-	fmt.Println()
+
+	items := []tui.SelectItem{
+		{Label: "允许一次", Value: "once"},
+		{Label: "该会话允许该项", Value: "item"},
+		{Label: "该会话允许所有", Value: "all"},
+		{Label: "拒绝执行", Value: "reject"},
+	}
+	selected, err := tui.SelectFromListContext(ctx, "请选择操作", items, len(items))
+	if err != nil {
+		return approval.Reject, nil
+	}
 
 	switch selected {
-	case "允许一次":
-		return approval.ApproveOnce
-	case "该会话允许该项":
-		return approval.ApproveItem
-	case "该会话允许所有":
-		return approval.ApproveAll
+	case "once":
+		return approval.ApproveOnce, nil
+	case "item":
+		return approval.ApproveItem, nil
+	case "all":
+		return approval.ApproveAll, nil
 	default:
-		return approval.Reject
+		return approval.Reject, nil
 	}
 }
 

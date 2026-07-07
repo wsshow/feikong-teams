@@ -34,6 +34,7 @@ type runtimeModel struct {
 	members      map[string]*runtimeMemberState
 	memberTools  map[string]string
 	memberView   string
+	approval     *runtimeApprovalState
 }
 
 type runtimeSelectionCopiedTickMsg time.Time

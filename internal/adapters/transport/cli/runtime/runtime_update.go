@@ -62,6 +62,15 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runtimeAskCancelledMsg:
 		m.applyAskCancelled(msg.askID)
 		return m, nil
+	case runtimeApprovalPendingMsg:
+		m.applyApprovalPending(msg.approval)
+		return m, nil
+	case runtimeApprovalAnsweredMsg:
+		m.applyApprovalAnswered(msg.id, msg.decision)
+		return m, nil
+	case runtimeApprovalCancelledMsg:
+		m.applyApprovalCancelled(msg.id)
+		return m, nil
 	case runtimeCancellingMsg:
 		m.cancelling = true
 		m.status = "正在取消当前任务..."
@@ -154,6 +163,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.insertPaste(strings.TrimRight(content, "\n\r")), nil
 		}
 	case tea.KeyPressMsg:
+		if m.approval != nil {
+			return m.updateApproval(msg)
+		}
 		if m.memberView != "" {
 			switch msg.String() {
 			case "esc", "left":

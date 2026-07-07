@@ -264,6 +264,12 @@ func (m runtimeModel) renderBottom() string {
 			sb.WriteString("\n")
 		}
 	}
+	if m.approval != nil {
+		sb.WriteString(m.renderApprovalPanel())
+		if !strings.HasSuffix(sb.String(), "\n") {
+			sb.WriteString("\n")
+		}
+	}
 	if m.currentScrollOffset() > 0 {
 		writeStatusLine(tui.CenterLine(tui.JumpToBottomButton(), m.contentWidth()))
 	}
@@ -329,6 +335,15 @@ func (m runtimeModel) memberDetailHint() string {
 }
 
 func (m runtimeModel) inputHint() string {
+	if m.approval != nil {
+		return strings.Join([]string{
+			"权限审批",
+			"↑↓ 选择",
+			"Enter 确认",
+			"Esc 拒绝",
+			"Ctrl+C 取消任务",
+		}, " · ")
+	}
 	if m.running {
 		return strings.Join([]string{
 			runtimeModeName(m.runtime.session.CurrentMode),
