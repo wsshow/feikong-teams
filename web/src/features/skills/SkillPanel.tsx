@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog, TextInputDialog } from "@/components/ui/action-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { LoadingSurface } from "@/components/ui/loading-surface";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
@@ -43,6 +44,7 @@ import { cn } from "@/lib/cn";
 import type { SkillCreateRequest, SkillFileEntry, SkillInfo } from "@/types/skills";
 
 type SkillView = "installed" | "market";
+type SkillEntryKind = "file" | "directory";
 
 export function SkillPanel() {
   const dispatch = useAppDispatch();
@@ -65,6 +67,11 @@ export function SkillPanel() {
   const [generatingSkill, setGeneratingSkill] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("");
   const [skillDraft, setSkillDraft] = useState<SkillCreateRequest>(() => emptySkillDraft());
+  const [entryDialogKind, setEntryDialogKind] = useState<SkillEntryKind | null>(null);
+  const [entryName, setEntryName] = useState("");
+  const [creatingEntry, setCreatingEntry] = useState(false);
+  const [deleteFileTarget, setDeleteFileTarget] = useState("");
+  const [deleteSkillTarget, setDeleteSkillTarget] = useState<SkillInfo | null>(null);
   const installedSlugs = useMemo(() => new Set(local.map((skill) => skill.slug)), [local]);
   const selectedSkill =
     local.find((skill) => skill.slug === selectedSlug) || results.find((skill) => skill.slug === selectedSlug);
@@ -244,29 +251,34 @@ export function SkillPanel() {
     }
   }
 
-  async function createFileEntry(isDir: boolean) {
+  async function createFileEntry() {
     if (!selectedSlug) return;
-    const name = window.prompt(isDir ? "输入目录名" : "输入文件名");
-    const trimmed = name?.trim();
+    const trimmed = entryName.trim();
+    const isDir = entryDialogKind === "directory";
     if (!trimmed) return;
     const path = filePath ? `${filePath}/${trimmed}` : trimmed;
+    setCreatingEntry(true);
     try {
       await createSkillFile(selectedSlug, path, "", isDir);
+      setEntryDialogKind(null);
+      setEntryName("");
       await openDirectory(selectedSlug, filePath);
       dispatch(appActions.showToast(isDir ? "目录已创建" : "文件已创建"));
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setCreatingEntry(false);
     }
   }
 
-  async function deleteActiveFile() {
-    if (!selectedSlug || !activeFile) return;
-    if (!window.confirm("确定删除这个文件或目录吗？")) return;
+  async function confirmDeleteFile() {
+    if (!selectedSlug || !deleteFileTarget) return;
     try {
-      await deleteSkillFile(selectedSlug, activeFile);
+      await deleteSkillFile(selectedSlug, deleteFileTarget);
       setActiveFile("");
       setContent("");
       setEditorContent("");
+      setDeleteFileTarget("");
       await openDirectory(selectedSlug, filePath);
       dispatch(appActions.showToast("文件已删除"));
     } catch (error) {
@@ -291,7 +303,13 @@ export function SkillPanel() {
   }
 
   async function remove(slug: string) {
-    if (!window.confirm("确定删除这个技能吗？")) return;
+    const skill = local.find((item) => item.slug === slug) || results.find((item) => item.slug === slug) || { slug };
+    setDeleteSkillTarget(skill);
+  }
+
+  async function confirmRemoveSkill() {
+    if (!deleteSkillTarget) return;
+    const slug = deleteSkillTarget.slug;
     setBusySlug(slug);
     try {
       await removeSkill(slug);
@@ -302,6 +320,7 @@ export function SkillPanel() {
         setEditorContent("");
       }
       await loadLocal();
+      setDeleteSkillTarget(null);
       dispatch(appActions.showToast("技能已删除"));
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
@@ -411,9 +430,15 @@ export function SkillPanel() {
           onOpenFile={(path) => void openFile(path)}
           onEditorChange={setEditorContent}
           onSaveFile={() => void saveActiveFile()}
-          onCreateFile={() => void createFileEntry(false)}
-          onCreateDirectory={() => void createFileEntry(true)}
-          onDeleteFile={() => void deleteActiveFile()}
+          onCreateFile={() => {
+            setEntryDialogKind("file");
+            setEntryName("");
+          }}
+          onCreateDirectory={() => {
+            setEntryDialogKind("directory");
+            setEntryName("");
+          }}
+          onDeleteFile={() => setDeleteFileTarget(activeFile)}
           savingFile={savingFile}
         />
         <CreateSkillDialog
@@ -428,6 +453,52 @@ export function SkillPanel() {
           onGenerate={() => void generateDraft()}
           onGenerateCreate={() => void generateAndCreateSkill()}
           onCreate={() => void createCustomSkill()}
+        />
+        <TextInputDialog
+          open={Boolean(entryDialogKind)}
+          title={entryDialogKind === "directory" ? "新建目录" : "新建文件"}
+          label={entryDialogKind === "directory" ? "目录名" : "文件名"}
+          description={filePath ? `将在 /${filePath} 下创建。` : "将在技能根目录下创建。"}
+          value={entryName}
+          placeholder={entryDialogKind === "directory" ? "references" : "notes.md"}
+          confirmLabel={entryDialogKind === "directory" ? "创建目录" : "创建文件"}
+          busy={creatingEntry}
+          onValueChange={setEntryName}
+          onCancel={() => {
+            if (creatingEntry) return;
+            setEntryDialogKind(null);
+            setEntryName("");
+          }}
+          onConfirm={() => void createFileEntry()}
+        />
+        <ConfirmDialog
+          open={Boolean(deleteFileTarget)}
+          title="删除文件"
+          description={
+            <>
+              文件或目录「<span className="font-medium text-foreground">{deleteFileTarget}</span>」将被删除，相关内容无法恢复。
+            </>
+          }
+          confirmLabel="确认删除"
+          destructive
+          onCancel={() => setDeleteFileTarget("")}
+          onConfirm={() => void confirmDeleteFile()}
+        />
+        <ConfirmDialog
+          open={Boolean(deleteSkillTarget)}
+          title="删除技能"
+          description={
+            <>
+              技能「<span className="font-medium text-foreground">{deleteSkillTarget?.name || deleteSkillTarget?.slug}</span>」会从本地移除，技能文件也将被删除。
+            </>
+          }
+          confirmLabel="确认删除"
+          destructive
+          busy={Boolean(deleteSkillTarget && busySlug === deleteSkillTarget.slug)}
+          onCancel={() => {
+            if (!busySlug) setDeleteSkillTarget(null);
+          }}
+          onConfirm={() => void confirmRemoveSkill()}
         />
       </div>
     </div>

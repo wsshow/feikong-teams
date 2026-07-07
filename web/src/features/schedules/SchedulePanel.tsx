@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/action-dialog";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { cn } from "@/lib/cn";
@@ -52,6 +53,8 @@ export function SchedulePanel() {
   const [busyID, setBusyID] = useState("");
   const [form, setForm] = useState<ScheduleFormState | undefined>();
   const [saving, setSaving] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<ScheduleTask | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ScheduleTask | null>(null);
   const selectedTask = tasks.find((task) => task.id === selectedID);
   const counts = useMemo(() => countTasks(tasks), [tasks]);
   const filteredTasks = useMemo(() => {
@@ -97,10 +100,17 @@ export function SchedulePanel() {
   }
 
   async function cancel(id: string) {
-    if (!window.confirm("确定取消这个任务吗？")) return;
+    const task = tasks.find((item) => item.id === id);
+    setCancelTarget(task || { id, task: "", status: "" });
+  }
+
+  async function confirmCancel() {
+    if (!cancelTarget) return;
+    const id = cancelTarget.id;
     setBusyID(id);
     try {
       await cancelSchedule(id);
+      setCancelTarget(null);
       dispatch(appActions.showToast("任务已取消"));
       await load();
     } catch (error) {
@@ -134,7 +144,13 @@ export function SchedulePanel() {
   }
 
   async function remove(id: string) {
-    if (!window.confirm("确定删除这个任务及其历史结果吗？")) return;
+    const task = tasks.find((item) => item.id === id);
+    setDeleteTarget(task || { id, task: "", status: "" });
+  }
+
+  async function confirmRemove() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
     setBusyID(id);
     try {
       await deleteSchedule(id);
@@ -143,6 +159,7 @@ export function SchedulePanel() {
         setResultContent("");
         setHistoryEntries([]);
       }
+      setDeleteTarget(null);
       dispatch(appActions.showToast("任务已删除"));
       await load();
     } catch (error) {
@@ -243,6 +260,37 @@ export function SchedulePanel() {
           onEdit={startEdit}
           onCancel={(id) => void cancel(id)}
           onDelete={(id) => void remove(id)}
+        />
+        <ConfirmDialog
+          open={Boolean(cancelTarget)}
+          title="取消任务"
+          description={
+            <>
+              任务「<span className="font-medium text-foreground">{cancelTarget?.task || shortID(cancelTarget?.id || "")}</span>」将停止后续执行。
+            </>
+          }
+          confirmLabel="确认取消"
+          busy={Boolean(cancelTarget && busyID === cancelTarget.id)}
+          onCancel={() => {
+            if (!busyID) setCancelTarget(null);
+          }}
+          onConfirm={() => void confirmCancel()}
+        />
+        <ConfirmDialog
+          open={Boolean(deleteTarget)}
+          title="删除任务"
+          description={
+            <>
+              任务「<span className="font-medium text-foreground">{deleteTarget?.task || shortID(deleteTarget?.id || "")}</span>」及其历史结果将被删除，无法恢复。
+            </>
+          }
+          confirmLabel="确认删除"
+          destructive
+          busy={Boolean(deleteTarget && busyID === deleteTarget.id)}
+          onCancel={() => {
+            if (!busyID) setDeleteTarget(null);
+          }}
+          onConfirm={() => void confirmRemove()}
         />
       </div>
     </div>
