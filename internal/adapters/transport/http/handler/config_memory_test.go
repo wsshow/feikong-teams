@@ -158,6 +158,46 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigHandlerFiltersBuiltinAgents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{})
+
+	next := config.Config{
+		Models: []config.ModelConfig{{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}}},
+		Agents: config.Agents{
+			Items: []config.AgentConfig{
+				{ID: "coordinator", Name: "覆盖协调者", Prompt: "local prompt", Enabled: false},
+				{ID: "coder", Name: "覆盖代码工程师", Builtin: true, Enabled: false},
+				{ID: "custom-agent", Name: "自定义智能体", Prompt: "custom prompt", Enabled: true},
+			},
+		},
+	}
+	body, err := json.Marshal(next)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+
+	router := gin.New()
+	router.POST("/config", UpdateConfigHandlerWithState(nil))
+	resp := performJSON(router, http.MethodPost, "/config", string(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("update config status = %d: %s", resp.Code, resp.Body.String())
+	}
+
+	got := config.Get()
+	if findAgentConfigForTest(got.Agents.Items, "coordinator") != nil {
+		t.Fatalf("coordinator should not be persisted: %#v", got.Agents.Items)
+	}
+	gotCoder := findAgentConfigForTest(got.Agents.Items, "coder")
+	if gotCoder == nil || gotCoder.Enabled || gotCoder.Name != "" || gotCoder.Prompt != "" {
+		t.Fatalf("builtin member should persist only enabled override: %#v", got.Agents.Items)
+	}
+	gotAgent := findAgentConfigForTest(got.Agents.Items, "custom-agent")
+	if gotAgent == nil || gotAgent.Prompt != "custom prompt" {
+		t.Fatalf("custom agent should be persisted: %#v", got.Agents.Items)
+	}
+}
+
 func findAgentConfigForTest(items []config.AgentConfig, id string) *config.AgentConfig {
 	for i := range items {
 		if items[i].ID == id {

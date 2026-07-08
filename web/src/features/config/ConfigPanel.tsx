@@ -4,6 +4,7 @@ import {
   Cable,
   Check,
   ChevronDown,
+  Copy,
   Database,
   KeyRound,
   Layers,
@@ -102,7 +103,7 @@ export function ConfigPanel() {
     if (!draft) return;
     setSaving(true);
     try {
-      await saveConfig(normalizeConfig(draft));
+      await saveConfig(normalizeConfigForSave(draft));
       dispatch(appActions.showToast("配置已保存"));
       await load();
     } catch (error) {
@@ -586,9 +587,27 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
     setDeleteAgentTarget(null);
   }
 
+  function duplicateBuiltinAgent(agent: AgentConfig) {
+    const nextID = uniqueAgentID(agentItems, `${agent.id || agent.name || "agent"}_custom`);
+    const copy: AgentConfig = {
+      ...agent,
+      id: nextID,
+      name: `${agent.name || agent.id || "智能体"} 副本`,
+      builtin: undefined,
+      team_member: undefined,
+      enabled: true,
+    };
+    updateDraft((next) => {
+      const items = next.agents?.items || [];
+      next.agents = { ...(next.agents || {}), items: [...items, copy] };
+    });
+    setExpandedAgentKey(`${nextID}-${agentItems.length}`);
+    dispatch(appActions.showToast("已复制为自定义智能体"));
+  }
+
   return (
     <Panel>
-      <SectionHeader icon={Brain} title="智能体目录" description="查看和配置全局可调用智能体，内置智能体支持开关和覆盖配置。">
+      <SectionHeader icon={Brain} title="智能体目录" description="内置智能体只读展示；需要调整时可复制为自定义智能体。">
         <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => setAssistantOpen(true)}>
             <Sparkles className="h-4 w-4" />
@@ -658,6 +677,7 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
               agent={agent}
               expanded={expanded}
               onToggle={() => setExpandedAgentKey(expanded ? null : agentKey)}
+              onDuplicate={agent.builtin ? () => duplicateBuiltinAgent(agent) : undefined}
               onRemove={
                 agent.builtin
                   ? undefined
@@ -668,6 +688,8 @@ function AgentsTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: s
                 agent={agent}
                 modelIDs={modelIDs}
                 toolOptions={toolOptions}
+                readOnly={Boolean(agent.builtin)}
+                enabledReadOnly={Boolean(agent.builtin && agent.id === "coordinator")}
                 onChange={(value) =>
                   updateDraft((next) => {
                     const items = [...(next.agents?.items || [])];
@@ -691,12 +713,14 @@ function AgentConfigCard({
   agent,
   expanded,
   onToggle,
+  onDuplicate,
   onRemove,
   children,
 }: {
   agent: AgentConfig;
   expanded: boolean;
   onToggle: () => void;
+  onDuplicate?: () => void;
   onRemove?: () => void;
   children: React.ReactNode;
 }) {
@@ -724,13 +748,20 @@ function AgentConfigCard({
         </div>
         <div className="flex items-center justify-between gap-2">
           <Button size="sm" variant={expanded ? "secondary" : "outline"} onClick={onToggle}>
-            {expanded ? "收起" : "编辑"}
+            {expanded ? "收起" : agent.builtin ? "查看" : "编辑"}
           </Button>
-          {onRemove ? (
-            <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          ) : null}
+          <div className="flex items-center gap-1">
+            {onDuplicate ? (
+              <Button size="icon" variant="ghost" onClick={onDuplicate} aria-label="复制为自定义">
+                <Copy className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {onRemove ? (
+              <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
       {expanded ? <div className="border-t border-border/70 p-4">{children}</div> : null}
@@ -1058,11 +1089,15 @@ function AgentCatalogEditor({
   agent,
   modelIDs,
   toolOptions,
+  readOnly = false,
+  enabledReadOnly = false,
   onChange,
 }: {
   agent: AgentConfig;
   modelIDs: string[];
   toolOptions: ToolSelectOption[];
+  readOnly?: boolean;
+  enabledReadOnly?: boolean;
   onChange: (value: AgentConfig) => void;
 }) {
   const usesSSH = (agent.tools || []).includes("ssh");
@@ -1073,54 +1108,59 @@ function AgentCatalogEditor({
         <Badge>{agent.builtin ? "内置" : "自定义"}</Badge>
         {agent.team_member ? <Badge>团队成员</Badge> : null}
         <Badge>{agent.enabled ? "已启用" : "已关闭"}</Badge>
+        {agent.builtin && agent.id === "coordinator" ? <Badge>核心入口</Badge> : null}
+        {readOnly ? <Badge>只读</Badge> : null}
       </div>
-      <ToggleField label="启用智能体" checked={Boolean(agent.enabled)} onChange={(value) => onChange({ ...agent, enabled: value })} />
+      <ToggleField label="启用智能体" checked={Boolean(agent.enabled)} disabled={enabledReadOnly} onChange={(value) => onChange({ ...agent, enabled: value })} />
       <div className="grid gap-3 md:grid-cols-3">
         <TextField
           label="ID"
           value={agent.id}
           onChange={(value) => onChange({ ...agent, id: value })}
-          disabled={Boolean(agent.builtin)}
+          disabled={readOnly || Boolean(agent.builtin)}
         />
-        <TextField label="名称" value={agent.name} onChange={(value) => onChange({ ...agent, name: value })} />
-        <ModelSelect label="模型 ID（可选）" value={agent.model_id} modelIDs={["", ...modelIDs]} onChange={(value) => onChange({ ...agent, model_id: value })} />
+        <TextField label="名称" value={agent.name} disabled={readOnly} onChange={(value) => onChange({ ...agent, name: value })} />
+        <ModelSelect label="模型 ID（可选）" value={agent.model_id} modelIDs={["", ...modelIDs]} disabled={readOnly} onChange={(value) => onChange({ ...agent, model_id: value })} />
       </div>
       <AITextField
         label="描述"
         scenario="agent_description"
         value={agent.description}
         context={{ agent_id: agent.id, agent_name: agent.name }}
+        disabled={readOnly}
         onChange={(value) => onChange({ ...agent, description: value })}
       />
       <ToolSelectField
         tools={agent.tools || []}
         options={toolOptions}
+        disabled={readOnly}
         onChange={(tools) => onChange({ ...agent, tools, ssh: tools.includes("ssh") ? agent.ssh : undefined })}
       />
       {usesSSH ? (
         <div className="grid gap-3 rounded-xl border border-border/75 bg-background/45 p-3 md:grid-cols-3">
-          <TextField label="SSH 主机" value={ssh.host} placeholder="ip:port" onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), host: value } })} />
-          <TextField label="SSH 用户名" value={ssh.username} onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), username: value } })} />
+          <TextField label="SSH 主机" value={ssh.host} placeholder="ip:port" disabled={readOnly} onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), host: value } })} />
+          <TextField label="SSH 用户名" value={ssh.username} disabled={readOnly} onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), username: value } })} />
           <TextField
             label="SSH 密码"
             type="password"
             value={ssh.password}
+            disabled={readOnly}
             onChange={(value) => onChange({ ...agent, ssh: { ...(agent.ssh || {}), password: value } })}
           />
         </div>
       ) : null}
       <Field
         label="系统提示词"
-        action={
+        action={readOnly ? undefined : (
           <AIRewriteButton
             scenario="agent_prompt"
             value={agent.prompt || ""}
             context={{ agent_id: agent.id, agent_name: agent.name, description: agent.description, tools: agent.tools || [] }}
             onApply={(value) => onChange({ ...agent, prompt: value })}
           />
-        }
+        )}
       >
-        <Textarea className="min-h-56 text-sm" value={agent.prompt || ""} onChange={(event) => onChange({ ...agent, prompt: event.target.value })} />
+        <Textarea className="min-h-56 text-sm" value={agent.prompt || ""} readOnly={readOnly} onChange={(event) => onChange({ ...agent, prompt: event.target.value })} />
       </Field>
     </div>
   );
@@ -1287,16 +1327,18 @@ function AITextField({
   value,
   context,
   onChange,
+  disabled,
 }: {
   label: string;
   scenario: string;
   value?: string;
   context?: Record<string, unknown>;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
-    <Field label={label} action={<AIRewriteButton scenario={scenario} value={value || ""} context={context} onApply={onChange} />}>
-      <Input value={value || ""} onChange={(event) => onChange(event.target.value)} />
+    <Field label={label} action={disabled ? undefined : <AIRewriteButton scenario={scenario} value={value || ""} context={context} onApply={onChange} />}>
+      <Input value={value || ""} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </Field>
   );
 }
@@ -1424,10 +1466,12 @@ function ToolSelectField({
   tools,
   options,
   onChange,
+  disabled,
 }: {
   tools: string[];
   options: ToolSelectOption[];
   onChange: (tools: string[]) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -1464,7 +1508,7 @@ function ToolSelectField({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">工具</div>
-        <Button variant="outline" size="sm" onClick={() => setOpen((value) => !value)}>
+        <Button variant="outline" size="sm" disabled={disabled} onClick={() => setOpen((value) => !value)}>
           <Plus className="h-4 w-4" />
           添加工具
         </Button>
@@ -1484,14 +1528,16 @@ function ToolSelectField({
                   <span className="truncate">{option?.label || tool}</span>
                   {option?.source === "mcp" ? <Badge>MCP</Badge> : null}
                   {!option ? <Badge>手动</Badge> : null}
-                  <button
-                    type="button"
-                    className="ml-0.5 rounded-full text-muted-foreground transition-colors hover:text-foreground"
-                    aria-label={`移除工具 ${tool}`}
-                    onClick={() => removeTool(tool)}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  {disabled ? null : (
+                    <button
+                      type="button"
+                      className="ml-0.5 rounded-full text-muted-foreground transition-colors hover:text-foreground"
+                      aria-label={`移除工具 ${tool}`}
+                      onClick={() => removeTool(tool)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </span>
               );
             })}
@@ -1862,11 +1908,13 @@ function SelectField({
   value,
   options,
   onChange,
+  disabled,
 }: {
   label: string;
   value?: string;
   options: string[];
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selected = value ?? options[0] ?? "";
@@ -1883,7 +1931,9 @@ function SelectField({
           className={cn(
             "sketch-inset flex h-9 w-full items-center justify-between gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             open && "ring-2 ring-ring",
+            disabled && "cursor-not-allowed opacity-70",
           )}
+          disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
@@ -1965,24 +2015,30 @@ function ModelSelect({
   value,
   modelIDs,
   onChange,
+  disabled,
 }: {
   label: string;
   value?: string;
   modelIDs: string[];
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
-  return <SelectField label={label} value={value} options={modelIDs.length ? modelIDs : [""]} onChange={onChange} />;
+  return <SelectField label={label} value={value} options={modelIDs.length ? modelIDs : [""]} disabled={disabled} onChange={onChange} />;
 }
 
 function ModeField({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
   return <SelectField label="运行模式" value={value} options={["team", "deep", "roundtable", "agent"]} onChange={onChange} />;
 }
 
-function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+function ToggleField({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return (
     <button
       type="button"
-      className="flex w-full items-center justify-between gap-3 rounded-lg border border-border/75 bg-card/60 px-3 py-2 text-left transition-colors hover:bg-accent/60"
+      className={cn(
+        "flex w-full items-center justify-between gap-3 rounded-lg border border-border/75 bg-card/60 px-3 py-2 text-left transition-colors hover:bg-accent/60",
+        disabled && "cursor-not-allowed opacity-70 hover:bg-card/60",
+      )}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
     >
       <span className="text-sm font-medium">{label}</span>
@@ -2200,6 +2256,19 @@ function normalizeConfig(config: AppConfig): AppConfig {
   next.deep = normalizeDeepConfig(next.deep || {});
   next.tools = next.tools || {};
   next.tools.mcp_servers = next.tools.mcp_servers || [];
+  return next;
+}
+
+function normalizeConfigForSave(config: AppConfig): AppConfig {
+  const next = normalizeConfig(config);
+  next.agents = {
+    ...(next.agents || {}),
+    items: (next.agents?.items || []).flatMap((agent) => {
+      if (agent.builtin && agent.id === "coordinator") return [];
+      if (agent.builtin) return [{ id: agent.id, enabled: agent.enabled }];
+      return [agent];
+    }),
+  };
   return next;
 }
 

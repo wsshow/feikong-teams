@@ -308,6 +308,21 @@ func builtinAgentSpecs() []builtinAgentSpec {
 	}
 }
 
+// IsBuiltinAgentID reports whether id belongs to a built-in agent.
+func IsBuiltinAgentID(id string) bool {
+	for _, spec := range builtinAgentSpecs() {
+		if spec.id == id {
+			return true
+		}
+	}
+	return false
+}
+
+// IsRequiredBuiltinAgentID reports whether id belongs to a required built-in entry.
+func IsRequiredBuiltinAgentID(id string) bool {
+	return id == "coordinator"
+}
+
 func ConfigItems(cfg *config.Config) []config.AgentConfig {
 	if cfg == nil {
 		cfg = config.Get()
@@ -335,7 +350,11 @@ func ConfigItems(cfg *config.Config) []config.AgentConfig {
 			TeamMember:  spec.teamMember,
 		}
 		if override, ok := overrides[spec.id]; ok {
-			item = mergeAgentConfig(item, override)
+			if IsRequiredBuiltinAgentID(spec.id) {
+				delete(overrides, spec.id)
+			} else {
+				item.Enabled = override.Enabled
+			}
 		}
 		result = append(result, item)
 		seen[spec.id] = true

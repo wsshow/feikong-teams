@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
@@ -121,6 +122,45 @@ func TestGetTeamAgentsReturnsCreatorError(t *testing.T) {
 	}
 	if team != nil {
 		t.Fatalf("team = %#v, want nil", team)
+	}
+}
+
+func TestConfigItemsIgnoreBuiltinOverrides(t *testing.T) {
+	items := ConfigItems(&config.Config{
+		Agents: config.Agents{
+			Items: []config.AgentConfig{
+				{ID: "coordinator", Name: "本地覆盖", Prompt: "local prompt", Enabled: false},
+				{ID: "coder", Name: "本地代码工程师", Prompt: "local coder prompt", Enabled: false},
+				{ID: "custom-agent", Name: "自定义智能体", Enabled: true},
+			},
+		},
+	})
+
+	var coordinator, coder, custom *config.AgentConfig
+	for i := range items {
+		switch items[i].ID {
+		case "coordinator":
+			coordinator = &items[i]
+		case "coder":
+			coder = &items[i]
+		case "custom-agent":
+			custom = &items[i]
+		}
+	}
+	if coordinator == nil {
+		t.Fatal("coordinator not found")
+	}
+	if coordinator.Name == "本地覆盖" || coordinator.Prompt == "local prompt" || !coordinator.Enabled {
+		t.Fatalf("coordinator override should be ignored, got %#v", coordinator)
+	}
+	if coder == nil {
+		t.Fatal("coder not found")
+	}
+	if coder.Name == "本地代码工程师" || coder.Prompt == "local coder prompt" || coder.Enabled {
+		t.Fatalf("builtin non-coordinator should only apply enabled override, got %#v", coder)
+	}
+	if custom == nil || custom.Builtin || custom.Name != "自定义智能体" {
+		t.Fatalf("custom agent = %#v, want persisted custom agent", custom)
 	}
 }
 

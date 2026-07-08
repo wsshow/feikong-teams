@@ -131,6 +131,7 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		if newCfg.Server.Auth.Secret == sensitivePassword {
 			newCfg.Server.Auth.Secret = oldCfg.Server.Auth.Secret
 		}
+		newCfg.Agents.Items = userAgentConfigItems(newCfg.Agents.Items)
 		restoreAgentSSHPasswords(newCfg.Agents.Items, oldCfg)
 		if newCfg.Channels.QQ.AppSecret == sensitivePassword {
 			newCfg.Channels.QQ.AppSecret = oldCfg.Channels.QQ.AppSecret
@@ -164,6 +165,24 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
+}
+
+func userAgentConfigItems(items []config.AgentConfig) []config.AgentConfig {
+	result := items[:0]
+	for _, item := range items {
+		if agents.IsRequiredBuiltinAgentID(item.ID) {
+			continue
+		}
+		if item.Builtin || agents.IsBuiltinAgentID(item.ID) {
+			result = append(result, config.AgentConfig{
+				ID:      item.ID,
+				Enabled: item.Enabled,
+			})
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
 }
 
 func maskAgentSSHPasswords(items []config.AgentConfig) {
