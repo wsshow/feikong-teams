@@ -3,7 +3,7 @@ package handler
 import (
 	domainschedule "fkteams/internal/domain/schedule"
 	schedulerport "fkteams/internal/ports/scheduler"
-	"log"
+	"fkteams/internal/runtime/log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

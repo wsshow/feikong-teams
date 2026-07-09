@@ -1,7 +1,7 @@
 package ssh
 
 import (
-	"log"
+	"fkteams/internal/runtime/log"
 	"regexp"
 	"strings"
 )

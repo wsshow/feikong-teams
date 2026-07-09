@@ -10,8 +10,8 @@ import (
 	"fkteams/internal/app/lifecycle"
 	bootstrapservices "fkteams/internal/bootstrap/services"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/log"
 	"fmt"
-	"log"
 	"syscall"
 
 	"github.com/pterm/pterm"

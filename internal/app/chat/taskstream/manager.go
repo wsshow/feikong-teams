@@ -1,7 +1,7 @@
 package taskstream
 
 import (
-	"log"
+	"fkteams/internal/runtime/log"
 	"sync"
 	"time"
 )

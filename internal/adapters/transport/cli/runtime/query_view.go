@@ -6,8 +6,8 @@ import (
 	"fkteams/internal/adapters/transport/cli/eventview"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/runtime/events"
+	"fkteams/internal/runtime/log"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 

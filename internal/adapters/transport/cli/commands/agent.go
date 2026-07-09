@@ -2,8 +2,8 @@ package commands
 
 import (
 	"context"
+	"fkteams/internal/runtime/log"
 	"fmt"
-	"log"
 	"syscall"
 
 	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"

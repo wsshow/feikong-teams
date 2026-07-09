@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
+	"strings"
 
 	einoruntime "fkteams/internal/adapters/runtime/eino"
 	"fkteams/internal/adapters/runtime/eino/middlewares/fkfs"
 	"fkteams/internal/app/appdata"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/log"
 
 	einoagentsmd "github.com/cloudwego/eino/adk/middlewares/agentsmd"
 )
@@ -37,8 +38,19 @@ func New(ctx context.Context) (runtimeport.AgentMiddleware, error) {
 }
 
 func onLoadWarning(filePath string, err error) {
-	if errors.Is(err, os.ErrNotExist) {
+	if isMissingAgentsMD(err) {
 		return
 	}
-	log.Printf("[agentsmd] load warning for %s: %v", filePath, err)
+	log.Warnf("[agentsmd] load warning for %s: %v", filePath, err)
+}
+
+func isMissingAgentsMD(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "file not found") || strings.Contains(msg, "no such file")
 }

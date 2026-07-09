@@ -12,15 +12,10 @@ import (
 	bootstraptools "fkteams/internal/bootstrap/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	modelregistry "fkteams/internal/runtime/model"
-	"log"
 	"os"
 
 	"github.com/pterm/pterm"
 )
-
-func init() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Llongfile)
-}
 
 func main() {
 	mcpProvider := mcpadapter.NewProvider()
