@@ -16,7 +16,6 @@ import (
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
@@ -388,7 +387,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			Summary:          recorder,
 			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
 			NonInteractive:   true,
-			ApprovalRegistry: approval.NewDefaultRegistry(),
+			ApprovalRegistry: configuredApprovalRegistry(),
 			AskHandler:       buildMemberAskRuntimeHandler(stream, recorder, sessionID),
 			SteeringSource:   steeringSource,
 			EventSink: func(event events.Event) error {

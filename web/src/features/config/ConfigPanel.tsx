@@ -49,7 +49,7 @@ import type {
   ToolInfo,
 } from "@/types/config";
 
-type ConfigTab = "models" | "server" | "agents" | "roundtable" | "deep" | "memory" | "channels" | "tools" | "other";
+type ConfigTab = "models" | "server" | "agents" | "roundtable" | "deep" | "memory" | "channels" | "permissions" | "tools" | "other";
 
 const tabs: Array<{ key: ConfigTab; label: string; icon: typeof Bot }> = [
   { key: "models", label: "模型", icon: Bot },
@@ -59,6 +59,7 @@ const tabs: Array<{ key: ConfigTab; label: string; icon: typeof Bot }> = [
   { key: "deep", label: "深度", icon: Layers },
   { key: "memory", label: "记忆", icon: Database },
   { key: "channels", label: "通道", icon: MessageSquare },
+  { key: "permissions", label: "权限", icon: KeyRound },
   { key: "tools", label: "工具", icon: Wrench },
   { key: "other", label: "其他", icon: Cable },
 ];
@@ -99,18 +100,22 @@ export function ConfigPanel() {
     }
   }
 
-  async function save() {
-    if (!draft) return;
+  async function persistConfig(nextDraft: AppConfig, message = "配置已保存") {
     setSaving(true);
     try {
-      await saveConfig(normalizeConfigForSave(draft));
-      dispatch(appActions.showToast("配置已保存"));
+      await saveConfig(normalizeConfigForSave(nextDraft));
+      dispatch(appActions.showToast(message));
       await load();
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
     } finally {
       setSaving(false);
     }
+  }
+
+  async function save() {
+    if (!draft) return;
+    await persistConfig(draft);
   }
 
   function updateDraft(mutator: (next: AppConfig) => void) {
@@ -186,6 +191,7 @@ export function ConfigPanel() {
         {activeTab === "deep" ? <DeepTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "memory" ? <MemoryTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "channels" ? <ChannelsTab draft={draft} updateDraft={updateDraft} /> : null}
+        {activeTab === "permissions" ? <PermissionsTab draft={draft} updateDraft={updateDraft} autoSaveDraft={(next) => persistConfig(next, "权限配置已保存")} saving={saving} /> : null}
         {activeTab === "tools" ? <ToolsTab draft={draft} updateDraft={updateDraft} /> : null}
         {activeTab === "other" ? <OtherTab draft={draft} toolsCount={tools.length} /> : null}
       </div>
@@ -925,6 +931,98 @@ function ChannelsTab({ draft, updateDraft }: EditorProps) {
   );
 }
 
+const approvalStoreOptions = [
+  { value: "command", label: "命令执行" },
+  { value: "file", label: "外部文件" },
+  { value: "git", label: "Git 操作" },
+  { value: "dispatch", label: "任务分发" },
+];
+
+function PermissionsTab({ draft, updateDraft, autoSaveDraft, saving }: EditorProps) {
+  const autoApprove = normalizeApprovalStores(draft.tools?.approval?.auto_approve || []);
+  const autoApproveAll = autoApprove.includes("all");
+  const popupEnabled = !autoApproveAll;
+  const [disableApprovalConfirmOpen, setDisableApprovalConfirmOpen] = useState(false);
+
+  function buildApprovalDraft(stores: string[]) {
+    const next = normalizeConfig(draft);
+    next.tools = {
+      ...(next.tools || {}),
+      approval: {
+        ...(next.tools?.approval || {}),
+        auto_approve: normalizeApprovalStores(stores),
+      },
+    };
+    return next;
+  }
+
+  function setAutoApprove(stores: string[]) {
+    const nextDraft = buildApprovalDraft(stores);
+    updateDraft((next) => {
+      next.tools = nextDraft.tools;
+    });
+    void autoSaveDraft?.(nextDraft);
+  }
+
+  function setPopupEnabled(enabled: boolean) {
+    if (enabled) {
+      setAutoApprove(autoApprove.filter((store) => store !== "all"));
+      return;
+    }
+    setDisableApprovalConfirmOpen(true);
+  }
+
+  function toggleStore(store: string, enabled: boolean) {
+    const withoutAll = autoApprove.filter((item) => item !== "all");
+    if (enabled) {
+      setAutoApprove([...withoutAll, store]);
+      return;
+    }
+    setAutoApprove(withoutAll.filter((item) => item !== store));
+  }
+
+  return (
+    <div className="space-y-4">
+      <Panel>
+        <PanelHeader>
+          <SectionTitle icon={KeyRound} title="权限审批" description="配置 Web 对话中的工具审批弹窗和自动允许类别。" />
+        </PanelHeader>
+        <PanelBody className="space-y-3">
+          <ToggleField label={saving ? "弹出审批框（保存中）" : "弹出审批框"} checked={popupEnabled} disabled={saving} onChange={setPopupEnabled} />
+          {!popupEnabled ? (
+            <div className="rounded-lg border border-destructive/35 bg-destructive/5 px-3 py-2 text-sm leading-6 text-destructive">
+              审批框已关闭，危险命令、外部文件访问、Git 写操作和任务分发会自动允许。
+            </div>
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-2">
+            {approvalStoreOptions.map((option) => (
+              <ToggleField
+                key={option.value}
+                label={`自动允许${option.label}`}
+                checked={autoApproveAll || autoApprove.includes(option.value)}
+                disabled={autoApproveAll || saving}
+                onChange={(value) => toggleStore(option.value, value)}
+              />
+            ))}
+          </div>
+        </PanelBody>
+      </Panel>
+      <ConfirmDialog
+        open={disableApprovalConfirmOpen}
+        title="关闭审批框"
+        description="关闭后，危险命令、外部文件访问、Git 写操作和任务分发将自动允许，不再等待人工确认。请仅在可信环境中使用。"
+        confirmLabel="确认关闭"
+        destructive
+        onCancel={() => setDisableApprovalConfirmOpen(false)}
+        onConfirm={() => {
+          setAutoApprove(["all"]);
+          setDisableApprovalConfirmOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
 function ToolsTab({ draft, updateDraft }: EditorProps) {
   const tools = useAppSelector((state) => state.config.tools);
   const builtinTools = tools.filter((tool) => tool.builtin !== false);
@@ -1041,6 +1139,8 @@ function OtherTab({ draft, toolsCount }: { draft: AppConfig; toolsCount: number 
 interface EditorProps {
   draft: AppConfig;
   updateDraft: (mutator: (next: AppConfig) => void) => void;
+  autoSaveDraft?: (next: AppConfig) => Promise<void>;
+  saving?: boolean;
 }
 
 function RoundtableMemberEditor({
@@ -2255,6 +2355,8 @@ function normalizeConfig(config: AppConfig): AppConfig {
   next.roundtable.members = next.roundtable.members || [];
   next.deep = normalizeDeepConfig(next.deep || {});
   next.tools = next.tools || {};
+  next.tools.approval = next.tools.approval || {};
+  next.tools.approval.auto_approve = normalizeApprovalStores(next.tools.approval.auto_approve || []);
   next.tools.mcp_servers = next.tools.mcp_servers || [];
   return next;
 }
@@ -2300,6 +2402,17 @@ function normalizeDeepConfig(deep: DeepConfig): DeepConfig {
     },
     extra_tools: deep.extra_tools || ["doc", "search", "fetch", "ask"],
   };
+}
+
+function normalizeApprovalStores(stores: string[]) {
+  const allowed = new Set(["all", ...approvalStoreOptions.map((option) => option.value)]);
+  const result: string[] = [];
+  for (const store of stores) {
+    if (!allowed.has(store) || result.includes(store)) continue;
+    result.push(store);
+  }
+  if (result.includes("all")) return ["all"];
+  return result;
 }
 
 function clone<T>(value: T): T {

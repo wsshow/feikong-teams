@@ -152,8 +152,13 @@ export interface MCPServerConfig {
   transport?: string;
 }
 
+export interface ToolApprovalConfig {
+  auto_approve?: string[];
+}
+
 export interface ToolSettingsConfig {
   mcp_servers?: MCPServerConfig[];
+  approval?: ToolApprovalConfig;
 }
 
 export interface OpenAIAPIConfig {

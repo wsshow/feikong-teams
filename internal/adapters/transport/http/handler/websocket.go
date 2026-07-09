@@ -15,7 +15,6 @@ import (
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
@@ -371,7 +370,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 			Summary:          recorder,
 			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
 			NonInteractive:   true,
-			ApprovalRegistry: approval.NewDefaultRegistry(),
+			ApprovalRegistry: configuredApprovalRegistry(),
 			AskHandler:       buildMemberAskRuntimeHandler(stream, recorder, sessionID),
 			SteeringSource:   steeringSource,
 			EventSink: func(event events.Event) error {

@@ -332,7 +332,13 @@ type MCPServer struct {
 
 // ToolSettings 工具配置。
 type ToolSettings struct {
-	MCPServers []MCPServer `toml:"mcp_servers" json:"mcp_servers"`
+	MCPServers []MCPServer          `toml:"mcp_servers" json:"mcp_servers"`
+	Approval   ToolApprovalSettings `toml:"approval" json:"approval"`
+}
+
+// ToolApprovalSettings 工具审批配置。
+type ToolApprovalSettings struct {
+	AutoApprove []string `toml:"auto_approve" json:"auto_approve"`
 }
 
 // ==================== OpenAI 兼容 API ====================
@@ -719,6 +725,9 @@ func GenerateExample() error {
 		},
 		Deep: DefaultDeep(),
 		Tools: ToolSettings{
+			Approval: ToolApprovalSettings{
+				AutoApprove: []string{},
+			},
 			MCPServers: []MCPServer{
 				{
 					ID:          "remote_mcp",

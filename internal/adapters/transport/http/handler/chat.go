@@ -7,10 +7,12 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools/ask"
 	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 	"fmt"
 	"strings"
@@ -210,6 +212,14 @@ func approvalDecisionText(result map[string]any) string {
 		break
 	}
 	return ""
+}
+
+func configuredApprovalRegistry() *approval.Registry {
+	cfg := config.Get()
+	if cfg == nil {
+		return approval.NewDefaultRegistry()
+	}
+	return approval.NewDefaultSelectiveRegistry(cfg.Tools.Approval.AutoApprove)
 }
 
 // askResponseText 从中断结果中提取 ask_answered 的可读文本
