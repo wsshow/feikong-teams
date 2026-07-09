@@ -151,6 +151,19 @@ func TestRenderMarkdownCodeBlockUsesBackground(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownCodeBlockFillsTargetWidth(t *testing.T) {
+	out := RenderMarkdownWithWidth("```text\nshort line\n```", 72)
+
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		if got := CellWidth(StripANSI(line)); got != 72 {
+			t.Fatalf("code block line width = %d, want 72\n%s", got, out)
+		}
+	}
+}
+
 func TestRenderMarkdownCodeBlockExpandsTabsAndControlChars(t *testing.T) {
 	out := RenderMarkdown("```go\nfunc main() {\n\tfmt.Println(\"hi\")\n\n}\x00\n```")
 

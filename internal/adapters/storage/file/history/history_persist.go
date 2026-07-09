@@ -144,6 +144,7 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 		case TranscriptToolCallStart:
 			msg := ensure(event.Agent, ts)
 			record := transcriptToolCallRecord(event, "")
+			record.Status = "running"
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 			if event.CallID != "" {
 				toolEventIndex[event.CallID] = len(msg.Events) - 1
@@ -153,9 +154,11 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) []Agen
 			result := transcriptToolResult(event)
 			if idx, ok := toolEventIndex[event.CallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
 				msg.Events[idx].ToolCall.Result = result
+				msg.Events[idx].ToolCall.Status = "done"
 				continue
 			}
 			record := transcriptToolCallRecord(event, result)
+			record.Status = "done"
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 		case TranscriptAskRequested, TranscriptAskAnswered:
 			msg := ensure(event.Agent, ts)
@@ -267,6 +270,7 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 			}
 		case TranscriptToolCallStart:
 			record := transcriptToolCallRecord(event, "")
+			record.Status = "running"
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 			if event.CallID != "" {
 				toolEventIndex[event.CallID] = len(msg.Events) - 1
@@ -275,9 +279,11 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 			result := transcriptToolResult(event)
 			if idx, ok := toolEventIndex[event.CallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
 				msg.Events[idx].ToolCall.Result = result
+				msg.Events[idx].ToolCall.Status = "done"
 				continue
 			}
 			record := transcriptToolCallRecord(event, result)
+			record.Status = "done"
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
 		case TranscriptSystemNotice:
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeNotice, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Detail: event.Detail})

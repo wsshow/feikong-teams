@@ -116,6 +116,13 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft {
+			if hit, ok := m.reasoningHitAtMouse(mouse); ok {
+				m.toggleReasoningHitPreservingMouse(hit)
+				m.selection.Active = false
+				return m, nil
+			}
+		}
 		if mouse.Button == tea.MouseLeft && m.memberView == "" {
 			if key := m.hitMemberSummary(mouse); key != "" {
 				m.memberView = key
@@ -175,6 +182,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.updateCurrentMemberAsk(msg)
 			}
 			switch msg.String() {
+			case "ctrl+r":
+				m.toggleReasoningCollapsed()
+				return m, nil
 			case "esc", "left":
 				m.memberView = ""
 				return m, nil
@@ -215,6 +225,9 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch msg.String() {
+		case "ctrl+r":
+			m.toggleReasoningCollapsed()
+			return m, nil
 		case "ctrl+c":
 			if m.running {
 				return m.startRuntimeCancel()
@@ -329,6 +342,147 @@ func (m runtimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+type runtimeReasoningHit struct {
+	Index        int
+	Member       *runtimeMemberState
+	AbsoluteLine int
+	ScreenY      int
+}
+
+func (m *runtimeModel) toggleReasoningCollapsed() {
+	if member := m.currentMember(); member != nil {
+		for i := len(member.Blocks) - 1; i >= 0; i-- {
+			if member.Blocks[i].Kind == runtimeBlockReasoning {
+				m.toggleReasoningBlock(runtimeReasoningHit{Index: i, Member: member})
+				return
+			}
+		}
+		return
+	}
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		if m.blocks[i].Kind == runtimeBlockReasoning {
+			m.toggleReasoningBlock(runtimeReasoningHit{Index: i})
+			return
+		}
+	}
+}
+
+func (m *runtimeModel) toggleReasoningHitPreservingMouse(hit runtimeReasoningHit) {
+	m.toggleReasoningBlock(hit)
+	m.keepTranscriptLineAtScreenY(hit.AbsoluteLine, hit.ScreenY)
+}
+
+func (m *runtimeModel) toggleReasoningBlock(hit runtimeReasoningHit) {
+	var collapsed bool
+	if hit.Member != nil {
+		if hit.Index < 0 || hit.Index >= len(hit.Member.Blocks) {
+			return
+		}
+		block := &hit.Member.Blocks[hit.Index]
+		if block.Kind != runtimeBlockReasoning {
+			return
+		}
+		block.Collapsed = !block.Collapsed
+		collapsed = block.Collapsed
+		hit.Member.markDirty()
+	} else {
+		if hit.Index < 0 || hit.Index >= len(m.blocks) {
+			return
+		}
+		block := &m.blocks[hit.Index]
+		if block.Kind != runtimeBlockReasoning {
+			return
+		}
+		block.Collapsed = !block.Collapsed
+		collapsed = block.Collapsed
+		m.markTranscriptDirty()
+	}
+	if collapsed {
+		m.status = "已折叠思考内容"
+	} else {
+		m.status = "已展开思考内容"
+	}
+}
+
+func (m *runtimeModel) keepTranscriptLineAtScreenY(absoluteLine int, screenY int) {
+	start := absoluteLine - screenY
+	if start < 0 {
+		start = 0
+	}
+	m.setCurrentScrollOffset(0)
+	next := scrollOffsetForVisibleStart(m.transcriptLineCount(), m.bodyHeight(), start)
+	if next > 0 {
+		m.setCurrentScrollOffset(next)
+		next = scrollOffsetForVisibleStart(m.transcriptLineCount(), m.bodyHeight(), start)
+	}
+	m.setCurrentScrollOffset(next)
+}
+
+func (m runtimeModel) reasoningHitAtMouse(mouse tea.Mouse) (runtimeReasoningHit, bool) {
+	bodyHeight := m.bodyHeight()
+	if mouse.Y < 0 || mouse.Y >= bodyHeight {
+		return runtimeReasoningHit{}, false
+	}
+	total := m.transcriptLineCount()
+	start := visibleTranscriptStart(total, bodyHeight, m.currentScrollOffset())
+	absoluteLine := start + mouse.Y
+	if member := m.currentMember(); member != nil {
+		blockLine := absoluteLine - m.memberBlocksStartLine(member)
+		if idx, ok := member.reasoningBlockIndexAtRenderedLine(blockLine); ok {
+			return runtimeReasoningHit{Index: idx, Member: member, AbsoluteLine: absoluteLine, ScreenY: mouse.Y}, true
+		}
+		return runtimeReasoningHit{}, false
+	}
+	if idx, ok := m.reasoningBlockIndexAtRenderedLine(absoluteLine); ok {
+		return runtimeReasoningHit{Index: idx, AbsoluteLine: absoluteLine, ScreenY: mouse.Y}, true
+	}
+	return runtimeReasoningHit{}, false
+}
+
+func (m runtimeModel) memberBlocksStartLine(member *runtimeMemberState) int {
+	if member == nil {
+		return 0
+	}
+	lines := 2
+	if member.Task != "" {
+		lines++
+	}
+	if strings.TrimSpace(m.memberBlocksText(member)) == "" {
+		return lines
+	}
+	return lines + 2
+}
+
+func visibleTranscriptStart(total int, maxLines int, offsetFromBottom int) int {
+	if total <= 0 || maxLines <= 0 || total <= maxLines {
+		return 0
+	}
+	maxOffset := max(0, total-maxLines)
+	if offsetFromBottom < 0 {
+		offsetFromBottom = 0
+	}
+	if offsetFromBottom > maxOffset {
+		offsetFromBottom = maxOffset
+	}
+	start := total - offsetFromBottom - maxLines
+	if start < 0 {
+		return 0
+	}
+	return start
+}
+
+func scrollOffsetForVisibleStart(total int, maxLines int, start int) int {
+	next := total - maxLines - start
+	maxOffset := max(0, total-maxLines)
+	if next < 0 {
+		return 0
+	}
+	if next > maxOffset {
+		return maxOffset
+	}
+	return next
 }
 
 func (m runtimeModel) startRuntimeCancel() (tea.Model, tea.Cmd) {

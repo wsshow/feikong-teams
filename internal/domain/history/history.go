@@ -74,6 +74,7 @@ type ToolCallRecord struct {
 	Target      string `json:"target,omitempty"`
 	Arguments   string `json:"arguments"`
 	Result      string `json:"result"`
+	Status      string `json:"status,omitempty"`
 }
 
 type UsageRecord struct {

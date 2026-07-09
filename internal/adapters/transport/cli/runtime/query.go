@@ -347,6 +347,9 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		recorder.FinalizeCurrent()
 		if err != nil {
 			if queryCtx.Err() != nil {
+				recorder.RecordCancelled("任务已取消")
+				store := eventlog.NewChatSessionStore(session.historyDir)
+				appchat.LogLifecycleError("cli", session.sessionID(), appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), session.sessionID(), session.sessionTitle, recorder))
 				e.view.Interrupted()
 				return nil
 			}

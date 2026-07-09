@@ -9,6 +9,7 @@ import (
 	"fkteams/internal/adapters/transport/cli/tui"
 
 	"strings"
+	"time"
 )
 
 func (m *runtimeModel) appendBlock(kind runtimeBlockKind, title, content string) {
@@ -37,6 +38,7 @@ func (m *runtimeModel) markTranscriptDirty() {
 	m.renderCache.Dirty = true
 	m.renderCache.Text = ""
 	m.renderCache.Lines = nil
+	m.renderCache.LineBlockIndexes = nil
 }
 
 func (m *runtimeModel) appendLoadedHistory() {
@@ -75,7 +77,7 @@ func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
 		switch event.Type {
 		case eventlog.MsgTypeReasoning:
 			if event.Content != "" {
-				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: event.Content})
+				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: event.Content, Collapsed: true})
 			}
 		case eventlog.MsgTypeText:
 			if event.Content != "" {
@@ -93,6 +95,8 @@ func (m *runtimeModel) appendHistoryMessage(msg eventlog.AgentMessage) {
 			if event.Content != "" {
 				m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockError, Title: agent, Content: event.Content})
 			}
+		case eventlog.MsgTypeCancelled:
+			m.appendHistoryBlock(runtimeBlock{Kind: runtimeBlockInterrupt, Title: agent, Content: historyCancelledContent(event.Content)})
 		}
 	}
 }
@@ -111,7 +115,7 @@ func (m *runtimeModel) appendHistoryMemberMessage(msg eventlog.AgentMessage) {
 		switch event.Type {
 		case eventlog.MsgTypeReasoning:
 			if event.Content != "" {
-				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: name, Content: event.Content})
+				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: name, Content: event.Content, Collapsed: true})
 			}
 		case eventlog.MsgTypeText:
 			if event.Content != "" {
@@ -129,11 +133,49 @@ func (m *runtimeModel) appendHistoryMemberMessage(msg eventlog.AgentMessage) {
 			if event.Content != "" {
 				member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockError, Title: name, Content: event.Content})
 			}
+		case eventlog.MsgTypeCancelled:
+			member.Blocks = append(member.Blocks, runtimeBlock{Kind: runtimeBlockInterrupt, Title: name, Content: historyCancelledContent(event.Content)})
 		}
 	}
 	member.Status = "done"
 	member.markDirty()
 	m.syncMemberSummary(member)
+}
+
+func historyCancelledContent(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "Interrupted · 输入新的指令继续"
+	}
+	return content
+}
+
+func historyToolStatus(tool *eventlog.ToolCallRecord) tui.ToolStatus {
+	if tool == nil {
+		return tui.ToolStatusDone
+	}
+	switch strings.ToLower(strings.TrimSpace(tool.Status)) {
+	case "running":
+		if strings.TrimSpace(tool.Result) == "" {
+			return tui.ToolStatusError
+		}
+	case "error", "failed":
+		return tui.ToolStatusError
+	}
+	return tui.ToolStatusDone
+}
+
+func historyToolResult(tool *eventlog.ToolCallRecord) (string, bool) {
+	if tool == nil {
+		return "", false
+	}
+	if strings.TrimSpace(tool.Result) != "" {
+		return tool.Result, true
+	}
+	if historyToolStatus(tool) == tui.ToolStatusError {
+		return historyCancelledContent(""), true
+	}
+	return "", false
 }
 
 func (m *runtimeModel) appendHistoryToolCall(tool *eventlog.ToolCallRecord) {
@@ -160,10 +202,10 @@ func (m *runtimeModel) appendHistoryToolCall(tool *eventlog.ToolCallRecord) {
 		ToolKey:    tool.Ref,
 		ToolName:   emptyRuntimeToolName(name),
 		ToolArgs:   tool.Arguments,
-		ToolStatus: tui.ToolStatusDone,
+		ToolStatus: historyToolStatus(tool),
 	}
-	if tool.Result != "" {
-		block.ToolResult = tool.Result
+	if result, ok := historyToolResult(tool); ok {
+		block.ToolResult = result
 		block.ToolHasResult = true
 	}
 	m.appendHistoryBlock(block)
@@ -182,10 +224,10 @@ func (m *runtimeModel) appendHistoryMemberToolCall(member *runtimeMemberState, t
 		ToolKey:    tool.Ref,
 		ToolName:   emptyRuntimeToolName(name),
 		ToolArgs:   tool.Arguments,
-		ToolStatus: tui.ToolStatusDone,
+		ToolStatus: historyToolStatus(tool),
 	}
-	if strings.TrimSpace(tool.Result) != "" {
-		block.ToolResult = tool.Result
+	if result, ok := historyToolResult(tool); ok {
+		block.ToolResult = result
 		block.ToolHasResult = true
 	}
 	member.Blocks = append(member.Blocks, block)
@@ -498,6 +540,8 @@ func (s *runtimeMemberState) markDirty() {
 		return
 	}
 	s.RenderDirty = true
+	s.RenderCache = ""
+	s.RenderLineBlockIndexes = nil
 }
 
 func (s *runtimeMemberState) hasPendingAsk() bool {
@@ -634,11 +678,13 @@ func (s *runtimeMemberState) appendReasoning(agent, content string) {
 	}
 	s.markDirty()
 	s.ActiveOutput = -1
+	now := time.Now()
 	if s.ActiveReason >= 0 && s.ActiveReason < len(s.Blocks) && s.Blocks[s.ActiveReason].Kind == runtimeBlockReasoning {
 		s.Blocks[s.ActiveReason].Content += content
+		s.Blocks[s.ActiveReason].UpdatedAt = now
 		return
 	}
-	s.Blocks = append(s.Blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: content})
+	s.Blocks = append(s.Blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: content, StartedAt: now, UpdatedAt: now, Collapsed: true})
 	s.ActiveReason = len(s.Blocks) - 1
 }
 
@@ -739,12 +785,14 @@ func (m *runtimeModel) appendReasoning(agent, content string) {
 		return
 	}
 	m.activeOutput = -1
+	now := time.Now()
 	if m.activeReason >= 0 && m.activeReason < len(m.blocks) && m.blocks[m.activeReason].Kind == runtimeBlockReasoning {
 		m.blocks[m.activeReason].Content += content
+		m.blocks[m.activeReason].UpdatedAt = now
 		m.markTranscriptDirty()
 		return
 	}
-	m.blocks = append(m.blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: content})
+	m.blocks = append(m.blocks, runtimeBlock{Kind: runtimeBlockReasoning, Title: agent, Content: content, StartedAt: now, UpdatedAt: now, Collapsed: true})
 	m.activeReason = len(m.blocks) - 1
 	m.markTranscriptDirty()
 }

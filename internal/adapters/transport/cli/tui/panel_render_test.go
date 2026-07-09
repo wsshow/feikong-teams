@@ -30,6 +30,8 @@ func TestPanelRenderHelpers(t *testing.T) {
 		{args: `{"url":"https://example.com"}`, want: "https://example.com"},
 		{args: `{"flag":true}`, want: "true"},
 		{args: `{"count":2}`, want: "2"},
+		{args: `{"z":"last","a":"first"}`, want: "first"},
+		{args: `{"z":"last","command":"preferred","a":"first"}`, want: "preferred"},
 		{args: `not   json`, want: "not json"},
 	}
 	for _, tt := range tests {

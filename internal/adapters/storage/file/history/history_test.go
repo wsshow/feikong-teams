@@ -612,6 +612,36 @@ func TestTranscriptRecorderAggregatesAssistantDeltas(t *testing.T) {
 	}
 }
 
+func TestTranscriptProjectionMarksUnfinishedToolCallRunning(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+
+	recorder.RecordEvent(Event{
+		Type:       EventToolCallStarted,
+		AgentName:  "coordinator",
+		ToolCallID: "call_1",
+		ToolName:   "file_read",
+		ToolArgs:   `{"filepath":"agent-loop.ts"}`,
+	})
+
+	loaded := NewHistoryRecorder()
+	if err := loaded.LoadFromFile(filepath.Join(dir, TranscriptFileName)); err != nil {
+		t.Fatalf("load recorder: %v", err)
+	}
+	messages := loaded.GetMessages()
+	if len(messages) != 1 || len(messages[0].Events) != 1 || messages[0].Events[0].ToolCall == nil {
+		t.Fatalf("messages = %#v, want one unfinished tool call", messages)
+	}
+	tool := messages[0].Events[0].ToolCall
+	if tool.Status != "running" {
+		t.Fatalf("tool status = %q, want running", tool.Status)
+	}
+	if tool.Result != "" {
+		t.Fatalf("tool result = %q, want empty", tool.Result)
+	}
+}
+
 func TestTranscriptRecorderStoresReasoningOnlyModelOutputAsAgentStep(t *testing.T) {
 	dir := t.TempDir()
 	recorder := NewHistoryRecorder()

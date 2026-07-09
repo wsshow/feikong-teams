@@ -35,6 +35,27 @@ func TestRuntimeLayoutHelpers(t *testing.T) {
 	if !strings.Contains(user, "hello") || !strings.Contains(user, "world") {
 		t.Fatalf("user message block = %q", user)
 	}
+	userLines := strings.Split(user, "\n")
+	if len(userLines) != 4 {
+		t.Fatalf("user message lines = %d, want 4: %q", len(userLines), user)
+	}
+	for _, line := range userLines {
+		if CellWidth(line) != 20 {
+			t.Fatalf("user message line width = %d, want 20: %q", CellWidth(line), line)
+		}
+	}
+	if strings.TrimSpace(strings.TrimPrefix(userLines[0], "▌")) != "" || strings.TrimSpace(strings.TrimPrefix(userLines[len(userLines)-1], "▌")) != "" {
+		t.Fatalf("user message should include vertical padding with accent: %q", user)
+	}
+	if !strings.HasPrefix(userLines[0], "▌") || !strings.HasPrefix(userLines[1], "▌") {
+		t.Fatalf("user message should render accent bar: %q", user)
+	}
+	if !strings.HasPrefix(userLines[1], "▌  hello") {
+		t.Fatalf("user message content should keep compact left padding: %q", user)
+	}
+	if strings.Contains(user, PromptMarker()) {
+		t.Fatalf("user message block should not render prompt marker: %q", user)
+	}
 }
 
 func TestWelcomeAndStyledTextHelpers(t *testing.T) {
@@ -52,6 +73,14 @@ func TestWelcomeAndStyledTextHelpers(t *testing.T) {
 	}
 	if emptyAs("  ", "fallback") != "fallback" || emptyAs(" value ", "fallback") != "value" {
 		t.Fatal("emptyAs returned unexpected value")
+	}
+	collapsedReasoning := StripANSI(ReasoningBlock("line 1\nline 2", true, "1.2s"))
+	if !strings.Contains(collapsedReasoning, "Thought · 2 行 · 1.2s") || strings.Contains(collapsedReasoning, "line 1") || strings.Contains(collapsedReasoning, "点击") || strings.Contains(collapsedReasoning, "Ctrl+R") {
+		t.Fatalf("collapsed reasoning should render only a clickable title, got %q", collapsedReasoning)
+	}
+	expandedReasoning := StripANSI(ReasoningBlock("line 1\nline 2", false, "1.2s"))
+	if !strings.Contains(expandedReasoning, "Thought · 2 行 · 1.2s") || !strings.Contains(expandedReasoning, "line 1") || !strings.Contains(expandedReasoning, "line 2") {
+		t.Fatalf("expanded reasoning should render title and body, got %q", expandedReasoning)
 	}
 	for _, rendered := range []string{
 		Dim("dim"),
@@ -79,6 +108,9 @@ func TestToolRuntimeRendering(t *testing.T) {
 	if !strings.Contains(call, "tool") || !strings.Contains(call, "go test ./...") {
 		t.Fatalf("ToolCall = %q", call)
 	}
+	if strings.Contains(call, "tool(") {
+		t.Fatalf("ToolCall should separate args from name without parentheses, got %q", call)
+	}
 	partialCall := StripANSI(ToolCall("todo_add", `{"title":"测试 TODO`, ToolStatusRunning))
 	if strings.Contains(partialCall, "测试 TODO") || strings.Contains(partialCall, "(") {
 		t.Fatalf("running ToolCall should hide incomplete args, got %q", partialCall)
@@ -93,11 +125,29 @@ func TestToolRuntimeRendering(t *testing.T) {
 	}
 
 	result := StripANSI(ToolResult("exec", "{}", "line1\n\nline2\nline3", ToolStatusDone))
-	if !strings.Contains(result, "exec") || !strings.Contains(result, "line1") || !strings.Contains(result, "隐藏 1 行") {
+	if !strings.Contains(result, "exec") || !strings.Contains(result, "line1") || !strings.Contains(result, "line3") {
 		t.Fatalf("ToolResult = %q", result)
 	}
 	if got := StripANSI(ToolResult("exec", "{}", "   ", ToolStatusDone)); !strings.Contains(got, "exec") {
 		t.Fatalf("empty ToolResult should fall back to call, got %q", got)
+	}
+	formattedResult := StripANSI(ToolResult(
+		"file_list",
+		`{"path":"/tmp/project"}`,
+		`{"content":"目录 /tmp/project 下的文件和文件夹:\n\n[FILE] index.ts (509 bytes)\n[DIR] interactive\n[DIR] rpc\n[FILE] readme.md (1 KB)\n[FILE] package.json (2 KB)"}`,
+		ToolStatusDone,
+	))
+	if strings.Contains(formattedResult, `{"content"`) || strings.Contains(formattedResult, `\n`) {
+		t.Fatalf("structured tool result should not render raw JSON: %q", formattedResult)
+	}
+	for _, want := range []string{"目录 /tmp/project", "[FILE] index.ts", "[DIR] interactive", "隐藏 2 项"} {
+		if !strings.Contains(formattedResult, want) {
+			t.Fatalf("structured tool result missing %q: %q", want, formattedResult)
+		}
+	}
+	arrayResult := StripANSI(ToolResult("search", `{}`, `{"results":[{"title":"A"},{"title":"B"},{"title":"C"},{"title":"D"},{"title":"E"}]}`, ToolStatusDone))
+	if !strings.Contains(arrayResult, "隐藏 1 项") || !strings.Contains(arrayResult, "- {\"title\":\"A\"}") {
+		t.Fatalf("array tool result should limit preview items: %q", arrayResult)
 	}
 
 	items := []ToolChainItem{

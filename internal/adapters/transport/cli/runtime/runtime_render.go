@@ -209,12 +209,25 @@ func (m runtimeModel) mainTranscriptLines() []string {
 	return m.ensureRenderCache().Lines
 }
 
+func (m runtimeModel) reasoningBlockIndexAtRenderedLine(line int) (int, bool) {
+	_ = m.mainTranscriptText()
+	indexes := m.ensureRenderCache().LineBlockIndexes
+	if line < 0 || line >= len(indexes) {
+		return -1, false
+	}
+	idx := indexes[line]
+	if idx < 0 || idx >= len(m.blocks) || m.blocks[idx].Kind != runtimeBlockReasoning {
+		return -1, false
+	}
+	return idx, true
+}
+
 func (m runtimeModel) rebuildMainTranscriptCache() string {
 	cache := m.ensureRenderCache()
-	text := m.blocksText(m.blocks)
-	lines := splitTranscriptLines(text)
-	cache.Text = text
-	cache.Lines = lines
+	rendered := m.renderBlocksWithLineIndexes(m.blocks, m.renderBlock)
+	cache.Text = rendered.Text
+	cache.Lines = rendered.Lines
+	cache.LineBlockIndexes = rendered.LineBlockIndexes
 	cache.Width = m.contentWidth()
 	cache.Dirty = false
 	return cache.Text
@@ -264,16 +277,24 @@ func (m runtimeModel) memberBlocksText(member *runtimeMemberState) string {
 	if !member.RenderDirty && member.RenderCache != "" {
 		return member.RenderCache
 	}
-	var transcript strings.Builder
-	for i, block := range member.Blocks {
-		if i > 0 && shouldSpaceBeforeBlock(member.Blocks[i-1].Kind, block.Kind) {
-			transcript.WriteString("\n")
-		}
-		fmt.Fprintf(&transcript, "%s\n", m.renderMemberBlock(member, block))
-	}
-	member.RenderCache = tui.WrapLines(transcript.String(), m.contentWidth())
+	rendered := m.renderBlocksWithLineIndexes(member.Blocks, func(block runtimeBlock) string {
+		return m.renderMemberBlock(member, block)
+	})
+	member.RenderCache = rendered.Text
+	member.RenderLineBlockIndexes = rendered.LineBlockIndexes
 	member.RenderDirty = false
 	return member.RenderCache
+}
+
+func (s *runtimeMemberState) reasoningBlockIndexAtRenderedLine(line int) (int, bool) {
+	if s == nil || line < 0 || line >= len(s.RenderLineBlockIndexes) {
+		return -1, false
+	}
+	idx := s.RenderLineBlockIndexes[line]
+	if idx < 0 || idx >= len(s.Blocks) || s.Blocks[idx].Kind != runtimeBlockReasoning {
+		return -1, false
+	}
+	return idx, true
 }
 
 func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtimeBlock) string {
@@ -291,20 +312,52 @@ func (m runtimeModel) renderMemberBlock(member *runtimeMemberState, block runtim
 }
 
 func (m runtimeModel) blocksText(blocks []runtimeBlock) string {
-	var transcript strings.Builder
+	return m.renderBlocksWithLineIndexes(blocks, m.renderBlock).Text
+}
+
+type runtimeRenderedBlocks struct {
+	Text             string
+	Lines            []string
+	LineBlockIndexes []int
+}
+
+func (m runtimeModel) renderBlocksWithLineIndexes(blocks []runtimeBlock, render func(runtimeBlock) string) runtimeRenderedBlocks {
+	var lines []string
+	var lineBlockIndexes []int
+	appendRenderedLine := func(line string, blockIndex int, interactive bool) {
+		lines = append(lines, line)
+		if interactive {
+			lineBlockIndexes = append(lineBlockIndexes, blockIndex)
+		} else {
+			lineBlockIndexes = append(lineBlockIndexes, -1)
+		}
+	}
 	for i, block := range blocks {
 		if i > 0 && shouldSpaceBeforeBlock(blocks[i-1].Kind, block.Kind) {
-			transcript.WriteString("\n")
+			lines = append(lines, "")
+			lineBlockIndexes = append(lineBlockIndexes, -1)
 		}
-		fmt.Fprintf(&transcript, "%s\n", m.renderBlock(block))
+		for lineIndex, line := range strings.Split(render(block), "\n") {
+			appendRenderedLine(line, i, block.Kind == runtimeBlockReasoning && lineIndex == 0)
+		}
 	}
-	return tui.WrapLines(transcript.String(), m.contentWidth())
+	return runtimeRenderedBlocks{
+		Text:             strings.Join(lines, "\n"),
+		Lines:            lines,
+		LineBlockIndexes: lineBlockIndexes,
+	}
 }
 
 func shouldSpaceBeforeBlock(prev runtimeBlockKind, current runtimeBlockKind) bool {
 	switch current {
 	case runtimeBlockUser, runtimeBlockReasoning, runtimeBlockDone:
 		return true
+	case runtimeBlockAssistant:
+		return prev == runtimeBlockTool || prev == runtimeBlockMember || prev == runtimeBlockReasoning
+	case runtimeBlockTool:
+		return prev != runtimeBlockTool
+	case runtimeBlockMember:
+		return prev != runtimeBlockMember
 	case runtimeBlockSystem, runtimeBlockError:
 		return prev == runtimeBlockUser
 	default:
@@ -516,7 +569,7 @@ func (m runtimeModel) renderBlock(block runtimeBlock) string {
 	case runtimeBlockWelcome:
 		return tui.RenderWelcomePanel(m.welcome, m.contentWidth())
 	case runtimeBlockReasoning:
-		return tui.Reasoning(block.Content) + "\n"
+		return tui.ReasoningBlock(block.Content, block.Collapsed, reasoningDurationLabel(block))
 	case runtimeBlockError:
 		return tui.Error(block.Title + " " + block.Content)
 	case runtimeBlockDone:
@@ -536,6 +589,17 @@ func (m runtimeModel) renderBlock(block runtimeBlock) string {
 	default:
 		return m.runtimeRenderMarkdown(block.Content)
 	}
+}
+
+func reasoningDurationLabel(block runtimeBlock) string {
+	if block.StartedAt.IsZero() || block.UpdatedAt.IsZero() || block.UpdatedAt.Before(block.StartedAt) {
+		return ""
+	}
+	elapsed := block.UpdatedAt.Sub(block.StartedAt)
+	if elapsed < time.Millisecond {
+		elapsed = time.Millisecond
+	}
+	return elapsed.Round(time.Millisecond).String()
 }
 
 func (m runtimeModel) renderMemberSummary(block runtimeBlock) string {

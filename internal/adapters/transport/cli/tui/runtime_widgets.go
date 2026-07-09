@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -10,6 +12,7 @@ import (
 const (
 	defaultToolDisplayName = "tool"
 	toolArgsPendingText    = "参数准备中..."
+	toolResultPreviewLimit = 4
 )
 
 type ToolStatus string
@@ -118,19 +121,18 @@ func RenderUserMessageBlock(content string, width int) string {
 	if width <= 0 {
 		width = 100
 	}
-	lineWidth := max(20, width-2)
+	lineWidth := max(20, width)
 	lines := strings.Split(content, "\n")
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	for i, line := range lines {
-		prefix := "  "
-		if i == 0 {
-			prefix = PromptMarker()
-		}
-		lines[i] = userLineStyle(lineWidth).Render(prefix + userTextStyle().Render(line))
+	rendered := make([]string, 0, len(lines)+2)
+	rendered = append(rendered, renderUserMessageLine("", lineWidth))
+	for _, line := range lines {
+		rendered = append(rendered, renderUserMessageLine(line, lineWidth))
 	}
-	return strings.Join(lines, "\n")
+	rendered = append(rendered, renderUserMessageLine("", lineWidth))
+	return strings.Join(rendered, "\n")
 }
 
 func RenderWelcomePanel(info WelcomeInfo, width int) string {
@@ -255,12 +257,11 @@ func ToolCallWithArgsReady(name string, args string, status ToolStatus, argsRead
 	} else {
 		args = toolArgsSummary(args)
 	}
-	label := name
+	nameLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true).Render(name)
 	if args != "" {
-		label = name + "(" + truncateRunes(args, 88) + ")"
+		nameLabel += dimStyle().Render(" · " + truncateRunes(args, 88))
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(toolStatusColor(status))).Render("● ") +
-		lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true).Render(label)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(toolStatusColor(status))).Render(toolStatusIcon(status)+" ") + nameLabel
 }
 
 func ToolResult(name string, args string, content string, status ToolStatus) string {
@@ -271,14 +272,18 @@ func ToolResultWithArgsReady(name string, args string, content string, status To
 	if strings.TrimSpace(content) == "" {
 		return ToolCallWithArgsReady(name, args, status, argsReady)
 	}
-	line, hidden := toolResultPreviewLine(content)
+	lines, hidden := toolResultPreviewLines(content, toolResultPreviewLimit)
 	rendered := make([]string, 0, 3)
 	rendered = append(rendered, ToolCallWithArgsReady(name, args, status, argsReady))
-	if line != "" {
-		if hidden > 0 {
-			line += "  ... 隐藏 " + formatInt(hidden) + " 行"
+	for i, line := range lines {
+		prefix := "  ├ "
+		if i == len(lines)-1 && hidden == 0 {
+			prefix = "  └ "
 		}
-		rendered = append(rendered, dimStyle().Render("  └ "+line))
+		rendered = append(rendered, dimStyle().Render(prefix+line))
+	}
+	if hidden > 0 {
+		rendered = append(rendered, dimStyle().Render("  └ ... 隐藏 "+formatInt(hidden)+" 项"))
 	}
 	return strings.Join(rendered, "\n")
 }
@@ -330,9 +335,11 @@ func toolTreeLabel(name, args string, argsPending bool, maxWidth int) string {
 	if name == "" {
 		name = defaultToolDisplayName
 	}
-	summary := toolArgsSummary(args)
+	summary := ""
 	if argsPending {
 		summary = toolArgsPendingText
+	} else {
+		summary = toolArgsSummary(args)
 	}
 	if summary == "" {
 		return truncateRunes(name, maxWidth)
@@ -354,6 +361,19 @@ func toolStatusColor(status ToolStatus) string {
 	}
 }
 
+func toolStatusIcon(status ToolStatus) string {
+	switch status {
+	case ToolStatusRunning:
+		return "◌"
+	case ToolStatusError:
+		return "✗"
+	case ToolStatusDone:
+		return "■"
+	default:
+		return "□"
+	}
+}
+
 func Interrupted(text string) string {
 	return dimStyle().Render("  └─ " + text)
 }
@@ -371,7 +391,37 @@ func Tool(text string) string {
 }
 
 func Reasoning(text string) string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true).Render(text)
+	return ReasoningBlock(text, false, "")
+}
+
+func ReasoningBlock(text string, collapsed bool, duration string) string {
+	lines := nonEmptyReasoningLines(text)
+	count := len(lines)
+	if count == 0 {
+		count = 1
+	}
+	title := reasoningTitle(collapsed, count, duration)
+	if collapsed {
+		return reasoningTitleStyle().Render(title)
+	}
+	rendered := make([]string, 0, len(lines)+1)
+	rendered = append(rendered, reasoningTitleStyle().Render(title))
+	for _, line := range lines {
+		rendered = append(rendered, reasoningBodyStyle().Render("    "+line))
+	}
+	return strings.Join(rendered, "\n")
+}
+
+func reasoningTitle(collapsed bool, count int, duration string) string {
+	indicator := "▾"
+	if collapsed {
+		indicator = "▸"
+	}
+	title := indicator + " Thought · " + formatInt(count) + " 行"
+	if strings.TrimSpace(duration) != "" {
+		title += " · " + strings.TrimSpace(duration)
+	}
+	return title
 }
 
 func Banner(text string) string {
@@ -403,12 +453,41 @@ func dimStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 }
 
+func reasoningTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+}
+
+func reasoningBodyStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+}
+
+func nonEmptyReasoningLines(text string) []string {
+	rawLines := strings.Split(strings.TrimSpace(text), "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func renderUserMessageLine(content string, width int) string {
+	width = max(20, width)
+	return userLineStyle(width).Render(content)
+}
+
 func userLineStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("236")).
-		Padding(0, 0).
-		Width(max(20, width))
+		Background(lipgloss.Color("235")).
+		Bold(true).
+		Border(lipgloss.Border{Left: "▌"}, false, false, false, true).
+		BorderForeground(lipgloss.Color("12")).
+		BorderBackground(lipgloss.Color("235")).
+		Padding(0, 0, 0, 2).
+		Width(width)
 }
 
 func userTextStyle() lipgloss.Style {
@@ -416,24 +495,144 @@ func userTextStyle() lipgloss.Style {
 }
 
 func toolResultPreviewLine(content string) (string, int) {
+	lines, hidden := toolResultPreviewLines(content, 2)
+	return truncateRunes(strings.Join(lines, "  "), 160), hidden
+}
+
+func toolResultPreviewLines(content string, limit int) ([]string, int) {
+	if limit <= 0 {
+		limit = toolResultPreviewLimit
+	}
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.ReplaceAll(content, "\r", "\n")
 	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, 0
+	}
+	if parsed, ok := parseToolResultPreviewJSON(content, limit); ok {
+		return parsed.lines, parsed.hidden
+	}
+	return previewTextLines(content, limit)
+}
+
+type toolResultPreview struct {
+	lines  []string
+	hidden int
+}
+
+func parseToolResultPreviewJSON(content string, limit int) (toolResultPreview, bool) {
+	var value any
+	if err := json.Unmarshal([]byte(content), &value); err != nil {
+		return toolResultPreview{}, false
+	}
+	return previewJSONValue(value, limit), true
+}
+
+func previewJSONValue(value any, limit int) toolResultPreview {
+	switch v := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"content", "message", "error", "result", "output", "text"} {
+			if raw, ok := v[key]; ok {
+				if text := stringifyPreviewScalar(raw); text != "" {
+					lines, hidden := previewTextLines(text, limit)
+					return toolResultPreview{lines: lines, hidden: hidden}
+				}
+			}
+		}
+		for _, key := range []string{"items", "results", "files", "entries", "data"} {
+			if raw, ok := v[key]; ok {
+				if items, ok := raw.([]any); ok {
+					lines, hidden := previewJSONArray(items, limit)
+					return toolResultPreview{lines: lines, hidden: hidden}
+				}
+			}
+		}
+		lines, hidden := previewJSONFields(v, limit)
+		return toolResultPreview{lines: lines, hidden: hidden}
+	case []any:
+		lines, hidden := previewJSONArray(v, limit)
+		return toolResultPreview{lines: lines, hidden: hidden}
+	default:
+		if text := stringifyPreviewScalar(v); text != "" {
+			lines, hidden := previewTextLines(text, limit)
+			return toolResultPreview{lines: lines, hidden: hidden}
+		}
+	}
+	return toolResultPreview{}
+}
+
+func previewTextLines(content string, limit int) ([]string, int) {
 	rawLines := strings.Split(content, "\n")
-	var parts []string
+	lines := make([]string, 0, min(len(rawLines), limit))
 	hidden := 0
 	for _, line := range rawLines {
 		line = strings.TrimSpace(line)
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if len(parts) < 2 {
-			parts = append(parts, strings.Join(strings.Fields(line), " "))
+		if len(lines) < limit {
+			lines = append(lines, truncateRunes(strings.Join(strings.Fields(line), " "), 160))
 		} else {
 			hidden++
 		}
 	}
-	return truncateRunes(strings.Join(parts, "  "), 160), hidden
+	return lines, hidden
+}
+
+func previewJSONArray(items []any, limit int) ([]string, int) {
+	lines := make([]string, 0, min(len(items), limit))
+	for i, item := range items {
+		if i >= limit {
+			break
+		}
+		lines = append(lines, truncateRunes("- "+compactJSONPreviewValue(item), 160))
+	}
+	return lines, max(0, len(items)-limit)
+}
+
+func previewJSONFields(fields map[string]any, limit int) ([]string, int) {
+	lines := make([]string, 0, min(len(fields), limit))
+	hidden := 0
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := fields[key]
+		if len(lines) >= limit {
+			hidden++
+			continue
+		}
+		lines = append(lines, truncateRunes(key+": "+compactJSONPreviewValue(value), 160))
+	}
+	return lines, hidden
+}
+
+func compactJSONPreviewValue(value any) string {
+	if text := stringifyPreviewScalar(value); text != "" {
+		return strings.Join(strings.Fields(text), " ")
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func stringifyPreviewScalar(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	case nil:
+		return ""
+	default:
+		return ""
+	}
 }
 
 func formatInt(n int) string {

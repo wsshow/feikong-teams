@@ -42,10 +42,11 @@ type runtimeModel struct {
 type runtimeSelectionCopiedTickMsg time.Time
 
 type runtimeTranscriptRenderCache struct {
-	Text  string
-	Lines []string
-	Dirty bool
-	Width int
+	Text             string
+	Lines            []string
+	LineBlockIndexes []int
+	Dirty            bool
+	Width            int
 }
 
 type runtimeBlockKind string
@@ -69,6 +70,9 @@ type runtimeBlock struct {
 	Kind          runtimeBlockKind
 	Title         string
 	Content       string
+	StartedAt     time.Time
+	UpdatedAt     time.Time
+	Collapsed     bool
 	ToolKey       string
 	ToolName      string
 	ToolArgs      string
@@ -84,18 +88,19 @@ type runtimeBlock struct {
 }
 
 type runtimeMemberState struct {
-	Key          string
-	Name         string
-	Status       string
-	Task         string
-	Blocks       []runtimeBlock
-	ActiveOutput int
-	ActiveReason int
-	ToolCount    int
-	PendingAsks  []runtimeAskState
-	ScrollOffset int
-	RenderCache  string
-	RenderDirty  bool
+	Key                    string
+	Name                   string
+	Status                 string
+	Task                   string
+	Blocks                 []runtimeBlock
+	ActiveOutput           int
+	ActiveReason           int
+	ToolCount              int
+	PendingAsks            []runtimeAskState
+	ScrollOffset           int
+	RenderCache            string
+	RenderLineBlockIndexes []int
+	RenderDirty            bool
 }
 
 func newRuntimeModel(r *Runtime) runtimeModel {

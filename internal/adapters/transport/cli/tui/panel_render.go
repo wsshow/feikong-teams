@@ -5,13 +5,24 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
 var ansiSeqRe = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\a]*(?:\a|\x1b\\))`)
+
+const toolArgsSummaryCacheLimit = 512
+
+var toolArgsSummaryCache = struct {
+	sync.Mutex
+	values map[string]string
+}{
+	values: make(map[string]string),
+}
 
 func terminalWidth() int {
 	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
@@ -86,9 +97,11 @@ func toolLabelWithPending(name, args string, argsPending bool, maxWidth int) str
 	if name == "" {
 		name = "tool"
 	}
-	summary := toolArgsSummary(args)
+	summary := ""
 	if argsPending {
 		summary = toolArgsPendingText
+	} else {
+		summary = toolArgsSummary(args)
 	}
 	if summary == "" {
 		return truncateRunes(name, maxWidth)
@@ -102,6 +115,23 @@ func toolArgsSummary(args string) string {
 	if args == "" {
 		return ""
 	}
+	toolArgsSummaryCache.Lock()
+	if summary, ok := toolArgsSummaryCache.values[args]; ok {
+		toolArgsSummaryCache.Unlock()
+		return summary
+	}
+	toolArgsSummaryCache.Unlock()
+	summary := computeToolArgsSummary(args)
+	toolArgsSummaryCache.Lock()
+	if len(toolArgsSummaryCache.values) >= toolArgsSummaryCacheLimit {
+		toolArgsSummaryCache.values = make(map[string]string)
+	}
+	toolArgsSummaryCache.values[args] = summary
+	toolArgsSummaryCache.Unlock()
+	return summary
+}
+
+func computeToolArgsSummary(args string) string {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(args), &payload); err == nil {
 		for _, key := range []string{"query", "url", "path", "file_path", "request", "task", "command"} {
@@ -111,8 +141,13 @@ func toolArgsSummary(args string) string {
 				}
 			}
 		}
-		for _, v := range payload {
-			if s := stringifyArgValue(v); s != "" {
+		keys := make([]string, 0, len(payload))
+		for key := range payload {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if s := stringifyArgValue(payload[key]); s != "" {
 				return s
 			}
 		}

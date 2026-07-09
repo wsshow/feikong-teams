@@ -544,17 +544,13 @@ func paintCodeBlockBackground(highlighted string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	contentWidth := width - 4
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
 	lines := strings.Split(highlighted, "\n")
 	rows := make([]string, 0, len(lines)+2)
-	rows = append(rows, paintCodeBlockLine("", contentWidth))
+	rows = append(rows, paintCodeBlockLine("", width))
 	for _, line := range lines {
-		rows = append(rows, paintCodeBlockLine("  "+keepBackgroundAfterReset(line), contentWidth))
+		rows = append(rows, paintCodeBlockLine("  "+keepBackgroundAfterReset(line), width))
 	}
-	rows = append(rows, paintCodeBlockLine("", contentWidth))
+	rows = append(rows, paintCodeBlockLine("", width))
 	return strings.Join(rows, "\n")
 }
 

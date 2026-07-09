@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
@@ -64,6 +65,63 @@ func TestRuntimeCtrlCConfirmsExitWhenIdle(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("first idle Ctrl+C should start countdown")
+	}
+}
+
+func TestRuntimeHistoryCancelledRendersInterrupt(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.blocks = nil
+	model.appendHistoryMessage(eventlog.AgentMessage{
+		AgentName: "system",
+		Events: []eventlog.MessageEvent{{
+			Type:    eventlog.MsgTypeCancelled,
+			Content: "任务已取消",
+		}},
+	})
+
+	if len(model.blocks) != 1 || model.blocks[0].Kind != runtimeBlockInterrupt {
+		t.Fatalf("cancelled history should append interrupt block, got %#v", model.blocks)
+	}
+	view := tui.StripANSI(model.View().Content)
+	if !strings.Contains(view, "任务已取消") {
+		t.Fatalf("cancelled history should render cancellation text, got %q", view)
+	}
+}
+
+func TestRuntimeHistoryUnfinishedToolRendersInterrupted(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.blocks = nil
+	model.appendHistoryMessage(eventlog.AgentMessage{
+		AgentName: "coordinator",
+		Events: []eventlog.MessageEvent{{
+			Type: eventlog.MsgTypeToolCall,
+			ToolCall: &eventlog.ToolCallRecord{
+				Ref:       "tool_call:call_1",
+				ID:        "call_1",
+				Name:      "file_read",
+				Arguments: `{"filepath":"agent-loop.ts"}`,
+				Status:    "running",
+			},
+		}},
+	})
+
+	if len(model.blocks) != 1 || model.blocks[0].Kind != runtimeBlockTool {
+		t.Fatalf("unfinished tool history should append tool block, got %#v", model.blocks)
+	}
+	if model.blocks[0].ToolStatus != tui.ToolStatusError || !model.blocks[0].ToolHasResult {
+		t.Fatalf("unfinished tool should render as interrupted error, got %#v", model.blocks[0])
+	}
+	view := tui.StripANSI(model.View().Content)
+	if !strings.Contains(view, "file_read") || !strings.Contains(view, "Interrupted") {
+		t.Fatalf("unfinished tool should render interruption, got %q", view)
 	}
 }
 
@@ -883,6 +941,185 @@ func TestRuntimeCopiedNoticeCountsLinesAndCharacters(t *testing.T) {
 	want := "已复制 2 行 · 7 字符"
 	if got != want {
 		t.Fatalf("CopiedNotice() = %q, want %q", got, want)
+	}
+}
+
+func TestRuntimeMouseClickTogglesReasoning(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 80
+	model.height = 10
+	model.blocks = []runtimeBlock{{Kind: runtimeBlockReasoning, Content: "line 1\nline 2", Collapsed: true}}
+	model.markTranscriptDirty()
+
+	if !model.blocks[0].Collapsed {
+		t.Fatal("reasoning should be collapsed by default")
+	}
+	if view := model.View().Content; !strings.Contains(view, "Thought · 2 行") || strings.Contains(view, "line 1") || strings.Contains(view, "点击") || strings.Contains(view, "Ctrl+R") {
+		t.Fatalf("initial reasoning view should be collapsed, got %q", view)
+	}
+
+	updated, _ := model.Update(tea.MouseClickMsg(tea.Mouse{X: 2, Y: 0, Button: tea.MouseLeft}))
+	model = updated.(runtimeModel)
+	if model.blocks[0].Collapsed {
+		t.Fatal("clicking reasoning header should expand reasoning")
+	}
+	if view := model.View().Content; !strings.Contains(view, "Thought · 2 行") || !strings.Contains(view, "line 1") || strings.Contains(view, "点击") || strings.Contains(view, "Ctrl+R") {
+		t.Fatalf("expanded reasoning view should show body, got %q", view)
+	}
+
+	updated, _ = model.Update(tea.MouseClickMsg(tea.Mouse{X: 2, Y: 0, Button: tea.MouseLeft}))
+	model = updated.(runtimeModel)
+	if !model.blocks[0].Collapsed {
+		t.Fatal("clicking reasoning header again should collapse reasoning")
+	}
+}
+
+func TestRuntimeMouseClickTogglesOnlyClickedReasoning(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 80
+	model.height = 14
+	model.blocks = []runtimeBlock{
+		{Kind: runtimeBlockReasoning, Content: "first", Collapsed: true},
+		{Kind: runtimeBlockReasoning, Content: "second", Collapsed: true},
+	}
+	model.markTranscriptDirty()
+
+	updated, _ := model.Update(tea.MouseClickMsg(tea.Mouse{X: 2, Y: 2, Button: tea.MouseLeft}))
+	model = updated.(runtimeModel)
+	if !model.blocks[0].Collapsed {
+		t.Fatal("clicking second reasoning should not expand first reasoning")
+	}
+	if model.blocks[1].Collapsed {
+		t.Fatal("clicking second reasoning should expand only second reasoning")
+	}
+}
+
+func TestRuntimeMouseClickReasoningKeepsHeaderVisible(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 80
+	model.height = 8
+	model.blocks = []runtimeBlock{{
+		Kind:      runtimeBlockReasoning,
+		Content:   "line 1\nline 2\nline 3\nline 4\nline 5\nline 6",
+		Collapsed: true,
+	}}
+	model.markTranscriptDirty()
+
+	initial := model.View().Content
+	if !strings.Contains(initial, "Thought · 6 行") {
+		t.Fatalf("initial reasoning header should be visible, got %q", initial)
+	}
+	initialY := runtimeViewLineIndex(initial, "Thought · 6 行")
+	if initialY < 0 {
+		t.Fatalf("initial reasoning header line not found, got %q", initial)
+	}
+
+	updated, _ := model.Update(tea.MouseClickMsg(tea.Mouse{X: 2, Y: 0, Button: tea.MouseLeft}))
+	model = updated.(runtimeModel)
+
+	view := model.View().Content
+	if !strings.Contains(view, "Thought · 6 行") {
+		t.Fatalf("expanded reasoning header should stay visible after mouse click, got %q", view)
+	}
+	if got := runtimeViewLineIndex(view, "Thought · 6 行"); got != initialY {
+		t.Fatalf("expanded reasoning header line = %d, want %d; view %q", got, initialY, view)
+	}
+	if model.currentScrollOffset() == 0 {
+		t.Fatal("expanding reasoning from bottom should compensate scroll offset")
+	}
+}
+
+func runtimeViewLineIndex(view string, needle string) int {
+	for i, line := range strings.Split(view, "\n") {
+		if strings.Contains(tui.StripANSI(line), needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestRuntimeReasoningHeaderShowsDuration(t *testing.T) {
+	started := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
+	block := runtimeBlock{
+		Kind:      runtimeBlockReasoning,
+		Content:   "line 1",
+		StartedAt: started,
+		UpdatedAt: started.Add(1500 * time.Millisecond),
+	}
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.blocks = []runtimeBlock{block}
+	model.markTranscriptDirty()
+
+	view := model.View().Content
+	if !strings.Contains(view, "Thought · 1 行 · 1.5s") || strings.Contains(view, "点击") || strings.Contains(view, "Ctrl+R") {
+		t.Fatalf("reasoning header should show duration without operation hints, got %q", view)
+	}
+}
+
+func TestRuntimeMarkdownBlockquoteKeepsGutterOnWrappedLines(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 72
+	model.height = 20
+	model.blocks = []runtimeBlock{{
+		Kind:    runtimeBlockAssistant,
+		Content: "> Pi 是一个设计上很有追求的开源智能体框架。它的 Provider 中立和事件驱动的 Agent 循环做得扎实。",
+	}}
+	model.markTranscriptDirty()
+
+	view := tui.StripANSI(model.View().Content)
+	for _, line := range strings.Split(view, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || !strings.Contains(trimmed, "Agent") {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "┃") && !strings.HasPrefix(trimmed, "|") {
+			t.Fatalf("wrapped blockquote line should keep quote gutter, got %q in view:\n%s", line, view)
+		}
+	}
+}
+
+func TestRuntimeMarkdownRenderingStillConstrainsPlainTextWidth(t *testing.T) {
+	model := newRuntimeModel(&Runtime{
+		ctx:         context.Background(),
+		session:     NewSession(ModeTeam, nil, nil),
+		exitSignals: make(chan os.Signal, 1),
+	})
+	model.width = 48
+	model.height = 20
+	model.blocks = []runtimeBlock{{
+		Kind:    runtimeBlockAssistant,
+		Content: "这是一段很长的普通 Markdown 文本，用来确认 runtime 不做二次换行后，markdown renderer 自己仍然会按照终端宽度换行。",
+	}}
+	model.markTranscriptDirty()
+
+	for _, line := range strings.Split(model.View().Content, "\n") {
+		plain := tui.StripANSI(line)
+		if strings.TrimSpace(plain) == "" {
+			continue
+		}
+		if got := tui.CellWidth(plain); got > model.screenWidth() {
+			t.Fatalf("rendered markdown line width = %d, want <= %d: %q", got, model.screenWidth(), plain)
+		}
 	}
 }
 
