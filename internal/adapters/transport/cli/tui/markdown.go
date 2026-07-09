@@ -618,6 +618,10 @@ func renderMarkdownTable(tableMarkdown string, width int) string {
 	for i := range rows {
 		normalizeTableRow(&rows[i], colCount)
 	}
+	renderMarkdownTableRow(header, width)
+	for i := range rows {
+		renderMarkdownTableRow(rows[i], width)
+	}
 	aligns := parseTableAligns(splitMarkdownTableLine(lines[1]), colCount)
 
 	t := table.New().
@@ -650,6 +654,54 @@ func renderMarkdownTable(tableMarkdown string, width int) string {
 		rendered = t.Width(maxWidth).String()
 	}
 	return strings.TrimRight(rendered, "\n")
+}
+
+func renderMarkdownTableRow(row []string, width int) {
+	for i := range row {
+		row[i] = renderMarkdownTableCell(row[i], width)
+	}
+}
+
+func renderMarkdownTableCell(cell string, width int) string {
+	cell = strings.TrimSpace(cell)
+	if cell == "" || !hasInlineMarkdown(cell) {
+		return cell
+	}
+	r := rendererForWidth(width)
+	if r == nil {
+		return cell
+	}
+	out, err := r.Render(cell)
+	if err != nil {
+		return cell
+	}
+	out = compactInlineMarkdownOutput(out)
+	if out == "" {
+		return cell
+	}
+	return out
+}
+
+func hasInlineMarkdown(s string) bool {
+	return strings.Contains(s, "**") ||
+		strings.Contains(s, "__") ||
+		strings.Contains(s, "*") ||
+		strings.Contains(s, "_") ||
+		strings.Contains(s, "`") ||
+		strings.Contains(s, "~~") ||
+		strings.Contains(s, "](")
+}
+
+func compactInlineMarkdownOutput(out string) string {
+	lines := strings.Split(strings.Trim(out, "\n"), "\n")
+	parts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func normalizeTableRow(row *[]string, count int) {

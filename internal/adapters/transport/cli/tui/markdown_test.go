@@ -33,6 +33,25 @@ func TestRenderMarkdownTableSeparatesBodyRows(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownTableRendersInlineMarkdown(t *testing.T) {
+	out := RenderMarkdownWithWidth("| 包 | 路径 | 职责 |\n| --- | --- | --- |\n| **pi-ai** | `packages/ai` | **核心** CLI |", 80)
+	plain := StripANSI(out)
+
+	if strings.Contains(plain, "**pi-ai**") || strings.Contains(plain, "`packages/ai`") || strings.Contains(plain, "**核心**") {
+		t.Fatalf("expected table cells to render inline markdown:\n%s", out)
+	}
+	for _, want := range []string{"pi-ai", "packages/ai", "核心", "CLI"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected rendered table to keep %q:\n%s", want, out)
+		}
+	}
+	for _, token := range []string{"┌", "┐", "└", "┘", "├", "┼", "┤"} {
+		if !strings.Contains(out, token) {
+			t.Fatalf("expected table border token %q in output:\n%s", token, out)
+		}
+	}
+}
+
 func TestRenderMarkdownNormalizesCompactOneLineTable(t *testing.T) {
 	out := RenderMarkdownWithWidth("| 序号 | 项目 | 状态 | |:---:|:---|:---:| | 1 | 用户中心重构 | 进行中 | | 2 | 支付模块升级 | 待评审 |", 80)
 
