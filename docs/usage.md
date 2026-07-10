@@ -34,7 +34,7 @@ fkteams serve
 fkteams serve --host 0.0.0.0 --port 8080
 ```
 
-提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。详细接口文档请参考 [API 文档](./api.md)。
+提供与 Web 模式相同的 API 接口和 WebSocket 服务，但不包含前端页面。详细接口文档请参考 [API 文档](./api/README.md)。
 
 ### 命令行模式
 
@@ -57,6 +57,7 @@ fkteams -m group
 make native
 
 # 也可以直接从源码启动
+make web-build
 go run ./cmd/fkteams web
 
 # Web界面模式
@@ -71,6 +72,48 @@ go run ./cmd/fkteams web
 # 启动多智能体讨论模式
 ./release/fkteams_darwin_arm64 -m group
 ```
+
+完整的构建环境、跨平台编译和前端开发说明见[部署指南](./deployment.md)。
+
+## 模型登录与管理
+
+推荐通过交互式向导配置模型：
+
+```bash
+fkteams login
+```
+
+也可以直接指定服务商：
+
+```bash
+fkteams login openai
+fkteams login deepseek
+fkteams login copilot
+```
+
+GitHub Copilot 用户需要有效订阅，可以使用设备码登录，也可以导入 VS Code 已保存的 token：
+
+```bash
+fkteams login copilot --import
+```
+
+常用管理命令：
+
+```bash
+fkteams model ls
+fkteams model rm
+fkteams logout openai
+```
+
+如果需要直接编辑 TOML、配置自定义 OpenAI 兼容服务或指定不同用途的默认模型，请参考[配置指南](./configuration.md)。
+
+## 工作区项目约定
+
+在应用工作区中放置 `AGENTS.md`，可以为所有智能体提供统一的项目说明和开发约定；系统也兼容 `Agents.md`。
+
+默认文件位置为 `~/.fkteams/workspace/AGENTS.md`。通过 `FEIKONG_APP_DIR` 修改应用目录后，文件位置相应变为 `{FEIKONG_APP_DIR}/workspace/AGENTS.md`。
+
+规则文件支持通过 `@import` 拆分。内容会在每次模型调用前临时注入，不会写入会话历史，因此适合保存项目架构、代码规范和验证命令等长期上下文。
 
 ## 使用场景
 

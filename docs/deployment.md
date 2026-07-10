@@ -1,17 +1,80 @@
 # 部署指南
 
-## 构建
+## 安装发行版
+
+一键安装脚本会下载最新发行版并安装到 `~/.fkteams/bin`，Windows 默认安装到 `%USERPROFILE%\.fkteams\bin`。
+
+Linux / macOS：
 
 ```bash
-# 清理构建产物
-make clean
-
-# 构建当前平台
-make build
-
-# 修改 Makefile 中的 os-archs 变量以支持其他平台
-# 例如：os-archs=darwin:arm64 linux:amd64 windows:amd64
+curl -fsSL https://raw.githubusercontent.com/wsshow/feikong-teams/main/install.sh | bash
 ```
+
+Windows PowerShell：
+
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/install.ps1 | iex"
+```
+
+也可以从 [GitHub Releases](https://github.com/wsshow/feikong-teams/releases) 下载对应平台的压缩包。
+
+如需修改安装目录，请在运行脚本前设置 `FKTEAMS_INSTALL_DIR`：
+
+```bash
+# Linux / macOS
+export FKTEAMS_INSTALL_DIR=/your/path
+```
+
+```powershell
+# Windows PowerShell
+$env:FKTEAMS_INSTALL_DIR = "D:\fkteams"
+```
+
+## 从源码构建
+
+源码构建需要 Go 和 Bun。前端构建产物 `web/dist` 不提交到仓库，Go 编译前需要先生成；Makefile 的构建目标会自动完成 Bun 依赖安装和前端生产构建。
+
+```bash
+# 构建当前平台
+make native
+
+# 构建指定平台
+make build t=linux:amd64
+
+# 构建预设平台（darwin/arm64、windows/amd64、linux/amd64）
+make all
+
+# 清理 release/ 和 web/dist
+make clean
+```
+
+构建产物写入 `release/fkteams_<goos>_<goarch>`，Windows 产物带 `.exe` 后缀。
+
+### 源码开发运行
+
+```bash
+# 生成嵌入 Go 二进制的前端产物
+make web-build
+
+# 启动 Web 服务
+go run ./cmd/fkteams web
+
+# 启动 CLI
+go run ./cmd/fkteams
+
+# 启动纯 API 服务
+go run ./cmd/fkteams serve
+```
+
+### 前端开发
+
+```bash
+cd web
+bun install
+bun run dev
+```
+
+前端开发服务器用于热更新；需要从 Go Web 服务验证完整嵌入式产物时，重新执行 `make web-build`。
 
 ## Docker 部署
 
