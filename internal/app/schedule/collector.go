@@ -4,25 +4,95 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
+	domainschedule "fkteams/internal/domain/schedule"
 )
+
+const truncatedOutputMarker = "\n\n> Output truncated because it exceeded the scheduler result limit."
 
 // newMarkdownCollector 收集后台调度运行事件并生成稳定的 Markdown 结果。
 func newMarkdownCollector() (func(event.Event) error, func() string) {
+	return newMarkdownCollectorWithLimit(domainschedule.MaxCollectedOutputBytes)
+}
+
+func newMarkdownCollectorWithLimit(limit int) (func(event.Event) error, func() string) {
 	collector := &markdownCollector{
+		buf:           newBoundedMarkdownBuffer(limit),
 		toolNamesByID: map[string]string{},
 	}
 	return collector.handle, collector.result
 }
 
 type markdownCollector struct {
-	buf           strings.Builder
+	buf           *boundedMarkdownBuffer
 	lastAgent     string
 	lastToolName  string
 	toolNamesByID map[string]string
 	inStream      bool
+}
+
+type boundedMarkdownBuffer struct {
+	builder   strings.Builder
+	limit     int
+	truncated bool
+}
+
+func newBoundedMarkdownBuffer(limit int) *boundedMarkdownBuffer {
+	if limit < len(truncatedOutputMarker) {
+		limit = len(truncatedOutputMarker)
+	}
+	return &boundedMarkdownBuffer{limit: limit}
+}
+
+func (b *boundedMarkdownBuffer) Write(data []byte) (int, error) {
+	originalLength := len(data)
+	if b.truncated || originalLength == 0 {
+		return originalLength, nil
+	}
+	remaining := b.limit - len(truncatedOutputMarker) - b.builder.Len()
+	if originalLength <= remaining {
+		_, _ = b.builder.Write(data)
+		return originalLength, nil
+	}
+	if remaining > 0 {
+		cut := min(remaining, originalLength)
+		for cut > 0 && !utf8.Valid(data[:cut]) {
+			cut--
+		}
+		_, _ = b.builder.Write(data[:cut])
+	}
+	b.builder.WriteString(truncatedOutputMarker)
+	b.truncated = true
+	return originalLength, nil
+}
+
+func (b *boundedMarkdownBuffer) WriteString(value string) (int, error) {
+	originalLength := len(value)
+	if b.truncated || originalLength == 0 {
+		return originalLength, nil
+	}
+	remaining := b.limit - len(truncatedOutputMarker) - b.builder.Len()
+	if originalLength <= remaining {
+		_, _ = b.builder.WriteString(value)
+		return originalLength, nil
+	}
+	if remaining > 0 {
+		cut := min(remaining, originalLength)
+		for cut > 0 && !utf8.ValidString(value[:cut]) {
+			cut--
+		}
+		_, _ = b.builder.WriteString(value[:cut])
+	}
+	b.builder.WriteString(truncatedOutputMarker)
+	b.truncated = true
+	return originalLength, nil
+}
+
+func (b *boundedMarkdownBuffer) String() string {
+	return b.builder.String()
 }
 
 func (c *markdownCollector) handle(e event.Event) error {
@@ -37,7 +107,10 @@ func (c *markdownCollector) handle(e event.Event) error {
 		c.writeNotice(e)
 	case event.TypeError:
 		c.flushStream()
-		fmt.Fprintf(&c.buf, "\n\n**Error [%s]**: %s", displayAgent(e.AgentName), e.Error)
+		c.buf.WriteString("\n\n**Error [")
+		c.buf.WriteString(displayAgent(e.AgentName))
+		c.buf.WriteString("]**: ")
+		c.buf.WriteString(e.Error)
 	}
 	return nil
 }
@@ -64,7 +137,7 @@ func (c *markdownCollector) writeMessageDelta(e event.Event) {
 	if e.AgentName != "" && c.lastAgent != e.AgentName {
 		c.flushStream()
 		c.lastAgent = e.AgentName
-		fmt.Fprintf(&c.buf, "\n\n**[%s]**\n\n", e.AgentName)
+		fmt.Fprintf(c.buf, "\n\n**[%s]**\n\n", e.AgentName)
 	}
 	c.buf.WriteString(e.Content)
 	c.inStream = true
@@ -91,9 +164,9 @@ func (c *markdownCollector) writeToolStart(e event.Event) {
 		if tc.ID != "" {
 			c.toolNamesByID[tc.ID] = name
 		}
-		fmt.Fprintf(&c.buf, "\n\n> **[%s]** tool: `%s`", displayAgent(e.AgentName), name)
+		fmt.Fprintf(c.buf, "\n\n> **[%s]** tool: `%s`", displayAgent(e.AgentName), name)
 		if tc.Function.Arguments != "" {
-			fmt.Fprintf(&c.buf, "\n> args: `%s`", truncateMarkdownLine(tc.Function.Arguments, 120))
+			fmt.Fprintf(c.buf, "\n> args: `%s`", truncateMarkdownLine(tc.Function.Arguments, 120))
 		}
 	}
 	c.lastAgent = ""
@@ -115,9 +188,9 @@ func (c *markdownCollector) writeToolEnd(e event.Event) {
 	}
 	if summary := summarizeToolResult(content); summary != "" {
 		if name != "" {
-			fmt.Fprintf(&c.buf, "\n\n> `%s`: %s", name, summary)
+			fmt.Fprintf(c.buf, "\n\n> `%s`: %s", name, summary)
 		} else {
-			fmt.Fprintf(&c.buf, "\n\n> %s", summary)
+			fmt.Fprintf(c.buf, "\n\n> %s", summary)
 		}
 	}
 	c.lastAgent = ""
@@ -126,7 +199,10 @@ func (c *markdownCollector) writeToolEnd(e event.Event) {
 func (c *markdownCollector) writeNotice(e event.Event) {
 	if e.Notice != nil && e.Notice.Code == "transfer" {
 		c.flushStream()
-		fmt.Fprintf(&c.buf, "\n\n> **[%s]** -> %s", displayAgent(e.AgentName), e.Content)
+		c.buf.WriteString("\n\n> **[")
+		c.buf.WriteString(displayAgent(e.AgentName))
+		c.buf.WriteString("]** -> ")
+		c.buf.WriteString(e.Content)
 		c.lastAgent = ""
 	}
 }

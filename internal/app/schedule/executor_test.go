@@ -3,6 +3,7 @@ package schedule
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,14 +11,18 @@ import (
 
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
+	domainschedule "fkteams/internal/domain/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
 func TestBackgroundExecutorExecuteWritesResult(t *testing.T) {
 	resultsDir := t.TempDir()
-	executor := NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
+	executor, err := NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
 		return fakeRunner{content: "执行完成"}, nil
 	}, resultsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	output, err := executor.Execute(context.Background(), "task-1", "生成报告")
 	if err != nil {
@@ -46,23 +51,32 @@ func TestBackgroundExecutorExecuteWritesResult(t *testing.T) {
 }
 
 func TestBackgroundExecutorExecuteErrorPaths(t *testing.T) {
-	executor := NewBackgroundExecutor(nil, t.TempDir())
+	executor, err := NewBackgroundExecutor(nil, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := executor.Execute(context.Background(), "task-nil", "task"); err == nil {
 		t.Fatal("expected nil runner creator error")
 	}
 
 	createErr := errors.New("create failed")
-	executor = NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
+	executor, err = NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
 		return nil, createErr
 	}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := executor.Execute(context.Background(), "task-create", "task"); !errors.Is(err, createErr) {
 		t.Fatalf("create runner error = %v", err)
 	}
 
 	runErr := errors.New("run failed")
-	executor = NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
+	executor, err = NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
 		return fakeRunner{err: runErr}, nil
 	}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := executor.Execute(context.Background(), "task-run", "task"); !errors.Is(err, runErr) {
 		t.Fatalf("run error = %v", err)
 	}
@@ -72,6 +86,65 @@ func TestBackgroundExecutorExecuteErrorPaths(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "execution error") {
 		t.Fatalf("error result content = %s", string(content))
+	}
+}
+
+func TestNewBackgroundExecutorReportsInitializationFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results")
+	if err := os.WriteFile(path, []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewBackgroundExecutor(nil, path); err == nil {
+		t.Fatal("NewBackgroundExecutor() should reject a file result path")
+	}
+}
+
+func TestBackgroundExecutorPrunesHistory(t *testing.T) {
+	executor, err := NewBackgroundExecutor(nil, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyDir := filepath.Join(executor.taskDir("task-prune"), "history")
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i <= domainschedule.MaxHistoryEntries; i++ {
+		name := fmt.Sprintf("20260101_%06d.md", i)
+		if err := os.WriteFile(filepath.Join(historyDir, name), nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := executor.writeResult("task-prune", "task", "result"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) > domainschedule.MaxHistoryEntries {
+		t.Fatalf("history entries = %d, want <= %d", len(entries), domainschedule.MaxHistoryEntries)
+	}
+}
+
+func TestBackgroundExecutorRejectsSymlinkResultDirectory(t *testing.T) {
+	resultsDir := t.TempDir()
+	executor, err := NewBackgroundExecutor(nil, resultsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, executor.taskDir("task-linked")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	if err := executor.writeResult("task-linked", "task", "secret"); err == nil {
+		t.Fatal("writeResult() should reject a symlink task directory")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("result escaped scheduler root: %#v", entries)
 	}
 }
 

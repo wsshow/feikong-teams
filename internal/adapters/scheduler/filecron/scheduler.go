@@ -3,10 +3,12 @@ package filecron
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,10 +18,13 @@ import (
 	schedulerport "fkteams/internal/ports/scheduler"
 	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/log"
+	"fkteams/internal/runtime/pathguard"
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 )
+
+var errResultSizeLimit = errors.New("scheduler result exceeds size limit")
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
@@ -890,22 +895,22 @@ func (s *Scheduler) ReadTaskResult(ctx context.Context, taskID string) (string, 
 		return "", apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	task, err := s.loadTaskByID(taskID)
+	s.mu.RUnlock()
 	if err != nil {
 		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 	if task == nil {
 		return "", apperror.Errorf(apperror.CodeNotFound, "task not found: %s", taskID)
 	}
-	resultPath := s.taskResultPath(taskID)
-	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
-		return "", apperror.Errorf(apperror.CodeConflict, "task %s has no result yet", taskID)
-	}
-
-	data, err := os.ReadFile(resultPath)
+	data, err := s.readResultFile(ctx, filepath.Join(taskID, "result.md"))
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", apperror.Errorf(apperror.CodeConflict, "task %s has no result yet", taskID)
+		}
+		if errors.Is(err, errResultSizeLimit) {
+			return "", apperror.New(apperror.CodeResourceLimit, err.Error())
+		}
 		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler result unavailable", err)
 	}
 	return string(data), nil
@@ -917,8 +922,8 @@ func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]do
 		return nil, apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	task, err := s.loadTaskByID(taskID)
+	s.mu.RUnlock()
 	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
@@ -926,18 +931,48 @@ func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]do
 		return nil, apperror.New(apperror.CodeNotFound, "task not found")
 	}
 
-	historyDir := filepath.Join(s.taskDir(taskID), "history")
-	entries, err := os.ReadDir(historyDir)
+	root, err := os.OpenRoot(s.resultsDir)
+	if err != nil {
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", err)
+	}
+	defer root.Close()
+	historyPath := filepath.Join(taskID, "history")
+	directory, err := root.Open(historyPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", err)
 	}
+	openedInfo, statErr := directory.Stat()
+	if statErr != nil || !openedInfo.IsDir() {
+		directory.Close()
+		return nil, apperror.New(apperror.CodeUnavailable, "scheduler history unavailable")
+	}
+	if err := pathguard.RejectRootSymlinkComponents(root, historyPath); err != nil {
+		directory.Close()
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", err)
+	}
+	currentInfo, statErr := root.Lstat(historyPath)
+	if statErr != nil || !os.SameFile(openedInfo, currentInfo) {
+		directory.Close()
+		return nil, apperror.New(apperror.CodeUnavailable, "scheduler history unavailable")
+	}
+	entries, readErr := directory.ReadDir(domainschedule.MaxHistoryScanEntries + 1)
+	closeErr := directory.Close()
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", readErr)
+	}
+	if closeErr != nil {
+		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", closeErr)
+	}
+	if len(entries) > domainschedule.MaxHistoryScanEntries {
+		return nil, apperror.New(apperror.CodeResourceLimit, "scheduler history exceeds entry limit")
+	}
 
-	var result []domainschedule.HistoryEntry
+	result := make([]domainschedule.HistoryEntry, 0, min(len(entries), domainschedule.MaxHistoryEntries))
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+		if !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".md" {
 			continue
 		}
 		name := entry.Name()
@@ -952,6 +987,10 @@ func (s *Scheduler) ListHistoryEntries(ctx context.Context, taskID string) ([]do
 			Time:     timeStr,
 		})
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Filename > result[j].Filename })
+	if len(result) > domainschedule.MaxHistoryEntries {
+		result = result[:domainschedule.MaxHistoryEntries]
+	}
 	return result, nil
 }
 
@@ -961,8 +1000,8 @@ func (s *Scheduler) ReadHistoryFile(ctx context.Context, taskID string, filename
 		return "", apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	task, err := s.loadTaskByID(taskID)
+	s.mu.RUnlock()
 	if err != nil {
 		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
@@ -974,13 +1013,82 @@ func (s *Scheduler) ReadHistoryFile(ctx context.Context, taskID string, filename
 		return "", apperror.New(apperror.CodeInvalidArgument, "invalid file type")
 	}
 
-	filePath := filepath.Join(s.taskDir(taskID), "history", filename)
-	data, err := os.ReadFile(filePath)
+	data, err := s.readResultFile(ctx, filepath.Join(taskID, "history", filename))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", apperror.New(apperror.CodeNotFound, "history file not found")
 		}
+		if errors.Is(err, errResultSizeLimit) {
+			return "", apperror.New(apperror.CodeResourceLimit, err.Error())
+		}
 		return "", apperror.Wrap(apperror.CodeUnavailable, "scheduler history unavailable", err)
 	}
 	return string(data), nil
+}
+
+func (s *Scheduler) readResultFile(ctx context.Context, relativePath string) ([]byte, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(s.resultsDir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	file, err := root.Open(relativePath)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	if statErr != nil {
+		file.Close()
+		return nil, statErr
+	}
+	if !info.Mode().IsRegular() {
+		file.Close()
+		return nil, fmt.Errorf("scheduler result is not a regular file")
+	}
+	if err := pathguard.RejectRootSymlinkComponents(root, relativePath); err != nil {
+		file.Close()
+		return nil, err
+	}
+	currentInfo, statErr := root.Lstat(relativePath)
+	if statErr != nil || !os.SameFile(info, currentInfo) {
+		file.Close()
+		if statErr != nil {
+			return nil, statErr
+		}
+		return nil, fmt.Errorf("scheduler result changed while opening")
+	}
+	if info.Size() > domainschedule.MaxResultFileBytes {
+		file.Close()
+		return nil, errResultSizeLimit
+	}
+	data, readErr := io.ReadAll(io.LimitReader(&schedulerContextReader{ctx: ctx, reader: file}, domainschedule.MaxResultFileBytes+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if len(data) > domainschedule.MaxResultFileBytes {
+		return nil, errResultSizeLimit
+	}
+	return data, nil
+}
+
+type schedulerContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *schedulerContextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(buffer)
 }

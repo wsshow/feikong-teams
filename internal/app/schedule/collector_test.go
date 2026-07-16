@@ -3,6 +3,7 @@ package schedule
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
@@ -30,6 +31,24 @@ func TestMarkdownCollectorCollectsOutputDeltas(t *testing.T) {
 	}
 	if strings.Contains(got, "hidden") {
 		t.Fatalf("result contains non-output delta: %q", got)
+	}
+}
+
+func TestMarkdownCollectorBoundsOutput(t *testing.T) {
+	handle, result := newMarkdownCollectorWithLimit(128)
+	if err := handle(event.Event{
+		Type:      event.TypeAssistantText,
+		Content:   strings.Repeat("你", 100),
+		DeltaKind: event.DeltaOutput,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	output := result()
+	if len(output) > 128 {
+		t.Fatalf("bounded output length = %d, want <= 128", len(output))
+	}
+	if !strings.Contains(output, "Output truncated") || !utf8.ValidString(output) {
+		t.Fatalf("bounded output is invalid: %q", output)
 	}
 }
 

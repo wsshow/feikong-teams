@@ -59,15 +59,18 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	agentRegistry, _ := agents.RegistryFromContext(ctx)
 	models, _ := modelregistry.RegistryFromContext(ctx)
 	tools, _ := apptools.RegistryFromContext(ctx)
-	executor := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks")).
-		WithContextHook(func(ctx context.Context) context.Context {
-			ctx = runtimeport.WithRuntime(ctx, runtime)
-			ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
-			ctx = agents.WithRegistry(ctx, agentRegistry)
-			ctx = modelregistry.WithRegistry(ctx, models)
-			ctx = apptools.WithRegistry(ctx, tools)
-			return appschedule.WithService(ctx, appService)
-		})
+	executor, err := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks"))
+	if err != nil {
+		return fmt.Errorf("initialize scheduler executor: %w", err)
+	}
+	executor.WithContextHook(func(ctx context.Context) context.Context {
+		ctx = runtimeport.WithRuntime(ctx, runtime)
+		ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
+		ctx = agents.WithRegistry(ctx, agentRegistry)
+		ctx = modelregistry.WithRegistry(ctx, models)
+		ctx = apptools.WithRegistry(ctx, tools)
+		return appschedule.WithService(ctx, appService)
+	})
 	sched.SetExecutor(executor)
 	sched.Start()
 	s.scheduler = sched

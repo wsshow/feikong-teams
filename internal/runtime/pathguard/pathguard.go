@@ -2,6 +2,7 @@
 package pathguard
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -92,4 +93,54 @@ func isWithin(path, base string) bool {
 	path = filepath.Clean(path)
 	base = filepath.Clean(base)
 	return path == base || strings.HasPrefix(path, base+string(os.PathSeparator))
+}
+
+// RejectRootSymlinkComponents 拒绝 root 内相对路径上的任意符号链接组件。
+func RejectRootSymlinkComponents(root *os.Root, relativePath string) error {
+	if root == nil {
+		return fmt.Errorf("root is nil")
+	}
+	current := ""
+	for _, component := range strings.Split(filepath.Clean(relativePath), string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := root.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symbolic links are not allowed")
+		}
+	}
+	return nil
+}
+
+// EnsureRootDirectory 在 root 内逐级创建目录，并拒绝已有的符号链接或非目录组件。
+func EnsureRootDirectory(root *os.Root, relativePath string, perm os.FileMode) error {
+	if root == nil {
+		return fmt.Errorf("root is nil")
+	}
+	current := ""
+	for _, component := range strings.Split(filepath.Clean(relativePath), string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := root.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := root.Mkdir(current, perm); err != nil && !errors.Is(err, os.ErrExist) {
+				return err
+			}
+			info, err = root.Lstat(current)
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("path component is not a regular directory")
+		}
+	}
+	return nil
 }

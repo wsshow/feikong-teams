@@ -2,6 +2,13 @@ package schedule
 
 import "time"
 
+const (
+	MaxResultFileBytes      = 8 << 20
+	MaxCollectedOutputBytes = 6 << 20
+	MaxHistoryEntries       = 1_000
+	MaxHistoryScanEntries   = 10_000
+)
+
 // Status 表示调度任务的生命周期状态。
 type Status string
 

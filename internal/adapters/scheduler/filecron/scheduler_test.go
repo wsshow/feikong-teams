@@ -264,6 +264,65 @@ func TestResultAndHistoryReaders(t *testing.T) {
 	}
 }
 
+func TestResultReadersEnforceFileBoundaries(t *testing.T) {
+	s := newTestScheduler(t)
+	taskID := "bounded-result"
+	if err := s.saveTasks(&domainschedule.TaskList{Tasks: []domainschedule.Task{{
+		ID:     taskID,
+		Task:   "bounded result task",
+		Status: domainschedule.StatusCompleted,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(s.taskDir(taskID), "history"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	resultPath := s.taskResultPath(taskID)
+	file, err := os.Create(resultPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(domainschedule.MaxResultFileBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReadTaskResult(context.Background(), taskID); err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("ReadTaskResult() error = %v, want size limit", err)
+	}
+
+	if err := os.Remove(resultPath); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(outside, []byte("secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, resultPath); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	if result, err := s.ReadTaskResult(context.Background(), taskID); err == nil || strings.Contains(result, "secret") {
+		t.Fatalf("ReadTaskResult() followed symlink: result=%q err=%v", result, err)
+	}
+
+	historyLink := filepath.Join(s.taskDir(taskID), "history", "20260716_120000.md")
+	if err := os.Symlink(outside, historyLink); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.ListHistoryEntries(context.Background(), taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("history symlink should be omitted: %#v", entries)
+	}
+	if content, err := s.ReadHistoryFile(context.Background(), taskID, filepath.Base(historyLink)); err == nil || strings.Contains(content, "secret") {
+		t.Fatalf("ReadHistoryFile() followed symlink: content=%q err=%v", content, err)
+	}
+}
+
 func TestTimingRecoveryExecuteAndCleanup(t *testing.T) {
 	s := newTestScheduler(t)
 	now := time.Now()
