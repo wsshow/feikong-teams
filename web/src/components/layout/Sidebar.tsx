@@ -18,7 +18,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { RefObject } from "react";
-import { appActions, chatActions, type AppPanel } from "@/app/store";
+import { appActions, chatActions, sessionsActions, type AppPanel } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,6 @@ import { shortID, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { chatPath, panelPath, pushAppPath } from "@/lib/navigation";
 import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
-import { loadSessions } from "@/features/sessions/sessionThunks";
 import { SessionShareDialog } from "./SessionShareDialog";
 
 const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
@@ -140,9 +139,14 @@ export function Sidebar() {
   }
 
   async function toggleFavorite(session: { session_id: string; favorite?: boolean }) {
-    await favoriteSession(session.session_id, !session.favorite);
-    closeSessionMenu();
-    dispatch(loadSessions());
+    const favorite = !session.favorite;
+    try {
+      await favoriteSession(session.session_id, favorite);
+      dispatch(sessionsActions.setSessionFavorite({ sessionID: session.session_id, favorite }));
+      closeSessionMenu();
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "更新收藏失败"));
+    }
   }
 
   function requestRename(session: { session_id: string; title?: string }) {
@@ -157,8 +161,10 @@ export function Sidebar() {
     setRenamingSessionID(renameTarget.session_id);
     try {
       await renameSession(renameTarget.session_id, nextTitle);
+      dispatch(sessionsActions.renameSessionLocal({ sessionID: renameTarget.session_id, title: nextTitle }));
       setRenameTarget(null);
-      dispatch(loadSessions());
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "重命名会话失败"));
     } finally {
       setRenamingSessionID("");
     }
@@ -180,13 +186,15 @@ export function Sidebar() {
     setDeletingSessionID(sessionID);
     try {
       await deleteSession(sessionID);
+      dispatch(sessionsActions.removeSession(sessionID));
       setDeleteTarget(null);
       if (activeSessionID === sessionID) {
         dispatch(chatActions.setActiveSession(""));
         dispatch(chatActions.clearMessages());
         pushAppPath(chatPath());
       }
-      dispatch(loadSessions());
+    } catch (error) {
+      dispatch(appActions.showToast(error instanceof Error ? error.message : "删除会话失败"));
     } finally {
       setDeletingSessionID("");
     }
@@ -352,7 +360,6 @@ export function Sidebar() {
       <SessionShareDialog
         session={shareTarget}
         onClose={() => setShareTarget(null)}
-        onCreated={() => dispatch(loadSessions())}
       />
       {openMenuSession && sessionMenuPosition ? (
         <SessionMenu

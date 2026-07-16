@@ -17,20 +17,22 @@ interface ActiveSubscription {
 export function TaskStreamController() {
   const dispatch = useAppDispatch();
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
+  const viewSessionID = useAppSelector((state) => state.chat.viewSessionID);
   const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
   const initialOffset = useAppSelector((state) => state.chat.streamInitialOffset);
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
   const authExpired = useAppSelector((state) => state.app.authExpired);
-  const activeSessionRef = useRef(activeSessionID);
+  const consumableSessionRef = useRef("");
   const subscriptionRef = useRef<ActiveSubscription | undefined>(undefined);
 
-  useEffect(() => {
-    activeSessionRef.current = activeSessionID;
-  }, [activeSessionID]);
+  const consumableSessionID = activeSessionID === runningSessionID && viewSessionID === runningSessionID
+    ? runningSessionID
+    : "";
+  consumableSessionRef.current = consumableSessionID;
 
   useEffect(() => {
     const current = subscriptionRef.current;
-    if (authExpired || !runningSessionID || !isProcessing) {
+    if (authExpired || !consumableSessionID || !isProcessing) {
       if (current) {
         current.controller.abort();
         subscriptionRef.current = undefined;
@@ -38,23 +40,23 @@ export function TaskStreamController() {
       dispatch(chatActions.setConnectionState(authExpired ? "disconnected" : "connected"));
       return;
     }
-    if (current?.sessionID === runningSessionID) return;
+    if (current?.sessionID === consumableSessionID) return;
     current?.controller.abort();
 
     const controller = new AbortController();
-    const subscription = { sessionID: runningSessionID, controller };
+    const subscription = { sessionID: consumableSessionID, controller };
     subscriptionRef.current = subscription;
     dispatch(chatActions.consumeStreamInitialOffset());
     void followTaskStream(
-      runningSessionID,
+      consumableSessionID,
       initialOffset,
       controller.signal,
       dispatch,
-      () => activeSessionRef.current,
+      () => consumableSessionRef.current === consumableSessionID,
     ).finally(() => {
       if (subscriptionRef.current === subscription) subscriptionRef.current = undefined;
     });
-  }, [authExpired, dispatch, isProcessing, runningSessionID]);
+  }, [authExpired, consumableSessionID, dispatch, isProcessing]);
 
   useEffect(() => () => {
     subscriptionRef.current?.controller.abort();
@@ -69,17 +71,18 @@ async function followTaskStream(
   initialOffset: number | undefined,
   signal: AbortSignal,
   dispatch: AppDispatch,
-  activeSessionID: () => string,
+  canConsume: () => boolean,
 ) {
   let retryCount = 0;
   let fallbackOffset = initialOffset;
   for (;;) {
     if (signal.aborted) return;
     try {
-      const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, dispatch, activeSessionID);
+      const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, dispatch, canConsume);
       if (offset === undefined || signal.aborted) return;
       dispatch(chatActions.setConnectionState("connecting"));
       const result = await subscribeStream(sessionID, offset, (event) => {
+        if (!canConsume()) return;
         retryCount = 0;
         fallbackOffset = undefined;
         if (event.stream_event_id !== undefined) {
@@ -106,23 +109,25 @@ async function resolveSubscribeOffset(
   sessionID: string,
   fallbackOffset: number | undefined,
   dispatch: AppDispatch,
-  activeSessionID: () => string,
+  canConsume: () => boolean,
 ) {
+  if (!canConsume()) return undefined;
   if (fallbackOffset !== undefined) return fallbackOffset;
   const storedOffset = readStreamOffset(sessionID);
   if (storedOffset !== undefined) return storedOffset;
-  return replayStreamSnapshot(sessionID, dispatch, activeSessionID);
+  return replayStreamSnapshot(sessionID, dispatch, canConsume);
 }
 
 async function replayStreamSnapshot(
   sessionID: string,
   dispatch: AppDispatch,
-  activeSessionID: () => string,
+  canConsume: () => boolean,
 ) {
   let nextOffset = 0;
   for (;;) {
+    if (!canConsume()) return undefined;
     const snapshot = await streamSnapshot(sessionID, { offset: nextOffset, limit: 1000 });
-    const appliedOffset = applyStreamSnapshot(sessionID, snapshot, dispatch, activeSessionID);
+    const appliedOffset = applyStreamSnapshot(sessionID, snapshot, dispatch, canConsume);
     if (appliedOffset === undefined) return undefined;
     if (!snapshot.more_available || appliedOffset <= nextOffset) return appliedOffset;
     nextOffset = appliedOffset;
@@ -133,12 +138,14 @@ function applyStreamSnapshot(
   sessionID: string,
   snapshot: StreamSnapshot,
   dispatch: AppDispatch,
-  activeSessionID: () => string,
+  canConsume: () => boolean,
 ) {
-  if (activeSessionID() === sessionID && Array.isArray(snapshot.queue)) {
+  if (!canConsume()) return undefined;
+  if (Array.isArray(snapshot.queue)) {
     dispatch(chatActions.setQueue(snapshot.queue));
   }
   for (const event of snapshot.events || []) {
+    if (!canConsume()) return undefined;
     if (event.stream_event_id !== undefined) {
       writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
     }

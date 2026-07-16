@@ -13,6 +13,7 @@ export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "s
 
 const initialChatState: ChatState = {
   activeSessionID: chatSessionIDFromPath(location.pathname),
+  viewSessionID: "",
   runningSessionID: "",
   currentAgent: "",
   mode: "team",
@@ -66,6 +67,7 @@ const chatSlice = createSlice({
       state.isProcessing = false;
     },
     clearMessages(state) {
+      state.viewSessionID = "";
       state.messages = [];
       state.events = [];
       state.queue = [];
@@ -81,6 +83,7 @@ const chatSlice = createSlice({
     setSessionDetail(state, action: PayloadAction<SessionDetail>) {
       const detail = action.payload;
       state.activeSessionID = detail.session_id;
+      state.viewSessionID = detail.session_id;
       if (detail.session_id) localStorage.setItem(storageKeys.sessionID, detail.session_id);
       else localStorage.removeItem(storageKeys.sessionID);
       state.messages = [];
@@ -106,9 +109,11 @@ const chatSlice = createSlice({
       }
     },
     appendUserMessage(state, action: PayloadAction<{ id: string; content: string; sessionID?: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
+      const sessionID = action.payload.sessionID || state.activeSessionID;
+      state.viewSessionID = sessionID;
       const event: ChatEvent = {
         type: "user_message",
-        session_id: action.payload.sessionID || state.activeSessionID,
+        session_id: sessionID,
         event_id: `local:${action.payload.id}`,
         content: action.payload.content,
         content_parts: action.payload.contentParts,
@@ -462,6 +467,17 @@ const sessionsSlice = createSlice({
         session.mod_time = updatedAt;
         session.updated_at = updatedAt;
       }
+    },
+    renameSessionLocal(state, action: PayloadAction<{ sessionID: string; title: string }>) {
+      const session = state.items.find((item) => item.session_id === action.payload.sessionID);
+      if (session) session.title = action.payload.title;
+    },
+    setSessionFavorite(state, action: PayloadAction<{ sessionID: string; favorite: boolean }>) {
+      const session = state.items.find((item) => item.session_id === action.payload.sessionID);
+      if (session) session.favorite = action.payload.favorite;
+    },
+    removeSession(state, action: PayloadAction<string>) {
+      state.items = state.items.filter((item) => item.session_id !== action.payload);
     },
     setSessionsLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;

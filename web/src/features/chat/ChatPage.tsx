@@ -13,65 +13,48 @@ import { ChatInput } from "./ChatInput";
 export function ChatPage() {
   const dispatch = useAppDispatch();
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
-  const runningSessionID = useAppSelector((state) => state.chat.runningSessionID);
+  const viewSessionID = useAppSelector((state) => state.chat.viewSessionID);
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
   const messages = useAppSelector((state) => state.chat.messages);
   const events = useAppSelector((state) => state.chat.events);
   const queue = useAppSelector((state) => state.chat.queue);
   const error = useAppSelector((state) => state.chat.error);
-  const [loadedSessionID, setLoadedSessionID] = useState("");
   const [failedSessionID, setFailedSessionID] = useState("");
   const [showSessionLoading, setShowSessionLoading] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
-  const loadingSessionIDRef = useRef("");
   const hasConversation = messages.length > 0 || events.length > 0 || queue.length > 0 || isProcessing || Boolean(error);
-  const currentSessionIsRunning = Boolean(isProcessing && runningSessionID === activeSessionID);
-  const currentViewBelongsToActiveSession = Boolean(
-    activeSessionID && events.some((event) => event.session_id === activeSessionID),
-  );
   const isLoadingSession = Boolean(
     activeSessionID &&
-      activeSessionID !== loadedSessionID &&
-      failedSessionID !== activeSessionID &&
-      !(currentSessionIsRunning && currentViewBelongsToActiveSession),
+      activeSessionID !== viewSessionID &&
+      failedSessionID !== activeSessionID,
   );
 
   useEffect(() => {
     if (!activeSessionID) {
-      setLoadedSessionID("");
       setFailedSessionID("");
-      loadingSessionIDRef.current = "";
       return;
     }
-    if (currentSessionIsRunning && currentViewBelongsToActiveSession) {
-      setLoadedSessionID(activeSessionID);
-      if (loadingSessionIDRef.current === activeSessionID) loadingSessionIDRef.current = "";
-      return;
-    }
-    if (activeSessionID === loadedSessionID) return;
-    if (loadingSessionIDRef.current === activeSessionID) return;
+    if (activeSessionID === viewSessionID) return;
 
     const loadingSessionID = activeSessionID;
-    loadingSessionIDRef.current = loadingSessionID;
+    let cancelled = false;
     setFailedSessionID("");
     void dispatch(loadSessionDetail(loadingSessionID))
       .unwrap()
       .then((detail) => {
-        if (loadingSessionIDRef.current !== loadingSessionID) return;
+        if (cancelled) return;
         dispatch(chatActions.setSessionDetail(detail));
-        setLoadedSessionID(loadingSessionID);
       })
       .catch((loadError) => {
-        if (loadingSessionIDRef.current === loadingSessionID) {
-          setFailedSessionID(loadingSessionID);
-          dispatch(chatActions.setError(loadError instanceof Error ? loadError.message : String(loadError)));
-        }
-      })
-      .finally(() => {
-        if (loadingSessionIDRef.current === loadingSessionID) loadingSessionIDRef.current = "";
+        if (cancelled) return;
+        setFailedSessionID(loadingSessionID);
+        dispatch(chatActions.setError(loadError instanceof Error ? loadError.message : String(loadError)));
       });
-  }, [activeSessionID, loadedSessionID, currentSessionIsRunning, currentViewBelongsToActiveSession, dispatch]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionID, viewSessionID, dispatch]);
 
   useEffect(() => {
     dispatch(chatActions.setConnectionState("connected"));

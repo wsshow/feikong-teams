@@ -24,11 +24,9 @@ const shareExpiryOptions = [
 export function SessionShareDialog({
   session,
   onClose,
-  onCreated,
 }: {
   session: ShareableSession | null;
   onClose: () => void;
-  onCreated?: () => void;
 }) {
   const dispatch = useAppDispatch();
   const [expiresIn, setExpiresIn] = useState<number>(7 * 24 * 3600);
@@ -66,7 +64,6 @@ export function SessionShareDialog({
         allow_tool_details: allowToolDetails,
       });
       setCreatedShare(share);
-      onCreated?.();
       dispatch(appActions.showToast("分享已创建"));
     } catch (shareError) {
       setError(shareError instanceof Error ? shareError.message : String(shareError));
