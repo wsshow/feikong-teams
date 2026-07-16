@@ -16,12 +16,12 @@ type SSHTools struct {
 }
 
 // NewSSHTools 创建一个新的SSH工具实例
-func NewSSHTools(host, username, password string, knownHostsFile ...string) (*SSHTools, error) {
+func NewSSHTools(host, username, password string, options ...ClientOption) (*SSHTools, error) {
 	if host == "" || username == "" || password == "" {
 		return nil, fmt.Errorf("host, username 和 password 都是必需的")
 	}
 
-	client := NewClient(username, password, host, knownHostsFile...)
+	client := NewClient(username, password, host, options...)
 	if err := client.Connect(); err != nil {
 		return nil, fmt.Errorf("SSH 连接失败: %v", err)
 	}
@@ -140,7 +140,7 @@ func (st *SSHTools) SSHFileUpload(ctx context.Context, req *SSHFileUploadRequest
 		}, nil
 	}
 
-	n, err := st.client.CopyLocalFileToRemote(req.LocalPath, req.RemotePath)
+	n, err := st.client.CopyLocalFileToRemote(ctx, req.LocalPath, req.RemotePath)
 	if err != nil {
 		return &SSHFileUploadResponse{
 			ErrorMessage: fmt.Sprintf("文件上传失败: %v", err),
@@ -180,7 +180,7 @@ func (st *SSHTools) SSHFileDownload(ctx context.Context, req *SSHFileDownloadReq
 		}, nil
 	}
 
-	n, err := st.client.CopyRemoteFileToLocal(req.RemotePath, req.LocalPath)
+	n, err := st.client.CopyRemoteFileToLocal(ctx, req.RemotePath, req.LocalPath)
 	if err != nil {
 		return &SSHFileDownloadResponse{
 			ErrorMessage: fmt.Sprintf("文件下载失败: %v", err),

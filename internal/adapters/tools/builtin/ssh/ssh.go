@@ -12,33 +12,56 @@ import (
 	"sync"
 	"time"
 
+	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/pathguard"
+
+	"github.com/google/uuid"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-const maxKnownHostsBytes int64 = 16 << 20
+const (
+	maxKnownHostsBytes  int64 = 16 << 20
+	maxSSHTransferBytes       = 1 << 30
+)
+
+type ClientOption func(*SshClient)
+
+// WithKnownHostsFile 设置主机密钥数据库路径。
+func WithKnownHostsFile(path string) ClientOption {
+	return func(client *SshClient) { client.knownHosts = path }
+}
+
+// WithWorkDir 设置本地文件传输允许访问的工作区。
+func WithWorkDir(path string) ClientOption {
+	return func(client *SshClient) { client.workDir = path }
+}
 
 type SshClient struct {
 	user       string
 	pwd        string
 	addr       string
 	knownHosts string
+	workDir    string
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 }
 
-func NewClient(user, pwd, addr string, knownHostsFile ...string) *SshClient {
-	knownHosts := ""
-	if len(knownHostsFile) > 0 {
-		knownHosts = knownHostsFile[0]
+func NewClient(user, pwd, addr string, options ...ClientOption) *SshClient {
+	workDir, _ := os.Getwd()
+	client := &SshClient{
+		user:    user,
+		pwd:     pwd,
+		addr:    addr,
+		workDir: workDir,
 	}
-	return &SshClient{
-		user:       user,
-		pwd:        pwd,
-		addr:       addr,
-		knownHosts: knownHosts,
+	for _, option := range options {
+		if option != nil {
+			option(client)
+		}
 	}
+	return client
 }
 
 func (c *SshClient) Addr() string {
@@ -200,148 +223,142 @@ func (output *limitedSSHOutput) result() ([]byte, bool) {
 	return bytes.Clone(output.buffer.Bytes()), output.truncated
 }
 
-func (c *SshClient) IsRemotePathExist(remotePath string) bool {
-	_, err := c.sftpClient.Stat(remotePath)
-	return err == nil
-}
-
-func (c *SshClient) NotExistToMkdirRemote(remotePath string) error {
-	if c.IsRemotePathExist(remotePath) {
-		return nil
-	}
-	err := c.sftpClient.MkdirAll(remotePath)
-	if err != nil {
-		return err
-	}
-	return c.sftpClient.Chmod(remotePath, 0755)
-}
-
-func (c *SshClient) NotExistToMkdirLocal(localPath string) error {
-	if c.IsLocalPathExist(localPath) {
-		return nil
-	}
-	err := os.MkdirAll(localPath, 0755)
-	if err != nil {
-		return err
-	}
-	return os.Chmod(localPath, 0755)
-}
-
-func (c *SshClient) CopyRemoteFileToLocal(remotePath, localPath string) (int64, error) {
-	if !c.IsRemotePathExist(remotePath) {
-		return 0, fmt.Errorf("remote file not exist: %s", remotePath)
+func (c *SshClient) CopyRemoteFileToLocal(ctx context.Context, remotePath, localPath string) (int64, error) {
+	if c == nil || c.sftpClient == nil {
+		return 0, fmt.Errorf("SFTP client is not connected")
 	}
 	source, err := c.sftpClient.Open(remotePath)
 	if err != nil {
 		return 0, fmt.Errorf("sftp client open file error: %w", err)
 	}
-	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		source.Close()
+		return 0, fmt.Errorf("stat remote file error: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxSSHTransferBytes {
+		source.Close()
+		return 0, fmt.Errorf("remote file exceeds transfer limits")
+	}
+	resolved, root, err := c.resolveLocalTarget(localPath)
+	if err != nil {
+		source.Close()
+		return 0, err
+	}
+	reader := &sshContextReader{ctx: ctx, reader: source}
+	written, writeErr := atomicfile.WriteReaderInRoot(root, resolved.RelPath, reader, maxSSHTransferBytes, 0644)
+	closeErr := source.Close()
+	rootCloseErr := root.Close()
+	if writeErr != nil {
+		return written, fmt.Errorf("save local file: %w", errors.Join(writeErr, closeErr, rootCloseErr))
+	}
+	if closeErr != nil {
+		return written, fmt.Errorf("close remote file: %w", closeErr)
+	}
+	if rootCloseErr != nil {
+		return written, fmt.Errorf("close workspace root: %w", rootCloseErr)
+	}
+	return written, nil
+}
 
-	target, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+func (c *SshClient) CopyLocalFileToRemote(ctx context.Context, localPath, remotePath string) (int64, error) {
+	if c == nil || c.sftpClient == nil {
+		return 0, fmt.Errorf("SFTP client is not connected")
+	}
+	resolved, err := pathguard.ResolveWorkspace(c.workDir, localPath)
+	if err != nil {
+		return 0, fmt.Errorf("resolve local file: %w", err)
+	}
+	info, err := os.Stat(resolved.AbsPath)
+	if err != nil {
+		return 0, fmt.Errorf("stat local file: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxSSHTransferBytes {
+		return 0, fmt.Errorf("local file exceeds transfer limits")
+	}
+	source, err := os.Open(resolved.AbsPath)
 	if err != nil {
 		return 0, fmt.Errorf("open local file error: %w", err)
 	}
-	defer target.Close()
-
-	n, err := io.Copy(target, source)
-	if err != nil {
-		return 0, fmt.Errorf("copy file error: %w", err)
-	}
-	return n, nil
-}
-
-func (c *SshClient) IsLocalPathExist(localPath string) bool {
-	_, err := os.Stat(localPath)
-	if err == nil {
-		return true // 文件存在
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false // 文件明确不存在
-	}
-	return false
-}
-
-func (c *SshClient) CopyLocalFileToRemote(localPath, remotePath string) (int64, error) {
-	if !c.IsLocalPathExist(localPath) {
-		return 0, fmt.Errorf("local file not exist: %s", localPath)
-	}
-	source, err := os.Open(localPath)
-	if err != nil {
-		return 0, fmt.Errorf("open local file error: %w", err)
-	}
 	defer source.Close()
 
-	target, err := c.sftpClient.Create(remotePath)
+	temporaryPath := remotePath + ".fkteams-upload-" + uuid.NewString()
+	target, err := c.sftpClient.OpenFile(temporaryPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
-		return 0, fmt.Errorf("sftp client create file error: %w", err)
+		return 0, fmt.Errorf("create remote temporary file: %w", err)
 	}
-	defer target.Close()
-
-	n, err := io.Copy(target, source)
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = c.sftpClient.Remove(temporaryPath)
+		}
+	}()
+	reader := &sshContextReader{ctx: ctx, reader: source}
+	written, copyErr := io.Copy(target, io.LimitReader(reader, maxSSHTransferBytes+1))
+	if copyErr == nil && written > maxSSHTransferBytes {
+		copyErr = fmt.Errorf("local file exceeds transfer limits")
+	}
+	if copyErr == nil {
+		copyErr = target.Chmod(info.Mode().Perm())
+	}
+	if copyErr == nil {
+		copyErr = target.Sync()
+	}
+	closeErr := target.Close()
+	if copyErr != nil {
+		return written, fmt.Errorf("upload remote file: %w", copyErr)
+	}
+	if closeErr != nil {
+		return written, fmt.Errorf("close remote temporary file: %w", closeErr)
+	}
+	if _, ok := c.sftpClient.HasExtension("posix-rename@openssh.com"); ok {
+		err = c.sftpClient.PosixRename(temporaryPath, remotePath)
+	} else {
+		err = c.sftpClient.Rename(temporaryPath, remotePath)
+	}
 	if err != nil {
-		return 0, fmt.Errorf("copy file error: %w", err)
+		return written, fmt.Errorf("replace remote file: %w", err)
 	}
-	return n, nil
+	cleanup = false
+	return written, nil
 }
 
-func (c *SshClient) CopyRemoteDirToLocal(remotePath, localPath string) error {
-	fis, err := c.sftpClient.ReadDir(remotePath)
+func (c *SshClient) resolveLocalTarget(localPath string) (pathguard.ResolvedPath, *os.Root, error) {
+	resolved, err := pathguard.ResolveWorkspace(c.workDir, localPath)
 	if err != nil {
-		return fmt.Errorf("sftp client read dir error: %w", err)
+		return pathguard.ResolvedPath{}, nil, fmt.Errorf("resolve local file: %w", err)
 	}
-	err = c.NotExistToMkdirLocal(localPath)
+	root, err := os.OpenRoot(resolved.BaseAbs)
 	if err != nil {
-		return fmt.Errorf("mkdir error: %w", err)
+		return pathguard.ResolvedPath{}, nil, fmt.Errorf("open workspace root: %w", err)
 	}
-	for _, fi := range fis {
-		rp, lp := fmt.Sprintf("%s/%s", remotePath, fi.Name()), filepath.Join(localPath, fi.Name())
-		if fi.IsDir() {
-			err = c.CopyRemoteDirToLocal(rp, lp)
-			if err != nil {
-				return fmt.Errorf("copy remote dir to local error: %w", err)
-			}
-			continue
-		}
-		_, err = c.CopyRemoteFileToLocal(rp, lp)
-		if err != nil {
-			return fmt.Errorf("copy remote file to local error: %w", err)
+	parent := filepath.Dir(resolved.RelPath)
+	if parent != "." {
+		if err := pathguard.EnsureRootDirectory(root, parent, 0755); err != nil {
+			root.Close()
+			return pathguard.ResolvedPath{}, nil, fmt.Errorf("create local directory: %w", err)
 		}
 	}
-	return nil
+	return resolved, root, nil
 }
 
-func (c *SshClient) CopyLocalDirToRemote(localPath, remotePath string) error {
-	if !c.IsLocalPathExist(localPath) {
-		return fmt.Errorf("local path not exist: %s", localPath)
+type sshContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader *sshContextReader) Read(data []byte) (int, error) {
+	select {
+	case <-reader.ctx.Done():
+		return 0, reader.ctx.Err()
+	default:
+		return reader.reader.Read(data)
 	}
-	err := c.NotExistToMkdirRemote(remotePath)
-	if err != nil {
-		return err
-	}
-	de, err := os.ReadDir(localPath)
-	if err != nil {
-		return err
-	}
-	for _, fi := range de {
-		lp, rp := filepath.Join(localPath, fi.Name()), fmt.Sprintf("%s/%s", remotePath, fi.Name())
-		if fi.IsDir() {
-			err = c.CopyLocalDirToRemote(lp, rp)
-			if err != nil {
-				return fmt.Errorf("copy local dir to remote error: %w", err)
-			}
-			continue
-		}
-		_, err = c.CopyLocalFileToRemote(lp, rp)
-		if err != nil {
-			return fmt.Errorf("copy local file to remote error: %w", err)
-		}
-	}
-	return nil
 }
 
 func (c *SshClient) ReadRemoteDir(remotePath string) (fileNameList []string, err error) {
-	if !c.IsRemotePathExist(remotePath) {
-		return fileNameList, fmt.Errorf("remote path not exist: %s", remotePath)
+	if c == nil || c.sftpClient == nil {
+		return nil, fmt.Errorf("SFTP client is not connected")
 	}
 	fis, err := c.sftpClient.ReadDir(remotePath)
 	if err != nil {
@@ -351,8 +368,4 @@ func (c *SshClient) ReadRemoteDir(remotePath string) (fileNameList []string, err
 		fileNameList = append(fileNameList, fi.Name())
 	}
 	return
-}
-
-func (c *SshClient) RemoveRemoteDir(remotePath string) error {
-	return c.sftpClient.RemoveAll(remotePath)
 }

@@ -1,6 +1,8 @@
 package ssh
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,8 +11,8 @@ import (
 )
 
 func TestNewClientAndAddr(t *testing.T) {
-	client := NewClient("user", "pwd", "127.0.0.1:22", "/tmp/known_hosts")
-	if client.user != "user" || client.pwd != "pwd" || client.Addr() != "127.0.0.1:22" || client.knownHosts != "/tmp/known_hosts" {
+	client := NewClient("user", "pwd", "127.0.0.1:22", WithKnownHostsFile("/tmp/known_hosts"), WithWorkDir("/tmp/work"))
+	if client.user != "user" || client.pwd != "pwd" || client.Addr() != "127.0.0.1:22" || client.knownHosts != "/tmp/known_hosts" || client.workDir != "/tmp/work" {
 		t.Fatalf("client = %#v", client)
 	}
 	if strings.Contains(client.String(), "pwd") {
@@ -64,44 +66,39 @@ func TestLimitedSSHOutputEnforcesCombinedLimit(t *testing.T) {
 	}
 }
 
-func TestLocalPathHelpers(t *testing.T) {
-	client := NewClient("user", "pwd", "127.0.0.1:22")
-	dir := filepath.Join(t.TempDir(), "nested", "dir")
-
-	if client.IsLocalPathExist(dir) {
-		t.Fatalf("path %s should not exist yet", dir)
+func TestResolveLocalTargetRejectsWorkspaceEscape(t *testing.T) {
+	workspace := t.TempDir()
+	client := NewClient("user", "pwd", "127.0.0.1:22", WithWorkDir(workspace))
+	if _, root, err := client.resolveLocalTarget("../outside.txt"); err == nil {
+		if root != nil {
+			root.Close()
+		}
+		t.Fatal("resolveLocalTarget accepted workspace escape")
 	}
-	if err := client.NotExistToMkdirLocal(dir); err != nil {
-		t.Fatalf("NotExistToMkdirLocal returned error: %v", err)
-	}
-	if !client.IsLocalPathExist(dir) {
-		t.Fatalf("path %s should exist", dir)
-	}
-	info, err := os.Stat(dir)
+	resolved, root, err := client.resolveLocalTarget("nested/file.txt")
 	if err != nil {
-		t.Fatalf("stat dir: %v", err)
+		t.Fatal(err)
 	}
-	if !info.IsDir() {
-		t.Fatalf("%s should be a dir", dir)
+	defer root.Close()
+	if resolved.AbsPath != filepath.Join(workspace, "nested", "file.txt") {
+		t.Fatalf("resolved path = %q", resolved.AbsPath)
 	}
-	if err := client.NotExistToMkdirLocal(dir); err != nil {
-		t.Fatalf("NotExistToMkdirLocal existing returned error: %v", err)
+}
+
+func TestSSHContextReaderStopsAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reader := &sshContextReader{ctx: ctx, reader: strings.NewReader("data")}
+	if _, err := reader.Read(make([]byte, 4)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Read() error = %v, want context canceled", err)
 	}
 }
 
 func TestCopyLocalFileToRemoteMissingLocalFile(t *testing.T) {
 	client := NewClient("user", "pwd", "127.0.0.1:22")
-	n, err := client.CopyLocalFileToRemote(filepath.Join(t.TempDir(), "missing.txt"), "/tmp/remote.txt")
+	n, err := client.CopyLocalFileToRemote(context.Background(), filepath.Join(t.TempDir(), "missing.txt"), "/tmp/remote.txt")
 	if err == nil {
 		t.Fatalf("CopyLocalFileToRemote n=%d err=nil, want missing file error", n)
-	}
-}
-
-func TestCopyLocalDirToRemoteMissingLocalPath(t *testing.T) {
-	client := NewClient("user", "pwd", "127.0.0.1:22")
-	err := client.CopyLocalDirToRemote(filepath.Join(t.TempDir(), "missing"), "/tmp/remote")
-	if err == nil {
-		t.Fatal("CopyLocalDirToRemote missing path should return error")
 	}
 }
 

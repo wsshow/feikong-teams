@@ -22,14 +22,14 @@ func (st *SSHTools) GetTools() ([]runtimeport.Tool, error) {
 	tools = append(tools, executeTool)
 
 	// 文件上传工具
-	uploadTool, err := runtimeport.InferTool("ssh_upload", "上传本地文件到远程服务器。支持单个文件上传", st.SSHFileUpload)
+	uploadTool, err := runtimeport.InferTool("ssh_upload", "上传工作区内的本地文件到远程服务器。支持最大 1 GiB 的单文件上传", st.SSHFileUpload)
 	if err != nil {
 		return nil, err
 	}
 	tools = append(tools, uploadTool)
 
 	// 文件下载工具
-	downloadTool, err := runtimeport.InferTool("ssh_download", "从远程服务器下载文件到本地。支持单个文件下载", st.SSHFileDownload)
+	downloadTool, err := runtimeport.InferTool("ssh_download", "从远程服务器下载文件到工作区。支持最大 1 GiB 的单文件原子下载", st.SSHFileDownload)
 	if err != nil {
 		return nil, err
 	}
