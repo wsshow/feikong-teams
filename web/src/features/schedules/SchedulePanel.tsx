@@ -266,7 +266,7 @@ export function SchedulePanel() {
           title="取消任务"
           description={
             <>
-              任务「<span className="font-medium text-foreground">{cancelTarget?.task || shortID(cancelTarget?.id || "")}</span>」将停止后续执行。
+              任务「<span className="font-medium text-foreground">{cancelTarget?.task || shortID(cancelTarget?.id || "")}</span>」将停止当前执行（如有）以及后续执行。
             </>
           }
           confirmLabel="确认取消"

@@ -167,6 +167,9 @@ func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req scheduler
 		if tasks.Tasks[i].Status == domainschedule.StatusRunning {
 			return nil, apperror.New(apperror.CodeConflict, "cannot update a running task")
 		}
+		if s.isExecuting(taskID) {
+			return nil, apperror.New(apperror.CodeConflict, "cannot update a task while its execution is stopping")
+		}
 		next := tasks.Tasks[i]
 		next.Status = domainschedule.StatusPending
 		next.LastRunAt = nil
@@ -241,17 +244,17 @@ func (s *Scheduler) ListTasks(ctx context.Context, statusFilter domainschedule.S
 	return filtered, nil
 }
 
-// CancelTask 取消尚未执行的任务。
+// CancelTask 取消待执行任务，或请求停止正在执行的任务。
 func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
 	if !validTaskID(taskID) {
 		return apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	tasks, err := s.loadTasks()
 	if err != nil {
+		s.mu.Unlock()
 		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
 
@@ -259,15 +262,27 @@ func (s *Scheduler) CancelTask(ctx context.Context, taskID string) error {
 		if tasks.Tasks[i].ID != taskID {
 			continue
 		}
-		if tasks.Tasks[i].Status != domainschedule.StatusPending {
-			return apperror.Errorf(apperror.CodeConflict, "task status is %s, only pending tasks can be cancelled", tasks.Tasks[i].Status)
+		status := tasks.Tasks[i].Status
+		if status == domainschedule.StatusCancelled {
+			s.mu.Unlock()
+			return nil
+		}
+		if status != domainschedule.StatusPending && status != domainschedule.StatusRunning {
+			s.mu.Unlock()
+			return apperror.Errorf(apperror.CodeConflict, "task status is %s and cannot be cancelled", status)
 		}
 		tasks.Tasks[i].Status = domainschedule.StatusCancelled
 		if err := s.saveTasks(tasks); err != nil {
+			s.mu.Unlock()
 			return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
+		}
+		s.mu.Unlock()
+		if status == domainschedule.StatusRunning {
+			s.CancelExecution(taskID)
 		}
 		return nil
 	}
+	s.mu.Unlock()
 	return apperror.New(apperror.CodeNotFound, "task not found")
 }
 
@@ -294,6 +309,9 @@ func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 		}
 		if task.Status == domainschedule.StatusRunning {
 			return apperror.New(apperror.CodeConflict, "cannot delete a running task, cancel it first")
+		}
+		if s.isExecuting(taskID) {
+			return apperror.New(apperror.CodeConflict, "cannot delete a task while its execution is stopping")
 		}
 		found = true
 	}
@@ -548,37 +566,28 @@ func (s *Scheduler) checkAndExecute() {
 			log.Printf("[scheduler] save task status failed: %v", saveErr)
 			continue
 		}
+		parentCtx := s.runCtx
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		executionCtx, executionCancel := context.WithTimeout(parentCtx, 30*time.Minute)
+		s.cancelsMu.Lock()
+		s.cancelFuncs[currentTask.ID] = executionCancel
+		s.cancelsMu.Unlock()
 		s.wg.Add(1)
 		s.mu.Unlock()
 
-		go func(tID, tContent, tCron string, tOneTime bool, tExec schedulerport.TaskExecutor) {
+		go func(ctx context.Context, parent context.Context, cancel context.CancelFunc, tID, tContent, tCron string, tOneTime bool, tExec schedulerport.TaskExecutor) {
 			defer s.wg.Done()
 			defer func() { <-s.semaphore }()
-			s.executeTask(tID, tContent, tCron, tOneTime, tExec)
-		}(currentTask.ID, currentTask.Task, currentTask.CronExpr, currentTask.OneTime, executor)
+			defer cancel()
+			defer s.finishExecution(tID)
+			s.executeTask(ctx, parent, tID, tContent, tCron, tOneTime, tExec)
+		}(executionCtx, parentCtx, executionCancel, currentTask.ID, currentTask.Task, currentTask.CronExpr, currentTask.OneTime, executor)
 	}
 }
 
-func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr string, oneTime bool, executor schedulerport.TaskExecutor) {
-	s.mu.RLock()
-	parentCtx := s.runCtx
-	s.mu.RUnlock()
-	if parentCtx == nil {
-		parentCtx = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Minute)
-	defer cancel()
-
-	s.cancelsMu.Lock()
-	s.cancelFuncs[taskID] = cancel
-	s.cancelsMu.Unlock()
-
-	defer func() {
-		s.cancelsMu.Lock()
-		delete(s.cancelFuncs, taskID)
-		s.cancelsMu.Unlock()
-	}()
-
+func (s *Scheduler) executeTask(ctx context.Context, parentCtx context.Context, taskID string, taskContent string, cronExpr string, oneTime bool, executor schedulerport.TaskExecutor) {
 	log.Printf("[scheduler] task started: %s", taskID)
 	_, err := executor.Execute(ctx, taskID, taskContent)
 
@@ -596,7 +605,11 @@ func (s *Scheduler) executeTask(taskID string, taskContent string, cronExpr stri
 			now := time.Now()
 			tasks.Tasks[i].LastRunAt = &now
 
-			if parentCtx.Err() != nil {
+			if tasks.Tasks[i].Status == domainschedule.StatusCancelled {
+				log.Printf("[scheduler] task cancelled: %s", taskID)
+			} else if tasks.Tasks[i].Status != domainschedule.StatusRunning {
+				log.Printf("[scheduler] task status changed during execution: taskID=%s, status=%s", taskID, tasks.Tasks[i].Status)
+			} else if parentCtx.Err() != nil {
 				tasks.Tasks[i].Status = domainschedule.StatusPending
 				log.Printf("[scheduler] task interrupted by shutdown, returning to pending: %s", taskID)
 			} else if err != nil {
@@ -681,9 +694,21 @@ func (s *Scheduler) CancelExecution(taskID string) {
 	s.cancelsMu.Lock()
 	if cancel, ok := s.cancelFuncs[taskID]; ok {
 		cancel()
-		delete(s.cancelFuncs, taskID)
 		log.Printf("[scheduler] task execution cancelled: %s", taskID)
 	}
+	s.cancelsMu.Unlock()
+}
+
+func (s *Scheduler) isExecuting(taskID string) bool {
+	s.cancelsMu.Lock()
+	defer s.cancelsMu.Unlock()
+	_, ok := s.cancelFuncs[taskID]
+	return ok
+}
+
+func (s *Scheduler) finishExecution(taskID string) {
+	s.cancelsMu.Lock()
+	delete(s.cancelFuncs, taskID)
 	s.cancelsMu.Unlock()
 }
 

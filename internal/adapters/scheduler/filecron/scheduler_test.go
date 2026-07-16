@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +48,9 @@ func TestAddListCancelDeleteTask(t *testing.T) {
 
 	if err := s.CancelTask(ctx, task.ID); err != nil {
 		t.Fatalf("CancelTask: %v", err)
+	}
+	if err := s.CancelTask(ctx, task.ID); err != nil {
+		t.Fatalf("repeated CancelTask should be idempotent: %v", err)
 	}
 	cancelled, err := s.ListTasks(ctx, domainschedule.StatusCancelled)
 	if err != nil {
@@ -222,8 +226,8 @@ func TestTimingRecoveryExecuteAndCleanup(t *testing.T) {
 		t.Fatalf("mkdir old task dir: %v", err)
 	}
 
-	s.executeTask("ok", "ok task", "", true, fakeTaskExecutor{})
-	s.executeTask("fail", "fail task", "", true, fakeTaskExecutor{err: errors.New("boom")})
+	s.executeTask(context.Background(), context.Background(), "ok", "ok task", "", true, fakeTaskExecutor{})
+	s.executeTask(context.Background(), context.Background(), "fail", "fail task", "", true, fakeTaskExecutor{err: errors.New("boom")})
 	tasks, err := s.ListTasks(context.Background(), "")
 	if err != nil {
 		t.Fatalf("ListTasks all: %v", err)
@@ -242,10 +246,103 @@ func TestTimingRecoveryExecuteAndCleanup(t *testing.T) {
 	}
 }
 
+func TestCancelRunningTaskWaitsForExecutionBeforeDelete(t *testing.T) {
+	s := newTestScheduler(t)
+	now := time.Now()
+	taskID := "running-cancel"
+	if err := s.saveTasks(&domainschedule.TaskList{Tasks: []domainschedule.Task{{
+		ID:        taskID,
+		Task:      "blocking task",
+		Status:    domainschedule.StatusPending,
+		NextRunAt: now.Add(-time.Second),
+		CreatedAt: now,
+		OneTime:   true,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	executor := newBlockingTaskExecutor()
+	s.SetExecutor(executor)
+	s.Start()
+	defer func() {
+		executor.Release()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := s.Stop(ctx); err != nil {
+			t.Errorf("Stop(): %v", err)
+		}
+	}()
+
+	select {
+	case <-executor.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduled execution did not start")
+	}
+	if err := s.CancelTask(context.Background(), taskID); err != nil {
+		t.Fatalf("CancelTask(): %v", err)
+	}
+	select {
+	case <-executor.cancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("running execution did not receive cancellation")
+	}
+	if err := s.DeleteTask(context.Background(), taskID); err == nil {
+		t.Fatal("DeleteTask() should reject a task whose execution is still stopping")
+	}
+
+	executor.Release()
+	deadline := time.Now().Add(2 * time.Second)
+	for s.isExecuting(taskID) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s.isExecuting(taskID) {
+		t.Fatal("execution remained registered after executor returned")
+	}
+	tasks, err := s.ListTasks(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != domainschedule.StatusCancelled {
+		t.Fatalf("tasks after cancellation = %#v", tasks)
+	}
+	if err := s.DeleteTask(context.Background(), taskID); err != nil {
+		t.Fatalf("DeleteTask() after execution stopped: %v", err)
+	}
+}
+
 type fakeTaskExecutor struct {
 	err error
 }
 
 func (e fakeTaskExecutor) Execute(context.Context, string, string) (string, error) {
 	return "ok", e.err
+}
+
+type blockingTaskExecutor struct {
+	started     chan struct{}
+	cancelled   chan struct{}
+	release     chan struct{}
+	startOnce   sync.Once
+	cancelOnce  sync.Once
+	releaseOnce sync.Once
+}
+
+func newBlockingTaskExecutor() *blockingTaskExecutor {
+	return &blockingTaskExecutor{
+		started:   make(chan struct{}),
+		cancelled: make(chan struct{}),
+		release:   make(chan struct{}),
+	}
+}
+
+func (e *blockingTaskExecutor) Execute(ctx context.Context, _ string, _ string) (string, error) {
+	e.startOnce.Do(func() { close(e.started) })
+	<-ctx.Done()
+	e.cancelOnce.Do(func() { close(e.cancelled) })
+	<-e.release
+	return "", ctx.Err()
+}
+
+func (e *blockingTaskExecutor) Release() {
+	e.releaseOnce.Do(func() { close(e.release) })
 }

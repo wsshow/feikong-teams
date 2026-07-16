@@ -87,7 +87,7 @@ func (s *Service) ListTasks(ctx context.Context, statusFilter domainschedule.Sta
 	return scheduler.ListTasks(ctx, statusFilter)
 }
 
-// CancelTask 取消尚未执行的任务。
+// CancelTask 取消待执行任务，或请求停止正在执行的任务。
 func (s *Service) CancelTask(ctx context.Context, taskID string) error {
 	scheduler, err := s.requireScheduler()
 	if err != nil {
