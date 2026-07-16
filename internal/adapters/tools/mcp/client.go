@@ -32,9 +32,12 @@ func setupMCPClients(ctx context.Context) ([]MCPClient, error) {
 		log.Printf("Connecting to MCP server: %s", serverDisplayName(server))
 		mcpClient, err := newClient(server)
 		if err != nil {
+			closeMCPClients(clients)
 			return nil, err
 		}
 		if err := mcpClient.Start(ctx); err != nil {
+			_ = mcpClient.Close()
+			closeMCPClients(clients)
 			return nil, fmt.Errorf("failed to start MCP client for %s: %v", serverDisplayName(server), err)
 		}
 
@@ -42,6 +45,8 @@ func setupMCPClients(ctx context.Context) ([]MCPClient, error) {
 		initializeResult, err := mcpClient.Initialize(initCtx, initializeRequest())
 		cancel()
 		if err != nil {
+			_ = mcpClient.Close()
+			closeMCPClients(clients)
 			return nil, fmt.Errorf("failed to initialize MCP client for %s: %v", serverDisplayName(server), err)
 		}
 
@@ -65,6 +70,17 @@ func setupMCPClients(ctx context.Context) ([]MCPClient, error) {
 	}
 
 	return clients, nil
+}
+
+func closeMCPClients(clients []MCPClient) {
+	for _, item := range clients {
+		if item.Client == nil {
+			continue
+		}
+		if err := item.Client.Close(); err != nil {
+			log.Printf("failed to close MCP client %s: %v", item.Name, err)
+		}
+	}
 }
 
 func newClient(server config.MCPServer) (*client.Client, error) {

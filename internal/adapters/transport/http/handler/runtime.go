@@ -225,13 +225,16 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	rt.BeginShutdown()
-	rt.resourceCloseOnce.Do(func() {
-		if rt.ChunkUploads != nil {
-			rt.ChunkUploads.Close()
-		}
-	})
 	select {
 	case <-rt.shutdownDone:
+		rt.resourceCloseOnce.Do(func() {
+			if rt.ChunkUploads != nil {
+				rt.ChunkUploads.Close()
+			}
+			if rt.ToolRegistry != nil {
+				rt.ToolRegistry.ClearMCPToolCache()
+			}
+		})
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("wait for HTTP runtime tasks: %w", ctx.Err())

@@ -3,15 +3,28 @@ package mcp
 import (
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
+
+	"github.com/mark3labs/mcp-go/client"
 )
 
 type fakeTool struct {
 	name string
+}
+
+type fakeManagedClient struct {
+	closed atomic.Bool
+}
+
+func (c *fakeManagedClient) Close() error {
+	c.closed.Store(true)
+	return nil
 }
 
 func (f fakeTool) Info(context.Context) (*runtimeport.ToolInfo, error) {
@@ -54,6 +67,52 @@ func TestProviderUsesCacheAndClearsCache(t *testing.T) {
 	provider.ClearCache()
 	if provider.cachedGroups != nil {
 		t.Fatalf("cachedGroups = %#v, want nil", provider.cachedGroups)
+	}
+}
+
+func TestProviderSerializesColdLoadsAndClosesOwnedClients(t *testing.T) {
+	provider := NewProvider()
+	provider.RegisterToolProvider(func(context.Context, *client.Client) ([]runtimeport.Tool, error) {
+		return nil, nil
+	})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var loads atomic.Int32
+	ownedClient := &fakeManagedClient{}
+	provider.loader = func(context.Context, ToolProvider) (toolport.MCPToolGroups, []managedClient, error) {
+		loads.Add(1)
+		close(started)
+		<-release
+		return toolport.MCPToolGroups{"demo": {Name: "demo"}}, []managedClient{ownedClient}, nil
+	}
+
+	const callers = 8
+	var wait sync.WaitGroup
+	errs := make(chan error, callers)
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, err := provider.GetAllToolGroups(context.Background())
+			errs <- err
+		}()
+	}
+	<-started
+	close(release)
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("GetAllToolGroups: %v", err)
+		}
+	}
+	if loads.Load() != 1 {
+		t.Fatalf("cold loads = %d, want 1", loads.Load())
+	}
+
+	provider.ClearCache()
+	if !ownedClient.closed.Load() {
+		t.Fatal("owned MCP client was not closed")
 	}
 }
 
