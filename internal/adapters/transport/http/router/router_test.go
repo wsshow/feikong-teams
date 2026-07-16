@@ -89,6 +89,19 @@ func TestNewEngineAddsMiddlewareAndRoutesCanBeRegistered(t *testing.T) {
 	}
 }
 
+func TestControlRouteRejectsOversizedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	registerAPIRoutesWithRuntime(engine, false, nil, handler.NewRuntime())
+
+	request := httptest.NewRequest(http.MethodPost, "/api/fkteams/login", strings.NewReader(strings.Repeat("x", int(controlBodyLimit)+1)))
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
 func TestNewEngineOnlyTrustsConfiguredProxyHeaders(t *testing.T) {
 	t.Setenv(env.AppDir, t.TempDir())
 	gin.SetMode(gin.TestMode)

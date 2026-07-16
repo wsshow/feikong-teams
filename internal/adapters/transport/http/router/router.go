@@ -18,6 +18,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	controlBodyLimit  int64 = 16 << 10
+	smallJSONLimit    int64 = 256 << 10
+	standardJSONLimit int64 = 4 << 20
+	contentJSONLimit  int64 = 16 << 20
+	chatBodyLimit     int64 = 32 << 20
+	chunkUploadLimit  int64 = 65 << 20
+	fileUploadLimit   int64 = 101 << 20
+	absoluteBodyLimit int64 = 128 << 20
+)
+
 // newEngine 创建带公共中间件的 Gin 引擎
 func newEngine(_ bool) *gin.Engine {
 	r := gin.New()
@@ -29,13 +40,21 @@ func newEngine(_ bool) *gin.Engine {
 		gin.Logger(),
 		gin.Recovery(),
 		middleware.Cors(),
-		middleware.MaxBodySize(100<<20), // 100MB
+		middleware.MaxBodySize(absoluteBodyLimit),
 	)
 	r.Use(middleware.Auth())
 	return r
 }
 
 func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, runtime *handler.Runtime) {
+	controlBody := middleware.MaxBodySize(controlBodyLimit)
+	smallJSONBody := middleware.MaxBodySize(smallJSONLimit)
+	standardJSONBody := middleware.MaxBodySize(standardJSONLimit)
+	contentJSONBody := middleware.MaxBodySize(contentJSONLimit)
+	chatBody := middleware.MaxBodySize(chatBodyLimit)
+	chunkUploadBody := middleware.MaxBodySize(chunkUploadLimit)
+	fileUploadBody := middleware.MaxBodySize(fileUploadLimit)
+
 	r.GET("/health", handler.HealthHandler())
 	r.GET("/live", handler.HealthHandler())
 	r.GET("/ready", runtime.ReadinessHandler())
@@ -45,13 +64,13 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 	v1 := r.Group("/v1", middleware.APIKeyAuth())
 	{
 		v1.GET("/models", handler.OpenAIModelsHandler())
-		v1.POST("/chat/completions", handler.OpenAIChatCompletionsHandler())
+		v1.POST("/chat/completions", chatBody, handler.OpenAIChatCompletionsHandler())
 	}
 
 	apiV1 := r.Group("/api/fkteams")
 	{
-		apiV1.POST("/login", handler.LoginHandler())
-		apiV1.POST("/logout", handler.LogoutHandler())
+		apiV1.POST("/login", controlBody, handler.LoginHandler())
+		apiV1.POST("/logout", controlBody, handler.LogoutHandler())
 		apiV1.GET("/version", handler.VersionHandler())
 
 		// 智能体 API
@@ -63,31 +82,31 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		// AI 辅助 API
 		ai := apiV1.Group("/ai")
 		{
-			ai.POST("/agents/draft", runtime.GenerateAgentDraftsHandler())
-			ai.POST("/skills/draft", runtime.GenerateSkillDraftHandler())
-			ai.POST("/text/rewrite", runtime.RewriteTextHandler())
+			ai.POST("/agents/draft", standardJSONBody, runtime.GenerateAgentDraftsHandler())
+			ai.POST("/skills/draft", standardJSONBody, runtime.GenerateSkillDraftHandler())
+			ai.POST("/text/rewrite", standardJSONBody, runtime.RewriteTextHandler())
 		}
 
 		// 聊天 API
-		apiV1.POST("/chat", runtime.ChatHandlerWithState(state))
+		apiV1.POST("/chat", chatBody, runtime.ChatHandlerWithState(state))
 
 		// 流式任务 API（前端订阅模式，支持断线重连）
 		stream := apiV1.Group("/stream")
 		{
-			stream.POST("/start", runtime.StreamStartHandlerWithState(state))
-			stream.POST("/steer", runtime.StreamSteerHandler())
+			stream.POST("/start", chatBody, runtime.StreamStartHandlerWithState(state))
+			stream.POST("/steer", chatBody, runtime.StreamSteerHandler())
 			stream.GET("/queue/:sessionID", runtime.StreamQueueHandler())
-			stream.PATCH("/queue/:sessionID/:queueID", runtime.StreamQueueUpdateHandler())
-			stream.DELETE("/queue/:sessionID/:queueID", runtime.StreamQueueDeleteHandler())
-			stream.POST("/queue/:sessionID/:queueID/kind", runtime.StreamQueueKindHandler())
-			stream.POST("/queue/:sessionID/:queueID/move", runtime.StreamQueueMoveHandler())
-			stream.POST("/stop/:sessionID", runtime.StreamStopHandler())
+			stream.PATCH("/queue/:sessionID/:queueID", chatBody, runtime.StreamQueueUpdateHandler())
+			stream.DELETE("/queue/:sessionID/:queueID", controlBody, runtime.StreamQueueDeleteHandler())
+			stream.POST("/queue/:sessionID/:queueID/kind", controlBody, runtime.StreamQueueKindHandler())
+			stream.POST("/queue/:sessionID/:queueID/move", controlBody, runtime.StreamQueueMoveHandler())
+			stream.POST("/stop/:sessionID", controlBody, runtime.StreamStopHandler())
 			stream.GET("/subscribe/:sessionID", runtime.StreamSubscribeHandler())
 			stream.GET("/snapshot/:sessionID", runtime.StreamSnapshotHandler())
 			stream.GET("/status/:sessionID", runtime.StreamStatusHandler())
 			stream.GET("/events/:sessionID", runtime.StreamEventsHandler())
-			stream.POST("/approval", runtime.StreamApprovalHandler())
-			stream.POST("/ask-response", runtime.StreamAskResponseHandler())
+			stream.POST("/approval", smallJSONBody, runtime.StreamApprovalHandler())
+			stream.POST("/ask-response", standardJSONBody, runtime.StreamAskResponseHandler())
 		}
 
 		// 文件管理 API
@@ -96,63 +115,63 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 			files.GET("", handler.GetFilesHandler())
 			files.GET("/search", handler.SearchFilesHandler())
 			files.GET("/content", handler.GetFileContentHandler())
-			files.PUT("/content", handler.SaveFileContentHandler())
+			files.PUT("/content", contentJSONBody, handler.SaveFileContentHandler())
 			files.GET("/download", handler.DownloadFileHandler())
-			files.POST("/download/batch", handler.BatchDownloadHandler())
-			files.POST("/upload", handler.UploadFileHandler())
-			files.POST("/upload/chunk", runtime.UploadChunkHandler())
-			files.DELETE("", handler.DeleteFileHandler())
+			files.POST("/download/batch", smallJSONBody, handler.BatchDownloadHandler())
+			files.POST("/upload", fileUploadBody, handler.UploadFileHandler())
+			files.POST("/upload/chunk", chunkUploadBody, runtime.UploadChunkHandler())
+			files.DELETE("", smallJSONBody, handler.DeleteFileHandler())
 			files.GET("/serve/*filepath", handler.ServeFileHandler())
 		}
 
 		// 文件预览链接 API
 		preview := apiV1.Group("/preview")
 		{
-			preview.POST("", runtime.CreatePreviewLinkHandler())
+			preview.POST("", smallJSONBody, runtime.CreatePreviewLinkHandler())
 			preview.GET("", runtime.ListPreviewLinksHandler())
 			preview.GET("/:linkId", runtime.PreviewFileHandler())
 			preview.GET("/:linkId/info", runtime.PreviewInfoHandler())
-			preview.POST("/:linkId/auth", runtime.PreviewAuthHandler())
+			preview.POST("/:linkId/auth", controlBody, runtime.PreviewAuthHandler())
 			preview.GET("/:linkId/render/*filepath", runtime.PreviewRenderHandler())
-			preview.DELETE("/:linkId", runtime.DeletePreviewLinkHandler())
+			preview.DELETE("/:linkId", controlBody, runtime.DeletePreviewLinkHandler())
 		}
 
 		// 会话分享管理 API
 		sessionShares := apiV1.Group("/session-shares")
 		{
-			sessionShares.POST("", runtime.CreateSessionShareHandler())
+			sessionShares.POST("", smallJSONBody, runtime.CreateSessionShareHandler())
 			sessionShares.GET("", runtime.ListSessionSharesHandler())
-			sessionShares.DELETE("/:shareID", runtime.DeleteSessionShareHandler())
+			sessionShares.DELETE("/:shareID", controlBody, runtime.DeleteSessionShareHandler())
 		}
 
 		// 公开会话分享 API
 		publicSessionShares := apiV1.Group("/public/session-shares")
 		{
 			publicSessionShares.GET("/:shareID/info", runtime.GetPublicSessionShareInfoHandler())
-			publicSessionShares.POST("/:shareID/access", runtime.AccessPublicSessionShareHandler())
+			publicSessionShares.POST("/:shareID/access", controlBody, runtime.AccessPublicSessionShareHandler())
 		}
 
 		// 会话管理 API
 		sessions := apiV1.Group("/sessions")
 		{
 			sessions.GET("", runtime.ListSessionsHandler())
-			sessions.POST("", runtime.CreateSessionHandler())
+			sessions.POST("", smallJSONBody, runtime.CreateSessionHandler())
 			sessions.GET("/:sessionID", runtime.GetSessionHandler())
-			sessions.PATCH("/:sessionID", runtime.UpdateSessionHandler())
-			sessions.DELETE("/:sessionID", runtime.DeleteSessionHandler())
-			sessions.POST("/rename", runtime.RenameSessionHandler())
-			sessions.POST("/favorite", runtime.FavoriteSessionHandler())
-			sessions.POST("/agent", runtime.UpdateSessionAgentHandler())
+			sessions.PATCH("/:sessionID", smallJSONBody, runtime.UpdateSessionHandler())
+			sessions.DELETE("/:sessionID", controlBody, runtime.DeleteSessionHandler())
+			sessions.POST("/rename", smallJSONBody, runtime.RenameSessionHandler())
+			sessions.POST("/favorite", controlBody, runtime.FavoriteSessionHandler())
+			sessions.POST("/agent", smallJSONBody, runtime.UpdateSessionAgentHandler())
 		}
 
 		// 定时任务管理 API
 		schedules := apiV1.Group("/schedules")
 		{
 			schedules.GET("", runtime.GetScheduleTasksHandler())
-			schedules.POST("", runtime.CreateScheduleTaskHandler())
-			schedules.PUT("/:id", runtime.UpdateScheduleTaskHandler())
-			schedules.DELETE("/:id", runtime.DeleteScheduleTaskHandler())
-			schedules.POST("/:id/cancel", runtime.CancelScheduleTaskHandler())
+			schedules.POST("", standardJSONBody, runtime.CreateScheduleTaskHandler())
+			schedules.PUT("/:id", standardJSONBody, runtime.UpdateScheduleTaskHandler())
+			schedules.DELETE("/:id", controlBody, runtime.DeleteScheduleTaskHandler())
+			schedules.POST("/:id/cancel", controlBody, runtime.CancelScheduleTaskHandler())
 			schedules.GET("/:id/result", runtime.GetTaskResultHandler())
 			schedules.GET("/:id/history", runtime.GetTaskHistoryHandler())
 			schedules.GET("/:id/history/:filename", runtime.GetTaskHistoryFileHandler())
@@ -162,30 +181,30 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		skills := apiV1.Group("/skills")
 		{
 			skills.GET("", handler.GetInstalledSkillsHandler())
-			skills.POST("", handler.CreateSkillHandler())
+			skills.POST("", standardJSONBody, handler.CreateSkillHandler())
 			skills.GET("/search", runtime.SearchSkillsHandler())
-			skills.POST("/install", runtime.InstallSkillHandler())
-			skills.DELETE("/:slug", handler.RemoveSkillHandler())
+			skills.POST("/install", smallJSONBody, runtime.InstallSkillHandler())
+			skills.DELETE("/:slug", controlBody, handler.RemoveSkillHandler())
 			skills.GET("/:slug/files", handler.GetSkillFilesHandler())
-			skills.POST("/:slug/files", handler.CreateSkillFileHandler())
+			skills.POST("/:slug/files", standardJSONBody, handler.CreateSkillFileHandler())
 			skills.GET("/:slug/file", handler.GetSkillFileContentHandler())
-			skills.PUT("/:slug/file", handler.SaveSkillFileContentHandler())
-			skills.DELETE("/:slug/file", handler.DeleteSkillFileHandler())
+			skills.PUT("/:slug/file", standardJSONBody, handler.SaveSkillFileContentHandler())
+			skills.DELETE("/:slug/file", controlBody, handler.DeleteSkillFileHandler())
 		}
 
 		// 长期记忆管理 API
 		memory := apiV1.Group("/memory")
 		{
 			memory.GET("", handler.GetMemoryListHandlerWithState(state))
-			memory.DELETE("", handler.DeleteMemoryHandlerWithState(state))
-			memory.POST("/clear", handler.ClearMemoryHandlerWithState(state))
+			memory.DELETE("", smallJSONBody, handler.DeleteMemoryHandlerWithState(state))
+			memory.POST("/clear", controlBody, handler.ClearMemoryHandlerWithState(state))
 		}
 
 		// 配置管理 API
 		configGroup := apiV1.Group("/config")
 		{
 			configGroup.GET("", handler.GetConfigHandler())
-			configGroup.PUT("", runtime.UpdateConfigHandlerWithState(state))
+			configGroup.PUT("", standardJSONBody, runtime.UpdateConfigHandlerWithState(state))
 			configGroup.GET("/tools", runtime.GetToolNamesHandler())
 			configGroup.GET("/tool-catalog", runtime.GetToolCatalogHandler())
 			configGroup.GET("/template-vars", handler.GetTemplateVarsHandler())
@@ -193,11 +212,11 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 
 		// 模型提供者 API
 		apiV1.GET("/providers", runtime.GetProvidersHandler())
-		apiV1.POST("/providers/models", runtime.GetProviderModelsHandler())
+		apiV1.POST("/providers/models", smallJSONBody, runtime.GetProviderModelsHandler())
 
 		// 系统管理 API
-		apiV1.POST("/shutdown", handler.ShutdownHandler())
-		apiV1.POST("/restart", handler.RestartHandler())
+		apiV1.POST("/shutdown", controlBody, handler.ShutdownHandler())
+		apiV1.POST("/restart", controlBody, handler.RestartHandler())
 	}
 }
 

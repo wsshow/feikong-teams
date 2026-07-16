@@ -27,7 +27,10 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-const webSocketWriteTimeout = 15 * time.Second
+const (
+	webSocketWriteTimeout = 15 * time.Second
+	webSocketReadLimit    = 32 << 20
+)
 
 // WSMessage WebSocket 消息类型
 type WSMessage struct {
@@ -56,6 +59,7 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 			log.Printf("websocket upgrade failed: %v", err)
 			return
 		}
+		conn.SetReadLimit(webSocketReadLimit)
 
 		connCtx, connCancel := context.WithCancel(c.Request.Context())
 		rt.Connections.registerConn(conn, connCancel)
