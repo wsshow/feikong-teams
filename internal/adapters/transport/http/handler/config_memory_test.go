@@ -17,11 +17,13 @@ func TestGetConfigHandlerMasksSensitiveFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	saveHandlerConfig(t, config.Config{
 		Models: []config.ModelConfig{{
-			ID:     "main",
-			Name:   "主力模型",
-			UseFor: []string{config.ModelUseChat},
-			APIKey: "sk-secret",
+			ID:           "main",
+			Name:         "主力模型",
+			UseFor:       []string{config.ModelUseChat},
+			APIKey:       "sk-secret",
+			ExtraHeaders: "Authorization: Bearer gateway-secret",
 		}},
+		OpenAIAPI: config.OpenAIAPI{APIKeys: []string{"sk-api-first", "sk-api-second"}},
 		Server: config.Server{Auth: config.ServerAuth{
 			Password: "password",
 			Secret:   "auth-secret",
@@ -53,6 +55,12 @@ func TestGetConfigHandlerMasksSensitiveFields(t *testing.T) {
 	if len(got.Models) != 1 || got.Models[0].APIKey != "" || !got.Models[0].HasAPIKey {
 		t.Fatalf("model api key should be hidden with presence flag, got %#v", got.Models)
 	}
+	if got.Models[0].OriginalID != "main" || got.Models[0].ExtraHeaders != sensitivePassword {
+		t.Fatalf("model identity or extra headers were not protected: %#v", got.Models[0])
+	}
+	if len(got.OpenAIAPI.APIKeys) != 2 || got.OpenAIAPI.APIKeys[0] == "sk-api-first" || !isMasked(got.OpenAIAPI.APIKeys[0]) {
+		t.Fatalf("OpenAI API keys were not masked: %#v", got.OpenAIAPI.APIKeys)
+	}
 	if got.Server.Auth.Password != sensitivePassword || got.Server.Auth.Secret != sensitivePassword {
 		t.Fatalf("auth sensitive fields were not masked: %#v", got.Server.Auth)
 	}
@@ -72,11 +80,13 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	saveHandlerConfig(t, config.Config{
 		Models: []config.ModelConfig{{
-			ID:     "main",
-			Name:   "主力模型",
-			UseFor: []string{config.ModelUseChat},
-			APIKey: "old-key",
+			ID:           "main",
+			Name:         "主力模型",
+			UseFor:       []string{config.ModelUseChat},
+			APIKey:       "old-key",
+			ExtraHeaders: "Authorization: Bearer old-gateway",
 		}},
+		OpenAIAPI: config.OpenAIAPI{APIKeys: []string{"sk-api-first", "sk-api-second"}},
 		Server: config.Server{Auth: config.ServerAuth{
 			Enabled:  true,
 			Username: "admin",
@@ -100,11 +110,13 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 
 	next := config.Config{
 		Models: []config.ModelConfig{{
-			ID:         "renamed",
-			Name:       "重命名模型",
-			UseFor:     []string{config.ModelUseChat},
-			OriginalID: "main",
+			ID:           "renamed",
+			Name:         "重命名模型",
+			UseFor:       []string{config.ModelUseChat},
+			OriginalID:   "main",
+			ExtraHeaders: sensitivePassword,
 		}},
+		OpenAIAPI: config.OpenAIAPI{APIKeys: []string{maskAPIKey("sk-api-second"), maskAPIKey("sk-api-first")}},
 		Server: config.Server{Auth: config.ServerAuth{
 			Enabled:  true,
 			Username: "root",
@@ -146,6 +158,12 @@ func TestUpdateConfigHandlerRestoresSensitiveFields(t *testing.T) {
 	got := config.Get()
 	if got.Models[0].APIKey != "old-key" {
 		t.Fatalf("model api key was not restored: %#v", got.Models[0])
+	}
+	if got.Models[0].ExtraHeaders != "Authorization: Bearer old-gateway" {
+		t.Fatalf("model extra headers were not restored: %#v", got.Models[0])
+	}
+	if len(got.OpenAIAPI.APIKeys) != 2 || got.OpenAIAPI.APIKeys[0] != "sk-api-second" || got.OpenAIAPI.APIKeys[1] != "sk-api-first" {
+		t.Fatalf("OpenAI API keys were not restored after reorder: %#v", got.OpenAIAPI.APIKeys)
 	}
 	if got.Server.Auth.Password != "old-password" || got.Server.Auth.Secret != "old-secret" {
 		t.Fatalf("auth sensitive fields were not restored: %#v", got.Server.Auth)
@@ -236,6 +254,92 @@ func TestUpdateConfigHandlerRejectsNegativeRoundtableIterations(t *testing.T) {
 	resp := performJSON(router, http.MethodPost, "/config", body)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("negative roundtable iterations status = %d, want 400", resp.Code)
+	}
+}
+
+func TestUpdateConfigHandlerDoesNotRestoreModelSecretsByPosition(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{Models: []config.ModelConfig{
+		{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}, APIKey: "main-secret"},
+		{ID: "aux", Name: "辅助模型", APIKey: "aux-secret"},
+	}})
+
+	next := config.Config{Models: []config.ModelConfig{
+		{ID: "new", Name: "新增模型"},
+		{ID: "renamed-main", OriginalID: "main", Name: "重命名主力", UseFor: []string{config.ModelUseChat}},
+		{ID: "aux", Name: "辅助模型"},
+	}}
+	body, err := json.Marshal(next)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	router := gin.New()
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
+
+	resp := performJSON(router, http.MethodPost, "/config", string(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("update config status = %d: %s", resp.Code, resp.Body.String())
+	}
+	got := config.Get()
+	if got.Models[0].APIKey != "" {
+		t.Fatalf("new model received another model's secret: %#v", got.Models[0])
+	}
+	if got.Models[1].APIKey != "main-secret" || got.Models[2].APIKey != "aux-secret" {
+		t.Fatalf("stable model secrets were not restored: %#v", got.Models)
+	}
+}
+
+func TestUpdateConfigHandlerRejectsDuplicateOriginalModelID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{Models: []config.ModelConfig{
+		{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}, APIKey: "main-secret"},
+	}})
+
+	body := `{"models":[{"id":"first","original_id":"main","name":"模型一","use_for":["chat"]},{"id":"second","original_id":"main","name":"模型二"}]}`
+	router := gin.New()
+	rt := NewRuntime()
+	router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
+
+	resp := performJSON(router, http.MethodPost, "/config", body)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate original_id status = %d, want 400: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestUpdateConfigHandlerRejectsIncompleteEnabledAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name string
+		auth config.ServerAuth
+	}{
+		{name: "missing username", auth: config.ServerAuth{Enabled: true, Password: "password", Secret: "secret"}},
+		{name: "missing password", auth: config.ServerAuth{Enabled: true, Username: "admin", Secret: "secret"}},
+		{name: "missing secret", auth: config.ServerAuth{Enabled: true, Username: "admin", Password: "password"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saveHandlerConfig(t, config.Config{})
+			next := config.Config{
+				Models: []config.ModelConfig{{ID: "main", Name: "主力模型", UseFor: []string{config.ModelUseChat}}},
+				Server: config.Server{Auth: tt.auth},
+			}
+			body, err := json.Marshal(next)
+			if err != nil {
+				t.Fatalf("marshal config: %v", err)
+			}
+			router := gin.New()
+			rt := NewRuntime()
+			router.POST("/config", rt.UpdateConfigHandlerWithState(nil))
+
+			resp := performJSON(router, http.MethodPost, "/config", string(body))
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("invalid auth status = %d, want 400: %s", resp.Code, resp.Body.String())
+			}
+			if config.Get().Server.Auth.Enabled {
+				t.Fatal("invalid authentication config must not be saved")
+			}
+		})
 	}
 }
 

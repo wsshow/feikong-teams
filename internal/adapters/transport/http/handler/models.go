@@ -46,9 +46,13 @@ func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 
 		apiKey := req.APIKey
 		if apiKey == "" {
-			apiKey = restoredModelAPIKey(config.Get(), req.ModelID, req.OriginalID, req.BaseURL)
+			apiKey = restoredModelAPIKey(config.Get(), req.ModelID, req.OriginalID)
 		}
-		modelCfg := config.ModelConfig{ExtraHeaders: req.ExtraHeaders}
+		extraHeaders := req.ExtraHeaders
+		if extraHeaders == sensitivePassword {
+			extraHeaders = restoredModelExtraHeaders(config.Get(), req.ModelID, req.OriginalID)
+		}
+		modelCfg := config.ModelConfig{ExtraHeaders: extraHeaders}
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 		defer cancel()
@@ -74,7 +78,7 @@ func (rt *Runtime) GetProviderModelsHandler() gin.HandlerFunc {
 	}
 }
 
-func restoredModelAPIKey(cfg *config.Config, modelID, originalID, baseURL string) string {
+func restoredModelAPIKey(cfg *config.Config, modelID, originalID string) string {
 	if cfg == nil {
 		return ""
 	}
@@ -88,13 +92,6 @@ func restoredModelAPIKey(cfg *config.Config, modelID, originalID, baseURL string
 			return key
 		}
 	}
-	if baseURL != "" {
-		for _, m := range cfg.Models {
-			if m.BaseURL == baseURL && m.APIKey != "" {
-				return m.APIKey
-			}
-		}
-	}
 	return ""
 }
 
@@ -102,6 +99,27 @@ func modelAPIKeyByID(cfg *config.Config, id string) string {
 	for _, m := range cfg.Models {
 		if m.ID == id && m.APIKey != "" {
 			return m.APIKey
+		}
+	}
+	return ""
+}
+
+func restoredModelExtraHeaders(cfg *config.Config, modelID, originalID string) string {
+	if cfg == nil {
+		return ""
+	}
+	if originalID != "" {
+		if headers := modelExtraHeadersByID(cfg, originalID); headers != "" {
+			return headers
+		}
+	}
+	return modelExtraHeadersByID(cfg, modelID)
+}
+
+func modelExtraHeadersByID(cfg *config.Config, id string) string {
+	for _, model := range cfg.Models {
+		if model.ID == id {
+			return model.ExtraHeaders
 		}
 	}
 	return ""

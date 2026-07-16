@@ -5,6 +5,8 @@
 获取当前配置。响应会对敏感字段脱敏：
 
 - `models[].api_key` 永远返回空字符串，并用 `models[].has_api_key` 标识是否已配置。
+- `models[].original_id` 返回当前稳定 ID；`models[].extra_headers` 已配置时返回 `"***"`。
+- `openai_api.api_keys[]` 返回仅保留末 4 位的掩码。
 - `server.auth.password`、`server.auth.secret`、`agents.items[].ssh.password`、`channels.qq.app_secret` 返回 `"***"`。
 - `channels.discord.token` 只保留末 4 位。
 - `agents.items` 返回合并后的全局智能体目录，包含内置智能体的名称、描述、工具和提示词。
@@ -44,7 +46,9 @@
 
 | 字段 | 保留旧值条件 |
 | ---- | ------------ |
-| `models[].api_key` | 提交空字符串时按 `original_id` 或 `id` 还原旧密钥 |
+| `models[].api_key` | 提交空字符串时只按 `original_id` 或 `id` 还原旧密钥；不按数组位置或 URL 猜测 |
+| `models[].extra_headers` | 提交 `"***"` 时按稳定模型 ID 保留旧值；提交空字符串表示清空 |
+| `openai_api.api_keys[]` | 提交 GET 返回的掩码时按掩码唯一匹配旧值，支持重排和删除 |
 | `server.auth.password` / `server.auth.secret` | 提交 `"***"` 时保留旧值 |
 | `agents.items[].ssh.password` | 提交 `"***"` 时保留旧值 |
 | `channels.qq.app_secret` | 提交 `"***"` 时保留旧值 |
@@ -78,6 +82,8 @@
 | 400 | `invalid config: ...` | 请求体不是合法配置 |
 | 400 | `duplicate model id: <id>` | 模型 ID 重复 |
 | 400 | `model use_for "<use>" is configured by both <id> and <id>` | 模型用途重复 |
+| 400 | `model original_id is duplicated: <id>` | 多个模型尝试继承同一个旧模型身份 |
+| 400 | `server.auth.<field> is required when authentication is enabled` | 启用认证时用户名、密码或 Secret 缺失 |
 | 500 | `failed to save config: ...` | 保存失败 |
 
 ---

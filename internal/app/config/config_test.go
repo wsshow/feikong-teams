@@ -38,6 +38,29 @@ func TestModelConfigParseExtraHeaders(t *testing.T) {
 	}
 }
 
+func TestServerAuthValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		auth    ServerAuth
+		wantErr bool
+	}{
+		{name: "disabled", auth: ServerAuth{}},
+		{name: "valid", auth: ServerAuth{Enabled: true, Username: "admin", Password: "password", Secret: "secret"}},
+		{name: "missing username", auth: ServerAuth{Enabled: true, Password: "password", Secret: "secret"}, wantErr: true},
+		{name: "blank username", auth: ServerAuth{Enabled: true, Username: "  ", Password: "password", Secret: "secret"}, wantErr: true},
+		{name: "missing password", auth: ServerAuth{Enabled: true, Username: "admin", Secret: "secret"}, wantErr: true},
+		{name: "missing secret", auth: ServerAuth{Enabled: true, Username: "admin", Password: "password"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.auth.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestChannelsList(t *testing.T) {
 	channels := Channels{
 		QQ: ChannelQQ{

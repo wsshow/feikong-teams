@@ -9,6 +9,7 @@ import (
 	"fkteams/internal/app/tools"
 	"fkteams/internal/runtime/log"
 	modelregistry "fkteams/internal/runtime/model"
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -43,10 +44,18 @@ func GetConfigHandler() gin.HandlerFunc {
 		models := make([]config.ModelConfig, len(cfg.Models))
 		for i, m := range cfg.Models {
 			models[i] = m
+			models[i].OriginalID = m.ID
 			models[i].HasAPIKey = m.APIKey != ""
 			models[i].APIKey = ""
+			if m.ExtraHeaders != "" {
+				models[i].ExtraHeaders = sensitivePassword
+			}
 		}
 		resp.Models = models
+		resp.OpenAIAPI.APIKeys = make([]string, len(cfg.OpenAIAPI.APIKeys))
+		for i, apiKey := range cfg.OpenAIAPI.APIKeys {
+			resp.OpenAIAPI.APIKeys[i] = maskAPIKey(apiKey)
+		}
 
 		// 脱敏 Auth
 		if resp.Server.Auth.Password != "" {
@@ -99,26 +108,17 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 			return
 		}
 
-		// 合并敏感字段：前端传空字符串时保留旧值
-		for i := range newCfg.Models {
-			if newCfg.Models[i].APIKey == "" {
-				lookupID := newCfg.Models[i].OriginalID
-				if lookupID == "" {
-					lookupID = newCfg.Models[i].ID
-				}
-				restored := false
-				for _, old := range oldCfg.Models {
-					if old.ID == lookupID {
-						newCfg.Models[i].APIKey = old.APIKey
-						restored = true
-						break
-					}
-				}
-				if !restored && i < len(oldCfg.Models) {
-					newCfg.Models[i].APIKey = oldCfg.Models[i].APIKey
-				}
-			}
+		// 合并敏感字段：只按稳定 ID 恢复，禁止按数组位置猜测密钥归属。
+		if err := restoreModelSecrets(&newCfg, oldCfg); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
+		apiKeys, err := restoreMaskedAPIKeys(newCfg.OpenAIAPI.APIKeys, oldCfg.OpenAIAPI.APIKeys)
+		if err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		newCfg.OpenAIAPI.APIKeys = apiKeys
 		if newCfg.Server.Auth.Password == sensitivePassword {
 			newCfg.Server.Auth.Password = oldCfg.Server.Auth.Password
 		}
@@ -132,6 +132,10 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		}
 		if isMasked(newCfg.Channels.Discord.Token) {
 			newCfg.Channels.Discord.Token = oldCfg.Channels.Discord.Token
+		}
+		if err := newCfg.Server.Auth.Validate(); err != nil {
+			Fail(c, http.StatusBadRequest, err.Error())
+			return
 		}
 
 		// 检测 Auth 是否变更
@@ -161,6 +165,65 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
+}
+
+func restoreModelSecrets(newCfg *config.Config, oldCfg *config.Config) error {
+	oldByID := make(map[string]config.ModelConfig, len(oldCfg.Models))
+	for _, model := range oldCfg.Models {
+		oldByID[model.ID] = model
+	}
+	usedOriginalIDs := make(map[string]struct{}, len(newCfg.Models))
+	for i := range newCfg.Models {
+		model := &newCfg.Models[i]
+		lookupID := model.OriginalID
+		if lookupID == "" {
+			lookupID = model.ID
+		} else {
+			if _, exists := usedOriginalIDs[lookupID]; exists {
+				return fmt.Errorf("model original_id is duplicated: %s", lookupID)
+			}
+			usedOriginalIDs[lookupID] = struct{}{}
+		}
+		oldModel, exists := oldByID[lookupID]
+		if model.OriginalID != "" && !exists {
+			return fmt.Errorf("model original_id does not exist: %s", model.OriginalID)
+		}
+		if model.APIKey == "" && exists {
+			model.APIKey = oldModel.APIKey
+		} else if model.APIKey == "" && model.HasAPIKey {
+			return fmt.Errorf("model api key cannot be restored: %s", model.ID)
+		}
+		if model.ExtraHeaders == sensitivePassword {
+			if !exists {
+				return fmt.Errorf("model extra headers cannot be restored: %s", model.ID)
+			}
+			model.ExtraHeaders = oldModel.ExtraHeaders
+		}
+		model.HasAPIKey = false
+		model.OriginalID = ""
+	}
+	return nil
+}
+
+func restoreMaskedAPIKeys(submitted, existing []string) ([]string, error) {
+	maskedExisting := make(map[string][]string, len(existing))
+	for _, apiKey := range existing {
+		masked := maskAPIKey(apiKey)
+		maskedExisting[masked] = append(maskedExisting[masked], apiKey)
+	}
+	restored := make([]string, 0, len(submitted))
+	for _, apiKey := range submitted {
+		matches := maskedExisting[apiKey]
+		switch len(matches) {
+		case 0:
+			restored = append(restored, apiKey)
+		case 1:
+			restored = append(restored, matches[0])
+		default:
+			return nil, fmt.Errorf("masked openai api key is ambiguous")
+		}
+	}
+	return restored, nil
 }
 
 func userAgentConfigItems(items []config.AgentConfig) []config.AgentConfig {

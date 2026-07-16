@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fkteams/internal/app/config"
 	"fkteams/internal/runtime/log"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -32,8 +31,8 @@ func AuthEnabled() (bool, error) {
 	if !auth.Enabled {
 		return false, nil
 	}
-	if auth.Secret == "" {
-		return false, fmt.Errorf("server.auth.secret is required when authentication is enabled")
+	if err := auth.Validate(); err != nil {
+		return false, err
 	}
 	return true, nil
 }

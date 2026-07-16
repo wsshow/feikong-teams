@@ -69,6 +69,22 @@ type ServerAuth struct {
 	Secret   string `toml:"secret" json:"secret"`
 }
 
+func (a ServerAuth) Validate() error {
+	if !a.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(a.Username) == "" {
+		return fmt.Errorf("server.auth.username is required when authentication is enabled")
+	}
+	if a.Password == "" {
+		return fmt.Errorf("server.auth.password is required when authentication is enabled")
+	}
+	if a.Secret == "" {
+		return fmt.Errorf("server.auth.secret is required when authentication is enabled")
+	}
+	return nil
+}
+
 // Server 服务端配置
 type Server struct {
 	Host         string     `toml:"host" json:"host"`
