@@ -14,6 +14,14 @@ import (
 	appskill "fkteams/internal/app/skill"
 )
 
+const (
+	maxSearchResponseBytes int64 = 8 << 20
+	maxSkillDownloadBytes  int64 = 64 << 20
+	maxErrorDrainBytes     int64 = 64 << 10
+	minSearchPageSize            = 1
+	maxSearchPageSize            = 100
+)
+
 type Provider struct {
 	baseURL string
 	client  *http.Client
@@ -39,6 +47,15 @@ func (p *Provider) Search(ctx context.Context, keyword string, page, pageSize in
 	if order == "" {
 		order = "desc"
 	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < minSearchPageSize {
+		pageSize = minSearchPageSize
+	}
+	if pageSize > maxSearchPageSize {
+		pageSize = maxSearchPageSize
+	}
 	query := u.Query()
 	query.Set("keyword", keyword)
 	query.Set("page", strconv.Itoa(page))
@@ -57,7 +74,7 @@ func (p *Provider) Search(ctx context.Context, keyword string, page, pageSize in
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		_, _ = io.Copy(io.Discard, response.Body)
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxErrorDrainBytes))
 		return nil, fmt.Errorf("skill provider returned %d", response.StatusCode)
 	}
 
@@ -79,7 +96,7 @@ func (p *Provider) Search(ctx context.Context, keyword string, page, pageSize in
 			Total int `json:"total"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	if err := decodeSearchResponse(response.Body, &payload); err != nil {
 		return nil, fmt.Errorf("decode skill search response: %w", err)
 	}
 	if payload.Code != 0 {
@@ -119,8 +136,32 @@ func (p *Provider) Download(ctx context.Context, slug, version string) (io.ReadC
 		return nil, fmt.Errorf("download skill: %w", err)
 	}
 	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxErrorDrainBytes))
 		response.Body.Close()
 		return nil, fmt.Errorf("skill provider returned %d", response.StatusCode)
 	}
-	return response.Body, nil
+	if response.ContentLength > maxSkillDownloadBytes {
+		response.Body.Close()
+		return nil, fmt.Errorf("skill archive exceeds %d bytes", maxSkillDownloadBytes)
+	}
+	return &limitedReadCloser{
+		Reader: io.LimitReader(response.Body, maxSkillDownloadBytes+1),
+		Closer: response.Body,
+	}, nil
+}
+
+func decodeSearchResponse(reader io.Reader, target any) error {
+	data, err := io.ReadAll(io.LimitReader(reader, maxSearchResponseBytes+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(data)) > maxSearchResponseBytes {
+		return fmt.Errorf("skill search response exceeds %d bytes", maxSearchResponseBytes)
+	}
+	return json.Unmarshal(data, target)
+}
+
+type limitedReadCloser struct {
+	io.Reader
+	io.Closer
 }

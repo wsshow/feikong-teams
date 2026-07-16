@@ -58,3 +58,19 @@ func TestProviderRejectsUpstreamErrors(t *testing.T) {
 		t.Fatal("expected upstream error")
 	}
 }
+
+func TestDecodeSearchResponseRejectsOversizedBody(t *testing.T) {
+	reader := io.LimitReader(skillFillReader{}, maxSearchResponseBytes+1)
+	if err := decodeSearchResponse(reader, &struct{}{}); err == nil {
+		t.Fatal("oversized skill search response was accepted")
+	}
+}
+
+type skillFillReader struct{}
+
+func (skillFillReader) Read(buffer []byte) (int, error) {
+	for index := range buffer {
+		buffer[index] = '0'
+	}
+	return len(buffer), nil
+}
