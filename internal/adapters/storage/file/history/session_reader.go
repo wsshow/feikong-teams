@@ -29,6 +29,8 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 	if !domainsession.ValidID(sessionID) {
 		return nil, fmt.Errorf("invalid session ID")
 	}
+	releaseLease := AcquireSessionLease(r.sessionsDir, sessionID)
+	defer releaseLease()
 	if recorder := r.manager.Get(sessionID); recorder != nil {
 		return recorder.GetMessages(), nil
 	}

@@ -26,13 +26,14 @@ import (
 
 // queuedMessage 队列中的待处理消息
 type queuedMessage struct {
-	ctx         context.Context
-	channelName string
-	chatID      string
-	senderID    string
-	msg         Message
-	isGroup     bool
-	userInput   string // 预处理后的用户输入文本
+	ctx          context.Context
+	channelName  string
+	chatID       string
+	senderID     string
+	msg          Message
+	isGroup      bool
+	userInput    string // 预处理后的用户输入文本
+	releaseLease func()
 }
 
 // sessionQueue 每个会话的消息队列，确保同一会话的消息串行处理
@@ -192,13 +193,14 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 	sessionID := fmt.Sprintf("channel_%s_%s", channelName, chatID)
 
 	qm := queuedMessage{
-		ctx:         ctx,
-		channelName: channelName,
-		chatID:      chatID,
-		senderID:    senderID,
-		msg:         msg,
-		isGroup:     isGroup,
-		userInput:   userInput,
+		ctx:          ctx,
+		channelName:  channelName,
+		chatID:       chatID,
+		senderID:     senderID,
+		msg:          msg,
+		isGroup:      isGroup,
+		userInput:    userInput,
+		releaseLease: eventlog.AcquireSessionLease(b.historyDir, sessionID),
 	}
 
 	b.queueMu.Lock()
@@ -221,6 +223,7 @@ func (b *Bridge) HandleMessage(ctx context.Context, chatID, senderID string, msg
 		return
 	}
 	log.Printf("[bridge] session queue full, dropping message: session=%s", sessionID)
+	qm.releaseLease()
 	_ = b.manager.SendText(ctx, channelName, chatID, "消息队列已满，请稍后再试")
 }
 
@@ -293,6 +296,13 @@ func (b *Bridge) sessionWorker(sessionID string, q *sessionQueue) {
 
 // processBatch 处理一批消息：合并用户输入，通知用户，执行引擎
 func (b *Bridge) processBatch(sessionID string, batch []queuedMessage) {
+	defer func() {
+		for _, message := range batch {
+			if message.releaseLease != nil {
+				message.releaseLease()
+			}
+		}
+	}()
 	first := batch[0]
 	channelName := first.channelName
 	chatID := first.chatID

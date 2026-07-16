@@ -1,6 +1,13 @@
 package eventlog
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
+
+	"fkteams/internal/domain/apperror"
+	domainsession "fkteams/internal/domain/session"
+)
 
 func TestSessionHistoryManagerEvictsLeastRecentlyUsedRecorder(t *testing.T) {
 	manager := NewSessionHistoryManagerWithCapacity(2)
@@ -52,5 +59,31 @@ func TestSessionHistoryManagerReleaseIsIdempotent(t *testing.T) {
 	release()
 	if manager.Get("session-1") != recorder {
 		t.Fatal("duplicate release should not corrupt the cache entry")
+	}
+}
+
+func TestSessionRepositoryRejectsDeleteWhileRecorderIsAcquired(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "session-1"
+	if err := SaveMetadata(sessionDirPathForTest(root, sessionID), &SessionMetadata{
+		ID:        sessionID,
+		Title:     "active",
+		Status:    domainsession.StatusActive,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := NewSessionHistoryManager()
+	_, release := manager.Acquire(sessionID, root)
+	repository := NewSessionRepository(root)
+	if err := repository.DeleteSession(context.Background(), sessionID); apperror.CodeOf(err) != apperror.CodeConflict {
+		t.Fatalf("DeleteSession() error = %v, want conflict", err)
+	}
+
+	release()
+	if err := repository.DeleteSession(context.Background(), sessionID); err != nil {
+		t.Fatalf("DeleteSession() after release: %v", err)
 	}
 }

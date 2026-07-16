@@ -84,10 +84,6 @@ func (s *Service) Update(ctx context.Context, req UpdateRequest) (domainsession.
 	if err != nil {
 		return domainsession.Metadata{}, err
 	}
-	metadata, err := repository.LoadSession(ctx, req.SessionID)
-	if err != nil {
-		return domainsession.Metadata{}, err
-	}
 	if req.Title == nil && req.Favorite == nil && req.CurrentAgent == nil {
 		return domainsession.Metadata{}, apperror.New(apperror.CodeInvalidArgument, "at least one session field is required")
 	}
@@ -95,19 +91,20 @@ func (s *Service) Update(ctx context.Context, req UpdateRequest) (domainsession.
 		if strings.TrimSpace(*req.Title) == "" {
 			return domainsession.Metadata{}, apperror.New(apperror.CodeInvalidArgument, "session title is required")
 		}
-		metadata.Title = NormalizeTitle(*req.Title)
 	}
-	if req.Favorite != nil {
-		metadata.Favorite = *req.Favorite
-	}
-	if req.CurrentAgent != nil {
-		metadata.CurrentAgent = strings.TrimSpace(*req.CurrentAgent)
-	}
-	metadata.UpdatedAt = s.now()
-	if err := repository.SaveSession(ctx, metadata); err != nil {
-		return domainsession.Metadata{}, err
-	}
-	return metadata, nil
+	return repository.UpdateSession(ctx, req.SessionID, func(metadata *domainsession.Metadata) error {
+		if req.Title != nil {
+			metadata.Title = NormalizeTitle(*req.Title)
+		}
+		if req.Favorite != nil {
+			metadata.Favorite = *req.Favorite
+		}
+		if req.CurrentAgent != nil {
+			metadata.CurrentAgent = strings.TrimSpace(*req.CurrentAgent)
+		}
+		metadata.UpdatedAt = s.now()
+		return nil
+	})
 }
 
 func (s *Service) Delete(ctx context.Context, sessionID string) error {

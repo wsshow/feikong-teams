@@ -38,9 +38,16 @@ func (r *memoryRepository) LoadSession(_ context.Context, id string) (domainsess
 	return metadata, nil
 }
 
-func (r *memoryRepository) SaveSession(_ context.Context, metadata domainsession.Metadata) error {
-	r.items[metadata.ID] = metadata
-	return nil
+func (r *memoryRepository) UpdateSession(_ context.Context, id string, update func(*domainsession.Metadata) error) (domainsession.Metadata, error) {
+	metadata, ok := r.items[id]
+	if !ok {
+		return domainsession.Metadata{}, apperror.New(apperror.CodeNotFound, "session not found")
+	}
+	if err := update(&metadata); err != nil {
+		return domainsession.Metadata{}, err
+	}
+	r.items[id] = metadata
+	return metadata, nil
 }
 
 func (r *memoryRepository) DeleteSession(_ context.Context, id string) error {

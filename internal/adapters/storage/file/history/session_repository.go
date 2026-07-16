@@ -97,31 +97,37 @@ func (r *SessionRepository) LoadSession(_ context.Context, sessionID string) (do
 	return *metadata, nil
 }
 
-func (r *SessionRepository) SaveSession(_ context.Context, metadata domainsession.Metadata) error {
-	if !domainsession.ValidID(metadata.ID) {
-		return apperror.New(apperror.CodeInvalidArgument, "invalid session ID")
+func (r *SessionRepository) UpdateSession(_ context.Context, sessionID string, update func(*domainsession.Metadata) error) (domainsession.Metadata, error) {
+	if !domainsession.ValidID(sessionID) {
+		return domainsession.Metadata{}, apperror.New(apperror.CodeInvalidArgument, "invalid session ID")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := SaveMetadata(filepath.Join(r.root, metadata.ID), &metadata); err != nil {
-		return apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
+	metadata, err := UpdateMetadata(filepath.Join(r.root, sessionID), false, update)
+	if errors.Is(err, os.ErrNotExist) {
+		return domainsession.Metadata{}, apperror.New(apperror.CodeNotFound, "session not found")
 	}
-	return nil
+	if err != nil {
+		return domainsession.Metadata{}, apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
+	}
+	return *metadata, nil
 }
 
 func (r *SessionRepository) DeleteSession(_ context.Context, sessionID string) error {
 	if !domainsession.ValidID(sessionID) {
 		return apperror.New(apperror.CodeInvalidArgument, "invalid session ID")
 	}
+	finishDelete, ok := beginSessionDelete(r.root, sessionID)
+	if !ok {
+		return apperror.New(apperror.CodeConflict, "session is active")
+	}
+	defer finishDelete()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sessionDir := filepath.Join(r.root, sessionID)
-	if _, err := os.Stat(sessionDir); errors.Is(err, os.ErrNotExist) {
+	if err := deleteSessionDirectory(sessionDir); errors.Is(err, os.ErrNotExist) {
 		return apperror.New(apperror.CodeNotFound, "session not found")
 	} else if err != nil {
-		return apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
-	}
-	if err := os.RemoveAll(sessionDir); err != nil {
 		return apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
 	}
 	return nil

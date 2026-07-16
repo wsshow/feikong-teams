@@ -2,7 +2,9 @@ package eventlog
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -35,19 +37,15 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 	}
 	sessionDir := s.sessionDir(update.SessionID)
 	now := time.Now()
-	meta, err := LoadMetadata(sessionDir)
-	if err != nil {
-		if !update.CreateIfMissing {
+	_, err := UpdateMetadata(sessionDir, update.CreateIfMissing, func(meta *SessionMetadata) error {
+		if meta.ID == "" {
+			meta.ID = update.SessionID
+			meta.Title = titleFromSource(update.TitleSource, update.DefaultTitle)
+			meta.Status = domainsession.Status(update.Status)
+			meta.CreatedAt = now
+			meta.UpdatedAt = now
 			return nil
 		}
-		meta = &SessionMetadata{
-			ID:        update.SessionID,
-			Title:     titleFromSource(update.TitleSource, update.DefaultTitle),
-			Status:    domainsession.Status(update.Status),
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-	} else {
 		meta.UpdatedAt = now
 		if update.Status != "" {
 			meta.Status = domainsession.Status(update.Status)
@@ -55,8 +53,12 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 		if update.UpdateDefaultTitle && update.TitleSource != "" && isDefaultTitle(meta.Title) {
 			meta.Title = truncateTitle(update.TitleSource)
 		}
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) && !update.CreateIfMissing {
+		return nil
 	}
-	return SaveMetadata(sessionDir, meta)
+	return err
 }
 
 func (s *ChatSessionStore) sessionDir(sessionID string) string {

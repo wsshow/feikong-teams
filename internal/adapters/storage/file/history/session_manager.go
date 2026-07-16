@@ -6,12 +6,17 @@ import (
 	domainsession "fkteams/internal/domain/session"
 	"fkteams/internal/runtime/atomicfile"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"sync"
 )
 
 const defaultSessionRecorderCacheSize = 128
+
+const metadataLockStripeCount = 64
+
+var metadataLockStripes [metadataLockStripeCount]sync.RWMutex
 
 type sessionRecorderEntry struct {
 	recorder *HistoryRecorder
@@ -24,6 +29,13 @@ type SessionMetadata = domainsession.Metadata
 
 // SaveMetadata 保存会话元数据到指定目录
 func SaveMetadata(sessionDir string, meta *SessionMetadata) error {
+	lock := metadataLock(sessionDir)
+	lock.Lock()
+	defer lock.Unlock()
+	return saveMetadataUnlocked(sessionDir, meta)
+}
+
+func saveMetadataUnlocked(sessionDir string, meta *SessionMetadata) error {
 	if err := os.MkdirAll(sessionDir, 0755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
@@ -36,6 +48,13 @@ func SaveMetadata(sessionDir string, meta *SessionMetadata) error {
 
 // LoadMetadata 从指定目录加载会话元数据
 func LoadMetadata(sessionDir string) (*SessionMetadata, error) {
+	lock := metadataLock(sessionDir)
+	lock.RLock()
+	defer lock.RUnlock()
+	return loadMetadataUnlocked(sessionDir)
+}
+
+func loadMetadataUnlocked(sessionDir string) (*SessionMetadata, error) {
 	data, err := os.ReadFile(filepath.Join(sessionDir, "metadata.json"))
 	if err != nil {
 		return nil, err
@@ -45,6 +64,53 @@ func LoadMetadata(sessionDir string) (*SessionMetadata, error) {
 		return nil, fmt.Errorf("unmarshal metadata: %w", err)
 	}
 	return &meta, nil
+}
+
+// UpdateMetadata 在同一进程的所有存储实例之间原子执行元数据读改写。
+func UpdateMetadata(sessionDir string, createIfMissing bool, update func(*SessionMetadata) error) (*SessionMetadata, error) {
+	lock := metadataLock(sessionDir)
+	lock.Lock()
+	defer lock.Unlock()
+
+	meta, err := loadMetadataUnlocked(sessionDir)
+	if errors.Is(err, os.ErrNotExist) && createIfMissing {
+		meta = &SessionMetadata{}
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if update != nil {
+		if err := update(meta); err != nil {
+			return nil, err
+		}
+	}
+	if err := saveMetadataUnlocked(sessionDir, meta); err != nil {
+		return nil, err
+	}
+	copy := *meta
+	return &copy, nil
+}
+
+func deleteSessionDirectory(sessionDir string) error {
+	lock := metadataLock(sessionDir)
+	lock.Lock()
+	defer lock.Unlock()
+
+	if _, err := os.Stat(sessionDir); err != nil {
+		return err
+	}
+	return os.RemoveAll(sessionDir)
+}
+
+func metadataLock(sessionDir string) *sync.RWMutex {
+	absPath, err := filepath.Abs(sessionDir)
+	if err == nil {
+		sessionDir = filepath.Clean(absPath)
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(sessionDir))
+	return &metadataLockStripes[hash.Sum32()%metadataLockStripeCount]
 }
 
 // SessionHistoryManager 按会话 ID 管理独立的 HistoryRecorder，支持并发安全
@@ -88,6 +154,7 @@ func (m *SessionHistoryManager) Acquire(sessionID, historyDir string) (*HistoryR
 	if !domainsession.ValidID(sessionID) {
 		return m.GetOrCreate(sessionID, historyDir), func() {}
 	}
+	releaseLease := AcquireSessionLease(historyDir, sessionID)
 	m.mu.Lock()
 	entry := m.getOrCreateLocked(sessionID, historyDir)
 	entry.refs++
@@ -98,6 +165,7 @@ func (m *SessionHistoryManager) Acquire(sessionID, historyDir string) (*HistoryR
 	return entry.recorder, func() {
 		once.Do(func() {
 			m.release(sessionID, entry.recorder)
+			releaseLease()
 		})
 	}
 }
