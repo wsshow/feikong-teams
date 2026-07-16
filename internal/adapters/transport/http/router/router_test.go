@@ -23,6 +23,7 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 		"GET /live",
 		"GET /ready",
 		"GET /ws",
+		"POST /api/fkteams/login",
 		"GET /v1/models",
 		"POST /v1/chat/completions",
 		"GET /api/fkteams/version",
@@ -59,13 +60,9 @@ func TestRegisterAPIRoutesIncludesCoreEndpoints(t *testing.T) {
 			t.Fatalf("route %s was not registered", route)
 		}
 	}
-
-	if routes["POST /api/fkteams/login"] {
-		t.Fatal("login route should not be registered when auth is disabled")
-	}
 }
 
-func TestRegisterAPIRoutesAddsLoginWhenAuthEnabled(t *testing.T) {
+func TestRegisterAPIRoutesKeepsLoginAvailableForAuthHotReload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 

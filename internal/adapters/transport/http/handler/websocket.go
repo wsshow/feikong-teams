@@ -73,13 +73,7 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 		}()
 
 		// 提取 WS 连接时的 token，用于每条消息的二次校验
-		wsToken := c.Query("token")
-		if wsToken == "" {
-			if cookie, err := c.Cookie("fk_token"); err == nil {
-				wsToken = cookie
-			}
-		}
-		authEnabled, _ := AuthEnabled()
+		wsToken := RequestAuthToken(c)
 
 		// 线程安全的写入
 		var writeMu sync.Mutex
@@ -109,8 +103,9 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 				continue
 			}
 
-			// chat/steer 消息二次校验 token，防止 WS 长时间连接后 token 过期仍可操作
-			if (wsMsg.Type == "chat" || wsMsg.Type == "follow_up" || wsMsg.Type == "steer" || wsMsg.Type == "steering") && authEnabled && !ValidateToken(wsToken) {
+			// 每条消息二次校验 Token，防止长连接绕过认证热更新或过期限制。
+			authEnabled, authErr := AuthEnabled()
+			if authErr != nil || authEnabled && !ValidateToken(wsToken) {
 				_ = writeJSON(errorEventPayload("", "登录已过期，请重新登录"))
 				conn.Close()
 				break

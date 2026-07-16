@@ -239,11 +239,14 @@ data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_
 
 服务端优先使用 `Last-Event-ID`，并从 `Last-Event-ID + 1` 开始回放；没有该 header 时使用 `offset` query 参数。
 
+启用登录认证时，服务端会在长连接期间周期复核 Token。Token 过期或认证配置变更后会关闭当前订阅，但不会取消后台任务；客户端重新登录后可用最后保存的 offset 继续订阅。
+
 **失败响应**：
 
 | 状态码 | message | 说明 |
 | ------ | ------- | ---- |
 | 400 | `invalid session ID` | 会话 ID 不合法 |
+| 401 | `未登录或登录已过期` | 建立订阅时 Token 无效 |
 | 404 | `no active task for this session` | 内存中没有活跃或保留中的任务 |
 
 ## GET /api/fkteams/stream/events/:sessionID

@@ -486,6 +486,9 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 
 		ctx := c.Request.Context()
 		flusher := c.Writer
+		authToken := RequestAuthToken(c)
+		authTicker := time.NewTicker(30 * time.Second)
+		defer authTicker.Stop()
 
 		writeSSE := func(event taskstream.IndexedEvent) bool {
 			data, _ := json.Marshal(event.Data)
@@ -504,6 +507,9 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 		}
 
 		for {
+			if !streamSubscriptionAuthorized(authToken) {
+				return
+			}
 			events := stream.EventsSince(offset)
 			for _, e := range events {
 				if !writeSSE(e) {
@@ -527,9 +533,18 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			case <-ctx.Done():
 				return
 			case <-notify:
+			case <-authTicker.C:
 			}
 		}
 	}
+}
+
+func streamSubscriptionAuthorized(token string) bool {
+	authEnabled, err := AuthEnabled()
+	if err != nil {
+		return false
+	}
+	return !authEnabled || ValidateToken(token)
 }
 
 func clearSSEWriteDeadline(w http.ResponseWriter) {

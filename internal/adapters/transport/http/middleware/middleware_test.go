@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"fkteams/internal/app/config"
@@ -115,6 +116,82 @@ func TestAPIKeyAuth(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAuthRejectsAPIAndRedirectsPageToLogin(t *testing.T) {
+	t.Setenv(env.AppDir, t.TempDir())
+	if err := config.Save(&config.Config{Server: config.Server{Auth: config.ServerAuth{
+		Enabled:  true,
+		Username: "admin",
+		Password: "secret",
+		Secret:   "token-secret",
+	}}}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	router := testRouter()
+	router.Use(Auth())
+	router.GET("/chat/:sessionID", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	router.GET("/api/fkteams/version", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+
+	pageTarget := "/chat/session-1?panel=details"
+	pageReq := httptest.NewRequest(http.MethodGet, pageTarget, nil)
+	pageResp := httptest.NewRecorder()
+	router.ServeHTTP(pageResp, pageReq)
+	if pageResp.Code != http.StatusFound {
+		t.Fatalf("page status = %d, want %d", pageResp.Code, http.StatusFound)
+	}
+	wantLocation := "/login?next=" + url.QueryEscape(pageTarget)
+	if got := pageResp.Header().Get("Location"); got != wantLocation {
+		t.Fatalf("redirect location = %q, want %q", got, wantLocation)
+	}
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/fkteams/version", nil)
+	apiResp := httptest.NewRecorder()
+	router.ServeHTTP(apiResp, apiReq)
+	if apiResp.Code != http.StatusUnauthorized {
+		t.Fatalf("API status = %d, want %d", apiResp.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuthReadsHotReloadedConfig(t *testing.T) {
+	t.Setenv(env.AppDir, t.TempDir())
+	if err := config.Save(&config.Config{}); err != nil {
+		t.Fatalf("save disabled config: %v", err)
+	}
+
+	router := testRouter()
+	router.Use(Auth())
+	router.GET("/api/fkteams/version", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+
+	request := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/api/fkteams/version", nil)
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp.Code
+	}
+	if got := request(); got != http.StatusOK {
+		t.Fatalf("disabled auth status = %d, want %d", got, http.StatusOK)
+	}
+
+	if err := config.Save(&config.Config{Server: config.Server{Auth: config.ServerAuth{
+		Enabled:  true,
+		Username: "admin",
+		Password: "secret",
+		Secret:   "token-secret",
+	}}}); err != nil {
+		t.Fatalf("save enabled config: %v", err)
+	}
+	if got := request(); got != http.StatusUnauthorized {
+		t.Fatalf("enabled auth status = %d, want %d", got, http.StatusUnauthorized)
+	}
+
+	if err := config.Save(&config.Config{}); err != nil {
+		t.Fatalf("restore disabled config: %v", err)
+	}
+	if got := request(); got != http.StatusOK {
+		t.Fatalf("re-disabled auth status = %d, want %d", got, http.StatusOK)
 	}
 }
 

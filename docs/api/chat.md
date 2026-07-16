@@ -91,7 +91,7 @@ ws://<host>/ws
 wss://<host>/ws
 ```
 
-启用登录认证时，Token 可以通过 `?token=<token>` 或 `fk_token` Cookie 传递。连接建立后服务端发送：
+启用登录认证时，Token 可以通过 `?token=<token>` 或 `fk_token` Cookie 传递。服务端会对连接中的每条消息再次校验 Token，以响应登录过期和认证配置热更新。连接建立后服务端发送：
 
 ```json
 {

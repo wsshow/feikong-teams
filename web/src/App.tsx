@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingSurface } from "@/components/ui/loading-surface";
 import { loadSessions } from "@/features/sessions/sessionThunks";
+import { authExpiredEvent, authRestoredEvent } from "@/lib/auth-session";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import type { AgentInfo, VersionInfo } from "@/types/api";
 
@@ -74,21 +75,31 @@ function Workspace() {
       }
     };
 
-    syncRoute();
-    void dispatch(loadSessions());
-    void get<VersionInfo>("/api/fkteams/version").then((version) => dispatch(appActions.setVersion(version))).catch(() => undefined);
-    void listAgents()
-      .then((result) => {
-        const agents = Array.isArray(result) ? result : result.agents || [];
-        dispatch(appActions.setAgents(agents as AgentInfo[]));
-      })
-      .catch(() => undefined);
+    const refreshWorkspace = () => {
+      void dispatch(loadSessions());
+      void get<VersionInfo>("/api/fkteams/version").then((version) => dispatch(appActions.setVersion(version))).catch(() => undefined);
+      void listAgents()
+        .then((result) => {
+          const agents = Array.isArray(result) ? result : result.agents || [];
+          dispatch(appActions.setAgents(agents as AgentInfo[]));
+        })
+        .catch(() => undefined);
+    };
     const onAuthExpired = () => dispatch(appActions.setAuthExpired(true));
+    const onAuthRestored = () => {
+      dispatch(appActions.setAuthExpired(false));
+      dispatch(appActions.showToast("已重新登录，正在恢复连接"));
+      refreshWorkspace();
+    };
     window.addEventListener("popstate", syncRoute);
-    window.addEventListener("fkteams:auth-expired", onAuthExpired);
+    window.addEventListener(authExpiredEvent, onAuthExpired);
+    window.addEventListener(authRestoredEvent, onAuthRestored);
+    syncRoute();
+    refreshWorkspace();
     return () => {
       window.removeEventListener("popstate", syncRoute);
-      window.removeEventListener("fkteams:auth-expired", onAuthExpired);
+      window.removeEventListener(authExpiredEvent, onAuthExpired);
+      window.removeEventListener(authRestoredEvent, onAuthRestored);
     };
   }, [dispatch]);
 

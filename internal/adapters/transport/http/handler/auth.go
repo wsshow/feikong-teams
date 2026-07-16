@@ -15,7 +15,9 @@ import (
 )
 
 func getTokenSecret() []byte {
-	return []byte(config.Get().Server.Auth.Secret)
+	auth := config.Get().Server.Auth
+	sum := sha256.Sum256([]byte(auth.Secret + "\x00" + auth.Username + "\x00" + auth.Password))
+	return sum[:]
 }
 
 // AuthEnabled 检查是否启用登录认证，启用时校验 SECRET 非空
@@ -25,7 +27,7 @@ func AuthEnabled() (bool, error) {
 		return false, nil
 	}
 	if auth.Secret == "" {
-		return false, fmt.Errorf("启用登录认证时 [server.auth] secret 不能为空")
+		return false, fmt.Errorf("server.auth.secret is required when authentication is enabled")
 	}
 	return true, nil
 }
@@ -66,11 +68,29 @@ func ValidateToken(token string) bool {
 	if idx < 0 {
 		return false
 	}
+	if payloadStr[:idx] != config.Get().Server.Auth.Username {
+		return false
+	}
 	expiry, err := time.Parse(time.RFC3339, payloadStr[idx+1:])
 	if err != nil {
 		return false
 	}
 	return time.Now().Before(expiry)
+}
+
+// RequestAuthToken 按认证中间件的优先级提取请求 Token。
+func RequestAuthToken(c *gin.Context) string {
+	authHeader := c.GetHeader("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		return authHeader[7:]
+	}
+	if token := c.Query("token"); token != "" {
+		return token
+	}
+	if cookie, err := c.Cookie("fk_token"); err == nil {
+		return cookie
+	}
+	return ""
 }
 
 func splitToken(token string) []string {
@@ -85,6 +105,16 @@ func splitToken(token string) []string {
 // LoginHandler 处理登录请求
 func LoginHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		authEnabled, err := AuthEnabled()
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "invalid authentication configuration")
+			return
+		}
+		if !authEnabled {
+			Fail(c, http.StatusNotFound, "authentication is disabled")
+			return
+		}
+
 		var req struct {
 			Username string `json:"username"`
 			Password string `json:"password"`

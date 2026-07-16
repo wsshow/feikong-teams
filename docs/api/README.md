@@ -37,6 +37,8 @@
 
 当配置 `[server.auth] enabled = true` 时，大多数 `/api/fkteams/*` 和 `/ws` 需要登录 Token。
 
+认证中间件按请求读取热更新配置。修改用户名、密码或 Secret 会使已有 Token 失效；浏览器页面请求会重定向到 `/login?next=<原地址>`，API 请求返回 `401`。
+
 免普通登录认证路径：
 
 - `/login`
@@ -102,7 +104,7 @@ Authorization: Bearer <api_key>
 | ---- | ---- | ---- |
 | GET | `/` | Web 首页 |
 | GET | `/chat` | Web 首页别名 |
-| GET | `/login` | 登录页，仅启用登录认证时注册 |
+| GET | `/login` | 登录页 |
 | GET | `/p/:linkId` | 文件预览页 |
 | GET | `/s/:shareID` | 会话分享页 |
 | GET | `/assets/*filepath` | 静态资源 |
@@ -116,7 +118,7 @@ Authorization: Bearer <api_key>
 | GET | `/live` | 进程存活检查 |
 | GET | `/ready` | 核心 Runtime 就绪检查 |
 | GET | `/ws` | WebSocket 聊天和任务事件通道 |
-| POST | `/api/fkteams/login` | 登录获取 Token，仅启用认证时注册 |
+| POST | `/api/fkteams/login` | 登录获取 Token；未启用认证时返回 `404` |
 | GET | `/api/fkteams/version` | 版本信息 |
 | GET | `/api/fkteams/agents` | 可用智能体列表 |
 | GET | `/api/fkteams/favicon` | favicon 代理 |

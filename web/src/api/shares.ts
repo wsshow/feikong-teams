@@ -34,9 +34,15 @@ export function deleteSessionShare(shareID: string) {
 }
 
 export function getPublicShareInfo(shareID: string) {
-  return get<SessionShare>(`/api/fkteams/public/session-shares/${encodeURIComponent(shareID)}/info`);
+  return get<SessionShare>(`/api/fkteams/public/session-shares/${encodeURIComponent(shareID)}/info`, {
+    authFailure: "ignore",
+  });
 }
 
 export function accessPublicShare(shareID: string, password = "") {
-  return post<SessionDetail>(`/api/fkteams/public/session-shares/${encodeURIComponent(shareID)}/access`, { password });
+  return post<SessionDetail>(
+    `/api/fkteams/public/session-shares/${encodeURIComponent(shareID)}/access`,
+    { password },
+    { authFailure: "ignore" },
+  );
 }

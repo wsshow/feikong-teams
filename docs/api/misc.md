@@ -32,7 +32,7 @@
 
 ## POST /api/fkteams/login
 
-登录获取 Token。仅在 `[server.auth] enabled = true` 时注册。
+登录获取 Token。接口始终注册，但仅在 `[server.auth] enabled = true` 时可用；未启用认证时返回 `404`。
 
 **请求 Body**：
 

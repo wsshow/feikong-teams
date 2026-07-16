@@ -3,8 +3,8 @@ package middleware
 import (
 	"fkteams/internal/adapters/transport/http/handler"
 	"fkteams/internal/runtime/log"
-	"fkteams/web"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +14,19 @@ import (
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
+		authEnabled, err := handler.AuthEnabled()
+		if err != nil {
+			log.Printf("check auth config failed: %v", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"code":    1,
+				"message": "invalid authentication configuration",
+			})
+			return
+		}
+		if !authEnabled {
+			c.Next()
+			return
+		}
 
 		// 登录页和登录接口不需要验证
 		if path == "/login" || path == "/favicon.ico" || path == "/api/fkteams/login" {
@@ -51,21 +64,7 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 
-		// 从 Authorization header、query 参数或 cookie 获取 token
-		token := ""
-		authHeader := c.GetHeader("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = authHeader[7:]
-		}
-		if token == "" {
-			token = c.Query("token")
-		}
-		if token == "" {
-			if cookie, err := c.Cookie("fk_token"); err == nil {
-				token = cookie
-			}
-		}
-
+		token := handler.RequestAuthToken(c)
 		if token == "" || !handler.ValidateToken(token) {
 			log.Printf("auth failed: ip=%s, path=%s", c.ClientIP(), path)
 			// API 请求返回 401
@@ -76,23 +75,13 @@ func Auth() gin.HandlerFunc {
 				})
 				return
 			}
-			// 页面请求返回登录页
-			serveLoginPage(c)
+			// 页面请求跳转到登录页，并保留原始地址
+			loginURL := "/login?next=" + url.QueryEscape(c.Request.URL.RequestURI())
+			c.Redirect(http.StatusFound, loginURL)
 			c.Abort()
 			return
 		}
 
 		c.Next()
 	}
-}
-
-func serveLoginPage(c *gin.Context) {
-	webFS := web.GetFS()
-	data, err := webFS.Open("index.html")
-	if err != nil {
-		c.String(http.StatusInternalServerError, "login page not found")
-		return
-	}
-	defer data.Close()
-	c.DataFromReader(http.StatusOK, -1, "text/html; charset=utf-8", data, nil)
 }

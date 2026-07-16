@@ -41,6 +41,12 @@ export function panelPath(panel: AppPanel) {
   }
 }
 
+export function loginReturnPath(search: string) {
+  const next = new URLSearchParams(search).get("next") || "";
+  if (!next.startsWith("/") || next.startsWith("//") || next.startsWith("/login")) return "/chat";
+  return next;
+}
+
 export function pushAppPath(path: string) {
   if (location.pathname !== path) history.pushState(null, "", path);
 }

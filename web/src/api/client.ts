@@ -1,5 +1,10 @@
-import { authToken, setAuthToken } from "@/lib/storage";
+import { expireAuthentication } from "@/lib/auth-session";
+import { authToken } from "@/lib/storage";
 import type { APIResponse } from "@/types/api";
+
+export interface RequestOptions extends RequestInit {
+  authFailure?: "expire" | "ignore";
+}
 
 export class APIError extends Error {
   status: number;
@@ -11,21 +16,19 @@ export class APIError extends Error {
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
+export async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
+  const { authFailure = "expire", ...fetchInit } = init;
+  const headers = new Headers(fetchInit.headers);
   const token = authToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.body && !headers.has("Content-Type") && !(init.body instanceof FormData)) {
+  if (fetchInit.body && !headers.has("Content-Type") && !(fetchInit.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(path, { ...fetchInit, headers });
   if (!response.ok) {
     const message = await responseErrorMessage(response);
-    if (response.status === 401) {
-      setAuthToken("");
-      window.dispatchEvent(new CustomEvent("fkteams:auth-expired"));
-    }
+    if (response.status === 401 && authFailure === "expire") expireAuthentication();
     throw new APIError(message, response.status);
   }
 
@@ -76,11 +79,11 @@ function httpStatusMessage(status: number, statusText: string) {
   }
 }
 
-export function get<T>(path: string) {
-  return request<T>(path);
+export function get<T>(path: string, init: RequestOptions = {}) {
+  return request<T>(path, init);
 }
 
-export function post<T>(path: string, body?: unknown, init: RequestInit = {}) {
+export function post<T>(path: string, body?: unknown, init: RequestOptions = {}) {
   return request<T>(path, {
     ...init,
     method: "POST",

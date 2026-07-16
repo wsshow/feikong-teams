@@ -17,7 +17,7 @@ import (
 )
 
 // newEngine 创建带公共中间件的 Gin 引擎
-func newEngine(authEnabled bool) *gin.Engine {
+func newEngine(_ bool) *gin.Engine {
 	r := gin.New()
 	r.Use(
 		gin.Logger(),
@@ -25,13 +25,11 @@ func newEngine(authEnabled bool) *gin.Engine {
 		middleware.Cors(),
 		middleware.MaxBodySize(100<<20), // 100MB
 	)
-	if authEnabled {
-		r.Use(middleware.Auth())
-	}
+	r.Use(middleware.Auth())
 	return r
 }
 
-func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appstate.State, runtime *handler.Runtime) {
+func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, runtime *handler.Runtime) {
 	r.GET("/health", handler.HealthHandler())
 	r.GET("/live", handler.HealthHandler())
 	r.GET("/ready", runtime.ReadinessHandler())
@@ -46,9 +44,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, authEnabled bool, state *appsta
 
 	apiV1 := r.Group("/api/fkteams")
 	{
-		if authEnabled {
-			apiV1.POST("/login", handler.LoginHandler())
-		}
+		apiV1.POST("/login", handler.LoginHandler())
 		apiV1.GET("/version", handler.VersionHandler())
 
 		// 智能体 API
@@ -235,12 +231,10 @@ func InitWithRuntime(state *appstate.State, runtime *handler.Runtime) (*gin.Engi
 		c.DataFromReader(http.StatusOK, -1, "image/x-icon", data, nil)
 	})
 
-	if authEnabled {
-		serveLogin := func(c *gin.Context) {
-			serveHTML(c, webFS)
-		}
-		r.GET("/login", serveLogin)
+	serveLogin := func(c *gin.Context) {
+		serveHTML(c, webFS)
 	}
+	r.GET("/login", serveLogin)
 
 	serveIndex := func(c *gin.Context) {
 		serveHTML(c, webFS)

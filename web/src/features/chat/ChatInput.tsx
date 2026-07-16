@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions } from "@/app/store";
+import { APIError, isAbortError } from "@/api/client";
 import { startStream, stopStream } from "@/api/chat";
 import { listFiles, searchFiles, uploadFile } from "@/api/files";
 import { streamSnapshot, streamStatus, subscribeStream, type StreamSnapshot } from "@/api/stream";
@@ -34,6 +35,7 @@ export function ChatInput({
   const currentAgent = useAppSelector((state) => state.chat.currentAgent);
   const isProcessing = useAppSelector((state) => state.chat.isProcessing);
   const agents = useAppSelector((state) => state.app.agents);
+  const authExpired = useAppSelector((state) => state.app.authExpired);
   const [value, setValue] = useState("");
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const [attachments, setAttachments] = useState<ChatAttachmentDraft[]>([]);
@@ -43,7 +45,7 @@ export function ChatInput({
   const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
   const dockRef = useRef<HTMLDivElement | null>(null);
   const activeSessionRef = useRef(sessionID);
-  const streamSubscriptionsRef = useRef(new Set<string>());
+  const streamSubscriptionsRef = useRef(new Map<string, AbortController>());
 
   useEffect(() => {
     activeSessionRef.current = sessionID;
@@ -51,9 +53,20 @@ export function ChatInput({
 
   useEffect(() => {
     if (variant !== "dock") return;
+    if (authExpired) {
+      for (const controller of streamSubscriptionsRef.current.values()) controller.abort();
+      streamSubscriptionsRef.current.clear();
+      dispatch(chatActions.setConnectionState("disconnected"));
+      return;
+    }
     if (!sessionID || runningSessionID !== sessionID || !isProcessing) return;
     ensureStreamSubscription(sessionID);
-  }, [variant, sessionID, runningSessionID, isProcessing]);
+  }, [variant, sessionID, runningSessionID, isProcessing, authExpired]);
+
+  useEffect(() => () => {
+    for (const controller of streamSubscriptionsRef.current.values()) controller.abort();
+    streamSubscriptionsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -154,17 +167,21 @@ export function ChatInput({
 
   function ensureStreamSubscription(id: string, initialOffset?: number) {
     if (streamSubscriptionsRef.current.has(id)) return;
-    streamSubscriptionsRef.current.add(id);
-    void subscribe(id, initialOffset).finally(() => {
-      streamSubscriptionsRef.current.delete(id);
+    const controller = new AbortController();
+    streamSubscriptionsRef.current.set(id, controller);
+    void subscribe(id, initialOffset, controller.signal).finally(() => {
+      if (streamSubscriptionsRef.current.get(id) === controller) {
+        streamSubscriptionsRef.current.delete(id);
+      }
     });
   }
 
-  async function subscribe(id: string, initialOffset?: number) {
+  async function subscribe(id: string, initialOffset: number | undefined, signal: AbortSignal) {
     const offsets = readJSON<Record<string, number>>(storageKeys.streamOffsets, {});
     let retryCount = 0;
     let fallbackOffset = initialOffset;
     for (;;) {
+      if (signal.aborted) return;
       if (activeSessionRef.current !== id && fallbackOffset === undefined) return;
       const offset = await resolveSubscribeOffset(id, fallbackOffset, offsets);
       if (offset === undefined) return;
@@ -182,14 +199,15 @@ export function ChatInput({
             offsets[id] = Number(event.stream_event_id) + 1;
             writeJSON(storageKeys.streamOffsets, offsets);
           }
-        });
+        }, signal);
         await handleSubscribeClosed(id);
         return;
       } catch (error) {
+        if (signal.aborted) return;
         const shouldReconnect = await handleSubscribeError(id, error);
         if (!shouldReconnect) return;
         retryCount += 1;
-        await sleep(streamReconnectDelay(retryCount));
+        await sleep(streamReconnectDelay(retryCount), signal);
       }
     }
   }
@@ -202,7 +220,12 @@ export function ChatInput({
   }
 
   async function handleSubscribeClosed(id: string) {
-    const status = await streamStatus(id).catch(() => undefined);
+    let status;
+    try {
+      status = await streamStatus(id);
+    } catch (error) {
+      if (isAuthenticationError(error)) return;
+    }
     if (isTerminalStreamStatus(status?.status)) {
       dispatch(loadSessions());
       if (activeSessionRef.current === id) dispatch(chatActions.setProcessing(false));
@@ -252,9 +275,15 @@ export function ChatInput({
     return status === "completed" || status === "cancelled" || status === "failed" || status === "error";
   }
 
-  async function handleSubscribeError(id: string, _error: unknown) {
+  async function handleSubscribeError(id: string, error: unknown) {
+    if (isAbortError(error) || isAuthenticationError(error)) return false;
     dispatch(chatActions.setConnectionState("connecting"));
-    const status = await streamStatus(id).catch(() => undefined);
+    let status;
+    try {
+      status = await streamStatus(id);
+    } catch (statusError) {
+      if (isAuthenticationError(statusError)) return false;
+    }
     if (isTerminalStreamStatus(status?.status)) {
       dispatch(loadSessions());
       if (activeSessionRef.current === id) dispatch(chatActions.setProcessing(false));
@@ -456,8 +485,25 @@ function streamReconnectDelay(retryCount: number) {
   return Math.min(delay, streamReconnectMaxDelayMs);
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = window.setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+
+    function done() {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+  });
+}
+
+function isAuthenticationError(error: unknown) {
+  return error instanceof APIError && error.status === 401;
 }
 
 async function fileReferenceSuggestions(query: string) {

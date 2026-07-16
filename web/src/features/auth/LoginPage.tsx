@@ -1,26 +1,12 @@
-import { useState } from "react";
-import { LogIn } from "lucide-react";
-import { login } from "@/api/auth";
-import { setAuthToken } from "@/lib/storage";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { LoginForm } from "@/features/auth/LoginForm";
+import { restoreAuthentication } from "@/lib/auth-session";
+import { loginReturnPath } from "@/lib/navigation";
 
 export function LoginPage() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    try {
-      const result = await login(username, password);
-      setAuthToken(result.token || "");
-      location.href = "/chat";
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+  function authenticated(token: string) {
+    restoreAuthentication(token);
+    location.replace(loginReturnPath(location.search));
   }
 
   return (
@@ -36,15 +22,7 @@ export function LoginPage() {
           </div>
         </PanelHeader>
         <PanelBody className="px-6 py-6 sm:px-7">
-          <form className="space-y-4" onSubmit={submit}>
-            <Input className="h-12 px-4 text-base" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" autoComplete="username" />
-            <Input className="h-12 px-4 text-base" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" type="password" autoComplete="current-password" />
-            {error ? <div className="text-sm text-destructive">{error}</div> : null}
-            <Button className="h-12 w-full text-base" type="submit">
-              <LogIn className="h-5 w-5" />
-              登录
-            </Button>
-          </form>
+          <LoginForm onAuthenticated={authenticated} />
         </PanelBody>
       </Panel>
     </div>

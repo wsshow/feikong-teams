@@ -41,8 +41,10 @@ func TestAuthEnabledAndValidateToken(t *testing.T) {
 
 	saveHandlerConfig(t, config.Config{
 		Server: config.Server{Auth: config.ServerAuth{
-			Enabled: true,
-			Secret:  "test-secret",
+			Enabled:  true,
+			Username: "alice",
+			Password: "first-password",
+			Secret:   "test-secret",
 		}},
 	})
 	enabled, err = AuthEnabled()
@@ -66,12 +68,38 @@ func TestAuthEnabledAndValidateToken(t *testing.T) {
 	if ValidateToken(signedTestToken(t, "alice", time.Now().Add(-time.Minute))) {
 		t.Fatal("expected expired token to be invalid")
 	}
+
+	saveHandlerConfig(t, config.Config{
+		Server: config.Server{Auth: config.ServerAuth{
+			Enabled:  true,
+			Username: "alice",
+			Password: "second-password",
+			Secret:   "test-secret",
+		}},
+	})
+	if ValidateToken(token) {
+		t.Fatal("expected password change to invalidate existing token")
+	}
+
+	token = generateToken("alice")
+	saveHandlerConfig(t, config.Config{
+		Server: config.Server{Auth: config.ServerAuth{
+			Enabled:  true,
+			Username: "bob",
+			Password: "second-password",
+			Secret:   "test-secret",
+		}},
+	})
+	if ValidateToken(token) {
+		t.Fatal("expected username change to invalidate existing token")
+	}
 }
 
 func TestLoginHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	saveHandlerConfig(t, config.Config{
 		Server: config.Server{Auth: config.ServerAuth{
+			Enabled:  true,
 			Username: "admin",
 			Password: "secret",
 			Secret:   "token-secret",
@@ -109,6 +137,49 @@ func TestLoginHandler(t *testing.T) {
 	}
 	if !ValidateToken(token) {
 		t.Fatal("expected login token to be valid")
+	}
+}
+
+func TestLoginHandlerRejectsLoginWhenAuthDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	saveHandlerConfig(t, config.Config{})
+
+	router := gin.New()
+	router.POST("/login", LoginHandler())
+	resp := performJSON(router, http.MethodPost, "/login", `{"username":"admin","password":"secret"}`)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled auth status 404, got %d", resp.Code)
+	}
+}
+
+func TestStreamSubscriptionAuthorizedTracksAuthChanges(t *testing.T) {
+	saveHandlerConfig(t, config.Config{})
+	if !streamSubscriptionAuthorized("") {
+		t.Fatal("expected subscription to remain authorized when auth is disabled")
+	}
+
+	saveHandlerConfig(t, config.Config{Server: config.Server{Auth: config.ServerAuth{
+		Enabled:  true,
+		Username: "alice",
+		Password: "first-password",
+		Secret:   "test-secret",
+	}}})
+	token := generateToken("alice")
+	if !streamSubscriptionAuthorized(token) {
+		t.Fatal("expected valid token to authorize subscription")
+	}
+	if streamSubscriptionAuthorized("invalid") {
+		t.Fatal("expected invalid token to reject subscription")
+	}
+
+	saveHandlerConfig(t, config.Config{Server: config.Server{Auth: config.ServerAuth{
+		Enabled:  true,
+		Username: "alice",
+		Password: "second-password",
+		Secret:   "test-secret",
+	}}})
+	if streamSubscriptionAuthorized(token) {
+		t.Fatal("expected credential change to reject existing subscription token")
 	}
 }
 

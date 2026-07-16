@@ -8,5 +8,7 @@ export interface PreviewInfo {
 }
 
 export function getPreviewInfo(linkID: string) {
-  return get<PreviewInfo>(`/api/fkteams/preview/${encodeURIComponent(linkID)}/info`);
+  return get<PreviewInfo>(`/api/fkteams/preview/${encodeURIComponent(linkID)}/info`, {
+    authFailure: "ignore",
+  });
 }

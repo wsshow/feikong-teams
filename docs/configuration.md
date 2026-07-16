@@ -61,6 +61,8 @@ password = "your_password"
 secret = "your_jwt_secret"
 ```
 
+认证配置支持热更新。启用认证或修改用户名、密码、Secret 后，已登录的 Web 页面会要求原地重新登录；关闭认证会立即停止校验。重新登录不会取消后台任务，任务输出会在认证恢复后继续同步。
+
 ## OpenAI 兼容 API
 
 ```toml

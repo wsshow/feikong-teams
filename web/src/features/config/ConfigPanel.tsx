@@ -27,6 +27,8 @@ import { getConfig, getToolCatalog, saveConfig } from "@/api/config";
 import { listProviderModels } from "@/api/providers";
 import { configActions, appActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
+import { authRestoredEvent, expireAuthentication } from "@/lib/auth-session";
+import { setAuthToken } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -103,8 +105,13 @@ export function ConfigPanel() {
   async function persistConfig(nextDraft: AppConfig, message = "配置已保存") {
     setSaving(true);
     try {
-      await saveConfig(normalizeConfigForSave(nextDraft));
+      const result = await saveConfig(normalizeConfigForSave(nextDraft));
       dispatch(appActions.showToast(message));
+      if (result.auth_changed && nextDraft.server?.auth?.enabled) {
+        expireAuthentication();
+        return;
+      }
+      if (result.auth_changed) setAuthToken("");
       await load();
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
@@ -128,6 +135,12 @@ export function ConfigPanel() {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  useEffect(() => {
+    const onAuthRestored = () => void load();
+    window.addEventListener(authRestoredEvent, onAuthRestored);
+    return () => window.removeEventListener(authRestoredEvent, onAuthRestored);
   }, []);
 
   if (!draft) {

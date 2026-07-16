@@ -1,6 +1,7 @@
 import type { ChatEvent, QueueItem } from "@/types/events";
+import { expireAuthentication } from "@/lib/auth-session";
 import { authToken } from "@/lib/storage";
-import { del, get, patch, post } from "./client";
+import { APIError, del, get, patch, post } from "./client";
 
 export function streamStatus(sessionID: string) {
   return get<{
@@ -106,7 +107,12 @@ export async function subscribeStream(
     `/api/fkteams/stream/subscribe/${encodeURIComponent(sessionID)}?offset=${encodeURIComponent(String(offset))}`,
     { headers, signal },
   );
-  if (!response.ok || !response.body) throw new Error("stream subscribe failed");
+  if (response.status === 401) {
+    expireAuthentication();
+    throw new APIError("未登录或登录已过期", response.status);
+  }
+  if (!response.ok) throw new APIError(response.statusText || "stream subscribe failed", response.status);
+  if (!response.body) throw new Error("stream response body is empty");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
