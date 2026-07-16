@@ -2,8 +2,23 @@ package fetch
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
+
+func TestReadResponseBodyDetectsTruncationWithoutSplittingUTF8(t *testing.T) {
+	body, truncated, err := readResponseBody(strings.NewReader("123你"), 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !truncated || string(body) != "123" {
+		t.Fatalf("body = %q, truncated = %v", body, truncated)
+	}
+	body, truncated, err = readResponseBody(strings.NewReader("1234"), 4)
+	if err != nil || truncated || string(body) != "1234" {
+		t.Fatalf("exact limit body = %q, truncated = %v, err = %v", body, truncated, err)
+	}
+}
 
 func TestFetch(t *testing.T) {
 	tests := []struct {

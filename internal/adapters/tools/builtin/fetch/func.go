@@ -96,7 +96,7 @@ func Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
 	}
 
 	// 读取响应体(限制大小)
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseSize))
+	body, isTruncated, err := readResponseBody(resp.Body, MaxResponseSize)
 	if err != nil {
 		return &FetchResponse{
 			StatusCode:   resp.StatusCode,
@@ -126,15 +126,30 @@ func Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
 		}, nil
 	}
 
-	// 检查是否截断
-	isTruncated := int64(len(body)) >= MaxResponseSize
-
 	return &FetchResponse{
 		Content:     processedContent,
 		StatusCode:  resp.StatusCode,
 		ContentType: contentType,
 		IsTruncated: isTruncated,
 	}, nil
+}
+
+func readResponseBody(reader io.Reader, limit int64) ([]byte, bool, error) {
+	if limit < 0 {
+		return nil, false, fmt.Errorf("response size limit must not be negative")
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(body)) <= limit {
+		return body, false, nil
+	}
+	body = body[:limit]
+	for len(body) > 0 && !utf8.Valid(body) {
+		body = body[:len(body)-1]
+	}
+	return body, true, nil
 }
 
 // processContent 根据格式处理内容
