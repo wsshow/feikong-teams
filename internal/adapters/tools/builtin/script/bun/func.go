@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"fkteams/internal/adapters/tools/builtin/script/scriptexec"
 )
 
 const maxPackageJSONBytes int64 = 4 << 20
@@ -65,12 +67,13 @@ func (bt *BunTools) executeCommand(ctx context.Context, name string, args ...str
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = bt.envDir
 
-	output, err := cmd.CombinedOutput()
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	outputText := scriptexec.String(output, truncated)
 	if err != nil {
-		return string(output), fmt.Errorf("命令执行失败: %w, 输出: %s", err, string(output))
+		return outputText, fmt.Errorf("命令执行失败: %w, 输出: %s", err, outputText)
 	}
 
-	return string(output), nil
+	return outputText, nil
 }
 
 // InitEnvRequest 初始化环境请求
@@ -475,10 +478,11 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 	// 设置超时
 	timeout := 300 * time.Second // 默认 300 秒
 	if req.Timeout > 0 {
-		if req.Timeout > 600 {
-			req.Timeout = 600 // 最大 600 秒
+		timeoutSeconds := req.Timeout
+		if timeoutSeconds > 600 {
+			timeoutSeconds = 600 // 最大 600 秒
 		}
-		timeout = time.Duration(req.Timeout) * time.Second
+		timeout = time.Duration(timeoutSeconds) * time.Second
 	}
 
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -495,7 +499,8 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 	cmd := exec.CommandContext(execCtx, bt.bunPath, args...)
 	cmd.Dir = bt.workDir
 
-	output, err := cmd.CombinedOutput()
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	outputText := scriptexec.String(output, truncated)
 	duration := time.Since(startTime)
 
 	exitCode := 0
@@ -505,7 +510,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 		} else {
 			return &RunScriptResponse{
 				Success:      false,
-				Output:       string(output),
+				Output:       outputText,
 				Duration:     duration.String(),
 				ErrorMessage: fmt.Sprintf("脚本执行失败: %v", err),
 			}, nil
@@ -521,7 +526,7 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 
 	return &RunScriptResponse{
 		Success:      success,
-		Output:       string(output),
+		Output:       outputText,
 		ExitCode:     exitCode,
 		Duration:     duration.String(),
 		ErrorMessage: message,

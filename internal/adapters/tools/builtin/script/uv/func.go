@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"fkteams/internal/adapters/tools/builtin/script/scriptexec"
 )
 
 // UVTools 基于 uv 的 Python 脚本执行工具实例
@@ -68,12 +70,13 @@ func (ut *UVTools) executeCommand(ctx context.Context, name string, args ...stri
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = ut.envDir
 
-	output, err := cmd.CombinedOutput()
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	outputText := scriptexec.String(output, truncated)
 	if err != nil {
-		return string(output), fmt.Errorf("命令执行失败: %w, 输出: %s", err, string(output))
+		return outputText, fmt.Errorf("命令执行失败: %w, 输出: %s", err, outputText)
 	}
 
-	return string(output), nil
+	return outputText, nil
 }
 
 // InitEnvRequest 初始化环境请求
@@ -471,10 +474,11 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 	// 设置超时
 	timeout := 300 * time.Second // 默认 300 秒
 	if req.Timeout > 0 {
-		if req.Timeout > 600 {
-			req.Timeout = 600 // 最大 600 秒
+		timeoutSeconds := req.Timeout
+		if timeoutSeconds > 600 {
+			timeoutSeconds = 600 // 最大 600 秒
 		}
-		timeout = time.Duration(req.Timeout) * time.Second
+		timeout = time.Duration(timeoutSeconds) * time.Second
 	}
 
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -492,7 +496,8 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 	cmd := exec.CommandContext(execCtx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, err := cmd.CombinedOutput()
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	outputText := scriptexec.String(output, truncated)
 	duration := time.Since(startTime)
 
 	exitCode := 0
@@ -502,7 +507,7 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 		} else {
 			return &RunScriptResponse{
 				Success:      false,
-				Output:       string(output),
+				Output:       outputText,
 				Duration:     duration.String(),
 				ErrorMessage: fmt.Sprintf("脚本执行失败: %v", err),
 			}, nil
@@ -518,7 +523,7 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 
 	return &RunScriptResponse{
 		Success:      success,
-		Output:       string(output),
+		Output:       outputText,
 		ExitCode:     exitCode,
 		Duration:     duration.String(),
 		ErrorMessage: message,
@@ -613,10 +618,11 @@ func (ut *UVTools) RunCode(ctx context.Context, req *RunCodeRequest) (*RunCodeRe
 	// 设置超时
 	timeout := 60 * time.Second // 默认 60 秒
 	if req.Timeout > 0 {
-		if req.Timeout > 300 {
-			req.Timeout = 300 // 最大 300 秒
+		timeoutSeconds := req.Timeout
+		if timeoutSeconds > 300 {
+			timeoutSeconds = 300 // 最大 300 秒
 		}
-		timeout = time.Duration(req.Timeout) * time.Second
+		timeout = time.Duration(timeoutSeconds) * time.Second
 	}
 
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -634,7 +640,8 @@ func (ut *UVTools) RunCode(ctx context.Context, req *RunCodeRequest) (*RunCodeRe
 	cmd := exec.CommandContext(execCtx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, err := cmd.CombinedOutput()
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	outputText := scriptexec.String(output, truncated)
 	duration := time.Since(startTime)
 
 	exitCode := 0
@@ -644,7 +651,7 @@ func (ut *UVTools) RunCode(ctx context.Context, req *RunCodeRequest) (*RunCodeRe
 		} else {
 			return &RunCodeResponse{
 				Success:      false,
-				Output:       string(output),
+				Output:       outputText,
 				Duration:     duration.String(),
 				ErrorMessage: fmt.Sprintf("代码执行失败: %v", err),
 			}, nil
@@ -660,7 +667,7 @@ func (ut *UVTools) RunCode(ctx context.Context, req *RunCodeRequest) (*RunCodeRe
 
 	return &RunCodeResponse{
 		Success:      success,
-		Output:       string(output),
+		Output:       outputText,
 		ExitCode:     exitCode,
 		Duration:     duration.String(),
 		ErrorMessage: message,
@@ -747,13 +754,19 @@ except Exception as e:
 	cmd := exec.CommandContext(ctx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, err := cmd.CombinedOutput()
-	result := strings.TrimSpace(string(output))
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	result := strings.TrimSpace(scriptexec.String(output, truncated))
 
 	if err != nil {
 		return &CheckSyntaxResponse{
 			Valid:        false,
 			ErrorMessage: fmt.Sprintf("语法检查失败: %v, 输出: %s", err, result),
+		}, nil
+	}
+	if truncated {
+		return &CheckSyntaxResponse{
+			Valid:        false,
+			ErrorMessage: "语法检查结果超过大小限制",
 		}, nil
 	}
 
@@ -848,11 +861,17 @@ except Exception as e:
 	cmd := exec.CommandContext(ctx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, err := cmd.CombinedOutput()
+	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
 	if err != nil {
 		return &FormatCodeResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("代码格式化失败: %v", err),
+		}, nil
+	}
+	if truncated {
+		return &FormatCodeResponse{
+			Success:      false,
+			ErrorMessage: "格式化结果超过大小限制",
 		}, nil
 	}
 
