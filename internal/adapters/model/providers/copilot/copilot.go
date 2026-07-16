@@ -237,7 +237,7 @@ func ListModels(ctx context.Context, _ *providerkit.Config) ([]providerkit.Model
 			ModelPickerEnabled bool   `json:"model_picker_enabled"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := providerkit.DecodeJSONResponse(resp.Body, &result); err != nil {
 		return nil, err
 	}
 

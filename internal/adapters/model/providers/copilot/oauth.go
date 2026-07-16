@@ -2,13 +2,13 @@ package copilot
 
 import (
 	"context"
-	"encoding/json"
-	"fkteams/internal/adapters/model/providers/providerkit"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"fkteams/internal/adapters/model/providers/providerkit"
 )
 
 const (
@@ -51,7 +51,7 @@ func RequestDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	}
 
 	var dc DeviceCode
-	if err := json.NewDecoder(resp.Body).Decode(&dc); err != nil {
+	if err := providerkit.DecodeJSONResponse(resp.Body, &dc); err != nil {
 		return nil, fmt.Errorf("解析设备码响应失败: %w", err)
 	}
 	return &dc, nil
@@ -123,12 +123,15 @@ func tryGetAccessToken(ctx context.Context, deviceCode string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("OAuth token request returned status %d", resp.StatusCode)
+	}
 
 	var result struct {
 		AccessToken string `json:"access_token"`
 		Error       string `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := providerkit.DecodeJSONResponse(resp.Body, &result); err != nil {
 		return "", err
 	}
 

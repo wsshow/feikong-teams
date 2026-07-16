@@ -2,13 +2,13 @@ package providerkit
 
 import (
 	"context"
-	"encoding/json"
-	"fkteams/internal/runtime/env"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"fkteams/internal/runtime/env"
 )
 
 // Config 统一模型配置（供各 provider 子包使用）
@@ -66,7 +66,7 @@ func ListOpenAIModels(ctx context.Context, cfg *Config) ([]ModelInfo, error) {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := DecodeJSONResponse(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("解析模型列表失败: %w", err)
 	}
 

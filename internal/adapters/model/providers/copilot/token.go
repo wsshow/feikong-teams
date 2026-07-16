@@ -135,7 +135,7 @@ func exchangeCopilotToken(ctx context.Context, githubToken string) (*Token, erro
 		Token     string `json:"token"`
 		ExpiresAt int64  `json:"expires_at"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := providerkit.DecodeJSONResponse(resp.Body, &result); err != nil {
 		return nil, err
 	}
 
