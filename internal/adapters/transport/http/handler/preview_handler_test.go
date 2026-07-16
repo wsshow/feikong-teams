@@ -178,6 +178,7 @@ func TestPreviewMarkdownDoesNotDownloadUnlessRequested(t *testing.T) {
 	if got := resp.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline;") {
 		t.Fatalf("preview markdown disposition = %q, want inline", got)
 	}
+	assertUntrustedContentHeaders(t, resp)
 
 	resp = performRequest(router, http.MethodGet, "/preview/markdown/file?download=1", nil)
 	if resp.Code != http.StatusOK {
@@ -194,6 +195,7 @@ func TestPreviewMarkdownDoesNotDownloadUnlessRequested(t *testing.T) {
 	if got := resp.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline;") {
 		t.Fatalf("render markdown disposition = %q, want inline", got)
 	}
+	assertUntrustedContentHeaders(t, resp)
 }
 
 func TestPreviewFileMultiFileZip(t *testing.T) {

@@ -436,6 +436,7 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 		}
 
 		contentType := previewContentType(filePath)
+		setUntrustedContentHeaders(c)
 
 		disposition := "inline"
 		if c.Query("download") == "1" {

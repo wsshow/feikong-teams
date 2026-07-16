@@ -33,6 +33,8 @@ type FileInfo struct {
 
 const editableFileMaxBytes = 2 * 1024 * 1024
 
+const untrustedContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+
 // getWorkspaceDir 获取工作目录并返回绝对路径
 func getWorkspaceDir() (string, string, error) {
 	baseDir := appdata.WorkspaceDir()
@@ -892,7 +894,22 @@ func serveFileContent(c *gin.Context, fullPath string, info os.FileInfo) {
 		return
 	}
 	defer f.Close()
+	setUntrustedContentHeaders(c)
+	if c.Writer.Header().Get("Content-Type") == "" {
+		c.Header("Content-Type", previewContentType(fullPath))
+	}
 	http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), f)
+}
+
+// setUntrustedContentHeaders 将工作区文件限制在无脚本、无同源权限的文档沙箱中。
+// 安全边界放在响应层，避免直接打开文件 URL 时绕过前端 iframe sandbox。
+func setUntrustedContentHeaders(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Content-Security-Policy", untrustedContentSecurityPolicy)
+	c.Header("Cross-Origin-Resource-Policy", "same-origin")
+	c.Header("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("X-Content-Type-Options", "nosniff")
 }
 
 // ServeFileHandler 以 inline 方式提供工作目录中的文件（用于 HTML 预览等场景）

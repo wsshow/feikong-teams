@@ -23,7 +23,13 @@ export function PreviewPage() {
           <Button onClick={() => window.open(`/api/fkteams/preview/${encodedLinkID}?download=1`, "_blank")}>下载</Button>
         </PanelHeader>
         <PanelBody className="min-h-0 flex-1 p-0">
-          <iframe className="h-full w-full border-0" src={`/api/fkteams/preview/${encodedLinkID}/render/`} title="文件预览" />
+          <iframe
+            className="h-full w-full border-0"
+            referrerPolicy="no-referrer"
+            sandbox=""
+            src={`/api/fkteams/preview/${encodedLinkID}/render/`}
+            title="文件预览"
+          />
         </PanelBody>
       </Panel>
     </div>

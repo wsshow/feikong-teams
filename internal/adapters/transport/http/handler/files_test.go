@@ -230,10 +230,28 @@ func TestServeFileHandler(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), "hello") {
 		t.Fatalf("expected served index content, got %q", resp.Body.String())
 	}
+	assertUntrustedContentHeaders(t, resp)
 
 	resp = performRequest(router, http.MethodGet, "/view/../outside.txt", nil)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("traversal serve status = %d, want 400", resp.Code)
+	}
+}
+
+func assertUntrustedContentHeaders(t *testing.T, resp *httptest.ResponseRecorder) {
+	t.Helper()
+
+	csp := resp.Header().Get("Content-Security-Policy")
+	for _, directive := range []string{"sandbox", "script-src 'none'", "object-src 'none'", "form-action 'none'"} {
+		if !strings.Contains(csp, directive) {
+			t.Fatalf("content security policy %q is missing %q", csp, directive)
+		}
+	}
+	if got := resp.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := resp.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
 	}
 }
 

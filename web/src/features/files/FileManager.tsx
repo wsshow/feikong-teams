@@ -368,7 +368,7 @@ function FileViewerContent({
     );
   }
   if (kind === "html" || kind === "pdf") {
-    return <iframe className="min-h-0 flex-1 rounded-lg border border-border/75 bg-background" src={serveFileURL(viewer.entry.path)} title={viewer.entry.name} sandbox={kind === "html" ? "" : undefined} />;
+    return <iframe className="min-h-0 flex-1 rounded-lg border border-border/75 bg-background" referrerPolicy="no-referrer" src={serveFileURL(viewer.entry.path)} title={viewer.entry.name} sandbox={kind === "html" ? "" : undefined} />;
   }
   if (kind === "image") {
     return (
