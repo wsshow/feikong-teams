@@ -13,11 +13,16 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	defaultFaviconSize = 16
 	maxFaviconSize     = 64
+	maxFaviconBytes    = 64 << 10
+	maxFaviconEntries  = 512
+	maxFaviconDomain   = 253
+	maxContentTypeSize = 255
 )
 
 const defaultFaviconUpstream = "https://www.google.com/s2/favicons"
@@ -28,6 +33,7 @@ type FaviconProxy struct {
 	items    map[string]faviconCacheEntry
 	client   *http.Client
 	upstream string
+	fetches  singleflight.Group
 }
 
 // FaviconProxyOptions 描述 favicon 代理的可替换依赖。
@@ -57,9 +63,8 @@ type faviconCacheEntry struct {
 	data        []byte
 	contentType string
 	expiresAt   time.Time
+	accessedAt  time.Time
 }
-
-// FaviconHandler 代理来源站点图标，避免浏览器侧大量外部 favicon 404 噪音。
 
 // FaviconHandler 代理当前 HTTP runtime 的来源站点图标。
 func (rt *Runtime) FaviconHandler() gin.HandlerFunc {
@@ -73,41 +78,88 @@ func (rt *Runtime) FaviconHandler() gin.HandlerFunc {
 		key := fmt.Sprintf("%s:%d", domain, size)
 		proxy := rt.Favicons
 
-		if entry, ok := proxy.get(key); ok {
-			writeFavicon(c, entry)
-			return
-		}
+		entry := proxy.resolve(c.Request.Context(), key, domain, size)
+		writeFavicon(c, entry)
+	}
+}
 
-		data, contentType, err := proxy.fetch(c.Request.Context(), domain, size)
+func (p *FaviconProxy) resolve(ctx context.Context, key, domain string, size int) faviconCacheEntry {
+	if entry, ok := p.get(key); ok {
+		return entry
+	}
+	resolved, _, _ := p.fetches.Do(key, func() (any, error) {
+		if entry, ok := p.get(key); ok {
+			return entry, nil
+		}
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		data, contentType, err := p.fetch(fetchCtx, domain, size)
 		if err != nil {
 			data = fallbackFaviconSVG(domain, size)
 			contentType = "image/svg+xml; charset=utf-8"
 		}
+		now := time.Now()
 		entry := faviconCacheEntry{
 			data:        data,
 			contentType: contentType,
-			expiresAt:   time.Now().Add(24 * time.Hour),
+			expiresAt:   now.Add(24 * time.Hour),
+			accessedAt:  now,
 		}
-		proxy.set(key, entry)
-		writeFavicon(c, entry)
+		p.set(key, entry)
+		return entry, nil
+	})
+	entry, ok := resolved.(faviconCacheEntry)
+	if !ok {
+		now := time.Now()
+		return faviconCacheEntry{
+			data:        fallbackFaviconSVG(domain, size),
+			contentType: "image/svg+xml; charset=utf-8",
+			expiresAt:   now.Add(24 * time.Hour),
+			accessedAt:  now,
+		}
 	}
+	return entry
 }
 
 func (p *FaviconProxy) get(key string) (faviconCacheEntry, bool) {
 	p.Lock()
 	defer p.Unlock()
+	now := time.Now()
 	entry, ok := p.items[key]
-	if !ok || time.Now().After(entry.expiresAt) {
+	if !ok || now.After(entry.expiresAt) {
 		delete(p.items, key)
 		return faviconCacheEntry{}, false
 	}
+	entry.accessedAt = now
+	p.items[key] = entry
 	return entry, true
 }
 
 func (p *FaviconProxy) set(key string, entry faviconCacheEntry) {
 	p.Lock()
+	defer p.Unlock()
+	if _, exists := p.items[key]; !exists && len(p.items) >= maxFaviconEntries {
+		p.evictOneLocked(time.Now())
+	}
 	p.items[key] = entry
-	p.Unlock()
+}
+
+func (p *FaviconProxy) evictOneLocked(now time.Time) {
+	oldestKey := ""
+	oldestAccess := now
+	for key, entry := range p.items {
+		if now.After(entry.expiresAt) {
+			delete(p.items, key)
+			continue
+		}
+		if oldestKey == "" || entry.accessedAt.Before(oldestAccess) {
+			oldestKey = key
+			oldestAccess = entry.accessedAt
+		}
+	}
+	if len(p.items) >= maxFaviconEntries && oldestKey != "" {
+		delete(p.items, oldestKey)
+	}
 }
 
 func writeFavicon(c *gin.Context, entry faviconCacheEntry) {
@@ -139,14 +191,20 @@ func (p *FaviconProxy) fetch(ctx context.Context, domain string, size int) ([]by
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", fmt.Errorf("favicon upstream status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFaviconBytes+1))
 	if err != nil {
 		return nil, "", err
+	}
+	if len(data) > maxFaviconBytes {
+		return nil, "", fmt.Errorf("favicon exceeds %d bytes", maxFaviconBytes)
 	}
 	if len(data) == 0 {
 		return nil, "", fmt.Errorf("empty favicon")
 	}
 	contentType := resp.Header.Get("Content-Type")
+	if len(contentType) > maxContentTypeSize {
+		return nil, "", fmt.Errorf("favicon content type is too long")
+	}
 	if contentType == "" {
 		contentType = http.DetectContentType(data)
 	}
@@ -171,7 +229,7 @@ func normalizeFaviconDomain(input string) string {
 		}
 	}
 	input = strings.Trim(strings.ToLower(input), ".")
-	if input == "" || strings.ContainsAny(input, " /\\\t\r\n") {
+	if input == "" || len(input) > maxFaviconDomain || strings.ContainsAny(input, " /\\\t\r\n") {
 		return ""
 	}
 	return input

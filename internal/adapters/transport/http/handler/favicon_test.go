@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,6 +49,39 @@ func TestFaviconHandlerProxiesAndCachesUpstreamIcon(t *testing.T) {
 	}
 }
 
+func TestFaviconHandlerCoalescesConcurrentRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var requests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("png"))
+	}))
+	defer upstream.Close()
+	rt := newFaviconTestRuntime(upstream.URL)
+	router := gin.New()
+	router.GET("/favicon", rt.FaviconHandler())
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/favicon?domain=example.com", nil)
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK || resp.Body.String() != "png" {
+				t.Errorf("status = %d, body = %q", resp.Code, resp.Body.String())
+			}
+		}()
+	}
+	wg.Wait()
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("upstream requests = %d, want 1", got)
+	}
+}
+
 func TestFaviconHandlerReturnsFallbackSVGOnUpstream404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := httptest.NewServer(http.NotFoundHandler())
@@ -67,6 +103,44 @@ func TestFaviconHandlerReturnsFallbackSVGOnUpstream404(t *testing.T) {
 	}
 	if body := resp.Body.String(); !strings.HasPrefix(body, "<svg") {
 		t.Fatalf("fallback body = %q, want svg", body)
+	}
+}
+
+func TestFaviconHandlerRejectsOversizedUpstreamIcon(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte(strings.Repeat("x", maxFaviconBytes+1)))
+	}))
+	defer upstream.Close()
+	rt := newFaviconTestRuntime(upstream.URL)
+	router := gin.New()
+	router.GET("/favicon", rt.FaviconHandler())
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/favicon?domain=large.example", nil)
+	router.ServeHTTP(resp, req)
+	if body := resp.Body.String(); !strings.HasPrefix(body, "<svg") {
+		t.Fatalf("body = %q, want fallback SVG", body)
+	}
+}
+
+func TestFaviconCacheEvictsLeastRecentlyUsedEntry(t *testing.T) {
+	proxy := NewFaviconProxy(FaviconProxyOptions{})
+	now := time.Now()
+	for i := range maxFaviconEntries {
+		proxy.set(fmt.Sprintf("key-%d", i), faviconCacheEntry{
+			data:       []byte("x"),
+			expiresAt:  now.Add(time.Hour),
+			accessedAt: now.Add(time.Duration(i) * time.Second),
+		})
+	}
+	proxy.set("new", faviconCacheEntry{data: []byte("x"), expiresAt: now.Add(time.Hour), accessedAt: now.Add(time.Hour)})
+	if len(proxy.items) != maxFaviconEntries {
+		t.Fatalf("cache size = %d, want %d", len(proxy.items), maxFaviconEntries)
+	}
+	if _, ok := proxy.items["key-0"]; ok {
+		t.Fatal("least recently used entry was not evicted")
 	}
 }
 
