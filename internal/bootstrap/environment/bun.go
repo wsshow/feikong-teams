@@ -25,7 +25,10 @@ func (b *bunInitializer) Run() error {
 		}
 	} else {
 		// 获取当前版本并升级
-		out, _ := combinedOutput(bunPath, "--version")
+		out, err := combinedOutput(bunPath, "--version")
+		if err != nil {
+			return fmt.Errorf("get current bun version: %w", err)
+		}
 		currentVersion := strings.TrimSpace(string(out))
 		pterm.Info.Printfln("当前版本: %s，正在检查更新...", currentVersion)
 
@@ -33,7 +36,10 @@ func (b *bunInitializer) Run() error {
 			return fmt.Errorf("upgrade failed: %w", err)
 		}
 
-		out, _ = combinedOutput(bunPath, "--version")
+		out, err = combinedOutput(bunPath, "--version")
+		if err != nil {
+			return fmt.Errorf("get updated bun version: %w", err)
+		}
 		newVersion := strings.TrimSpace(string(out))
 		if newVersion != currentVersion {
 			pterm.Info.Printfln("已升级: %s → %s", currentVersion, newVersion)

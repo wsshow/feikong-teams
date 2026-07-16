@@ -12,10 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"fkteams/internal/adapters/tools/builtin/script/scriptexec"
+	"fkteams/internal/runtime/executil"
 )
 
-const maxPackageJSONBytes int64 = 4 << 20
+const (
+	maxPackageJSONBytes  int64 = 4 << 20
+	maxScriptOutputBytes       = 1 << 20
+)
 
 // BunTools 基于 bun 的 JavaScript 脚本执行工具实例
 type BunTools struct {
@@ -67,8 +70,8 @@ func (bt *BunTools) executeCommand(ctx context.Context, name string, args ...str
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = bt.envDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
-	outputText := scriptexec.String(output, truncated)
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
+	outputText := executil.String(output, truncated)
 	if err != nil {
 		return outputText, fmt.Errorf("命令执行失败: %w, 输出: %s", err, outputText)
 	}
@@ -499,8 +502,8 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 	cmd := exec.CommandContext(execCtx, bt.bunPath, args...)
 	cmd.Dir = bt.workDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
-	outputText := scriptexec.String(output, truncated)
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
+	outputText := executil.String(output, truncated)
 	duration := time.Since(startTime)
 
 	exitCode := 0

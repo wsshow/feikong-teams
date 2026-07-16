@@ -1,4 +1,4 @@
-package scriptexec
+package executil
 
 import (
 	"fmt"

@@ -1,5 +1,5 @@
-// Package scriptexec 提供脚本工具共用的子进程执行边界。
-package scriptexec
+// Package executil 提供子进程执行的共享资源边界。
+package executil
 
 import (
 	"bytes"
@@ -9,10 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	MaxOutputBytes  int64 = 1 << 20
-	truncatedMarker       = "\n[output truncated]"
-)
+const truncatedMarker = "\n[output truncated]"
 
 // CombinedOutput 执行命令并限制 stdout 与 stderr 的合计内存占用。
 func CombinedOutput(command *exec.Cmd, limit int64) ([]byte, bool, error) {
@@ -34,7 +31,7 @@ func CombinedOutput(command *exec.Cmd, limit int64) ([]byte, bool, error) {
 	return data, truncated, err
 }
 
-// String 将有限输出转换为适合工具响应的文本，并显式标记截断。
+// String 将有限输出转换为文本，并显式标记截断。
 func String(output []byte, truncated bool) string {
 	if !truncated {
 		return string(output)

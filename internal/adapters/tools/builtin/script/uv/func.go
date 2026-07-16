@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"fkteams/internal/adapters/tools/builtin/script/scriptexec"
+	"fkteams/internal/runtime/executil"
 )
+
+const maxScriptOutputBytes int64 = 1 << 20
 
 // UVTools 基于 uv 的 Python 脚本执行工具实例
 type UVTools struct {
@@ -70,8 +72,8 @@ func (ut *UVTools) executeCommand(ctx context.Context, name string, args ...stri
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = ut.envDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
-	outputText := scriptexec.String(output, truncated)
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
+	outputText := executil.String(output, truncated)
 	if err != nil {
 		return outputText, fmt.Errorf("命令执行失败: %w, 输出: %s", err, outputText)
 	}
@@ -496,8 +498,8 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 	cmd := exec.CommandContext(execCtx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
-	outputText := scriptexec.String(output, truncated)
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
+	outputText := executil.String(output, truncated)
 	duration := time.Since(startTime)
 
 	exitCode := 0
@@ -640,8 +642,8 @@ func (ut *UVTools) RunCode(ctx context.Context, req *RunCodeRequest) (*RunCodeRe
 	cmd := exec.CommandContext(execCtx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
-	outputText := scriptexec.String(output, truncated)
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
+	outputText := executil.String(output, truncated)
 	duration := time.Since(startTime)
 
 	exitCode := 0
@@ -754,8 +756,8 @@ except Exception as e:
 	cmd := exec.CommandContext(ctx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
-	result := strings.TrimSpace(scriptexec.String(output, truncated))
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
+	result := strings.TrimSpace(executil.String(output, truncated))
 
 	if err != nil {
 		return &CheckSyntaxResponse{
@@ -861,7 +863,7 @@ except Exception as e:
 	cmd := exec.CommandContext(ctx, pythonPath, args...)
 	cmd.Dir = ut.workDir
 
-	output, truncated, err := scriptexec.CombinedOutput(cmd, scriptexec.MaxOutputBytes)
+	output, truncated, err := executil.CombinedOutput(cmd, maxScriptOutputBytes)
 	if err != nil {
 		return &FormatCodeResponse{
 			Success:      false,
