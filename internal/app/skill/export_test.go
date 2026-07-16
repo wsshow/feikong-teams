@@ -159,6 +159,53 @@ func TestSkillFilePathTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestSkillFileOperationsRejectSymlinks(t *testing.T) {
+	appDir := t.TempDir()
+	t.Setenv(env.AppDir, appDir)
+	writeSkill(t, appDir, "demo", "---\nname: Demo\n---\n")
+	outDir := t.TempDir()
+	outside := filepath.Join(outDir, "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(appDir, "skills", "demo", "link.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	if _, err := ReadSkillFile("demo", "link.txt"); err == nil {
+		t.Fatal("ReadSkillFile followed a symbolic link")
+	}
+	if err := SaveSkillFile("demo", "link.txt", "changed"); err == nil {
+		t.Fatal("SaveSkillFile replaced a symbolic link")
+	}
+	if err := DeleteSkillFile("demo", "link.txt"); err == nil {
+		t.Fatal("DeleteSkillFile accepted a symbolic link")
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "outside" {
+		t.Fatalf("outside file = %q", data)
+	}
+}
+
+func TestReadSkillRootFileRejectsOversizedContent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "large.txt"), []byte("12345"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if _, err := readSkillRootFile(root, "large.txt", 4); err == nil {
+		t.Fatal("oversized skill file was accepted")
+	}
+}
+
 func TestCreateSaveAndDeleteLocalSkillFiles(t *testing.T) {
 	appDir := t.TempDir()
 	t.Setenv(env.AppDir, appDir)

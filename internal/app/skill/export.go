@@ -2,7 +2,9 @@ package skill
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,11 +13,18 @@ import (
 
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/pathguard"
 
 	"github.com/goccy/go-yaml"
 )
 
 var localSkillSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+const (
+	maxSkillManifestBytes     int64 = 1 << 20
+	maxSkillEditableFileBytes int64 = 16 << 20
+	maxSkillDirectoryEntries        = 10_000
+)
 
 // LocalSkillInfo 表示本地已安装技能。
 type LocalSkillInfo struct {
@@ -36,21 +45,31 @@ type LocalSkillSpec struct {
 func ListLocalSkills() ([]LocalSkillInfo, error) {
 	skillsDir := appdata.SkillsDir()
 
-	entries, err := os.ReadDir(skillsDir)
+	directory, err := os.Open(skillsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read skills dir: %w", err)
 	}
+	defer directory.Close()
+	entries, err := readSkillDirectoryEntries(directory)
+	if err != nil {
+		return nil, fmt.Errorf("read skills dir: %w", err)
+	}
+	root, err := os.OpenRoot(skillsDir)
+	if err != nil {
+		return nil, fmt.Errorf("open skills root: %w", err)
+	}
+	defer root.Close()
 
 	var skills []LocalSkillInfo
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		skillFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
-		data, err := os.ReadFile(skillFile)
+		skillFile := filepath.Join(entry.Name(), "SKILL.md")
+		data, err := readSkillRootFile(root, skillFile, maxSkillManifestBytes)
 		if err != nil {
 			continue
 		}
@@ -94,17 +113,34 @@ type SkillFileEntry struct {
 
 // ListSkillFiles 列出技能目录下指定路径的文件。
 func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
-	targetDir, cleanSub, err := resolveSkillPath(slug, subPath, true)
+	_, cleanSub, err := resolveSkillPath(slug, subPath, true)
 	if err != nil {
 		return nil, err
 	}
 
-	entries, err := os.ReadDir(targetDir)
+	root, err := os.OpenRoot(appdata.SkillsDir())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("skill %s is not installed", slug)
 		}
 		return nil, err
+	}
+	defer root.Close()
+	relativeDir := skillRelativePath(slug, cleanSub)
+	if err := pathguard.RejectRootSymlinkComponents(root, relativeDir); err != nil {
+		return nil, fmt.Errorf("open skill directory: %w", err)
+	}
+	directory, err := root.Open(relativeDir)
+	if err != nil {
+		return nil, fmt.Errorf("open skill directory: %w", err)
+	}
+	entries, err := readSkillDirectoryEntries(directory)
+	closeErr := directory.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read skill directory: %w", err)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close skill directory: %w", closeErr)
 	}
 
 	type sortableSkillFileEntry struct {
@@ -113,8 +149,14 @@ func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
 	}
 	var sortableEntries []sortableSkillFileEntry
 	for _, e := range entries {
+		if e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
 		info, err := e.Info()
 		if err != nil {
+			continue
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
 			continue
 		}
 		sortableEntries = append(sortableEntries, sortableSkillFileEntry{
@@ -151,12 +193,17 @@ func ListSkillFiles(slug, subPath string) ([]SkillFileEntry, error) {
 
 // ReadSkillFile 读取技能目录中的文件。
 func ReadSkillFile(slug, filePath string) (string, error) {
-	cleanPath, _, err := resolveSkillPath(slug, filePath, false)
+	_, cleanSub, err := resolveSkillPath(slug, filePath, false)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := os.ReadFile(cleanPath)
+	root, err := os.OpenRoot(appdata.SkillsDir())
+	if err != nil {
+		return "", fmt.Errorf("open skills root: %w", err)
+	}
+	defer root.Close()
+	data, err := readSkillRootFile(root, skillRelativePath(slug, cleanSub), maxSkillEditableFileBytes)
 	if err != nil {
 		return "", err
 	}
@@ -175,20 +222,32 @@ func CreateLocalSkill(spec LocalSkillSpec) (LocalSkillInfo, error) {
 		spec.Name = spec.Slug
 	}
 
-	skillDir := filepath.Join(appdata.SkillsDir(), spec.Slug)
-	if _, err := os.Stat(skillDir); err == nil {
-		return LocalSkillInfo{}, fmt.Errorf("skill already exists")
-	} else if err != nil && !os.IsNotExist(err) {
-		return LocalSkillInfo{}, fmt.Errorf("stat skill dir: %w", err)
-	}
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
-		return LocalSkillInfo{}, fmt.Errorf("create skill dir: %w", err)
-	}
 	content := strings.TrimSpace(spec.Content)
 	if content == "" {
 		content = defaultSkillContent(spec.Name, spec.Description)
 	}
-	if err := atomicfile.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content+"\n"), 0644); err != nil {
+	data := []byte(content + "\n")
+	if int64(len(data)) > maxSkillEditableFileBytes {
+		return LocalSkillInfo{}, fmt.Errorf("skill file exceeds %d bytes", maxSkillEditableFileBytes)
+	}
+	if err := os.MkdirAll(appdata.SkillsDir(), 0755); err != nil {
+		return LocalSkillInfo{}, fmt.Errorf("create skills directory: %w", err)
+	}
+	root, err := os.OpenRoot(appdata.SkillsDir())
+	if err != nil {
+		return LocalSkillInfo{}, fmt.Errorf("open skills root: %w", err)
+	}
+	defer root.Close()
+	if _, err := root.Lstat(spec.Slug); err == nil {
+		return LocalSkillInfo{}, fmt.Errorf("skill already exists")
+	} else if !os.IsNotExist(err) {
+		return LocalSkillInfo{}, fmt.Errorf("stat skill dir: %w", err)
+	}
+	if err := root.Mkdir(spec.Slug, 0755); err != nil {
+		return LocalSkillInfo{}, fmt.Errorf("create skill dir: %w", err)
+	}
+	if err := atomicfile.WriteFileInRoot(root, filepath.Join(spec.Slug, "SKILL.md"), data, 0644); err != nil {
+		_ = root.RemoveAll(spec.Slug)
 		return LocalSkillInfo{}, err
 	}
 	return LocalSkillInfo{Slug: spec.Slug, Name: spec.Name, Description: spec.Description}, nil
@@ -196,53 +255,92 @@ func CreateLocalSkill(spec LocalSkillSpec) (LocalSkillInfo, error) {
 
 // SaveSkillFile 保存技能文件内容。
 func SaveSkillFile(slug, filePath, content string) error {
-	targetPath, _, err := resolveSkillPath(slug, filePath, false)
+	_, cleanSub, err := resolveSkillPath(slug, filePath, false)
 	if err != nil {
 		return err
 	}
-	info, err := os.Stat(targetPath)
+	if int64(len(content)) > maxSkillEditableFileBytes {
+		return fmt.Errorf("skill file exceeds %d bytes", maxSkillEditableFileBytes)
+	}
+	root, err := os.OpenRoot(appdata.SkillsDir())
+	if err != nil {
+		return fmt.Errorf("open skills root: %w", err)
+	}
+	defer root.Close()
+	relativePath := skillRelativePath(slug, cleanSub)
+	if err := pathguard.EnsureRootDirectory(root, filepath.Dir(relativePath), 0755); err != nil {
+		return fmt.Errorf("prepare skill parent directory: %w", err)
+	}
+	info, err := root.Lstat(relativePath)
 	if err == nil && info.IsDir() {
 		return fmt.Errorf("path is a directory")
+	}
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symbolic links are not allowed")
 	}
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("stat skill file: %w", err)
 	}
-	return atomicfile.WriteFile(targetPath, []byte(content), 0644)
+	return atomicfile.WriteFileInRoot(root, relativePath, []byte(content), 0644)
 }
 
 // CreateSkillFile 创建技能文件或目录。
 func CreateSkillFile(slug, filePath, content string, isDir bool) error {
-	targetPath, _, err := resolveSkillPath(slug, filePath, false)
+	_, cleanSub, err := resolveSkillPath(slug, filePath, false)
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(targetPath); err == nil {
+	if int64(len(content)) > maxSkillEditableFileBytes {
+		return fmt.Errorf("skill file exceeds %d bytes", maxSkillEditableFileBytes)
+	}
+	root, err := os.OpenRoot(appdata.SkillsDir())
+	if err != nil {
+		return fmt.Errorf("open skills root: %w", err)
+	}
+	defer root.Close()
+	relativePath := skillRelativePath(slug, cleanSub)
+	if _, err := root.Lstat(relativePath); err == nil {
 		return fmt.Errorf("path already exists")
 	} else if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("stat skill path: %w", err)
 	}
 	if isDir {
-		return os.MkdirAll(targetPath, 0755)
+		return pathguard.EnsureRootDirectory(root, relativePath, 0755)
 	}
-	return atomicfile.WriteFile(targetPath, []byte(content), 0644)
+	if err := pathguard.EnsureRootDirectory(root, filepath.Dir(relativePath), 0755); err != nil {
+		return fmt.Errorf("prepare skill parent directory: %w", err)
+	}
+	return atomicfile.WriteFileInRoot(root, relativePath, []byte(content), 0644)
 }
 
 // DeleteSkillFile 删除技能中的文件或目录。
 func DeleteSkillFile(slug, filePath string) error {
-	targetPath, cleanSub, err := resolveSkillPath(slug, filePath, false)
+	_, cleanSub, err := resolveSkillPath(slug, filePath, false)
 	if err != nil {
 		return err
 	}
 	if cleanSub == "SKILL.md" {
 		return fmt.Errorf("SKILL.md cannot be deleted")
 	}
-	if _, err := os.Stat(targetPath); err != nil {
+	root, err := os.OpenRoot(appdata.SkillsDir())
+	if err != nil {
+		return fmt.Errorf("open skills root: %w", err)
+	}
+	defer root.Close()
+	relativePath := skillRelativePath(slug, cleanSub)
+	if err := pathguard.RejectRootSymlinkComponents(root, relativePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("path not found")
+		}
+		return fmt.Errorf("inspect skill path: %w", err)
+	}
+	if _, err := root.Stat(relativePath); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("path not found")
 		}
 		return fmt.Errorf("stat skill path: %w", err)
 	}
-	return os.RemoveAll(targetPath)
+	return root.RemoveAll(relativePath)
 }
 
 // InstallSkillFromProvider 从指定 provider 安装技能。
@@ -255,11 +353,21 @@ func RemoveLocalSkill(slug string) error {
 	if err := validateSkillSlug(slug); err != nil {
 		return err
 	}
-	targetDir := filepath.Join(appdata.SkillsDir(), slug)
-	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-		return fmt.Errorf("skill %s is not installed", slug)
+	root, err := os.OpenRoot(appdata.SkillsDir())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("skill %s is not installed", slug)
+		}
+		return fmt.Errorf("open skills root: %w", err)
 	}
-	return os.RemoveAll(targetDir)
+	defer root.Close()
+	if _, err := root.Lstat(slug); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("skill %s is not installed", slug)
+		}
+		return fmt.Errorf("stat skill: %w", err)
+	}
+	return root.RemoveAll(slug)
 }
 
 func validateSkillSlug(slug string) error {
@@ -267,6 +375,55 @@ func validateSkillSlug(slug string) error {
 		return fmt.Errorf("invalid skill slug")
 	}
 	return nil
+}
+
+func skillRelativePath(slug, cleanSub string) string {
+	if cleanSub == "" {
+		return slug
+	}
+	return filepath.Join(slug, filepath.FromSlash(cleanSub))
+}
+
+func readSkillDirectoryEntries(directory *os.File) ([]os.DirEntry, error) {
+	entries, err := directory.ReadDir(maxSkillDirectoryEntries + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(entries) > maxSkillDirectoryEntries {
+		return nil, fmt.Errorf("skill directory exceeds %d entries", maxSkillDirectoryEntries)
+	}
+	return entries, nil
+}
+
+func readSkillRootFile(root *os.Root, relativePath string, limit int64) ([]byte, error) {
+	if err := pathguard.RejectRootSymlinkComponents(root, relativePath); err != nil {
+		return nil, fmt.Errorf("inspect skill file: %w", err)
+	}
+	file, err := root.Open(relativePath)
+	if err != nil {
+		return nil, fmt.Errorf("open skill file: %w", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("stat skill file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, fmt.Errorf("skill path is not a regular file")
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, limit+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("read skill file: %w", readErr)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("skill file exceeds %d bytes", limit)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close skill file: %w", closeErr)
+	}
+	return data, nil
 }
 
 func resolveSkillPath(slug, subPath string, allowRoot bool) (string, string, error) {
