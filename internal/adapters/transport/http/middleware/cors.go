@@ -13,7 +13,7 @@ import (
 func Cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method
-		c.Header("Vary", "Origin")
+		c.Header("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 
 		allowedOrigin, ok := origin.AllowedOrigin(c.Request)
 		if c.Request.Header.Get("Origin") != "" && !ok {
@@ -22,10 +22,12 @@ func Cors() gin.HandlerFunc {
 		}
 		if ok {
 			c.Header("Access-Control-Allow-Origin", allowedOrigin)
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Preview-Password")
-			c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, Last-Event-ID, X-Preview-Password")
+			c.Header("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
 			c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type")
-			c.Header("Access-Control-Allow-Credentials", "true")
+			if allowedOrigin != "*" {
+				c.Header("Access-Control-Allow-Credentials", "true")
+			}
 		}
 
 		if method == "OPTIONS" {

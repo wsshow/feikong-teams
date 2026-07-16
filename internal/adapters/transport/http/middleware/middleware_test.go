@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"fkteams/internal/app/config"
@@ -72,6 +73,29 @@ func TestCorsAllowsConfiguredOriginAndRejectsUnlisted(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d, want 204", w.Code)
+	}
+	if methods := w.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(methods, "PATCH") {
+		t.Fatalf("allow methods = %q, want PATCH", methods)
+	}
+}
+
+func TestCorsWildcardDoesNotEnableCredentialedCrossOrigin(t *testing.T) {
+	t.Setenv(env.AppDir, t.TempDir())
+	if err := config.Save(&config.Config{Server: config.Server{AllowOrigins: []string{"*"}}}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	router := testRouter()
+	router.Use(Cors())
+	router.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	req := httptest.NewRequest(http.MethodGet, "http://api.example/", nil)
+	req.Header.Set("Origin", "https://app.example")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("allow origin = %q, want wildcard", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("allow credentials = %q, want empty", got)
 	}
 }
 
