@@ -48,7 +48,7 @@ func interactiveAuthAction(ctx context.Context, cmd *ucli.Command) error {
 		return err
 	}
 
-	cfg := config.Get()
+	cfg := config.Snapshot()
 	currentStatus := "禁用"
 	if cfg.Server.Auth.Enabled {
 		currentStatus = fmt.Sprintf("启用（用户: %s）", cfg.Server.Auth.Username)
@@ -80,7 +80,7 @@ func authEnableAction(ctx context.Context, cmd *ucli.Command) error {
 		return err
 	}
 
-	cfg := config.Get()
+	cfg := config.Snapshot()
 	username := cmd.String("username")
 	password := cmd.String("password")
 
@@ -96,7 +96,7 @@ func authDisableAction(ctx context.Context, cmd *ucli.Command) error {
 	if err := config.Init(); err != nil {
 		return err
 	}
-	return disableAuth(config.Get())
+	return disableAuth(config.Snapshot())
 }
 
 // authStatusAction 查看认证状态

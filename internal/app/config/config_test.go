@@ -15,6 +15,7 @@ func resetConfigForTest(t *testing.T) string {
 	t.Setenv("FEIKONG_APP_DIR", appDir)
 	globalConfig.Store((*Config)(nil))
 	configOnce = sync.Once{}
+	configInitErr = nil
 	return appDir
 }
 
@@ -174,8 +175,12 @@ func TestSaveReloadAndInit(t *testing.T) {
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("config file was not written: %v", err)
 	}
-	if Get() != cfg {
-		t.Fatal("Save should update global config pointer")
+	if Get() == cfg {
+		t.Fatal("Save should publish an isolated config snapshot")
+	}
+	cfg.Models[0].APIKey = "mutated"
+	if got := Get().Models[0].APIKey; got != "sk-test" {
+		t.Fatalf("saved config was mutated through caller pointer: %q", got)
 	}
 
 	globalConfig.Store((*Config)(nil))
@@ -188,11 +193,52 @@ func TestSaveReloadAndInit(t *testing.T) {
 
 	globalConfig.Store((*Config)(nil))
 	configOnce = sync.Once{}
+	configInitErr = nil
 	if err := Init(); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
 	if got := Get().Server.Port; got != 1234 {
 		t.Fatalf("Init loaded port = %d, want 1234", got)
+	}
+}
+
+func TestSnapshotDeepCopiesMutableConfiguration(t *testing.T) {
+	resetConfigForTest(t)
+	original := &Config{
+		Models:    []ModelConfig{{ID: "model", UseFor: []string{ModelUseChat}}},
+		Server:    Server{AllowOrigins: []string{"https://example.com"}, TrustedProxies: []string{"127.0.0.1"}},
+		OpenAIAPI: OpenAIAPI{APIKeys: []string{"secret"}},
+		Agents: Agents{Items: []AgentConfig{{
+			ID: "agent", Tools: []string{"search"}, SSH: &AgentSSH{Password: "password"},
+		}}},
+		Deep: Deep{ExtraTools: []string{"fetch"}},
+		Tools: ToolSettings{MCPServers: []MCPServer{{
+			ID: "mcp", Args: []string{"serve"}, Env: map[string]string{"TOKEN": "secret"},
+		}}, Approval: ToolApprovalSettings{AutoApprove: []string{"search"}}},
+	}
+	globalConfig.Store(original)
+
+	snapshot := Snapshot()
+	snapshot.Models[0].UseFor[0] = "changed"
+	snapshot.Server.AllowOrigins[0] = "changed"
+	snapshot.OpenAIAPI.APIKeys[0] = "changed"
+	snapshot.Agents.Items[0].Tools[0] = "changed"
+	snapshot.Agents.Items[0].SSH.Password = "changed"
+	snapshot.Deep.ExtraTools[0] = "changed"
+	snapshot.Tools.MCPServers[0].Args[0] = "changed"
+	snapshot.Tools.MCPServers[0].Env["TOKEN"] = "changed"
+	snapshot.Tools.Approval.AutoApprove[0] = "changed"
+
+	if original.Models[0].UseFor[0] != ModelUseChat ||
+		original.Server.AllowOrigins[0] != "https://example.com" ||
+		original.OpenAIAPI.APIKeys[0] != "secret" ||
+		original.Agents.Items[0].Tools[0] != "search" ||
+		original.Agents.Items[0].SSH.Password != "password" ||
+		original.Deep.ExtraTools[0] != "fetch" ||
+		original.Tools.MCPServers[0].Args[0] != "serve" ||
+		original.Tools.MCPServers[0].Env["TOKEN"] != "secret" ||
+		original.Tools.Approval.AutoApprove[0] != "search" {
+		t.Fatal("snapshot mutation leaked into stored configuration")
 	}
 }
 
@@ -207,6 +253,7 @@ func TestInitAndValidate(t *testing.T) {
 		t.Fatalf("Save returned error: %v", err)
 	}
 	configOnce = sync.Once{}
+	configInitErr = nil
 	if err := InitAndValidate(); err != nil {
 		t.Fatalf("InitAndValidate with provider returned error: %v", err)
 	}

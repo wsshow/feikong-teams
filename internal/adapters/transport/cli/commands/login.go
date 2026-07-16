@@ -323,7 +323,7 @@ func customLoginAction(ctx context.Context, cmd *ucli.Command) error {
 
 // saveProviderConfig 保存供应商配置到 config.toml
 func saveProviderConfig(name, provider, apiKey, baseURL, model string) error {
-	cfg := config.Get()
+	cfg := config.Snapshot()
 
 	// 查找是否已存在同 ID 配置
 	var found bool
@@ -397,7 +397,7 @@ func providerLogoutAction(cmd *ucli.Command, defaultName string) error {
 		name = defaultName
 	}
 
-	cfg := config.Get()
+	cfg := config.Snapshot()
 	var newModels []config.ModelConfig
 	var removed bool
 	for _, m := range cfg.Models {
@@ -427,7 +427,7 @@ func interactiveLogoutAction(ctx context.Context, cmd *ucli.Command) error {
 		return err
 	}
 
-	cfg := config.Get()
+	cfg := config.Snapshot()
 
 	// 构建已配置的供应商列表
 	var items []tui.SelectItem

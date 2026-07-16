@@ -184,7 +184,7 @@ func listAvailableModels(ctx context.Context, provider, name string) error {
 
 // removeModel 移除指定 ID 的模型配置
 func removeModel(name string) error {
-	cfg := config.Get()
+	cfg := config.Snapshot()
 	var newModels []config.ModelConfig
 	var removed bool
 	for _, m := range cfg.Models {
@@ -236,7 +236,7 @@ func selectModelToRemove() (string, error) {
 
 // switchModel 切换默认模型
 func switchModel(ctx context.Context, name, model string) error {
-	cfg := config.Get()
+	cfg := config.Snapshot()
 	defaultModel := cfg.ResolveDefaultModel(config.ModelUseChat)
 	if name == "" && model != "" {
 		if defaultModel == nil {

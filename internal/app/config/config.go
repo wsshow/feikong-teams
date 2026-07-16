@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/atomicfile"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -487,9 +488,10 @@ func (c *Config) WorkspaceDir() string {
 // ==================== 全局单例 ====================
 
 var (
-	globalConfig atomic.Pointer[Config]
-	configOnce   sync.Once
-	configMu     sync.Mutex // 保护写操作
+	globalConfig  atomic.Pointer[Config]
+	configOnce    sync.Once
+	configInitErr error
+	configMu      sync.Mutex // 保护写操作
 )
 
 func configFilePath() string {
@@ -498,16 +500,17 @@ func configFilePath() string {
 
 // Init 初始化全局配置（应在启动时调用一次）
 func Init() error {
-	var initErr error
+	configMu.Lock()
+	defer configMu.Unlock()
 	configOnce.Do(func() {
 		cfg, err := load()
 		if err != nil {
-			initErr = err
+			configInitErr = err
 			return
 		}
 		globalConfig.Store(cfg)
 	})
-	return initErr
+	return configInitErr
 }
 
 // Get 返回全局配置（未初始化时返回默认值）
@@ -518,45 +521,81 @@ func Get() *Config {
 	return defaultConfig()
 }
 
+// Snapshot 返回可安全修改的当前配置深拷贝。
+func Snapshot() *Config {
+	return cloneConfig(Get())
+}
+
 // Reload 重新从文件加载配置（热重载）
 func Reload() error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	cfg, err := load()
 	if err != nil {
 		return err
 	}
 	globalConfig.Store(cfg)
+	configInitErr = nil
 	return nil
 }
 
-// Save 保存配置到文件（先写临时文件再 rename，防数据丢失）
+// Save 原子保存配置，并发布与调用方隔离的不可变快照。
 func Save(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
 	configMu.Lock()
 	defer configMu.Unlock()
 
 	filePath := configFilePath()
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create config dir: %w", err)
-	}
-
-	data, err := toml.Marshal(cfg)
+	snapshot := cloneConfig(cfg)
+	data, err := toml.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-
-	tmpFile := filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp config: %w", err)
+	if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	if err := os.Rename(tmpFile, filePath); err != nil {
-		os.Remove(tmpFile)
-		return fmt.Errorf("failed to rename config file: %w", err)
-	}
-
-	// 更新内存中的配置
-	globalConfig.Store(cfg)
+	globalConfig.Store(snapshot)
+	configInitErr = nil
 	return nil
+}
+
+func cloneConfig(cfg *Config) *Config {
+	if cfg == nil {
+		return nil
+	}
+	cloned := *cfg
+	cloned.Models = append([]ModelConfig(nil), cfg.Models...)
+	for i := range cloned.Models {
+		cloned.Models[i].UseFor = append([]string(nil), cfg.Models[i].UseFor...)
+	}
+	cloned.Server.AllowOrigins = append([]string(nil), cfg.Server.AllowOrigins...)
+	cloned.Server.TrustedProxies = append([]string(nil), cfg.Server.TrustedProxies...)
+	cloned.OpenAIAPI.APIKeys = append([]string(nil), cfg.OpenAIAPI.APIKeys...)
+	cloned.Agents.Items = append([]AgentConfig(nil), cfg.Agents.Items...)
+	for i := range cloned.Agents.Items {
+		cloned.Agents.Items[i].Tools = append([]string(nil), cfg.Agents.Items[i].Tools...)
+		if cfg.Agents.Items[i].SSH != nil {
+			ssh := *cfg.Agents.Items[i].SSH
+			cloned.Agents.Items[i].SSH = &ssh
+		}
+	}
+	cloned.Roundtable.Members = append([]TeamMember(nil), cfg.Roundtable.Members...)
+	cloned.Deep.ExtraTools = append([]string(nil), cfg.Deep.ExtraTools...)
+	cloned.Tools.MCPServers = append([]MCPServer(nil), cfg.Tools.MCPServers...)
+	for i := range cloned.Tools.MCPServers {
+		cloned.Tools.MCPServers[i].Args = append([]string(nil), cfg.Tools.MCPServers[i].Args...)
+		if cfg.Tools.MCPServers[i].Env != nil {
+			cloned.Tools.MCPServers[i].Env = make(map[string]string, len(cfg.Tools.MCPServers[i].Env))
+			for key, value := range cfg.Tools.MCPServers[i].Env {
+				cloned.Tools.MCPServers[i].Env[key] = value
+			}
+		}
+	}
+	cloned.Tools.Approval.AutoApprove = append([]string(nil), cfg.Tools.Approval.AutoApprove...)
+	return &cloned
 }
 
 // EnsureDefaultModel 检查是否配置了默认模型，未配置时返回引导信息
@@ -627,11 +666,9 @@ func Unmarshal(filePath string, v any) error {
 
 // GenerateExample 生成示例配置文件
 func GenerateExample() error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	filePath := filepath.Join(appdata.Dir(), "config", "config.toml")
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("无法创建目录 %s: %w", dir, err)
-	}
 	exampleConfig := Config{
 		Models: []ModelConfig{
 			{
@@ -807,5 +844,5 @@ func GenerateExample() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filePath, data, 0644)
+	return atomicfile.WriteFile(filePath, data, 0644)
 }

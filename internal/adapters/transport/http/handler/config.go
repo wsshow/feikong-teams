@@ -35,10 +35,8 @@ const sensitivePassword = "***"
 // GetConfigHandler 获取配置（敏感字段脱敏）
 func GetConfigHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cfg := config.Get()
-
-		// 深拷贝并脱敏
-		resp := *cfg
+		resp := config.Snapshot()
+		cfg := resp
 
 		// 处理模型 APIKey：不返回真实密钥，仅标记是否已配置
 		models := make([]config.ModelConfig, len(cfg.Models))
