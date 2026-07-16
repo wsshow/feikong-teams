@@ -3,6 +3,7 @@ package filecron
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,6 +118,7 @@ func TestAddTaskValidation(t *testing.T) {
 		{name: "mutually exclusive", req: schedulerport.AddTaskRequest{Task: "do work", CronExpr: "* * * * *", ExecuteAt: time.Now().Add(time.Hour).Format(time.RFC3339)}, want: "mutually exclusive"},
 		{name: "invalid cron", req: schedulerport.AddTaskRequest{Task: "do work", CronExpr: "bad cron"}, want: "invalid cron expression"},
 		{name: "past time", req: schedulerport.AddTaskRequest{Task: "do work", ExecuteAt: time.Now().Add(-time.Hour).Format(time.RFC3339)}, want: "must be in the future"},
+		{name: "large task", req: schedulerport.AddTaskRequest{Task: strings.Repeat("x", maxTaskDescriptionBytes+1), ExecuteAt: time.Now().Add(time.Hour).Format(time.RFC3339)}, want: "too large"},
 	}
 
 	for _, tt := range tests {
@@ -126,6 +128,84 @@ func TestAddTaskValidation(t *testing.T) {
 				t.Fatalf("AddTask error = %v, want containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestSchedulerStorageLimitsAndStartupValidation(t *testing.T) {
+	t.Run("task count", func(t *testing.T) {
+		s := newTestScheduler(t)
+		tasks := make([]domainschedule.Task, maxScheduledTasks)
+		for i := range tasks {
+			tasks[i] = domainschedule.Task{
+				ID:     fmt.Sprintf("task-%d", i),
+				Task:   "task",
+				Status: domainschedule.StatusPending,
+			}
+		}
+		if err := s.saveTasks(&domainschedule.TaskList{Tasks: tasks}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := s.AddTask(context.Background(), schedulerport.AddTaskRequest{
+			Task:      "one more",
+			ExecuteAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+		})
+		if err == nil || !strings.Contains(err.Error(), "limit") {
+			t.Fatalf("AddTask() error = %v, want task limit", err)
+		}
+	})
+
+	t.Run("duplicate IDs", func(t *testing.T) {
+		baseDir := t.TempDir()
+		data := `{"tasks":[{"id":"duplicate","task":"one","status":"pending"},{"id":"duplicate","task":"two","status":"pending"}]}`
+		if err := os.WriteFile(filepath.Join(baseDir, "scheduled_tasks.json"), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewScheduler(baseDir); err == nil || !strings.Contains(err.Error(), "duplicate") {
+			t.Fatalf("NewScheduler() error = %v, want duplicate ID", err)
+		}
+	})
+
+	t.Run("oversized store", func(t *testing.T) {
+		baseDir := t.TempDir()
+		path := filepath.Join(baseDir, "scheduled_tasks.json")
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Truncate(maxTaskStoreBytes + 1); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewScheduler(baseDir); err == nil || !strings.Contains(err.Error(), "size limit") {
+			t.Fatalf("NewScheduler() error = %v, want size limit", err)
+		}
+	})
+}
+
+func TestNewSchedulerCleansOnlyOrphanResultDirectories(t *testing.T) {
+	baseDir := t.TempDir()
+	resultsDir := filepath.Join(baseDir, "tasks")
+	if err := os.MkdirAll(filepath.Join(resultsDir, "active"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(resultsDir, "orphan"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"tasks":[{"id":"active","task":"active task","status":"pending"}]}`
+	if err := os.WriteFile(filepath.Join(baseDir, "scheduled_tasks.json"), []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewScheduler(baseDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(resultsDir, "active")); err != nil {
+		t.Fatalf("active result directory was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(resultsDir, "orphan")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("orphan result directory still exists: %v", err)
 	}
 }
 

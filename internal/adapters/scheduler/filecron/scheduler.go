@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,8 +42,12 @@ type Scheduler struct {
 }
 
 const (
-	maxConcurrentTasks = 5
-	taskResultTTL      = 7 * 24 * time.Hour
+	maxConcurrentTasks            = 5
+	maxScheduledTasks             = 1_000
+	maxTaskDescriptionBytes       = 16 << 10
+	maxTaskStoreBytes       int64 = 32 << 20
+	maxResultDirectories          = 10_000
+	taskResultTTL                 = 7 * 24 * time.Hour
 )
 
 // NewScheduler 创建基于文件存储和 cron 计算的调度器。
@@ -63,7 +68,8 @@ func NewScheduler(baseDir string) (*Scheduler, error) {
 
 	filePath := filepath.Join(absPath, "scheduled_tasks.json")
 
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	info, statErr := os.Stat(filePath)
+	if os.IsNotExist(statErr) {
 		emptyList := domainschedule.TaskList{Tasks: []domainschedule.Task{}}
 		data, err := json.MarshalIndent(emptyList, "", "  ")
 		if err != nil {
@@ -72,16 +78,26 @@ func NewScheduler(baseDir string) (*Scheduler, error) {
 		if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
 			return nil, fmt.Errorf("failed to create task list file: %w", err)
 		}
+	} else if statErr != nil {
+		return nil, fmt.Errorf("failed to inspect task list file: %w", statErr)
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("task list path is not a regular file")
 	}
 
-	return &Scheduler{
+	scheduler := &Scheduler{
 		filePath:    filePath,
 		resultsDir:  resultsDir,
 		stopCh:      make(chan struct{}),
 		cronParser:  cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
 		semaphore:   make(chan struct{}, maxConcurrentTasks),
 		cancelFuncs: make(map[string]context.CancelFunc),
-	}, nil
+	}
+	tasks, err := scheduler.loadTasks()
+	if err != nil {
+		return nil, fmt.Errorf("load scheduler task list: %w", err)
+	}
+	scheduler.cleanupOrphanTaskDirs(tasks)
+	return scheduler, nil
 }
 
 // generateTaskID 生成基于 UUID v4 的任务 ID
@@ -140,6 +156,9 @@ func (s *Scheduler) AddTask(ctx context.Context, req schedulerport.AddTaskReques
 	if err != nil {
 		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
 	}
+	if len(tasks.Tasks) >= maxScheduledTasks {
+		return nil, apperror.New(apperror.CodeResourceLimit, "scheduled task limit reached")
+	}
 	tasks.Tasks = append(tasks.Tasks, task)
 	if err := s.saveTasks(tasks); err != nil {
 		return nil, apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
@@ -188,6 +207,9 @@ func (s *Scheduler) UpdateTask(ctx context.Context, taskID string, req scheduler
 func (s *Scheduler) applyTaskSchedule(task *domainschedule.Task, req schedulerport.AddTaskRequest) error {
 	if strings.TrimSpace(req.Task) == "" {
 		return apperror.New(apperror.CodeInvalidArgument, "task description is required")
+	}
+	if len([]byte(strings.TrimSpace(req.Task))) > maxTaskDescriptionBytes {
+		return apperror.New(apperror.CodeResourceLimit, "task description is too large")
 	}
 	if req.CronExpr == "" && req.ExecuteAt == "" {
 		return apperror.New(apperror.CodeInvalidArgument, "must provide cron_expr (recurring) or execute_at (one-time)")
@@ -291,7 +313,17 @@ func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 	if !validTaskID(taskID) {
 		return apperror.New(apperror.CodeInvalidArgument, "invalid task ID")
 	}
+	if err := s.deleteTaskMetadata(taskID); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(s.taskDir(taskID)); err != nil {
+		// 任务表是权威状态；目录清理失败留待下次启动回收，避免删除接口变成非幂等。
+		log.Printf("[scheduler] cleanup deleted task directory failed: taskID=%s, err=%v", taskID, err)
+	}
+	return nil
+}
 
+func (s *Scheduler) deleteTaskMetadata(taskID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -319,9 +351,6 @@ func (s *Scheduler) DeleteTask(ctx context.Context, taskID string) error {
 		return apperror.New(apperror.CodeNotFound, "task not found")
 	}
 
-	if err := os.RemoveAll(s.taskDir(taskID)); err != nil {
-		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
-	}
 	tasks.Tasks = remaining
 	if err := s.saveTasks(tasks); err != nil {
 		return apperror.Wrap(apperror.CodeUnavailable, "scheduler storage unavailable", err)
@@ -651,16 +680,16 @@ func (s *Scheduler) executeTask(ctx context.Context, parentCtx context.Context, 
 // cleanupExpiredTasks 清理超过 TTL 的已完成/失败/取消的一次性任务
 func (s *Scheduler) cleanupExpiredTasks() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	tasks, err := s.loadTasks()
 	if err != nil {
+		s.mu.Unlock()
 		return
 	}
 
 	cutoff := time.Now().Add(-taskResultTTL)
-	var remaining []domainschedule.Task
-	removed := 0
+	remaining := make([]domainschedule.Task, 0, len(tasks.Tasks))
+	removedIDs := make([]string, 0)
 
 	for _, t := range tasks.Tasks {
 		if t.Status == domainschedule.StatusCompleted || t.Status == domainschedule.StatusFailed || t.Status == domainschedule.StatusCancelled {
@@ -669,22 +698,56 @@ func (s *Scheduler) cleanupExpiredTasks() {
 				refTime = &t.CreatedAt
 			}
 			if refTime.Before(cutoff) {
-				// 删除任务目录
-				if err := os.RemoveAll(s.taskDir(t.ID)); err != nil {
-					log.Printf("[scheduler] cleanup task dir failed: taskID=%s, err=%v", t.ID, err)
-				}
-				removed++
+				removedIDs = append(removedIDs, t.ID)
 				continue
 			}
 		}
 		remaining = append(remaining, t)
 	}
 
-	if removed > 0 {
-		log.Printf("[scheduler] cleaned up %d expired tasks", removed)
+	if len(removedIDs) > 0 {
 		tasks.Tasks = remaining
 		if err := s.saveTasks(tasks); err != nil {
+			s.mu.Unlock()
 			log.Printf("[scheduler] save after cleanup failed: %v", err)
+			return
+		}
+	}
+	s.mu.Unlock()
+
+	for _, taskID := range removedIDs {
+		if err := os.RemoveAll(s.taskDir(taskID)); err != nil {
+			log.Printf("[scheduler] cleanup task dir failed: taskID=%s, err=%v", taskID, err)
+		}
+	}
+	if len(removedIDs) > 0 {
+		log.Printf("[scheduler] cleaned up %d expired tasks", len(removedIDs))
+	}
+}
+
+func (s *Scheduler) cleanupOrphanTaskDirs(tasks *domainschedule.TaskList) {
+	active := make(map[string]struct{}, len(tasks.Tasks))
+	for _, task := range tasks.Tasks {
+		active[task.ID] = struct{}{}
+	}
+	entries, err := os.ReadDir(s.resultsDir)
+	if err != nil {
+		log.Printf("[scheduler] list result directories for cleanup failed: %v", err)
+		return
+	}
+	if len(entries) > maxResultDirectories {
+		log.Printf("[scheduler] skip orphan cleanup: too many result entries (%d)", len(entries))
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !validTaskID(entry.Name()) {
+			continue
+		}
+		if _, exists := active[entry.Name()]; exists {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(s.resultsDir, entry.Name())); err != nil {
+			log.Printf("[scheduler] cleanup orphan task directory failed: taskID=%s, err=%v", entry.Name(), err)
 		}
 	}
 }
@@ -727,9 +790,33 @@ func (s *Scheduler) loadTaskByID(taskID string) (*domainschedule.Task, error) {
 }
 
 func (s *Scheduler) loadTasks() (*domainschedule.TaskList, error) {
-	data, err := os.ReadFile(s.filePath)
+	file, err := os.Open(s.filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read task list: %w", err)
+	}
+	info, statErr := file.Stat()
+	if statErr != nil {
+		file.Close()
+		return nil, fmt.Errorf("failed to inspect task list: %w", statErr)
+	}
+	if !info.Mode().IsRegular() {
+		file.Close()
+		return nil, fmt.Errorf("task list is not a regular file")
+	}
+	if info.Size() > maxTaskStoreBytes {
+		file.Close()
+		return nil, fmt.Errorf("task list exceeds size limit")
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxTaskStoreBytes+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read task list: %w", readErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("failed to close task list: %w", closeErr)
+	}
+	if int64(len(data)) > maxTaskStoreBytes {
+		return nil, fmt.Errorf("task list exceeds size limit")
 	}
 
 	var list domainschedule.TaskList
@@ -737,19 +824,63 @@ func (s *Scheduler) loadTasks() (*domainschedule.TaskList, error) {
 		return nil, fmt.Errorf("failed to parse task list: %w", err)
 	}
 
+	if list.Tasks == nil {
+		list.Tasks = []domainschedule.Task{}
+	}
+	if err := s.validateTaskList(&list); err != nil {
+		return nil, err
+	}
 	return &list, nil
 }
 
 func (s *Scheduler) saveTasks(list *domainschedule.TaskList) error {
+	if list == nil {
+		return fmt.Errorf("task list is nil")
+	}
+	if list.Tasks == nil {
+		list.Tasks = []domainschedule.Task{}
+	}
+	if err := s.validateTaskList(list); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal task list: %w", err)
+	}
+	if int64(len(data)) > maxTaskStoreBytes {
+		return fmt.Errorf("task list exceeds size limit")
 	}
 
 	if err := atomicfile.WriteFile(s.filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write task list: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Scheduler) validateTaskList(list *domainschedule.TaskList) error {
+	if len(list.Tasks) > maxScheduledTasks {
+		return fmt.Errorf("task count exceeds limit")
+	}
+	seen := make(map[string]struct{}, len(list.Tasks))
+	for _, task := range list.Tasks {
+		if !validTaskID(task.ID) {
+			return fmt.Errorf("task has invalid ID")
+		}
+		if _, exists := seen[task.ID]; exists {
+			return fmt.Errorf("task list contains duplicate ID %q", task.ID)
+		}
+		seen[task.ID] = struct{}{}
+		if !domainschedule.ValidStatus(task.Status) {
+			return fmt.Errorf("task %q has invalid status", task.ID)
+		}
+		if strings.TrimSpace(task.Task) == "" {
+			return fmt.Errorf("task %q has an empty description", task.ID)
+		}
+		if len([]byte(task.Task)) > maxTaskDescriptionBytes {
+			return fmt.Errorf("task %q description exceeds size limit", task.ID)
+		}
+	}
 	return nil
 }
 
