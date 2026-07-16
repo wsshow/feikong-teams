@@ -141,13 +141,15 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 				}
 				stream := rt.Streams.Get(sid)
 				if stream != nil {
-					ok, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
+					ok, subID, truncated := stream.SubscribeChecked(taskstream.FuncSubscriber(func(event taskstream.Event) error {
 						return writeJSON(event)
 					}), wsMsg.Offset)
 					if ok {
 						// 成功重新绑定并回放事件
 						sm.attachSubscription(sid, stream, subID)
 						log.Printf("task resumed: session=%s", sid)
+					} else if truncated {
+						_ = writeJSON(errorEventPayload(sid, "stream replay window exceeded; reload the session snapshot"))
 					} else {
 						_ = writeJSON(map[string]any{
 							"type":       events.NotifyProcessingEnd,

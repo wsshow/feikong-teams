@@ -508,6 +508,10 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
+		if !stream.CanReplay(offset) {
+			Fail(c, http.StatusConflict, "stream replay window exceeded; reload the session snapshot")
+			return
+		}
 
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
@@ -536,6 +540,9 @@ func (rt *Runtime) StreamSubscribeHandler() gin.HandlerFunc {
 		writePending := func() bool {
 			for {
 				page := stream.EventsPage(offset, 1000)
+				if page.ReplayTruncated {
+					return false
+				}
 				for _, event := range page.Events {
 					if !writeSSE(event) {
 						return false
@@ -660,18 +667,21 @@ func (rt *Runtime) StreamSnapshotHandler() gin.HandlerFunc {
 		}
 
 		result := gin.H{
-			"session_id":      sessionID,
-			"status":          stream.Status(),
-			"has_task":        true,
-			"mode":            stream.Mode(),
-			"event_count":     page.EventCount,
-			"next_offset":     page.NextOffset,
-			"more_available":  page.MoreAvailable,
-			"queue":           stream.QueueSnapshot(),
-			"events":          items,
-			"snapshot_offset": page.SnapshotOffset,
-			"limit":           limit,
-			"created_at":      stream.CreatedAt(),
+			"session_id":       sessionID,
+			"status":           stream.Status(),
+			"has_task":         true,
+			"mode":             stream.Mode(),
+			"event_count":      page.EventCount,
+			"retained_count":   page.RetainedEventCount,
+			"earliest_offset":  page.EarliestOffset,
+			"replay_truncated": page.ReplayTruncated,
+			"next_offset":      page.NextOffset,
+			"more_available":   page.MoreAvailable,
+			"queue":            stream.QueueSnapshot(),
+			"events":           items,
+			"snapshot_offset":  page.SnapshotOffset,
+			"limit":            limit,
+			"created_at":       stream.CreatedAt(),
 		}
 		if doneAt := stream.DoneAt(); !doneAt.IsZero() {
 			result["finished_at"] = doneAt
@@ -851,14 +861,17 @@ func (rt *Runtime) StreamEventsHandler() gin.HandlerFunc {
 		limit := parseSnapshotLimit(c.Query("limit"))
 		page := stream.EventsPage(offset, limit)
 		OK(c, gin.H{
-			"session_id":     sessionID,
-			"status":         stream.Status(),
-			"events":         page.Events,
-			"event_count":    page.EventCount,
-			"next_offset":    page.NextOffset,
-			"more_available": page.MoreAvailable,
-			"limit":          limit,
-			"done":           stream.IsDone(),
+			"session_id":       sessionID,
+			"status":           stream.Status(),
+			"events":           page.Events,
+			"event_count":      page.EventCount,
+			"retained_count":   page.RetainedEventCount,
+			"earliest_offset":  page.EarliestOffset,
+			"replay_truncated": page.ReplayTruncated,
+			"next_offset":      page.NextOffset,
+			"more_available":   page.MoreAvailable,
+			"limit":            limit,
+			"done":             stream.IsDone(),
 		})
 	}
 }

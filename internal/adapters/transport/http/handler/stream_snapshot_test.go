@@ -87,6 +87,39 @@ func TestCompletedStreamSubscribeFromZeroReplaysEventsBeforeDone(t *testing.T) {
 	}
 }
 
+func TestStreamEndpointsReportExpiredReplayWindow(t *testing.T) {
+	rt := newTestRuntime(t)
+	gin.SetMode(gin.TestMode)
+	stream := rt.Streams.Register(taskstream.StreamConfig{
+		SessionID:             "session-1",
+		Cancel:                func() {},
+		MaxRetainedEvents:     2,
+		MaxRetainedEventBytes: 1 << 20,
+	})
+	for i := 0; i < 3; i++ {
+		stream.Publish(taskstream.Event{"type": "system_notice", "index": i})
+	}
+
+	router := gin.New()
+	router.GET("/stream/snapshot/:sessionID", rt.StreamSnapshotHandler())
+	router.GET("/stream/subscribe/:sessionID", rt.StreamSubscribeHandler())
+
+	snapshot := performRequest(router, http.MethodGet, "/stream/snapshot/session-1?offset=0&limit=10", nil)
+	if snapshot.Code != http.StatusOK {
+		t.Fatalf("snapshot status = %d: %s", snapshot.Code, snapshot.Body.String())
+	}
+	var got streamSnapshotResponse
+	decodeRawData(t, snapshot, &got)
+	if !got.ReplayTruncated || got.EarliestOffset != 1 || got.EventCount != 3 || got.RetainedCount != 2 {
+		t.Fatalf("snapshot metadata = %#v", got)
+	}
+
+	subscribe := performRequest(router, http.MethodGet, "/stream/subscribe/session-1?offset=0", nil)
+	if subscribe.Code != http.StatusConflict {
+		t.Fatalf("subscribe status = %d, want 409: %s", subscribe.Code, subscribe.Body.String())
+	}
+}
+
 func TestStreamEndpointsRejectInvalidOffsets(t *testing.T) {
 	rt := newTestRuntime(t)
 	gin.SetMode(gin.TestMode)
@@ -147,9 +180,12 @@ func TestStreamEventsHandlerPaginatesBufferedEvents(t *testing.T) {
 }
 
 type streamSnapshotResponse struct {
-	EventCount     int              `json:"event_count"`
-	NextOffset     uint64           `json:"next_offset"`
-	SnapshotOffset uint64           `json:"snapshot_offset"`
-	MoreAvailable  bool             `json:"more_available"`
-	Events         []map[string]any `json:"events"`
+	EventCount      int              `json:"event_count"`
+	RetainedCount   int              `json:"retained_count"`
+	EarliestOffset  uint64           `json:"earliest_offset"`
+	ReplayTruncated bool             `json:"replay_truncated"`
+	NextOffset      uint64           `json:"next_offset"`
+	SnapshotOffset  uint64           `json:"snapshot_offset"`
+	MoreAvailable   bool             `json:"more_available"`
+	Events          []map[string]any `json:"events"`
 }

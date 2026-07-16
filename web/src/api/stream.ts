@@ -23,6 +23,9 @@ export interface StreamSnapshot {
   mode?: string;
   agent_name?: string;
   event_count: number;
+  retained_count?: number;
+  earliest_offset?: number;
+  replay_truncated?: boolean;
   next_offset: number;
   snapshot_offset?: number;
   more_available?: boolean;

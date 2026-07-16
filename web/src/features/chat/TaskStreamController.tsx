@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { APIError, isAbortError } from "@/api/client";
+import { getSession } from "@/api/sessions";
 import { streamSnapshot, streamStatus, subscribeStream, type StreamSnapshot } from "@/api/stream";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions, type AppDispatch } from "@/app/store";
@@ -114,6 +115,10 @@ async function followTaskStream(
       }
     } catch (error) {
       if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
+      if (error instanceof APIError && error.status === 409) {
+        clearStreamOffset(sessionID);
+        fallbackOffset = undefined;
+      }
     }
 
     if (!await shouldReconnect(sessionID, dispatch)) return;
@@ -174,6 +179,12 @@ async function replayStreamSnapshot(
   for (;;) {
     if (!canConsume()) return undefined;
     const snapshot = await streamSnapshot(sessionID, { offset: nextOffset, limit: 1000 });
+    if (snapshot.replay_truncated) {
+      const detail = await getSession(sessionID);
+      if (!canConsume()) return undefined;
+      dispatch(chatActions.setSessionDetail(detail));
+      nextOffset = Number(snapshot.earliest_offset || snapshot.snapshot_offset || 0);
+    }
     const appliedOffset = applyStreamSnapshot(sessionID, snapshot, dispatch, canConsume);
     if (appliedOffset === undefined) return undefined;
     if (!snapshot.more_available || appliedOffset <= nextOffset) return appliedOffset;

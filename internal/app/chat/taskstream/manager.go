@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	defaultMaxRetainedEvents     = 4096
+	defaultMaxRetainedEventBytes = 8 << 20
+)
+
 // Manager 全局任务流注册表，管理所有活跃和已完成的任务流。
 type Manager struct {
 	mu            sync.Mutex
@@ -21,6 +26,12 @@ func NewManager() *Manager {
 }
 
 func (m *Manager) newStream(cfg StreamConfig) *Stream {
+	if cfg.MaxRetainedEvents <= 0 {
+		cfg.MaxRetainedEvents = defaultMaxRetainedEvents
+	}
+	if cfg.MaxRetainedEventBytes <= 0 {
+		cfg.MaxRetainedEventBytes = defaultMaxRetainedEventBytes
+	}
 	return &Stream{
 		config:      cfg,
 		status:      "processing",

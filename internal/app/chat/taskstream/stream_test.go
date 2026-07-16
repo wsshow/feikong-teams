@@ -1,6 +1,7 @@
 package taskstream
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -345,6 +346,48 @@ func TestEventPagesReturnAtomicPaginationMetadata(t *testing.T) {
 	beyond := s.EventsPage(100, 2)
 	if beyond.SnapshotOffset != 5 || beyond.NextOffset != 5 || len(beyond.Events) != 0 || beyond.MoreAvailable {
 		t.Fatalf("beyond-tail page = %#v", beyond)
+	}
+}
+
+func TestEventReplayWindowDropsOldestEvents(t *testing.T) {
+	s := NewManager().Register(StreamConfig{
+		SessionID:             "bounded-events",
+		MaxRetainedEvents:     3,
+		MaxRetainedEventBytes: 1 << 20,
+	})
+	for i := 0; i < 5; i++ {
+		s.Publish(Event{"type": "message", "index": i})
+	}
+
+	page := s.EventsPage(0, 10)
+	if !page.ReplayTruncated || page.EventCount != 5 || page.RetainedEventCount != 3 {
+		t.Fatalf("page metadata = %#v", page)
+	}
+	if page.EarliestOffset != 2 || page.SnapshotOffset != 2 || page.NextOffset != 5 || page.MoreAvailable {
+		t.Fatalf("page offsets = %#v", page)
+	}
+	if len(page.Events) != 3 || page.Events[0].ID != 2 || page.Events[2].ID != 4 {
+		t.Fatalf("retained events = %#v", page.Events)
+	}
+	if s.CanReplay(1) || !s.CanReplay(2) {
+		t.Fatal("CanReplay did not follow the retained window")
+	}
+	if ok, _, truncated := s.SubscribeChecked(FuncSubscriber(func(Event) error { return nil }), 1); ok || !truncated {
+		t.Fatalf("SubscribeChecked() = (%v, %v), want truncated", ok, truncated)
+	}
+}
+
+func TestOversizedEventIsNotRetained(t *testing.T) {
+	s := NewManager().Register(StreamConfig{
+		SessionID:             "oversized-event",
+		MaxRetainedEvents:     10,
+		MaxRetainedEventBytes: 32,
+	})
+	s.Publish(Event{"type": "message", "content": strings.Repeat("x", 64)})
+
+	page := s.EventsPage(0, 10)
+	if !page.ReplayTruncated || page.EventCount != 1 || page.RetainedEventCount != 0 || page.EarliestOffset != 1 {
+		t.Fatalf("page = %#v", page)
 	}
 }
 

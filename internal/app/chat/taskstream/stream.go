@@ -1,7 +1,7 @@
 // Package taskstream 提供统一的任务事件流管理，支持 Push（WebSocket）和 Pull（SSE）两种消费模式。
 //
 // 设计原则：
-//   - 事件日志：所有事件带递增 ID 持久保存，支持任意 offset 重连
+//   - 事件日志：事件带递增 ID 并保留有界回放窗口，过期 offset 由调用方重载快照
 //   - Push 订阅：多个 Subscriber（如多端 WS 连接），事件实时推送
 //   - Pull 监听：多个 Watcher（如 SSE 连接），通过通知+轮询获取事件
 //   - 连接分离：断连只解绑订阅者，不影响后台任务
@@ -9,6 +9,7 @@
 package taskstream
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -45,7 +46,7 @@ func (e Event) WithContentParts(parts []domainmessage.ContentPart) Event {
 	return e
 }
 
-// IndexedEvent 带递增 ID 的事件，支持 offset 断点续传
+// IndexedEvent 带递增 ID 的事件，支持回放窗口内的 offset 断点续传
 type IndexedEvent struct {
 	ID   uint64 `json:"id"`
 	Data Event  `json:"data"`
@@ -53,11 +54,14 @@ type IndexedEvent struct {
 
 // EventPage 是一次原子读取的事件分页结果。
 type EventPage struct {
-	Events         []IndexedEvent
-	EventCount     int
-	SnapshotOffset uint64
-	NextOffset     uint64
-	MoreAvailable  bool
+	Events             []IndexedEvent
+	EventCount         int
+	RetainedEventCount int
+	EarliestOffset     uint64
+	SnapshotOffset     uint64
+	NextOffset         uint64
+	MoreAvailable      bool
+	ReplayTruncated    bool
 }
 
 // SubscriptionID 标识一个 Push 订阅者。
@@ -180,6 +184,9 @@ type StreamConfig struct {
 	Cancel     func()        // 取消任务的函数
 	CleanupTTL time.Duration // 任务完成后保留数据的时间（0=立即清理）
 
+	MaxRetainedEvents     int // 事件回放窗口的最大事件数
+	MaxRetainedEventBytes int // 事件回放窗口的最大估算字节数
+
 	// 元数据（可选）
 	Mode      string // 协作模式
 	AgentName string // 智能体名称
@@ -193,9 +200,12 @@ type Stream struct {
 	mu     sync.Mutex
 	config StreamConfig
 
-	// 事件日志（带递增 ID，支持断点续传）
-	events []IndexedEvent
-	nextID uint64
+	// 有界事件日志（带递增 ID，支持窗口内断点续传）
+	events         []IndexedEvent
+	eventSizes     []int
+	retainedBytes  int
+	retainedFromID uint64
+	nextID         uint64
 
 	// Push 订阅者（多个，如多端 WS 连接）
 	subs    map[SubscriptionID]*streamSubscription
@@ -233,12 +243,12 @@ func (s *Stream) Publish(event Event) {
 		return
 	}
 
-	// 写入事件日志
+	// 写入有界事件日志
 	id := s.nextID
 	s.nextID++
 	storedEvent := cloneEvent(event)
 	storedEvent["stream_event_id"] = id
-	s.events = append(s.events, IndexedEvent{ID: id, Data: storedEvent})
+	s.retainEventLocked(IndexedEvent{ID: id, Data: storedEvent})
 
 	// 入队后立即释放任务锁，网络写入由订阅者各自的 worker 串行完成。
 	var overflowed []*streamSubscription
@@ -280,13 +290,23 @@ func (s *Stream) CurrentTurn() (string, string) {
 // 返回 (false, 0) 表示流已结束/过期，调用方需自行通知客户端。
 // 返回 (true, id) 表示绑定成功，调用方应保存 id 用于后续 Unsubscribe。
 func (s *Stream) Subscribe(sub Subscriber, offset uint64) (bool, SubscriptionID) {
+	ok, id, _ := s.SubscribeChecked(sub, offset)
+	return ok, id
+}
+
+// SubscribeChecked 额外返回请求的 offset 是否已经超出回放窗口。
+func (s *Stream) SubscribeChecked(sub Subscriber, offset uint64) (bool, SubscriptionID, bool) {
 	if sub == nil {
-		return false, 0
+		return false, 0, false
 	}
 	s.mu.Lock()
 	if s.done {
 		s.mu.Unlock()
-		return false, 0
+		return false, 0, false
+	}
+	if offset < s.retainedFromID {
+		s.mu.Unlock()
+		return false, 0, true
 	}
 
 	replay := s.eventsSinceLocked(offset)
@@ -303,25 +323,25 @@ func (s *Stream) Subscribe(sub Subscriber, offset uint64) (bool, SubscriptionID)
 	for _, event := range replay {
 		if subscription.state.Load() == 1 || sub.WriteEvent(event.Data) != nil {
 			s.removeSubscription(subID, subscription)
-			return false, 0
+			return false, 0, false
 		}
 	}
 	if subscription.state.Load() == 1 {
-		return false, 0
+		return false, 0, false
 	}
 	if subscription.state.Load() == 2 {
 		for event := range subscription.queue {
 			if sub.WriteEvent(event) != nil {
 				subscription.abortNow()
-				return false, 0
+				return false, 0, false
 			}
 		}
-		return false, 0
+		return false, 0, false
 	}
 	go subscription.run(func() {
 		s.removeSubscription(subID, subscription)
 	})
-	return true, subID
+	return true, subID, false
 }
 
 // Unsubscribe 解绑 Push 订阅者。断连只影响当前订阅，不取消后台任务。
@@ -391,7 +411,7 @@ func (s *Stream) EventsPage(offset uint64, limit int) EventPage {
 func (s *Stream) TailEventsPage(limit int) EventPage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	offset := uint64(0)
+	offset := s.retainedFromID
 	if limit > 0 && len(s.events) > limit {
 		offset = s.events[len(s.events)-limit].ID
 	}
@@ -400,7 +420,17 @@ func (s *Stream) TailEventsPage(limit int) EventPage {
 
 func (s *Stream) eventsPageLocked(offset uint64, limit int) EventPage {
 	count := len(s.events)
-	page := EventPage{EventCount: count, SnapshotOffset: offset}
+	page := EventPage{
+		EventCount:         int(s.nextID),
+		RetainedEventCount: count,
+		EarliestOffset:     s.retainedFromID,
+		SnapshotOffset:     offset,
+	}
+	if offset < s.retainedFromID {
+		page.ReplayTruncated = true
+		offset = s.retainedFromID
+		page.SnapshotOffset = offset
+	}
 	if offset > s.nextID {
 		page.SnapshotOffset = s.nextID
 		page.NextOffset = s.nextID
@@ -421,11 +451,84 @@ func (s *Stream) eventsPageLocked(offset uint64, limit int) EventPage {
 }
 
 func (s *Stream) eventsSinceLocked(offset uint64) []IndexedEvent {
+	if offset < s.retainedFromID {
+		offset = s.retainedFromID
+	}
 	start := sort.Search(len(s.events), func(i int) bool { return s.events[i].ID >= offset })
 	if start >= len(s.events) {
 		return nil
 	}
 	return cloneIndexedEvents(s.events[start:])
+}
+
+func (s *Stream) retainEventLocked(event IndexedEvent) {
+	size := estimateEventSize(event.Data)
+	maxBytes := s.config.MaxRetainedEventBytes
+	if maxBytes > 0 && size > maxBytes {
+		s.events = nil
+		s.eventSizes = nil
+		s.retainedBytes = 0
+		s.retainedFromID = s.nextID
+		return
+	}
+	s.events = append(s.events, event)
+	s.eventSizes = append(s.eventSizes, size)
+	s.retainedBytes += size
+	maxEvents := s.config.MaxRetainedEvents
+	for len(s.events) > 0 && (maxEvents > 0 && len(s.events) > maxEvents || maxBytes > 0 && s.retainedBytes > maxBytes) {
+		s.retainedBytes -= s.eventSizes[0]
+		s.events[0] = IndexedEvent{}
+		s.eventSizes[0] = 0
+		s.events = s.events[1:]
+		s.eventSizes = s.eventSizes[1:]
+	}
+	if len(s.events) > 0 {
+		s.retainedFromID = s.events[0].ID
+	} else {
+		s.retainedFromID = s.nextID
+	}
+}
+
+func estimateEventSize(event Event) int {
+	size := 0
+	for key, value := range event {
+		size += len(key) + estimateEventValueSize(value)
+	}
+	return size
+}
+
+func estimateEventValueSize(value any) int {
+	switch typed := value.(type) {
+	case nil:
+		return 0
+	case string:
+		return len(typed)
+	case []byte:
+		return len(typed)
+	case Event:
+		return estimateEventSize(typed)
+	case map[string]any:
+		return estimateEventSize(Event(typed))
+	case []any:
+		size := 0
+		for _, item := range typed {
+			size += estimateEventValueSize(item)
+		}
+		return size
+	default:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return 64
+		}
+		return len(encoded)
+	}
+}
+
+// CanReplay 返回指定 offset 是否仍在当前内存回放窗口内。
+func (s *Stream) CanReplay(offset uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return offset >= s.retainedFromID
 }
 
 func cloneIndexedEvents(events []IndexedEvent) []IndexedEvent {
@@ -979,5 +1082,5 @@ func (s *Stream) InterruptCh() chan any {
 func (s *Stream) EventCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.events)
+	return int(s.nextID)
 }
