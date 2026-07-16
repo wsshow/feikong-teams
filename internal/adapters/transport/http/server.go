@@ -3,8 +3,11 @@ package httpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	modelproviders "fkteams/internal/adapters/model/providers"
@@ -48,6 +51,9 @@ type httpService struct {
 	scheduler     *bootstrapservices.SchedulerService
 	runtime       *handler.Runtime
 	server        *http.Server // HTTP 服务实例
+	listener      net.Listener
+	serveDone     chan error
+	listen        func(network, address string) (net.Listener, error)
 }
 
 // Name 返回服务名称
@@ -95,14 +101,12 @@ func (s *httpService) Start(ctx context.Context) error {
 		h, err = router.InitWithRuntime(s.state, s.runtime)
 	}
 	if err != nil {
+		s.runtime.Close()
 		return fmt.Errorf("init router: %w", err)
-	}
-	if err := s.runtime.Start(ctx); err != nil {
-		return fmt.Errorf("start HTTP runtime: %w", err)
 	}
 
 	s.server = &http.Server{
-		Addr:           fmt.Sprintf("%s:%d", s.host, port),
+		Addr:           net.JoinHostPort(s.host, strconv.Itoa(port)),
 		Handler:        h,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   60 * time.Second,
@@ -110,10 +114,31 @@ func (s *httpService) Start(ctx context.Context) error {
 	}
 	s.server.RegisterOnShutdown(s.runtime.Connections.CloseAllWebSockets)
 
+	listen := s.listen
+	if listen == nil {
+		listen = net.Listen
+	}
+	listener, err := listen("tcp", s.server.Addr)
+	if err != nil {
+		s.runtime.Close()
+		return fmt.Errorf("listen on %s: %w", s.server.Addr, err)
+	}
+	s.listener = listener
+	s.server.Addr = listener.Addr().String()
+	if err := s.runtime.Start(ctx); err != nil {
+		_ = listener.Close()
+		s.runtime.Close()
+		return fmt.Errorf("start HTTP runtime: %w", err)
+	}
+
+	s.serveDone = make(chan error, 1)
 	go func() {
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		err := s.server.Serve(listener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("[http] server error: %v", err)
 		}
+		s.serveDone <- err
+		close(s.serveDone)
 	}()
 
 	log.Printf("[http] 服务运行在 [%s]", s.server.Addr)
@@ -133,7 +158,21 @@ func (s *httpService) Stop(ctx context.Context) error {
 	defer cancel()
 
 	if err := s.server.Shutdown(shutdownCtx); err != nil {
+		closeErr := s.server.Close()
+		if closeErr != nil {
+			return fmt.Errorf("http shutdown error: %w", errors.Join(err, closeErr))
+		}
 		return fmt.Errorf("http shutdown error: %w", err)
+	}
+	if s.serveDone != nil {
+		select {
+		case err := <-s.serveDone:
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return fmt.Errorf("http serve error: %w", err)
+			}
+		case <-shutdownCtx.Done():
+			return fmt.Errorf("wait for HTTP server stop: %w", shutdownCtx.Err())
+		}
 	}
 	return nil
 }
