@@ -168,11 +168,16 @@ func (rt *Runtime) InitializationError() error {
 
 // Close 停止后台任务并取消仍在运行的流。
 func (rt *Runtime) Close() {
-	if rt == nil || rt.Streams == nil {
+	if rt == nil {
 		return
 	}
-	rt.Streams.StopCleanup()
-	rt.Streams.CancelAll()
+	if rt.Streams != nil {
+		rt.Streams.StopCleanup()
+		rt.Streams.CancelAll()
+	}
+	if rt.ChunkUploads != nil {
+		rt.ChunkUploads.Close()
+	}
 }
 
 func (rt *Runtime) recorder(sessionID string) *eventlog.HistoryRecorder {

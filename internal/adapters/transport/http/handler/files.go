@@ -4,12 +4,10 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
-	"fkteams/internal/app/appdata"
-	"fkteams/internal/runtime/atomicfile"
-	"fkteams/internal/runtime/log"
-	"fkteams/internal/runtime/pathguard"
+	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,9 +15,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
+	"fkteams/internal/app/appdata"
+	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/log"
+	"fkteams/internal/runtime/pathguard"
+
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // FileInfo 文件信息响应
@@ -31,7 +36,16 @@ type FileInfo struct {
 	ModTime int64  `json:"mod_time"`
 }
 
-const editableFileMaxBytes = 2 * 1024 * 1024
+const (
+	editableFileMaxBytes = 2 * 1024 * 1024
+	maxUploadFiles       = 32
+	maxUploadedFileBytes = 100 << 20
+	maxUploadIDBytes     = 128
+	maxUploadChunks      = 1024
+	maxUploadChunkBytes  = 64 << 20
+	maxChunkedFileBytes  = 4 << 30
+	chunkUploadTTL       = time.Hour
+)
 
 const untrustedContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
@@ -140,6 +154,69 @@ func isPathWithinBase(absBase, path string) bool {
 		return false
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
+}
+
+func ensureWorkspaceDirectoryNoSymlinks(baseDir, relativePath string) error {
+	current := filepath.Clean(baseDir)
+	if relativePath == "" {
+		return nil
+	}
+	for _, component := range strings.Split(filepath.Clean(relativePath), string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(current, 0755); err != nil && !errors.Is(err, os.ErrExist) {
+				return err
+			}
+			info, err = os.Lstat(current)
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("workspace path is not a regular directory")
+		}
+	}
+	return nil
+}
+
+func saveUploadedFileAtomic(fileHeader *multipart.FileHeader, destination string, maxBytes int64) (int64, error) {
+	source, err := fileHeader.Open()
+	if err != nil {
+		return 0, fmt.Errorf("open uploaded file: %w", err)
+	}
+	defer source.Close()
+
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".upload-*")
+	if err != nil {
+		return 0, fmt.Errorf("create upload temp file: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+
+	written, copyErr := io.Copy(temporary, io.LimitReader(source, maxBytes+1))
+	if copyErr != nil {
+		_ = temporary.Close()
+		return 0, fmt.Errorf("copy uploaded file: %w", copyErr)
+	}
+	if written > maxBytes {
+		_ = temporary.Close()
+		return 0, fmt.Errorf("uploaded file is too large")
+	}
+	if err := temporary.Chmod(0644); err != nil {
+		_ = temporary.Close()
+		return 0, fmt.Errorf("set uploaded file permissions: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return 0, fmt.Errorf("close uploaded file: %w", err)
+	}
+	if err := os.Rename(temporaryPath, destination); err != nil {
+		return 0, fmt.Errorf("replace uploaded file: %w", err)
+	}
+	return written, nil
 }
 
 // GetFilesHandler 获取指定目录下的文件和文件夹列表
@@ -413,6 +490,12 @@ func SaveFileContentHandler() gin.HandlerFunc {
 // UploadFileHandler 处理文件上传（支持多文件），将文件保存到工作目录
 func UploadFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		defer func() {
+			if c.Request.MultipartForm != nil {
+				_ = c.Request.MultipartForm.RemoveAll()
+			}
+		}()
+
 		baseDir, absBase, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
@@ -420,15 +503,14 @@ func UploadFileHandler() gin.HandlerFunc {
 		}
 
 		subPath := c.PostForm("path")
-		targetDir, _, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		targetDir, targetRelPath, err := resolveAndValidatePath(baseDir, absBase, subPath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		// 确保目标目录存在
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			Fail(c, http.StatusInternalServerError, "创建目录失败")
+		if err := ensureWorkspaceDirectoryNoSymlinks(baseDir, targetRelPath); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid upload directory")
 			return
 		}
 
@@ -438,52 +520,75 @@ func UploadFileHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "解析表单失败")
 			return
 		}
-
 		files := form.File["file"]
 		if len(files) == 0 {
 			Fail(c, http.StatusBadRequest, "未找到上传文件")
 			return
 		}
-
-		results := make([]FileInfo, 0, len(files))
-
-		for _, file := range files {
-			// 校验文件名安全性
-			fileName := filepath.Base(file.Filename)
-			if fileName == "." || fileName == ".." || fileName == "" {
-				continue
-			}
-
-			savePath := filepath.Join(targetDir, fileName)
-
-			if !isPathWithinBase(absBase, savePath) {
-				continue
-			}
-
-			if err := c.SaveUploadedFile(file, savePath); err != nil {
-				continue
-			}
-
-			info, err := os.Stat(savePath)
-			if err != nil {
-				continue
-			}
-			relativePath := fileName
-			if subPath != "" {
-				relativePath = filepath.Join(subPath, fileName)
-			}
-			results = append(results, FileInfo{
-				Name:    fileName,
-				Path:    relativePath,
-				IsDir:   false,
-				Size:    info.Size(),
-				ModTime: info.ModTime().Unix(),
-			})
+		if len(files) > maxUploadFiles {
+			Fail(c, http.StatusBadRequest, "too many uploaded files")
+			return
 		}
 
-		if len(results) == 0 {
-			Fail(c, http.StatusBadRequest, "没有文件上传成功")
-			return
+		type pendingUpload struct {
+			header       *multipart.FileHeader
+			fileName     string
+			savePath     string
+			relativePath string
+		}
+		pending := make([]pendingUpload, 0, len(files))
+		seenNames := make(map[string]struct{}, len(files))
+		for _, file := range files {
+			fileName := filepath.Base(file.Filename)
+			if fileName == "." || fileName == ".." || fileName == "" {
+				Fail(c, http.StatusBadRequest, "invalid uploaded file name")
+				return
+			}
+			if file.Size < 0 || file.Size > maxUploadedFileBytes {
+				Fail(c, http.StatusRequestEntityTooLarge, "uploaded file is too large")
+				return
+			}
+			if _, exists := seenNames[fileName]; exists {
+				Fail(c, http.StatusBadRequest, "duplicate uploaded file name")
+				return
+			}
+			seenNames[fileName] = struct{}{}
+
+			savePath := filepath.Join(targetDir, fileName)
+			if !isPathWithinBase(absBase, savePath) {
+				Fail(c, http.StatusBadRequest, "invalid upload path")
+				return
+			}
+			relativePath := fileName
+			if targetRelPath != "" {
+				relativePath = filepath.Join(targetRelPath, fileName)
+			}
+			pending = append(pending, pendingUpload{header: file, fileName: fileName, savePath: savePath, relativePath: relativePath})
+		}
+
+		results := make([]FileInfo, 0, len(pending))
+		for _, upload := range pending {
+			if err := rejectSymlinkComponents(baseDir, targetRelPath); err != nil {
+				Fail(c, http.StatusBadRequest, "invalid upload directory")
+				return
+			}
+			size, err := saveUploadedFileAtomic(upload.header, upload.savePath, maxUploadedFileBytes)
+			if err != nil {
+				Fail(c, http.StatusInternalServerError, "failed to save uploaded file")
+				return
+			}
+			info, err := os.Stat(upload.savePath)
+			if err != nil {
+				Fail(c, http.StatusInternalServerError, "failed to inspect uploaded file")
+				return
+			}
+			results = append(results, FileInfo{
+				Name:    upload.fileName,
+				Path:    upload.relativePath,
+				IsDir:   false,
+				Size:    size,
+				ModTime: info.ModTime().Unix(),
+			})
 		}
 
 		OK(c, results)
@@ -492,21 +597,82 @@ func UploadFileHandler() gin.HandlerFunc {
 
 // chunkUploadMeta 分片上传状态
 type chunkUploadMeta struct {
-	mu          sync.Mutex
-	TotalChunks int
-	Received    map[int]bool
-	FilePath    string
+	mu           sync.Mutex
+	TotalChunks  int
+	Received     map[int]int64
+	FilePath     string
+	RelativePath string
+	ChunkDir     string
+	TotalBytes   int64
+	UpdatedAt    time.Time
+	Completed    bool
 }
 
 // ChunkUploadStore 保存单个 HTTP runtime 的分片上传状态。
 type ChunkUploadStore struct {
 	sync.Mutex
-	m map[string]*chunkUploadMeta
+	m       map[string]*chunkUploadMeta
+	rootDir string
 }
 
 // NewChunkUploadStore 创建独立的分片上传状态存储。
 func NewChunkUploadStore() *ChunkUploadStore {
-	return &ChunkUploadStore{m: make(map[string]*chunkUploadMeta)}
+	return &ChunkUploadStore{
+		m:       make(map[string]*chunkUploadMeta),
+		rootDir: filepath.Join(os.TempDir(), "fkteams-chunks", uuid.NewString()),
+	}
+}
+
+func (s *ChunkUploadStore) getOrCreate(uploadID string, totalChunks int, filePath, relativePath string) (*chunkUploadMeta, error) {
+	key := sanitizeUploadID(uploadID)
+	s.Lock()
+	defer s.Unlock()
+	if existing := s.m[key]; existing != nil {
+		if existing.TotalChunks != totalChunks || existing.FilePath != filePath || existing.RelativePath != relativePath {
+			return nil, fmt.Errorf("upload metadata does not match the existing upload")
+		}
+		return existing, nil
+	}
+	meta := &chunkUploadMeta{
+		TotalChunks:  totalChunks,
+		Received:     make(map[int]int64),
+		FilePath:     filePath,
+		RelativePath: relativePath,
+		ChunkDir:     filepath.Join(s.rootDir, key),
+		UpdatedAt:    time.Now(),
+	}
+	s.m[key] = meta
+	return meta, nil
+}
+
+func (s *ChunkUploadStore) removeExpired(now time.Time) {
+	s.Lock()
+	var expiredDirs []string
+	for key, meta := range s.m {
+		meta.mu.Lock()
+		expired := now.Sub(meta.UpdatedAt) >= chunkUploadTTL
+		dir := meta.ChunkDir
+		meta.mu.Unlock()
+		if expired {
+			delete(s.m, key)
+			expiredDirs = append(expiredDirs, dir)
+		}
+	}
+	s.Unlock()
+	for _, dir := range expiredDirs {
+		_ = os.RemoveAll(dir)
+	}
+}
+
+func (s *ChunkUploadStore) Close() {
+	if s == nil {
+		return
+	}
+	s.Lock()
+	s.m = make(map[string]*chunkUploadMeta)
+	rootDir := s.rootDir
+	s.Unlock()
+	_ = os.RemoveAll(rootDir)
 }
 
 // UploadChunkHandler 处理分片上传
@@ -515,6 +681,12 @@ func NewChunkUploadStore() *ChunkUploadStore {
 // UploadChunkHandler 处理当前 HTTP runtime 的分片上传。
 func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		defer func() {
+			if c.Request.MultipartForm != nil {
+				_ = c.Request.MultipartForm.RemoveAll()
+			}
+		}()
+
 		baseDir, absBase, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
@@ -526,7 +698,7 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 		totalChunksStr := c.PostForm("totalChunks")
 		fileName := c.PostForm("fileName")
 
-		if uploadID == "" || chunkIndexStr == "" || totalChunksStr == "" || fileName == "" {
+		if uploadID == "" || len(uploadID) > maxUploadIDBytes || chunkIndexStr == "" || totalChunksStr == "" || fileName == "" {
 			Fail(c, http.StatusBadRequest, "缺少必要参数")
 			return
 		}
@@ -538,7 +710,7 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 		}
 
 		totalChunks, err := strconv.Atoi(totalChunksStr)
-		if err != nil || totalChunks <= 0 {
+		if err != nil || totalChunks <= 0 || totalChunks > maxUploadChunks {
 			Fail(c, http.StatusBadRequest, "无效的总分片数")
 			return
 		}
@@ -557,7 +729,7 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 
 		// 验证目标子目录
 		subPath := c.PostForm("path")
-		targetDir, _, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		targetDir, targetRelPath, err := resolveAndValidatePath(baseDir, absBase, subPath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
@@ -569,110 +741,152 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "无效的保存路径")
 			return
 		}
-
-		// 分片临时目录
-		chunkDir := filepath.Join(os.TempDir(), "fkteams-chunks", sanitizeUploadID(uploadID))
-		if err := os.MkdirAll(chunkDir, 0755); err != nil {
-			log.Printf("failed to create chunk dir: path=%s, err=%v", chunkDir, err)
-			Fail(c, http.StatusInternalServerError, "创建临时目录失败")
-			return
+		relativePath := safeName
+		if targetRelPath != "" {
+			relativePath = filepath.Join(targetRelPath, safeName)
 		}
 
-		// 保存分片
 		file, err := c.FormFile("file")
 		if err != nil {
 			Fail(c, http.StatusBadRequest, "未找到分片文件")
 			return
 		}
+		if file.Size < 0 || file.Size > maxUploadChunkBytes {
+			Fail(c, http.StatusRequestEntityTooLarge, "upload chunk is too large")
+			return
+		}
 
-		chunkPath := filepath.Join(chunkDir, fmt.Sprintf("%d", chunkIndex))
-		if err := c.SaveUploadedFile(file, chunkPath); err != nil {
+		uploads := rt.ChunkUploads
+		uploads.removeExpired(time.Now())
+		meta, err := uploads.getOrCreate(uploadID, totalChunks, finalPath, relativePath)
+		if err != nil {
+			Fail(c, http.StatusConflict, err.Error())
+			return
+		}
+
+		meta.mu.Lock()
+		defer meta.mu.Unlock()
+		meta.UpdatedAt = time.Now()
+		if meta.Completed {
+			writeCompletedChunkUploadResponse(c, uploadID, meta)
+			return
+		}
+
+		previousSize := meta.Received[chunkIndex]
+		if meta.TotalBytes-previousSize+file.Size > maxChunkedFileBytes {
+			Fail(c, http.StatusRequestEntityTooLarge, "chunked file is too large")
+			return
+		}
+		if err := os.MkdirAll(meta.ChunkDir, 0700); err != nil {
+			log.Printf("failed to create chunk dir: path=%s, err=%v", meta.ChunkDir, err)
+			Fail(c, http.StatusInternalServerError, "创建临时目录失败")
+			return
+		}
+		chunkPath := filepath.Join(meta.ChunkDir, strconv.Itoa(chunkIndex))
+		written, err := saveUploadedFileAtomic(file, chunkPath, maxUploadChunkBytes)
+		if err != nil {
 			log.Printf("failed to save chunk: path=%s, err=%v", chunkPath, err)
 			Fail(c, http.StatusInternalServerError, "保存分片失败")
 			return
 		}
-
-		// 更新上传状态
-		uploads := rt.ChunkUploads
-		uploads.Lock()
-		meta, exists := uploads.m[uploadID]
-		if !exists {
-			meta = &chunkUploadMeta{
-				TotalChunks: totalChunks,
-				Received:    make(map[int]bool),
-				FilePath:    finalPath,
-			}
-			uploads.m[uploadID] = meta
-		}
-		uploads.Unlock()
-
-		meta.mu.Lock()
-		meta.Received[chunkIndex] = true
-		allReceived := len(meta.Received) == meta.TotalChunks
-		meta.mu.Unlock()
+		meta.Received[chunkIndex] = written
+		meta.TotalBytes = meta.TotalBytes - previousSize + written
+		receivedCount := len(meta.Received)
+		allReceived := receivedCount == meta.TotalChunks
 
 		if !allReceived {
 			OK(c, gin.H{
 				"uploadId":   uploadID,
 				"chunkIndex": chunkIndex,
-				"received":   len(meta.Received),
-				"total":      totalChunks,
+				"received":   receivedCount,
+				"total":      meta.TotalChunks,
 				"completed":  false,
 			})
 			return
 		}
 
-		// 所有分片已接收，合并文件
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			Fail(c, http.StatusInternalServerError, "创建目录失败")
+		if err := ensureWorkspaceDirectoryNoSymlinks(baseDir, targetRelPath); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid upload directory")
+			return
+		}
+		if err := rejectSymlinkComponents(baseDir, targetRelPath); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid upload directory")
+			return
+		}
+		if _, err := assembleChunkUpload(meta.FilePath, meta.ChunkDir, meta.TotalChunks); err != nil {
+			log.Printf("failed to assemble chunk upload: path=%s, err=%v", meta.FilePath, err)
+			Fail(c, http.StatusInternalServerError, "合并分片失败")
 			return
 		}
 
-		outFile, err := os.Create(finalPath)
-		if err != nil {
-			Fail(c, http.StatusInternalServerError, "创建目标文件失败")
-			return
-		}
-		defer outFile.Close()
-
-		for i := 0; i < totalChunks; i++ {
-			chunkFile := filepath.Join(chunkDir, fmt.Sprintf("%d", i))
-			src, err := os.Open(chunkFile)
-			if err != nil {
-				Fail(c, http.StatusInternalServerError, fmt.Sprintf("读取分片 %d 失败", i))
-				return
-			}
-			_, writeErr := io.Copy(outFile, src)
-			src.Close()
-			if writeErr != nil {
-				Fail(c, http.StatusInternalServerError, fmt.Sprintf("写入分片 %d 失败", i))
-				return
-			}
-		}
-
-		// 清理临时分片
-		os.RemoveAll(chunkDir)
-		uploads.Lock()
-		delete(uploads.m, uploadID)
-		uploads.Unlock()
-
-		info, _ := os.Stat(finalPath)
-		relativePath := safeName
-		if subPath != "" {
-			relativePath = filepath.Join(subPath, safeName)
-		}
-		OK(c, gin.H{
-			"uploadId":  uploadID,
-			"completed": true,
-			"file": FileInfo{
-				Name:    safeName,
-				Path:    relativePath,
-				IsDir:   false,
-				Size:    info.Size(),
-				ModTime: info.ModTime().Unix(),
-			},
-		})
+		meta.Completed = true
+		meta.UpdatedAt = time.Now()
+		_ = os.RemoveAll(meta.ChunkDir)
+		writeCompletedChunkUploadResponse(c, uploadID, meta)
 	}
+}
+
+func assembleChunkUpload(destination, chunkDir string, totalChunks int) (int64, error) {
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".chunk-upload-*")
+	if err != nil {
+		return 0, fmt.Errorf("create assembled temp file: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+
+	var total int64
+	for index := 0; index < totalChunks; index++ {
+		chunk, err := os.Open(filepath.Join(chunkDir, strconv.Itoa(index)))
+		if err != nil {
+			_ = temporary.Close()
+			return 0, fmt.Errorf("open chunk %d: %w", index, err)
+		}
+		written, copyErr := io.Copy(temporary, io.LimitReader(chunk, maxChunkedFileBytes-total+1))
+		closeErr := chunk.Close()
+		total += written
+		if copyErr != nil {
+			_ = temporary.Close()
+			return 0, fmt.Errorf("copy chunk %d: %w", index, copyErr)
+		}
+		if closeErr != nil {
+			_ = temporary.Close()
+			return 0, fmt.Errorf("close chunk %d: %w", index, closeErr)
+		}
+		if total > maxChunkedFileBytes {
+			_ = temporary.Close()
+			return 0, fmt.Errorf("chunked file is too large")
+		}
+	}
+	if err := temporary.Chmod(0644); err != nil {
+		_ = temporary.Close()
+		return 0, fmt.Errorf("set assembled file permissions: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return 0, fmt.Errorf("close assembled file: %w", err)
+	}
+	if err := os.Rename(temporaryPath, destination); err != nil {
+		return 0, fmt.Errorf("replace assembled file: %w", err)
+	}
+	return total, nil
+}
+
+func writeCompletedChunkUploadResponse(c *gin.Context, uploadID string, meta *chunkUploadMeta) {
+	info, err := os.Stat(meta.FilePath)
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, "failed to inspect uploaded file")
+		return
+	}
+	OK(c, gin.H{
+		"uploadId":  uploadID,
+		"completed": true,
+		"file": FileInfo{
+			Name:    filepath.Base(meta.FilePath),
+			Path:    meta.RelativePath,
+			IsDir:   false,
+			Size:    info.Size(),
+			ModTime: info.ModTime().Unix(),
+		},
+	})
 }
 
 // sanitizeUploadID 清理 uploadId 防止路径遍历
