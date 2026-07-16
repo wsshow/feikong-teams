@@ -24,34 +24,6 @@ type rawResponse struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func TestResolveAndValidatePathBoundaries(t *testing.T) {
-	baseDir := filepath.Join(t.TempDir(), "workspace")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		t.Fatalf("mkdir workspace: %v", err)
-	}
-	absBase, err := filepath.Abs(baseDir)
-	if err != nil {
-		t.Fatalf("abs base: %v", err)
-	}
-
-	fullPath, relPath, err := resolveAndValidatePath(baseDir, absBase, "dir/file.txt")
-	if err != nil {
-		t.Fatalf("resolve valid path: %v", err)
-	}
-	if !strings.HasPrefix(fullPath, absBase) || relPath != filepath.Join("dir", "file.txt") {
-		t.Fatalf("unexpected resolved path full=%q rel=%q", fullPath, relPath)
-	}
-	if _, _, err := resolveAndValidatePath(baseDir, absBase, "../outside.txt"); err == nil {
-		t.Fatal("expected traversal path to be rejected")
-	}
-	if isPathWithinBase(absBase, absBase+"-sibling/file.txt") {
-		t.Fatal("expected sibling prefix path to be outside base")
-	}
-	if !isPathWithinBase(absBase, filepath.Join(absBase, "file.txt")) {
-		t.Fatal("expected child path to be inside base")
-	}
-}
-
 func TestGetFilesAndSearchHandlers(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
 	if err := os.Mkdir(filepath.Join(workspace, "docs"), 0755); err != nil {
@@ -276,6 +248,7 @@ func TestWorkspaceFileHandlersDoNotExposeOrDeleteSymlinks(t *testing.T) {
 	router.GET("/files", GetFilesHandler())
 	router.GET("/search", SearchFilesHandler())
 	router.GET("/content", GetFileContentHandler())
+	router.PUT("/content", SaveFileContentHandler())
 	router.POST("/delete", DeleteFileHandler())
 
 	response := performRequest(router, http.MethodGet, "/files", nil)
@@ -300,6 +273,10 @@ func TestWorkspaceFileHandlersDoNotExposeOrDeleteSymlinks(t *testing.T) {
 	response = performRequest(router, http.MethodGet, "/content?path=linked.txt", nil)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("content status = %d, want 400", response.Code)
+	}
+	response = performJSON(router, http.MethodPut, "/content", `{"path":"linked.txt","content":"changed"}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("save status = %d, want 400", response.Code)
 	}
 	response = performJSON(router, http.MethodPost, "/delete", `{"path":"linked.txt","force":true}`)
 	if response.Code != http.StatusBadRequest {

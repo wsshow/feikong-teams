@@ -68,26 +68,16 @@ var errSearchLimit = errors.New("workspace search limit exceeded")
 const untrustedContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
 // getWorkspaceDir 获取工作目录并返回绝对路径
-func getWorkspaceDir() (string, string, error) {
+func getWorkspaceDir() (string, error) {
 	baseDir := appdata.WorkspaceDir()
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		return "", "", fmt.Errorf("创建工作目录失败")
+		return "", fmt.Errorf("创建工作目录失败")
 	}
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
-		return "", "", fmt.Errorf("解析工作目录失败")
+		return "", fmt.Errorf("解析工作目录失败")
 	}
-	return baseDir, absBase, nil
-}
-
-// resolveAndValidatePath 解析相对路径并校验是否在 baseDir 内
-// 返回完整路径和清理后的相对路径
-func resolveAndValidatePath(baseDir, absBase, subPath string) (string, string, error) {
-	resolved, err := pathguard.ResolveWorkspace(baseDir, subPath)
-	if err != nil {
-		return "", "", fmt.Errorf("无效的路径")
-	}
-	return resolved.AbsPath, resolved.RelPath, nil
+	return absBase, nil
 }
 
 // resolveWorkspaceEntryNoSymlinks 解析已存在的工作区条目，并拒绝路径中任意符号链接。
@@ -236,43 +226,52 @@ func rejectRootSymlinkComponents(root *os.Root, relativePath string) error {
 	return nil
 }
 
-func isPathWithinBase(absBase, path string) bool {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	rel, err := filepath.Rel(absBase, absPath)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
-}
-
 func ensureWorkspaceDirectoryNoSymlinks(baseDir, relativePath string) error {
-	current := filepath.Clean(baseDir)
-	if relativePath == "" {
-		return nil
+	root, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return err
 	}
-	for _, component := range strings.Split(filepath.Clean(relativePath), string(filepath.Separator)) {
-		if component == "" || component == "." {
-			continue
-		}
-		current = filepath.Join(current, component)
-		info, err := os.Lstat(current)
-		if errors.Is(err, os.ErrNotExist) {
-			if err := os.Mkdir(current, 0755); err != nil && !errors.Is(err, os.ErrExist) {
-				return err
-			}
-			info, err = os.Lstat(current)
-		}
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("workspace path is not a regular directory")
-		}
+	defer root.Close()
+	path := workspaceFSPath(relativePath)
+	if err := root.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+	if err := rejectRootSymlinkComponents(root, relativePath); err != nil {
+		return err
+	}
+	info, err := root.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("workspace path is not a regular directory")
 	}
 	return nil
+}
+
+func safeUploadedFileName(name string) (string, error) {
+	normalized := strings.ReplaceAll(name, `\`, "/")
+	fileName := filepath.Base(filepath.FromSlash(normalized))
+	if fileName == "." || fileName == ".." || fileName == "" || strings.ContainsRune(fileName, 0) {
+		return "", fmt.Errorf("invalid uploaded file name")
+	}
+	return fileName, nil
+}
+
+func saveUploadedFileInRoot(root *os.Root, fileHeader *multipart.FileHeader, relativePath string, maxBytes int64) (int64, error) {
+	source, err := fileHeader.Open()
+	if err != nil {
+		return 0, fmt.Errorf("open uploaded file: %w", err)
+	}
+	written, writeErr := atomicfile.WriteReaderInRoot(root, relativePath, source, maxBytes, 0644)
+	closeErr := source.Close()
+	if writeErr != nil {
+		return written, writeErr
+	}
+	if closeErr != nil {
+		return written, fmt.Errorf("close uploaded file: %w", closeErr)
+	}
+	return written, nil
 }
 
 func saveUploadedFileAtomic(fileHeader *multipart.FileHeader, destination string, maxBytes int64) (int64, error) {
@@ -314,7 +313,7 @@ func saveUploadedFileAtomic(fileHeader *multipart.FileHeader, destination string
 // GetFilesHandler 获取指定目录下的文件和文件夹列表
 func GetFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -387,7 +386,7 @@ func GetFilesHandler() gin.HandlerFunc {
 // SearchFilesHandler 递归搜索文件名和相对路径
 func SearchFilesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -496,7 +495,7 @@ func searchWorkspaceFiles(ctx context.Context, filesystem fs.FS, query string) (
 // Query: path(文件相对路径)
 func GetFileContentHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -554,7 +553,7 @@ func GetFileContentHandler() gin.HandlerFunc {
 // JSON body: {"path": "相对路径", "content": "文件内容"}
 func SaveFileContentHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -573,19 +572,19 @@ func SaveFileContentHandler() gin.HandlerFunc {
 			return
 		}
 
-		fullPath, cleanPath, err := resolveAndValidatePath(baseDir, absBase, req.Path)
+		resolved, _, err := resolveWorkspaceEntryNoSymlinks(baseDir, req.Path)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		info, err := os.Stat(fullPath)
+		opened, info, err := openWorkspaceRegularFileNoSymlinks(baseDir, resolved.RelPath)
 		if err != nil {
-			Fail(c, http.StatusNotFound, "文件不存在")
+			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if info.IsDir() {
-			Fail(c, http.StatusBadRequest, "路径不是文件")
+		if err := opened.Close(); err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to close file before saving")
 			return
 		}
 		if !utf8.ValidString(req.Content) {
@@ -593,20 +592,35 @@ func SaveFileContentHandler() gin.HandlerFunc {
 			return
 		}
 
-		if err := atomicfile.WriteFile(fullPath, []byte(req.Content), info.Mode().Perm()); err != nil {
-			log.Printf("failed to save file content: path=%s, err=%v", fullPath, err)
+		root, err := os.OpenRoot(baseDir)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		defer root.Close()
+		if err := rejectRootSymlinkComponents(root, resolved.RelPath); err != nil {
+			Fail(c, http.StatusConflict, "file changed before saving")
+			return
+		}
+		currentInfo, err := root.Lstat(resolved.RelPath)
+		if err != nil || !os.SameFile(info, currentInfo) || !currentInfo.Mode().IsRegular() {
+			Fail(c, http.StatusConflict, "file changed before saving")
+			return
+		}
+		if err := atomicfile.WriteFileInRoot(root, resolved.RelPath, []byte(req.Content), info.Mode().Perm()); err != nil {
+			log.Printf("failed to save file content: path=%s, err=%v", resolved.RelPath, err)
 			Fail(c, http.StatusInternalServerError, "保存文件失败")
 			return
 		}
 
-		nextInfo, err := os.Stat(fullPath)
+		nextInfo, err := root.Lstat(resolved.RelPath)
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, "读取文件状态失败")
 			return
 		}
 		OK(c, gin.H{
-			"path":     cleanPath,
-			"name":     filepath.Base(cleanPath),
+			"path":     resolved.RelPath,
+			"name":     filepath.Base(resolved.RelPath),
 			"size":     nextInfo.Size(),
 			"mod_time": nextInfo.ModTime().Unix(),
 		})
@@ -622,24 +636,20 @@ func UploadFileHandler() gin.HandlerFunc {
 			}
 		}()
 
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		subPath := c.PostForm("path")
-		targetDir, targetRelPath, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		resolvedTarget, err := pathguard.ResolveWorkspace(baseDir, subPath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		if err := ensureWorkspaceDirectoryNoSymlinks(baseDir, targetRelPath); err != nil {
-			Fail(c, http.StatusBadRequest, "invalid upload directory")
-			return
-		}
-
+		targetRelPath := resolvedTarget.RelPath
 		// 获取所有上传的文件
 		form, err := c.MultipartForm()
 		if err != nil {
@@ -659,14 +669,13 @@ func UploadFileHandler() gin.HandlerFunc {
 		type pendingUpload struct {
 			header       *multipart.FileHeader
 			fileName     string
-			savePath     string
 			relativePath string
 		}
 		pending := make([]pendingUpload, 0, len(files))
 		seenNames := make(map[string]struct{}, len(files))
 		for _, file := range files {
-			fileName := filepath.Base(file.Filename)
-			if fileName == "." || fileName == ".." || fileName == "" {
+			fileName, err := safeUploadedFileName(file.Filename)
+			if err != nil {
 				Fail(c, http.StatusBadRequest, "invalid uploaded file name")
 				return
 			}
@@ -674,36 +683,57 @@ func UploadFileHandler() gin.HandlerFunc {
 				Fail(c, http.StatusRequestEntityTooLarge, "uploaded file is too large")
 				return
 			}
-			if _, exists := seenNames[fileName]; exists {
+			nameKey := strings.ToLower(fileName)
+			if _, exists := seenNames[nameKey]; exists {
 				Fail(c, http.StatusBadRequest, "duplicate uploaded file name")
 				return
 			}
-			seenNames[fileName] = struct{}{}
+			seenNames[nameKey] = struct{}{}
 
-			savePath := filepath.Join(targetDir, fileName)
-			if !isPathWithinBase(absBase, savePath) {
-				Fail(c, http.StatusBadRequest, "invalid upload path")
-				return
-			}
 			relativePath := fileName
 			if targetRelPath != "" {
 				relativePath = filepath.Join(targetRelPath, fileName)
 			}
-			pending = append(pending, pendingUpload{header: file, fileName: fileName, savePath: savePath, relativePath: relativePath})
+			pending = append(pending, pendingUpload{header: file, fileName: fileName, relativePath: relativePath})
 		}
 
+		if err := ensureWorkspaceDirectoryNoSymlinks(baseDir, targetRelPath); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid upload directory")
+			return
+		}
+		root, err := os.OpenRoot(baseDir)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		defer root.Close()
+		if err := rejectRootSymlinkComponents(root, targetRelPath); err != nil {
+			Fail(c, http.StatusBadRequest, "invalid upload directory")
+			return
+		}
+		for _, upload := range pending {
+			info, err := root.Lstat(upload.relativePath)
+			if err == nil && !info.Mode().IsRegular() {
+				Fail(c, http.StatusBadRequest, "upload target is not a regular file")
+				return
+			}
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				Fail(c, http.StatusInternalServerError, "failed to inspect upload target")
+				return
+			}
+		}
 		results := make([]FileInfo, 0, len(pending))
 		for _, upload := range pending {
-			if err := rejectSymlinkComponents(baseDir, targetRelPath); err != nil {
+			if err := rejectRootSymlinkComponents(root, targetRelPath); err != nil {
 				Fail(c, http.StatusBadRequest, "invalid upload directory")
 				return
 			}
-			size, err := saveUploadedFileAtomic(upload.header, upload.savePath, maxUploadedFileBytes)
+			size, err := saveUploadedFileInRoot(root, upload.header, upload.relativePath, maxUploadedFileBytes)
 			if err != nil {
 				Fail(c, http.StatusInternalServerError, "failed to save uploaded file")
 				return
 			}
-			info, err := os.Stat(upload.savePath)
+			info, err := root.Lstat(upload.relativePath)
 			if err != nil {
 				Fail(c, http.StatusInternalServerError, "failed to inspect uploaded file")
 				return
@@ -944,7 +974,7 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 			}
 		}()
 
-		baseDir, absBase, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -978,26 +1008,22 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 		}
 
 		// 校验文件名安全性
-		safeName := filepath.Base(fileName)
-		if safeName == "." || safeName == ".." || safeName == "" {
+		safeName, err := safeUploadedFileName(fileName)
+		if err != nil {
 			Fail(c, http.StatusBadRequest, "无效的文件名")
 			return
 		}
 
 		// 验证目标子目录
 		subPath := c.PostForm("path")
-		targetDir, targetRelPath, err := resolveAndValidatePath(baseDir, absBase, subPath)
+		resolvedTarget, err := pathguard.ResolveWorkspace(baseDir, subPath)
 		if err != nil {
 			Fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		// 确保最终路径在 baseDir 内
-		finalPath := filepath.Join(targetDir, safeName)
-		if !isPathWithinBase(absBase, finalPath) {
-			Fail(c, http.StatusBadRequest, "无效的保存路径")
-			return
-		}
+		targetRelPath := resolvedTarget.RelPath
+		finalPath := filepath.Join(resolvedTarget.AbsPath, safeName)
 		relativePath := safeName
 		if targetRelPath != "" {
 			relativePath = filepath.Join(targetRelPath, safeName)
@@ -1032,7 +1058,7 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 		}
 		meta.UpdatedAt = time.Now()
 		if meta.Completed {
-			writeCompletedChunkUploadResponse(c, uploadID, meta)
+			writeCompletedChunkUploadResponse(c, uploadID, meta, baseDir)
 			return
 		}
 
@@ -1087,13 +1113,36 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 			Fail(c, http.StatusBadRequest, "invalid upload directory")
 			return
 		}
-		if err := rejectSymlinkComponents(baseDir, targetRelPath); err != nil {
+		root, err := os.OpenRoot(baseDir)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, "failed to open workspace")
+			return
+		}
+		if err := rejectRootSymlinkComponents(root, targetRelPath); err != nil {
+			root.Close()
 			Fail(c, http.StatusBadRequest, "invalid upload directory")
 			return
 		}
-		if _, err := assembleChunkUpload(meta.FilePath, meta.ChunkDir, meta.TotalChunks); err != nil {
-			log.Printf("failed to assemble chunk upload: path=%s, err=%v", meta.FilePath, err)
+		targetInfo, targetErr := root.Lstat(meta.RelativePath)
+		if targetErr == nil && !targetInfo.Mode().IsRegular() {
+			root.Close()
+			Fail(c, http.StatusBadRequest, "upload target is not a regular file")
+			return
+		}
+		if targetErr != nil && !errors.Is(targetErr, os.ErrNotExist) {
+			root.Close()
+			Fail(c, http.StatusInternalServerError, "failed to inspect upload target")
+			return
+		}
+		_, assembleErr := assembleChunkUpload(root, meta.RelativePath, meta.ChunkDir, meta.TotalChunks)
+		closeErr := root.Close()
+		if assembleErr != nil {
+			log.Printf("failed to assemble chunk upload: path=%s, err=%v", meta.FilePath, assembleErr)
 			Fail(c, http.StatusInternalServerError, "合并分片失败")
+			return
+		}
+		if closeErr != nil {
+			Fail(c, http.StatusInternalServerError, "failed to close workspace")
 			return
 		}
 
@@ -1104,65 +1153,50 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 		} else {
 			uploads.finish(meta)
 		}
-		writeCompletedChunkUploadResponse(c, uploadID, meta)
+		writeCompletedChunkUploadResponse(c, uploadID, meta, baseDir)
 	}
 }
 
-func assembleChunkUpload(destination, chunkDir string, totalChunks int) (int64, error) {
-	temporary, err := os.CreateTemp(filepath.Dir(destination), ".chunk-upload-*")
-	if err != nil {
-		return 0, fmt.Errorf("create assembled temp file: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-
-	var total int64
-	for index := 0; index < totalChunks; index++ {
-		chunk, err := os.Open(filepath.Join(chunkDir, strconv.Itoa(index)))
-		if err != nil {
-			_ = temporary.Close()
-			return 0, fmt.Errorf("open chunk %d: %w", index, err)
+func assembleChunkUpload(root *os.Root, destination, chunkDir string, totalChunks int) (int64, error) {
+	return atomicfile.WriteInRoot(root, destination, 0644, func(writer io.Writer) (int64, error) {
+		var total int64
+		for index := 0; index < totalChunks; index++ {
+			chunk, err := os.Open(filepath.Join(chunkDir, strconv.Itoa(index)))
+			if err != nil {
+				return total, fmt.Errorf("open chunk %d: %w", index, err)
+			}
+			written, copyErr := io.Copy(writer, io.LimitReader(chunk, maxChunkedFileBytes-total+1))
+			closeErr := chunk.Close()
+			total += written
+			if copyErr != nil {
+				return total, fmt.Errorf("copy chunk %d: %w", index, copyErr)
+			}
+			if closeErr != nil {
+				return total, fmt.Errorf("close chunk %d: %w", index, closeErr)
+			}
+			if total > maxChunkedFileBytes {
+				return total, fmt.Errorf("chunked file is too large")
+			}
 		}
-		written, copyErr := io.Copy(temporary, io.LimitReader(chunk, maxChunkedFileBytes-total+1))
-		closeErr := chunk.Close()
-		total += written
-		if copyErr != nil {
-			_ = temporary.Close()
-			return 0, fmt.Errorf("copy chunk %d: %w", index, copyErr)
-		}
-		if closeErr != nil {
-			_ = temporary.Close()
-			return 0, fmt.Errorf("close chunk %d: %w", index, closeErr)
-		}
-		if total > maxChunkedFileBytes {
-			_ = temporary.Close()
-			return 0, fmt.Errorf("chunked file is too large")
-		}
-	}
-	if err := temporary.Chmod(0644); err != nil {
-		_ = temporary.Close()
-		return 0, fmt.Errorf("set assembled file permissions: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return 0, fmt.Errorf("close assembled file: %w", err)
-	}
-	if err := os.Rename(temporaryPath, destination); err != nil {
-		return 0, fmt.Errorf("replace assembled file: %w", err)
-	}
-	return total, nil
+		return total, nil
+	})
 }
 
-func writeCompletedChunkUploadResponse(c *gin.Context, uploadID string, meta *chunkUploadMeta) {
-	info, err := os.Stat(meta.FilePath)
+func writeCompletedChunkUploadResponse(c *gin.Context, uploadID string, meta *chunkUploadMeta, baseDir string) {
+	file, info, err := openWorkspaceRegularFileNoSymlinks(baseDir, meta.RelativePath)
 	if err != nil {
 		Fail(c, http.StatusInternalServerError, "failed to inspect uploaded file")
+		return
+	}
+	if err := file.Close(); err != nil {
+		Fail(c, http.StatusInternalServerError, "failed to close uploaded file")
 		return
 	}
 	OK(c, gin.H{
 		"uploadId":  uploadID,
 		"completed": true,
 		"file": FileInfo{
-			Name:    filepath.Base(meta.FilePath),
+			Name:    filepath.Base(meta.RelativePath),
 			Path:    meta.RelativePath,
 			IsDir:   false,
 			Size:    info.Size(),
@@ -1181,7 +1215,7 @@ func sanitizeUploadID(id string) string {
 // Query: path(文件相对路径)
 func DownloadFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -1251,7 +1285,7 @@ func DownloadFileHandler() gin.HandlerFunc {
 // BatchDownloadHandler 批量下载：将多个文件/文件夹打包为单个 zip。
 func BatchDownloadHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -1521,7 +1555,7 @@ func writeArchiveValidationError(c *gin.Context, err error) {
 // force 为 true 时可删除非空目录
 func DeleteFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -1628,7 +1662,7 @@ func setUntrustedContentHeaders(c *gin.Context) {
 // 相对路径通过 URL wildcard 传入，浏览器可自然解析相对引用
 func ServeFileHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		baseDir, _, err := getWorkspaceDir()
+		baseDir, err := getWorkspaceDir()
 		if err != nil {
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
