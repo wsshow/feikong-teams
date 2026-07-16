@@ -293,11 +293,79 @@ func TestInstallSkillFromProviderExtractsZipAndRejectsZipSlip(t *testing.T) {
 	}
 
 	slipData := makeZip(t, map[string]string{"../evil.txt": "evil"})
-	if err := InstallSkillFromProvider(context.Background(), "bad", "", fakeProvider{data: slipData}); err == nil || !strings.Contains(err.Error(), "非法路径") {
+	if err := InstallSkillFromProvider(context.Background(), "bad", "", fakeProvider{data: slipData}); err == nil || !strings.Contains(err.Error(), "invalid skill archive path") {
 		t.Fatalf("zip slip install error = %v, want illegal path", err)
 	}
 	if _, err := os.Stat(filepath.Join(appDir, "skills", "evil.txt")); !os.IsNotExist(err) {
 		t.Fatalf("evil file exists or stat error: %v", err)
+	}
+}
+
+func TestInstallSkillRejectsInvalidSlugWithoutTouchingFilesystem(t *testing.T) {
+	appDir := t.TempDir()
+	t.Setenv(env.AppDir, appDir)
+	if err := InstallSkillFromProvider(context.Background(), "../bad", "", fakeProvider{}); err == nil {
+		t.Fatal("invalid skill slug was accepted")
+	}
+	if _, err := os.Stat(filepath.Join(appDir, "bad")); !os.IsNotExist(err) {
+		t.Fatalf("invalid install touched filesystem: %v", err)
+	}
+}
+
+func TestInstallSkillFailurePreservesPreviousVersion(t *testing.T) {
+	appDir := t.TempDir()
+	t.Setenv(env.AppDir, appDir)
+	writeSkill(t, appDir, "demo", "previous")
+
+	badArchive := makeZip(t, map[string]string{"README.md": "missing required file"})
+	if err := InstallSkillFromProvider(context.Background(), "demo", "", fakeProvider{data: badArchive}); err == nil {
+		t.Fatal("invalid replacement skill was accepted")
+	}
+	data, err := os.ReadFile(filepath.Join(appDir, "skills", "demo", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "previous" {
+		t.Fatalf("previous skill content = %q", data)
+	}
+}
+
+func TestWriteSkillArchiveRejectsOversizedDownload(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "skill.zip")
+	err := writeSkillArchiveLimited(context.Background(), filePath, strings.NewReader("12345"), 4)
+	if err == nil {
+		t.Fatal("oversized skill archive was accepted")
+	}
+	if _, statErr := os.Stat(filePath); !os.IsNotExist(statErr) {
+		t.Fatalf("rejected archive was not removed: %v", statErr)
+	}
+}
+
+func TestUnzipSkillRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "skill.zip")
+	file, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	header := &zip.FileHeader{Name: "link"}
+	header.SetMode(os.ModeSymlink | 0777)
+	entry, err := writer.CreateHeader(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("target")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := unzipSkill(context.Background(), archivePath, filepath.Join(dir, "out")); err == nil {
+		t.Fatal("symlink archive entry was accepted")
 	}
 }
 
