@@ -2,13 +2,24 @@
 package report
 
 import (
+	"bytes"
+	"fmt"
 	"html/template"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"fkteams/internal/runtime/atomicfile"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
+)
+
+const (
+	maxMarkdownReportBytes int64 = 64 << 20
+	maxHTMLReportBytes           = 128 << 20
 )
 
 // ConvertMarkdownToHTML 将 Markdown 字节数据转换为 HTML
@@ -17,7 +28,7 @@ func ConvertMarkdownToHTML(markdownByteData []byte) (htmlByteData []byte) {
 	p := parser.NewWithExtensions(extensions)
 	doc := p.Parse(markdownByteData)
 
-	htmlFlags := html.CommonFlags | html.HrefTargetBlank
+	htmlFlags := html.CommonFlags | html.SkipHTML | html.Safelink | html.NofollowLinks | html.NoreferrerLinks | html.NoopenerLinks | html.HrefTargetBlank
 	opts := html.RendererOptions{Flags: htmlFlags}
 	renderer := html.NewRenderer(opts)
 
@@ -26,11 +37,26 @@ func ConvertMarkdownToHTML(markdownByteData []byte) (htmlByteData []byte) {
 
 // ConvertMarkdownFileToHTML 读取 Markdown 文件并转换为 HTML
 func ConvertMarkdownFileToHTML(mdFilePath string) (htmlByteData []byte, err error) {
-	md, err := os.ReadFile(mdFilePath)
+	file, err := os.Open(mdFilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open markdown report: %w", err)
 	}
-	return ConvertMarkdownToHTML(md), nil
+	md, readErr := io.ReadAll(io.LimitReader(file, maxMarkdownReportBytes+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("read markdown report: %w", readErr)
+	}
+	if int64(len(md)) > maxMarkdownReportBytes {
+		return nil, fmt.Errorf("markdown report exceeds %d bytes", maxMarkdownReportBytes)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close markdown report: %w", closeErr)
+	}
+	htmlData := ConvertMarkdownToHTML(md)
+	if len(htmlData) > maxHTMLReportBytes {
+		return nil, fmt.Errorf("HTML report exceeds %d bytes", maxHTMLReportBytes)
+	}
+	return htmlData, nil
 }
 
 // ConvertMarkdownFileToHTMLFile 将 Markdown 文件转换并保存为 HTML 文件
@@ -39,8 +65,8 @@ func ConvertMarkdownFileToHTMLFile(mdFilePath string) (htmlFilePath string, err 
 	if err != nil {
 		return "", err
 	}
-	htmlFilePath = strings.TrimSuffix(mdFilePath, ".md") + ".html"
-	err = os.WriteFile(htmlFilePath, htmlByteData, 0644)
+	htmlFilePath = reportHTMLPath(mdFilePath)
+	err = atomicfile.WriteFile(htmlFilePath, htmlByteData, 0644)
 	if err != nil {
 		return "", err
 	}
@@ -54,26 +80,37 @@ func ConvertMarkdownFileToNiceHTMLFile(mdFilePath string) (htmlFilePath string, 
 		return "", err
 	}
 
-	htmlFilePath = strings.TrimSuffix(mdFilePath, ".md") + ".html"
-	f, err := os.Create(htmlFilePath)
+	htmlFilePath = reportHTMLPath(mdFilePath)
+	tmpl, err := template.New("fkteams_report").Parse(htmlTemplate)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-
-	tmpl, _ := template.New("fkteams_report").Parse(htmlTemplate)
 	data := struct {
 		Content template.HTML
 	}{
 		Content: template.HTML(string(htmlByteData)),
 	}
 
-	err = tmpl.Execute(f, data)
-	if err != nil {
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, data); err != nil {
+		return "", err
+	}
+	if rendered.Len() > maxHTMLReportBytes {
+		return "", fmt.Errorf("styled HTML report exceeds %d bytes", maxHTMLReportBytes)
+	}
+	if err := atomicfile.WriteFile(htmlFilePath, rendered.Bytes(), 0644); err != nil {
 		return "", err
 	}
 
 	return htmlFilePath, nil
+}
+
+func reportHTMLPath(markdownPath string) string {
+	extension := filepath.Ext(markdownPath)
+	if strings.EqualFold(extension, ".md") {
+		return strings.TrimSuffix(markdownPath, extension) + ".html"
+	}
+	return markdownPath + ".html"
 }
 
 const htmlTemplate = `<!DOCTYPE html>

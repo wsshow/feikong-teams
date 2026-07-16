@@ -8,7 +8,7 @@ import (
 )
 
 func TestConvertMarkdownToHTML(t *testing.T) {
-	html := string(ConvertMarkdownToHTML([]byte("# 标题\n\n[链接](https://example.com)\n")))
+	html := string(ConvertMarkdownToHTML([]byte("# 标题\n\n[链接](https://example.com)\n\n<script>alert(1)</script>\n\n[危险](javascript:alert(1))")))
 
 	for _, want := range []string{
 		`<h1 id="标题">标题</h1>`,
@@ -18,6 +18,42 @@ func TestConvertMarkdownToHTML(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("html = %q, missing %q", html, want)
 		}
+	}
+	if strings.Contains(html, "<script") || strings.Contains(html, "javascript:") {
+		t.Fatalf("unsafe HTML was rendered: %q", html)
+	}
+}
+
+func TestReportOutputDoesNotOverwriteNonMarkdownSource(t *testing.T) {
+	sourcePath := writeMarkdown(t, "report.txt", "# Source")
+	htmlPath, err := ConvertMarkdownFileToHTMLFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if htmlPath == sourcePath || htmlPath != sourcePath+".html" {
+		t.Fatalf("html path = %q, source = %q", htmlPath, sourcePath)
+	}
+	source, err := os.ReadFile(sourcePath)
+	if err != nil || string(source) != "# Source" {
+		t.Fatalf("source content = %q, err = %v", source, err)
+	}
+}
+
+func TestConvertMarkdownFileRejectsOversizedInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.md")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxMarkdownReportBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConvertMarkdownFileToHTML(path); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized report error = %v", err)
 	}
 }
 
