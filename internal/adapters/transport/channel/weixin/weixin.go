@@ -2,15 +2,16 @@ package weixin
 
 import (
 	"context"
-	channel "fkteams/internal/adapters/transport/channel"
-	wechatbot "fkteams/internal/adapters/transport/channel/weixin/sdk"
-	"fkteams/internal/runtime/log"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	channel "fkteams/internal/adapters/transport/channel"
+	wechatbot "fkteams/internal/adapters/transport/channel/weixin/sdk"
+	"fkteams/internal/runtime/log"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -27,14 +28,30 @@ type Channel struct {
 	logLevel  string
 	allowFrom map[string]bool
 
-	bot     *wechatbot.Bot
-	handler channel.MessageHandler
-	running atomic.Bool
-	cancel  context.CancelFunc
-	mu      sync.Mutex
+	bot       *wechatbot.Bot
+	handler   channel.MessageHandler
+	running   atomic.Bool
+	cancel    context.CancelFunc
+	runCtx    context.Context
+	runDone   <-chan error
+	accepting bool
+	mu        sync.Mutex
 
 	typingMu      sync.Mutex
-	typingCancels map[string]context.CancelFunc // per-user typing cancel
+	typingCancels map[string]typingIndicator
+	typingSeq     uint64
+}
+
+const (
+	maxTypingIndicators = 256
+	typingRefresh       = 8 * time.Second
+	typingMaxDuration   = 2 * time.Minute
+)
+
+type typingIndicator struct {
+	id        uint64
+	cancel    context.CancelFunc
+	startedAt time.Time
 }
 
 // NewChannel 创建微信通道实例
@@ -44,7 +61,7 @@ func NewChannel(cfg channel.ChannelConfig, handler channel.MessageHandler) (chan
 		credPath:      cfg.Extra["cred_path"],
 		logLevel:      cfg.Extra["log_level"],
 		handler:       handler,
-		typingCancels: make(map[string]context.CancelFunc),
+		typingCancels: make(map[string]typingIndicator),
 	}
 	if ids := cfg.Extra["allow_from"]; ids != "" {
 		c.allowFrom = make(map[string]bool)
@@ -63,6 +80,37 @@ func (c *Channel) IsRunning() bool { return c.running.Load() }
 
 // Start 启动微信 Bot，执行登录并开始消息轮询
 func (c *Channel) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !c.running.CompareAndSwap(false, true) {
+		return fmt.Errorf("weixin channel is already running")
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	c.mu.Lock()
+	c.cancel = cancel
+	c.runCtx = runCtx
+	c.runDone = done
+	c.accepting = false
+	c.mu.Unlock()
+	started := false
+	defer func() {
+		if !started {
+			cancel()
+			close(done)
+			c.mu.Lock()
+			if c.runDone == done {
+				c.cancel = nil
+				c.runCtx = nil
+				c.runDone = nil
+				c.accepting = false
+			}
+			c.mu.Unlock()
+			c.running.Store(false)
+		}
+	}()
+
 	opts := wechatbot.Options{
 		LogLevel: c.logLevel,
 		OnQRURL: func(qrURL string) {
@@ -93,7 +141,7 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	bot := wechatbot.New(opts)
 
-	creds, err := bot.Login(ctx, false)
+	creds, err := bot.Login(runCtx, false)
 	if err != nil {
 		return err
 	}
@@ -104,17 +152,31 @@ func (c *Channel) Start(ctx context.Context) error {
 	})
 
 	c.mu.Lock()
+	if err := runCtx.Err(); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("start weixin channel: %w", err)
+	}
 	c.bot = bot
-	runCtx, cancel := context.WithCancel(ctx)
-	c.cancel = cancel
+	c.accepting = true
 	c.mu.Unlock()
-
-	c.running.Store(true)
+	started = true
 
 	go func() {
-		if err := bot.Run(runCtx); err != nil {
+		err := bot.Run(runCtx)
+		if err != nil && runCtx.Err() == nil {
 			log.Printf("[weixin] bot run error: %v", err)
 		}
+		cancel()
+		c.cancelAllTyping()
+		c.mu.Lock()
+		if c.runDone == done {
+			c.bot = nil
+			c.runCtx = nil
+			c.accepting = false
+		}
+		c.mu.Unlock()
+		done <- err
+		close(done)
 		c.running.Store(false)
 	}()
 
@@ -122,20 +184,39 @@ func (c *Channel) Start(ctx context.Context) error {
 }
 
 // Stop 停止微信 Bot
-func (c *Channel) Stop(_ context.Context) error {
+func (c *Channel) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	c.mu.Lock()
 	bot := c.bot
 	cancel := c.cancel
+	done := c.runDone
 	c.bot = nil
-	c.cancel = nil
-	c.mu.Unlock()
-
+	c.accepting = false
 	if cancel != nil {
 		cancel()
 	}
+	c.mu.Unlock()
+	c.cancelAllTyping()
 	if bot != nil {
 		bot.Stop()
 	}
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return fmt.Errorf("stop weixin channel: %w", ctx.Err())
+		}
+	}
+	c.mu.Lock()
+	if c.runDone == done {
+		c.bot = nil
+		c.cancel = nil
+		c.runCtx = nil
+		c.runDone = nil
+	}
+	c.mu.Unlock()
 	c.running.Store(false)
 	log.Printf("[weixin] 微信 bot 已停止")
 	return nil
@@ -143,11 +224,15 @@ func (c *Channel) Stop(_ context.Context) error {
 
 // Send 向指定用户发送消息
 func (c *Channel) Send(ctx context.Context, chatID string, msg channel.Message) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	c.mu.Lock()
 	bot := c.bot
+	accepting := c.accepting
 	c.mu.Unlock()
-	if bot == nil {
-		return nil
+	if bot == nil || !accepting {
+		return fmt.Errorf("weixin channel is not running")
 	}
 
 	// 发送消息前停止 typing 指示器
@@ -210,33 +295,88 @@ func (c *Channel) onMessage(bot *wechatbot.Bot, msg *wechatbot.IncomingMessage) 
 
 // startTyping 启动持续 typing 指示器
 func (c *Channel) startTyping(bot *wechatbot.Bot, userID string) {
-	c.stopTyping(userID) // 先停止之前的
-
-	ctx, cancel := context.WithCancel(context.Background())
-	c.typingMu.Lock()
-	c.typingCancels[userID] = cancel
-	c.typingMu.Unlock()
+	if bot == nil || userID == "" {
+		return
+	}
+	c.mu.Lock()
+	parent := c.runCtx
+	active := c.bot == bot
+	c.mu.Unlock()
+	if parent == nil || !active {
+		return
+	}
+	ctx, cancel := context.WithTimeout(parent, typingMaxDuration)
+	id := c.registerTyping(userID, cancel)
 
 	go func() {
-		_ = bot.SendTyping(ctx, userID)
-		ticker := time.NewTicker(8 * time.Second)
+		defer cancel()
+		defer c.removeTyping(userID, id)
+		if err := bot.SendTyping(ctx, userID); err != nil {
+			return
+		}
+		ticker := time.NewTicker(typingRefresh)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = bot.SendTyping(ctx, userID)
+				if err := bot.SendTyping(ctx, userID); err != nil {
+					return
+				}
 			}
 		}
 	}()
 }
 
+func (c *Channel) registerTyping(userID string, cancel context.CancelFunc) uint64 {
+	c.typingMu.Lock()
+	defer c.typingMu.Unlock()
+	if previous, ok := c.typingCancels[userID]; ok {
+		previous.cancel()
+		delete(c.typingCancels, userID)
+	}
+	for len(c.typingCancels) >= maxTypingIndicators {
+		var oldestUser string
+		var oldestTime time.Time
+		for candidate, indicator := range c.typingCancels {
+			if oldestUser == "" || indicator.startedAt.Before(oldestTime) {
+				oldestUser = candidate
+				oldestTime = indicator.startedAt
+			}
+		}
+		oldest := c.typingCancels[oldestUser]
+		oldest.cancel()
+		delete(c.typingCancels, oldestUser)
+	}
+	c.typingSeq++
+	id := c.typingSeq
+	c.typingCancels[userID] = typingIndicator{id: id, cancel: cancel, startedAt: time.Now()}
+	return id
+}
+
 // stopTyping 停止指定用户的 typing 指示器
 func (c *Channel) stopTyping(userID string) {
 	c.typingMu.Lock()
-	if cancel, ok := c.typingCancels[userID]; ok {
-		cancel()
+	if indicator, ok := c.typingCancels[userID]; ok {
+		indicator.cancel()
+		delete(c.typingCancels, userID)
+	}
+	c.typingMu.Unlock()
+}
+
+func (c *Channel) removeTyping(userID string, id uint64) {
+	c.typingMu.Lock()
+	if indicator, ok := c.typingCancels[userID]; ok && indicator.id == id {
+		delete(c.typingCancels, userID)
+	}
+	c.typingMu.Unlock()
+}
+
+func (c *Channel) cancelAllTyping() {
+	c.typingMu.Lock()
+	for userID, indicator := range c.typingCancels {
+		indicator.cancel()
 		delete(c.typingCancels, userID)
 	}
 	c.typingMu.Unlock()
