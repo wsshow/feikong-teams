@@ -319,7 +319,16 @@ func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequ
 
 // backgroundExecution 将当前执行转入后台
 func (t *CommandTools) backgroundExecution(ec *executionContext) (*SmartExecuteResponse, error) {
-	taskID, _ := ec.registerAndWaitBackground()
+	taskID, _, ok := ec.registerAndWaitBackground()
+	if !ok {
+		ec.cancel()
+		return &SmartExecuteResponse{
+			Command:       ec.req.Command,
+			SecurityLevel: securityLevelName(ec.eval.Level),
+			ExitCode:      intPtr(-1),
+			ErrorMessage:  "too many background tasks are running",
+		}, nil
+	}
 
 	return &SmartExecuteResponse{
 		Success:       true,

@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,6 +128,46 @@ func TestBackgroundTaskMissingAndCompletedTerminate(t *testing.T) {
 	}
 	if resp.ErrorMessage != "invalid task operation" {
 		t.Fatalf("unknown task action error = %q", resp.ErrorMessage)
+	}
+}
+
+func TestReserveBackgroundTaskSlotRejectsWhenAllTasksRunning(t *testing.T) {
+	resetBackgroundTasksForTest(t)
+
+	bgTasksMu.Lock()
+	for i := 0; i < maxBackgroundTasks; i++ {
+		bgTasks[fmt.Sprintf("running-%d", i)] = &backgroundTask{startAt: time.Now()}
+	}
+	if reserveBackgroundTaskSlot() {
+		bgTasksMu.Unlock()
+		t.Fatal("expected full running task registry to reject a new task")
+	}
+	got := len(bgTasks)
+	bgTasksMu.Unlock()
+	if got != maxBackgroundTasks {
+		t.Fatalf("background task count = %d, want %d", got, maxBackgroundTasks)
+	}
+}
+
+func TestReserveBackgroundTaskSlotEvictsOldestCompletedTask(t *testing.T) {
+	resetBackgroundTasksForTest(t)
+
+	now := time.Now()
+	bgTasksMu.Lock()
+	for i := 0; i < maxBackgroundTasks-2; i++ {
+		bgTasks[fmt.Sprintf("running-%d", i)] = &backgroundTask{startAt: now}
+	}
+	bgTasks["oldest"] = &backgroundTask{done: true, doneAt: now.Add(-time.Minute)}
+	bgTasks["newer"] = &backgroundTask{done: true, doneAt: now}
+	if !reserveBackgroundTaskSlot() {
+		bgTasksMu.Unlock()
+		t.Fatal("expected a completed task to be evicted")
+	}
+	_, oldestExists := bgTasks["oldest"]
+	_, newerExists := bgTasks["newer"]
+	bgTasksMu.Unlock()
+	if oldestExists || !newerExists {
+		t.Fatalf("unexpected eviction result: oldest=%v newer=%v", oldestExists, newerExists)
 	}
 }
 

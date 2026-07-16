@@ -12,6 +12,7 @@ import (
 const (
 	backgroundThreshold = 15 * time.Second
 	bgTaskTTL           = 1 * time.Hour // 后台任务结果保留时间
+	maxBackgroundTasks  = 64
 )
 
 // backgroundTask 后台任务
@@ -70,6 +71,32 @@ func cleanStaleTasks() {
 		}
 		t.mu.Unlock()
 	}
+}
+
+// reserveBackgroundTaskSlot 为新任务预留容量，优先淘汰最早完成的结果。
+func reserveBackgroundTaskSlot() bool {
+	cleanStaleTasks()
+	if len(bgTasks) < maxBackgroundTasks {
+		return true
+	}
+
+	var oldestID string
+	var oldestDoneAt time.Time
+	for id, task := range bgTasks {
+		task.mu.Lock()
+		done := task.done
+		doneAt := task.doneAt
+		task.mu.Unlock()
+		if done && (oldestID == "" || doneAt.Before(oldestDoneAt)) {
+			oldestID = id
+			oldestDoneAt = doneAt
+		}
+	}
+	if oldestID == "" {
+		return false
+	}
+	delete(bgTasks, oldestID)
+	return true
 }
 
 // handleTaskOperation 后台任务管理路由
@@ -192,7 +219,7 @@ func (t *CommandTools) queryBackgroundTask(taskID string) (*SmartExecuteResponse
 }
 
 // registerAndWaitBackground 注册后台任务并启动等待协程
-func (ec *executionContext) registerAndWaitBackground() (string, *backgroundTask) {
+func (ec *executionContext) registerAndWaitBackground() (string, *backgroundTask, bool) {
 	taskID := fmt.Sprintf("bg_%d", time.Now().UnixNano())
 
 	task := &backgroundTask{
@@ -202,7 +229,10 @@ func (ec *executionContext) registerAndWaitBackground() (string, *backgroundTask
 	}
 
 	bgTasksMu.Lock()
-	cleanStaleTasks()
+	if !reserveBackgroundTaskSlot() {
+		bgTasksMu.Unlock()
+		return "", nil, false
+	}
 	bgTasks[taskID] = task
 	bgTasksMu.Unlock()
 
@@ -220,5 +250,5 @@ func (ec *executionContext) registerAndWaitBackground() (string, *backgroundTask
 		task.mu.Unlock()
 	}()
 
-	return taskID, task
+	return taskID, task, true
 }
