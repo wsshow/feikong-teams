@@ -601,9 +601,27 @@ func (s *Stream) QueueSnapshot() []QueuedMessage {
 func (s *Stream) RestoreQueue(queue []QueuedMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// 恢复期间可能已有并发请求写入新队列项。磁盘快照应排在新消息之前，
+	// 但不能覆盖已经向调用方确认接收的内存消息。
+	current := s.queueSnapshotLocked()
+	currentIDs := make(map[string]struct{}, len(current))
+	for _, msg := range current {
+		if msg.ID != "" {
+			currentIDs[msg.ID] = struct{}{}
+		}
+	}
+
 	s.steering = nil
 	s.followUps = nil
 	for _, msg := range queue {
+		msg = normalizeQueuedMessage(msg)
+		if _, exists := currentIDs[msg.ID]; exists {
+			continue
+		}
+		s.enqueueMessageLocked(msg)
+	}
+	for _, msg := range current {
 		msg = normalizeQueuedMessage(msg)
 		switch msg.Kind {
 		case QueueSteering:

@@ -490,6 +490,32 @@ func TestSteeringQueueIsConsumedBeforeFollowUpFallback(t *testing.T) {
 	}
 }
 
+func TestRestoreQueuePreservesMessagesAcceptedDuringRestore(t *testing.T) {
+	s := newTestStream()
+	accepted := s.EnqueueMessage(QueuedMessage{
+		ID:   "accepted",
+		Kind: QueueFollowUp,
+		Text: "new message",
+	})
+
+	s.RestoreQueue([]QueuedMessage{
+		{ID: "persisted-steering", Kind: QueueSteering, Text: "old steering"},
+		{ID: "persisted-follow-up", Kind: QueueFollowUp, Text: "old follow-up"},
+		{ID: accepted.ID, Kind: QueueFollowUp, Text: "stale duplicate"},
+	})
+
+	queue := s.QueueSnapshot()
+	if len(queue) != 3 {
+		t.Fatalf("queue length = %d, want 3: %#v", len(queue), queue)
+	}
+	if queue[0].ID != "persisted-steering" || queue[1].ID != "persisted-follow-up" || queue[2].ID != accepted.ID {
+		t.Fatalf("restored queue order = %#v", queue)
+	}
+	if queue[2].Text != "new message" {
+		t.Fatalf("accepted message was replaced by stale snapshot: %#v", queue[2])
+	}
+}
+
 func TestEnqueueAndCompletionTransitionAreAtomic(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		s := newTestStream()
