@@ -78,7 +78,7 @@ const chatSlice = createSlice({
         };
       }
       for (const [sessionID, task] of Object.entries(state.runningTasks)) {
-        if (active.has(sessionID) || task.phase === "starting" || task.startedAt > action.payload.requestStartedAt) continue;
+        if (active.has(sessionID) || task.phase === "starting" || task.startedAt >= action.payload.requestStartedAt) continue;
         delete state.runningTasks[sessionID];
       }
     },
