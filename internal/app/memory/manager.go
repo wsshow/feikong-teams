@@ -13,13 +13,16 @@ import (
 
 const (
 	defaultMaxEntries   = 500
-	defaultMinScore     = 1.0
+	defaultMinScore     = 0.5
 	defaultEvictionDays = 30
 
 	// 提取触发条件
 	minNewUserMessages = 2   // 新增至少 2 条用户消息才触发提取
 	minNewContentLen   = 300 // 新增消息总字符数至少 300
 	extractCooldown    = 3 * time.Minute
+
+	maxConcurrentExtractions = 4
+	maxTrackedSessions       = 4_096
 )
 
 // Manager 记忆管理器
@@ -35,12 +38,17 @@ type Manager struct {
 	evictionDays int
 
 	taskMu           sync.Mutex
+	resetMu          sync.Mutex
 	wg               sync.WaitGroup
 	stopping         bool
+	paused           bool
 	stopOnce         sync.Once
 	stopDone         chan struct{}
+	extractionSlots  chan struct{}
+	extracting       map[string]struct{}
 	extractedOffsets map[string]int
 	lastExtractTime  map[string]time.Time
+	sessionAccess    map[string]time.Time
 	dirty            bool
 }
 
@@ -76,6 +84,9 @@ func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager 
 		evictionDays:     evictionDays,
 		extractedOffsets: make(map[string]int),
 		lastExtractTime:  make(map[string]time.Time),
+		sessionAccess:    make(map[string]time.Time),
+		extractionSlots:  make(chan struct{}, maxConcurrentExtractions),
+		extracting:       make(map[string]struct{}),
 		stopDone:         make(chan struct{}),
 	}
 	m.load()
@@ -109,8 +120,7 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 	}
 
 	m.mu.Lock()
-	m.extractedOffsets[sessionID] = len(messages)
-	m.lastExtractTime[sessionID] = time.Now()
+	m.setSessionProgressLocked(sessionID, len(messages), time.Now())
 	m.mu.Unlock()
 
 	if len(entries) == 0 {
@@ -153,12 +163,12 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 
 // ExtractAndStoreAsync 原子登记并异步执行一次记忆提取。
 func (m *Manager) ExtractAndStoreAsync(messages []Message, sessionID string) bool {
-	copied := append([]Message(nil), messages...)
-	if !m.beginTask() {
+	if !m.beginExtraction(sessionID) {
 		return false
 	}
+	copied := append([]Message(nil), messages...)
 	go func() {
-		defer m.wg.Done()
+		defer m.finishExtraction(sessionID)
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		m.ExtractAndStore(ctx, copied, sessionID)
@@ -169,8 +179,6 @@ func (m *Manager) ExtractAndStoreAsync(messages []Message, sessionID string) boo
 // Search 检索记忆，使用 BM25 bigram 分词进行语义匹配
 func (m *Manager) Search(query string, topK int) []MemoryEntry {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	results := m.bm25.Search(query, m.entries, topK)
 
 	var entries []MemoryEntry
@@ -179,19 +187,15 @@ func (m *Manager) Search(query string, topK int) []MemoryEntry {
 			entries = append(entries, *r.Entry)
 		}
 	}
+	m.mu.RUnlock()
 
-	// 异步更新命中统计
+	// 命中统计只操作受限的内存条目，同步更新可避免每次查询创建协程。
 	if len(entries) > 0 {
 		hitIDs := make([]string, len(entries))
 		for i := range entries {
 			hitIDs[i] = entries[i].ID
 		}
-		if m.beginTask() {
-			go func() {
-				defer m.wg.Done()
-				m.updateHitStats(hitIDs)
-			}()
-		}
+		m.recordHitStats(hitIDs)
 	}
 
 	return entries
@@ -229,12 +233,20 @@ func (m *Manager) Wait(ctx context.Context) error {
 
 // ResetLLM 替换底层 LLM 客户端（配置变更后调用，保留已有记忆数据）
 func (m *Manager) ResetLLM(llm LLMClient) {
+	m.resetMu.Lock()
+	defer m.resetMu.Unlock()
 	m.taskMu.Lock()
-	defer m.taskMu.Unlock()
+	m.paused = true
+	m.taskMu.Unlock()
 	m.wg.Wait()
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.llm = llm
+	m.mu.Unlock()
+	m.taskMu.Lock()
+	if !m.stopping {
+		m.paused = false
+	}
+	m.taskMu.Unlock()
 }
 
 // FlushExtract 强制提取指定会话的剩余消息（退出前调用，跳过触发条件检查）
@@ -265,7 +277,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 	}
 
 	m.mu.Lock()
-	m.extractedOffsets[sessionID] = len(messages)
+	m.setSessionProgressLocked(sessionID, len(messages), time.Time{})
 
 	added := 0
 	for _, entry := range entries {
@@ -292,14 +304,54 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 	m.mu.Unlock()
 }
 
-func (m *Manager) beginTask() bool {
+func (m *Manager) beginExtraction(sessionID string) bool {
 	m.taskMu.Lock()
 	defer m.taskMu.Unlock()
-	if m.stopping {
+	if m.stopping || m.paused {
 		return false
 	}
+	if _, exists := m.extracting[sessionID]; exists {
+		return false
+	}
+	select {
+	case m.extractionSlots <- struct{}{}:
+	default:
+		return false
+	}
+	m.extracting[sessionID] = struct{}{}
 	m.wg.Add(1)
 	return true
+}
+
+func (m *Manager) finishExtraction(sessionID string) {
+	m.taskMu.Lock()
+	delete(m.extracting, sessionID)
+	<-m.extractionSlots
+	m.taskMu.Unlock()
+	m.wg.Done()
+}
+
+func (m *Manager) setSessionProgressLocked(sessionID string, offset int, extractedAt time.Time) {
+	if _, exists := m.sessionAccess[sessionID]; !exists && len(m.sessionAccess) >= maxTrackedSessions {
+		var oldestSession string
+		var oldestAccess time.Time
+		found := false
+		for candidate, accessedAt := range m.sessionAccess {
+			if !found || accessedAt.Before(oldestAccess) {
+				oldestSession = candidate
+				oldestAccess = accessedAt
+				found = true
+			}
+		}
+		delete(m.extractedOffsets, oldestSession)
+		delete(m.lastExtractTime, oldestSession)
+		delete(m.sessionAccess, oldestSession)
+	}
+	m.extractedOffsets[sessionID] = offset
+	if !extractedAt.IsZero() {
+		m.lastExtractTime[sessionID] = extractedAt
+	}
+	m.sessionAccess[sessionID] = time.Now()
 }
 
 // List 列出所有记忆条目
@@ -344,6 +396,7 @@ func (m *Manager) Clear() {
 	m.entries = []MemoryEntry{}
 	m.extractedOffsets = make(map[string]int)
 	m.lastExtractTime = make(map[string]time.Time)
+	m.sessionAccess = make(map[string]time.Time)
 	m.rebuildIndex()
 	if err := m.save(); err != nil {
 		log.Warnf("[memory] warn: save after clear failed: %v", err)
@@ -395,6 +448,15 @@ func (m *Manager) updateHitStats(ids []string) {
 			m.dirty = true
 		}
 	}
+}
+
+func (m *Manager) recordHitStats(ids []string) {
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
+	if m.stopping {
+		return
+	}
+	m.updateHitStats(ids)
 }
 
 type duplicateAction int

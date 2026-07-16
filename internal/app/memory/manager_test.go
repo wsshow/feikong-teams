@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,6 +191,77 @@ func TestManagerWaitHonorsContextDeadline(t *testing.T) {
 	}
 }
 
+func TestManagerRejectsDuplicateSessionExtraction(t *testing.T) {
+	llm := &blockingLLMClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	manager := NewManager(t.TempDir(), llm, nil)
+	messages := asyncExtractionMessages()
+	if !manager.ExtractAndStoreAsync(messages, "session-1") {
+		t.Fatal("first extraction should be accepted")
+	}
+	<-llm.started
+	if manager.ExtractAndStoreAsync(messages, "session-1") {
+		t.Fatal("duplicate extraction for the same session should be rejected")
+	}
+	close(llm.release)
+	if err := manager.Wait(context.Background()); err != nil {
+		t.Fatalf("wait for extraction: %v", err)
+	}
+	if calls := llm.calls.Load(); calls != 1 {
+		t.Fatalf("llm calls = %d, want 1", calls)
+	}
+}
+
+func TestManagerLimitsConcurrentExtractions(t *testing.T) {
+	llm := &concurrentLLMClient{
+		started: make(chan struct{}, maxConcurrentExtractions),
+		release: make(chan struct{}),
+	}
+	manager := NewManager(t.TempDir(), llm, nil)
+	messages := asyncExtractionMessages()
+	for i := 0; i < maxConcurrentExtractions; i++ {
+		if !manager.ExtractAndStoreAsync(messages, fmt.Sprintf("session-%d", i)) {
+			t.Fatalf("extraction %d should be accepted", i)
+		}
+	}
+	if manager.ExtractAndStoreAsync(messages, "session-overflow") {
+		t.Fatal("extraction above the global limit should be rejected")
+	}
+	for i := 0; i < maxConcurrentExtractions; i++ {
+		select {
+		case <-llm.started:
+		case <-time.After(time.Second):
+			t.Fatal("accepted extraction did not start")
+		}
+	}
+	close(llm.release)
+	if err := manager.Wait(context.Background()); err != nil {
+		t.Fatalf("wait for extractions: %v", err)
+	}
+	if maximum := llm.maximum.Load(); maximum > maxConcurrentExtractions {
+		t.Fatalf("maximum concurrent extractions = %d", maximum)
+	}
+}
+
+func TestManagerBoundsTrackedSessionProgress(t *testing.T) {
+	manager := NewManager(t.TempDir(), nil, nil)
+	manager.mu.Lock()
+	for i := 0; i <= maxTrackedSessions; i++ {
+		manager.setSessionProgressLocked(fmt.Sprintf("session-%d", i), i, time.Now())
+	}
+	count := len(manager.sessionAccess)
+	_, newestExists := manager.sessionAccess[fmt.Sprintf("session-%d", maxTrackedSessions)]
+	manager.mu.Unlock()
+	if count != maxTrackedSessions {
+		t.Fatalf("tracked session count = %d, want %d", count, maxTrackedSessions)
+	}
+	if !newestExists {
+		t.Fatal("newest session progress should be retained")
+	}
+}
+
 func TestManagerDuplicateDetection(t *testing.T) {
 	manager := NewManager(t.TempDir(), nil, nil)
 	manager.entries = []MemoryEntry{{
@@ -217,6 +289,39 @@ type blockingLLMClient struct {
 	started chan struct{}
 	release chan struct{}
 	calls   atomic.Int32
+}
+
+type concurrentLLMClient struct {
+	started chan struct{}
+	release chan struct{}
+	active  atomic.Int32
+	maximum atomic.Int32
+}
+
+func asyncExtractionMessages() []Message {
+	return []Message{
+		{Role: "user", Content: strings.Repeat("用户偏好", 80)},
+		{Role: "assistant", Content: "收到"},
+		{Role: "user", Content: strings.Repeat("继续补充", 80)},
+	}
+}
+
+func (c *concurrentLLMClient) Complete(ctx context.Context, _ string) (string, error) {
+	active := c.active.Add(1)
+	defer c.active.Add(-1)
+	for {
+		maximum := c.maximum.Load()
+		if active <= maximum || c.maximum.CompareAndSwap(maximum, active) {
+			break
+		}
+	}
+	c.started <- struct{}{}
+	select {
+	case <-c.release:
+		return `[]`, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 func (c *blockingLLMClient) Complete(ctx context.Context, _ string) (string, error) {
