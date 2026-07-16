@@ -1,6 +1,7 @@
 package taskstream
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -144,17 +145,17 @@ func TestUnsubscribeDoesNotCancelTask(t *testing.T) {
 
 func TestPublishFansOutToMultipleSubscribers(t *testing.T) {
 	s := newTestStream()
-	var first []Event
-	var second []Event
+	first := make(chan Event, 1)
+	second := make(chan Event, 1)
 
 	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
-		first = append(first, event)
+		first <- event
 		return nil
 	}), 0); !ok {
 		t.Fatal("expected first subscribe to succeed")
 	}
 	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
-		second = append(second, event)
+		second <- event
 		return nil
 	}), 0); !ok {
 		t.Fatal("expected second subscribe to succeed")
@@ -162,14 +163,264 @@ func TestPublishFansOutToMultipleSubscribers(t *testing.T) {
 
 	s.Publish(Event{"type": "message", "content": "hello"})
 
-	if len(first) != 1 || first[0]["content"] != "hello" {
-		t.Fatalf("expected first subscriber to receive event, got %#v", first)
+	firstEvent := receiveEvent(t, first)
+	secondEvent := receiveEvent(t, second)
+	if firstEvent["content"] != "hello" || secondEvent["content"] != "hello" {
+		t.Fatalf("expected both subscribers to receive event, got %#v %#v", firstEvent, secondEvent)
 	}
-	if len(second) != 1 || second[0]["content"] != "hello" {
-		t.Fatalf("expected second subscriber to receive event, got %#v", second)
+	if firstEvent["stream_event_id"] != uint64(0) || secondEvent["stream_event_id"] != uint64(0) {
+		t.Fatalf("expected stream event id to be attached, got %#v %#v", firstEvent, secondEvent)
 	}
-	if first[0]["stream_event_id"] != uint64(0) || second[0]["stream_event_id"] != uint64(0) {
-		t.Fatalf("expected stream event id to be attached, got %#v %#v", first[0], second[0])
+}
+
+func TestSlowSubscriberDoesNotBlockPublishingOrState(t *testing.T) {
+	s := newTestStream()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	if ok, _ := s.Subscribe(FuncSubscriber(func(Event) error {
+		close(started)
+		<-release
+		return nil
+	}), 0); !ok {
+		t.Fatal("expected subscribe to succeed")
+	}
+
+	published := make(chan struct{})
+	go func() {
+		s.Publish(Event{"type": "message", "content": "hello"})
+		close(published)
+	}()
+
+	select {
+	case <-published:
+	case <-time.After(time.Second):
+		t.Fatal("slow subscriber blocked Publish")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber did not start")
+	}
+
+	s.SetStatus("cancelled")
+	if got := s.Status(); got != "cancelled" {
+		t.Fatalf("status = %q, want cancelled", got)
+	}
+	close(release)
+}
+
+func TestSubscriberReceivesEventsInStreamOrder(t *testing.T) {
+	s := newTestStream()
+	received := make(chan uint64, 100)
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
+		received <- event["stream_event_id"].(uint64)
+		return nil
+	}), 0); !ok {
+		t.Fatal("expected subscribe to succeed")
+	}
+
+	for i := 0; i < 100; i++ {
+		s.Publish(Event{"type": "message"})
+	}
+	for want := uint64(0); want < 100; want++ {
+		select {
+		case got := <-received:
+			if got != want {
+				t.Fatalf("event ID = %d, want %d", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for event %d", want)
+		}
+	}
+}
+
+func TestSlowSubscriberIsDetachedWhenItsQueueIsFull(t *testing.T) {
+	s := newTestStream()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	if ok, _ := s.Subscribe(FuncSubscriber(func(Event) error {
+		close(started)
+		<-release
+		return nil
+	}), 0); !ok {
+		t.Fatal("expected subscribe to succeed")
+	}
+
+	s.Publish(Event{"type": "message"})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber did not start")
+	}
+	for i := 0; i <= subscriberQueueSize; i++ {
+		s.Publish(Event{"type": "message"})
+	}
+	if count := s.SubscriptionCount(); count != 0 {
+		t.Fatalf("subscription count = %d, want 0 after queue overflow", count)
+	}
+	close(release)
+}
+
+func TestDoneDrainsQueuedEventsAndCancelsOnce(t *testing.T) {
+	cancelled := 0
+	s := NewManager().Register(StreamConfig{
+		SessionID: "test-session",
+		Cancel:    func() { cancelled++ },
+	})
+	received := make(chan uint64, 3)
+	if ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
+		received <- event["stream_event_id"].(uint64)
+		return nil
+	}), 0); !ok {
+		t.Fatal("expected subscribe to succeed")
+	}
+
+	for i := 0; i < 3; i++ {
+		s.Publish(Event{"type": "message"})
+	}
+	s.Done()
+	s.Done()
+	s.Cancel()
+
+	for want := uint64(0); want < 3; want++ {
+		select {
+		case got := <-received:
+			if got != want {
+				t.Fatalf("event ID = %d, want %d", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for drained event %d", want)
+		}
+	}
+	if count := s.SubscriptionCount(); count != 0 {
+		t.Fatalf("subscription count after Done = %d, want 0", count)
+	}
+	if cancelled != 1 {
+		t.Fatalf("cancel calls = %d, want 1", cancelled)
+	}
+}
+
+func TestPublishedAndReturnedEventsAreIsolated(t *testing.T) {
+	s := newTestStream()
+	original := Event{"type": "message", "content": "original"}
+	s.Publish(original)
+	original["content"] = "changed"
+
+	first := s.EventsSince(0)
+	if len(first) != 1 || first[0].Data["content"] != "original" {
+		t.Fatalf("stored event was mutated through caller: %#v", first)
+	}
+	first[0].Data["content"] = "tampered"
+	second := s.EventsSince(0)
+	if second[0].Data["content"] != "original" {
+		t.Fatalf("stored event was mutated through returned snapshot: %#v", second)
+	}
+	if _, exists := original["stream_event_id"]; exists {
+		t.Fatal("Publish must not mutate the caller's event map")
+	}
+}
+
+func TestReplayDoesNotHoldStreamLockDuringSubscriberWrite(t *testing.T) {
+	s := newTestStream()
+	s.Publish(Event{"type": "message", "content": "replay"})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	subscribed := make(chan bool, 1)
+	var firstWrite sync.Once
+	go func() {
+		ok, _ := s.Subscribe(FuncSubscriber(func(Event) error {
+			firstWrite.Do(func() {
+				close(started)
+				<-release
+			})
+			return nil
+		}), 0)
+		subscribed <- ok
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("replay did not start")
+	}
+	published := make(chan struct{})
+	go func() {
+		s.Publish(Event{"type": "message", "content": "live"})
+		close(published)
+	}()
+	select {
+	case <-published:
+	case <-time.After(time.Second):
+		t.Fatal("replay write held the stream lock")
+	}
+	close(release)
+	select {
+	case ok := <-subscribed:
+		if !ok {
+			t.Fatal("expected subscribe to succeed")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subscribe did not finish")
+	}
+}
+
+func TestSubscribeDrainsLiveTailWhenStreamFinishesDuringReplay(t *testing.T) {
+	s := newTestStream()
+	s.Publish(Event{"type": "message", "content": "replay"})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	received := make(chan string, 2)
+	result := make(chan bool, 1)
+	var firstWrite sync.Once
+	go func() {
+		ok, _ := s.Subscribe(FuncSubscriber(func(event Event) error {
+			firstWrite.Do(func() {
+				close(started)
+				<-release
+			})
+			received <- event["content"].(string)
+			return nil
+		}), 0)
+		result <- ok
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("replay did not start")
+	}
+	s.Publish(Event{"type": "message", "content": "tail"})
+	s.Done()
+	close(release)
+
+	for _, want := range []string{"replay", "tail"} {
+		select {
+		case got := <-received:
+			if got != want {
+				t.Fatalf("content = %q, want %q", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %q", want)
+		}
+	}
+	select {
+	case ok := <-result:
+		if ok {
+			t.Fatal("completed stream must not retain a live subscription")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subscribe did not finish")
+	}
+}
+
+func receiveEvent(t *testing.T, events <-chan Event) Event {
+	t.Helper()
+	select {
+	case event := <-events:
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subscriber event")
+		return nil
 	}
 }
 

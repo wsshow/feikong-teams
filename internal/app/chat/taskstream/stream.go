@@ -10,7 +10,9 @@ package taskstream
 
 import (
 	"fmt"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	domainmessage "fkteams/internal/domain/message"
@@ -100,6 +102,69 @@ type FuncSubscriber func(Event) error
 
 func (f FuncSubscriber) WriteEvent(event Event) error { return f(event) }
 
+const subscriberQueueSize = 256
+
+type streamSubscription struct {
+	target Subscriber
+	queue  chan Event
+	abort  chan struct{}
+	state  atomic.Uint32
+}
+
+func newStreamSubscription(target Subscriber) *streamSubscription {
+	return &streamSubscription{
+		target: target,
+		queue:  make(chan Event, subscriberQueueSize),
+		abort:  make(chan struct{}),
+	}
+}
+
+func (s *streamSubscription) enqueue(event Event) bool {
+	if s == nil || s.state.Load() != 0 {
+		return false
+	}
+	select {
+	case s.queue <- event:
+		return true
+	case <-s.abort:
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *streamSubscription) abortNow() {
+	if s != nil && s.state.Swap(1) != 1 {
+		close(s.abort)
+	}
+}
+
+func (s *streamSubscription) finish() {
+	if s != nil && s.state.CompareAndSwap(0, 2) {
+		close(s.queue)
+	}
+}
+
+func (s *streamSubscription) run(onError func()) {
+	for {
+		select {
+		case <-s.abort:
+			return
+		case event, ok := <-s.queue:
+			if !ok {
+				return
+			}
+			if s.state.Load() == 1 {
+				return
+			}
+			if err := s.target.WriteEvent(event); err != nil {
+				onError()
+				return
+			}
+		}
+	}
+}
+
 // StreamConfig 创建 Stream 时的配置
 type StreamConfig struct {
 	SessionID  string
@@ -124,7 +189,7 @@ type Stream struct {
 	nextID uint64
 
 	// Push 订阅者（多个，如多端 WS 连接）
-	subs    map[SubscriptionID]Subscriber
+	subs    map[SubscriptionID]*streamSubscription
 	subNext SubscriptionID
 
 	// Pull 监听者（多个，如 SSE 连接）
@@ -148,23 +213,30 @@ type Stream struct {
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
+	cancel  sync.Once
 }
 
 // Publish 发布事件到流。有订阅者时推送，同时写入日志，通知所有监听者。
 func (s *Stream) Publish(event Event) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.done {
+		s.mu.Unlock()
+		return
+	}
 
 	// 写入事件日志
 	id := s.nextID
 	s.nextID++
-	event["stream_event_id"] = id
-	s.events = append(s.events, IndexedEvent{ID: id, Data: event})
+	storedEvent := cloneEvent(event)
+	storedEvent["stream_event_id"] = id
+	s.events = append(s.events, IndexedEvent{ID: id, Data: storedEvent})
 
-	// 推送给所有 Push 订阅者
+	// 入队后立即释放任务锁，网络写入由订阅者各自的 worker 串行完成。
+	var overflowed []*streamSubscription
 	for subID, sub := range s.subs {
-		if err := sub.WriteEvent(event); err != nil {
+		if !sub.enqueue(cloneEvent(storedEvent)) {
 			delete(s.subs, subID)
+			overflowed = append(overflowed, sub)
 		}
 	}
 
@@ -174,6 +246,11 @@ func (s *Stream) Publish(event Event) {
 		case ch <- struct{}{}:
 		default:
 		}
+	}
+	s.mu.Unlock()
+
+	for _, sub := range overflowed {
+		sub.abortNow()
 	}
 }
 
@@ -194,34 +271,68 @@ func (s *Stream) CurrentTurn() (string, string) {
 // 返回 (false, 0) 表示流已结束/过期，调用方需自行通知客户端。
 // 返回 (true, id) 表示绑定成功，调用方应保存 id 用于后续 Unsubscribe。
 func (s *Stream) Subscribe(sub Subscriber, offset uint64) (bool, SubscriptionID) {
+	if sub == nil {
+		return false, 0
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.done {
-		// 流已结束，不回放事件（避免重连时重复渲染）
-		// 已完成的任务数据应通过历史 API 获取
+		s.mu.Unlock()
 		return false, 0
 	}
 
-	for _, e := range s.eventsSinceLocked(offset) {
-		if err := sub.WriteEvent(e.Data); err != nil {
-			return false, 0
-		}
-	}
+	replay := s.eventsSinceLocked(offset)
 	if s.subs == nil {
-		s.subs = make(map[SubscriptionID]Subscriber)
+		s.subs = make(map[SubscriptionID]*streamSubscription)
 	}
 	s.subNext++
 	subID := s.subNext
-	s.subs[subID] = sub
+	subscription := newStreamSubscription(sub)
+	s.subs[subID] = subscription
+	s.mu.Unlock()
+
+	// 回放可能包含网络写入，不能占用任务总锁。回放期间的新事件先进入该订阅的有界队列。
+	for _, event := range replay {
+		if subscription.state.Load() == 1 || sub.WriteEvent(event.Data) != nil {
+			s.removeSubscription(subID, subscription)
+			return false, 0
+		}
+	}
+	if subscription.state.Load() == 1 {
+		return false, 0
+	}
+	if subscription.state.Load() == 2 {
+		for event := range subscription.queue {
+			if sub.WriteEvent(event) != nil {
+				subscription.abortNow()
+				return false, 0
+			}
+		}
+		return false, 0
+	}
+	go subscription.run(func() {
+		s.removeSubscription(subID, subscription)
+	})
 	return true, subID
 }
 
 // Unsubscribe 解绑 Push 订阅者。断连只影响当前订阅，不取消后台任务。
 func (s *Stream) Unsubscribe(id SubscriptionID) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	sub := s.subs[id]
 	delete(s.subs, id)
+	s.mu.Unlock()
+	if sub != nil {
+		sub.abortNow()
+	}
+}
+
+func (s *Stream) removeSubscription(id SubscriptionID, expected *streamSubscription) {
+	s.mu.Lock()
+	if s.subs[id] == expected {
+		delete(s.subs, id)
+	}
+	s.mu.Unlock()
+	expected.abortNow()
 }
 
 // SubscriptionCount 返回当前 Push 订阅者数量。
@@ -261,26 +372,39 @@ func (s *Stream) EventsSince(offset uint64) []IndexedEvent {
 }
 
 func (s *Stream) eventsSinceLocked(offset uint64) []IndexedEvent {
-	// 二分查找起始位置
-	start := 0
-	for start < len(s.events) && s.events[start].ID < offset {
-		start++
-	}
+	start := sort.Search(len(s.events), func(i int) bool { return s.events[i].ID >= offset })
 	if start >= len(s.events) {
 		return nil
 	}
 	result := make([]IndexedEvent, len(s.events)-start)
-	copy(result, s.events[start:])
+	for i, event := range s.events[start:] {
+		result[i] = IndexedEvent{ID: event.ID, Data: cloneEvent(event.Data)}
+	}
 	return result
+}
+
+func cloneEvent(event Event) Event {
+	cloned := make(Event, len(event)+1)
+	for key, value := range event {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // Done 标记流已完成。通知所有监听者。
 func (s *Stream) Done() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	if s.done {
+		s.mu.Unlock()
+		return
+	}
 	s.done = true
 	s.doneAt = time.Now()
+	subs := make([]*streamSubscription, 0, len(s.subs))
+	for _, sub := range s.subs {
+		subs = append(subs, sub)
+	}
+	s.subs = nil
 
 	// 通知所有 Pull 监听者（使其退出等待循环）
 	for _, ch := range s.watchers {
@@ -289,11 +413,22 @@ func (s *Stream) Done() {
 		default:
 		}
 	}
+	s.mu.Unlock()
+
+	// 已入队事件（包括 processing_end）按顺序排空后结束订阅 worker。
+	for _, sub := range subs {
+		sub.finish()
+	}
+	s.Cancel()
 }
 
 // Cancel 取消底层任务
 func (s *Stream) Cancel() {
-	s.config.Cancel()
+	s.cancel.Do(func() {
+		if s.config.Cancel != nil {
+			s.config.Cancel()
+		}
+	})
 }
 
 func (s *Stream) EnqueueMessage(msg QueuedMessage) QueuedMessage {

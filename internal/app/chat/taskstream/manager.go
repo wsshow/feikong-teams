@@ -23,13 +23,7 @@ func NewManager() *Manager {
 // Register 注册新的任务流。如果同一 session 已有活跃流，先取消旧流。
 func (m *Manager) Register(cfg StreamConfig) *Stream {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// 取消同一 session 的旧流
-	if old, exists := m.streams[cfg.SessionID]; exists {
-		old.Cancel()
-	}
-
+	old := m.streams[cfg.SessionID]
 	s := &Stream{
 		config:      cfg,
 		status:      "processing",
@@ -38,6 +32,12 @@ func (m *Manager) Register(cfg StreamConfig) *Stream {
 		manager:     m,
 	}
 	m.streams[cfg.SessionID] = s
+	m.mu.Unlock()
+
+	// Cancel 可能触发外部回调，不能在注册表锁内执行。
+	if old != nil {
+		old.Cancel()
+	}
 	return s
 }
 
@@ -158,7 +158,7 @@ func (m *Manager) cleanup() {
 
 	for sid, s := range m.streams {
 		s.mu.Lock()
-		shouldRemove := s.done && s.config.CleanupTTL > 0 && now.Sub(s.doneAt) > s.config.CleanupTTL
+		shouldRemove := s.done && (s.config.CleanupTTL <= 0 || now.Sub(s.doneAt) >= s.config.CleanupTTL)
 		s.mu.Unlock()
 		if shouldRemove {
 			log.Printf("[taskstream] cleanup expired stream: session=%s", sid)

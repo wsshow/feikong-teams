@@ -27,6 +27,8 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
+const webSocketWriteTimeout = 15 * time.Second
+
 // WSMessage WebSocket 消息类型
 type WSMessage struct {
 	Type        string        `json:"type"`
@@ -80,6 +82,9 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 		writeJSON := func(v any) error {
 			writeMu.Lock()
 			defer writeMu.Unlock()
+			if err := conn.SetWriteDeadline(time.Now().Add(webSocketWriteTimeout)); err != nil {
+				return err
+			}
 			return conn.WriteJSON(v)
 		}
 
@@ -135,9 +140,7 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 					}), wsMsg.Offset)
 					if ok {
 						// 成功重新绑定并回放事件
-						sm.mu.Lock()
-						sm.tasks[sid] = &sessionTask{cancel: stream.Cancel, stream: stream, subID: subID}
-						sm.mu.Unlock()
+						sm.attachSubscription(sid, stream, subID)
 						log.Printf("task resumed: session=%s", sid)
 					} else {
 						_ = writeJSON(map[string]any{
@@ -311,13 +314,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	}()
 
 	// 同时在连接级 sessionManager 中注册（用于取消和断线 Unsubscribe）
-	taskID := sm.startTask(sessionID, taskCancel)
-	sm.mu.Lock()
-	if t, exists := sm.tasks[sessionID]; exists && t.id == taskID {
-		t.stream = stream
-		t.subID = subID
-	}
-	sm.mu.Unlock()
+	taskID := sm.startTask(sessionID, taskCancel, stream, subID)
 	defer sm.removeTask(sessionID, taskID)
 
 	// 获取 runner

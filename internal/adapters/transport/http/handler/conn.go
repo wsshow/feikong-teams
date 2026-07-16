@@ -46,24 +46,57 @@ type sessionManager struct {
 
 // startTask 注册一个新的会话任务。如果该 session 已有运行中的任务则先取消旧任务。
 // 返回任务 ID，用于 removeTask 时识别是否是自己注册的任务。
-func (sm *sessionManager) startTask(sessionID string, cancel context.CancelFunc) uint64 {
+func (sm *sessionManager) startTask(sessionID string, cancel context.CancelFunc, stream *taskstream.Stream, subID taskstream.SubscriptionID) uint64 {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if old, exists := sm.tasks[sessionID]; exists && old.cancel != nil {
-		old.cancel()
-	}
+	old := sm.tasks[sessionID]
 	sm.nextID++
 	id := sm.nextID
-	sm.tasks[sessionID] = &sessionTask{cancel: cancel, id: id}
+	sm.tasks[sessionID] = &sessionTask{cancel: cancel, stream: stream, subID: subID, id: id}
+	sm.mu.Unlock()
+
+	detachSessionTask(old, stream, subID, true)
 	return id
+}
+
+// attachSubscription 绑定恢复后的订阅，并替换同一连接上的旧订阅。
+func (sm *sessionManager) attachSubscription(sessionID string, stream *taskstream.Stream, subID taskstream.SubscriptionID) {
+	sm.mu.Lock()
+	task := sm.tasks[sessionID]
+	if task == nil {
+		task = &sessionTask{}
+		sm.tasks[sessionID] = task
+	}
+	oldStream := task.stream
+	oldSubID := task.subID
+	task.cancel = stream.Cancel
+	task.stream = stream
+	task.subID = subID
+	sm.mu.Unlock()
+
+	if oldStream != nil && (oldStream != stream || oldSubID != subID) {
+		oldStream.Unsubscribe(oldSubID)
+	}
+}
+
+func detachSessionTask(task *sessionTask, replacement *taskstream.Stream, replacementSubID taskstream.SubscriptionID, cancel bool) {
+	if task == nil {
+		return
+	}
+	if task.stream != nil && (task.stream != replacement || task.subID != replacementSubID) {
+		task.stream.Unsubscribe(task.subID)
+	}
+	if cancel && task.cancel != nil && task.stream != replacement {
+		task.cancel()
+	}
 }
 
 // cancelTask 取消指定会话的任务
 func (sm *sessionManager) cancelTask(sessionID string) {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if t, exists := sm.tasks[sessionID]; exists && t.cancel != nil {
-		t.cancel()
+	task := sm.tasks[sessionID]
+	sm.mu.Unlock()
+	if task != nil && task.cancel != nil {
+		task.cancel()
 	}
 }
 
