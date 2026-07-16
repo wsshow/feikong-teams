@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -37,15 +38,20 @@ type FileInfo struct {
 }
 
 const (
-	editableFileMaxBytes = 2 * 1024 * 1024
-	maxUploadFiles       = 32
-	maxUploadedFileBytes = 100 << 20
-	maxUploadIDBytes     = 128
-	maxUploadChunks      = 1024
-	maxUploadChunkBytes  = 64 << 20
-	maxChunkedFileBytes  = 4 << 30
-	chunkUploadTTL       = time.Hour
+	editableFileMaxBytes             = 2 * 1024 * 1024
+	maxUploadFiles                   = 32
+	maxUploadedFileBytes             = 100 << 20
+	maxUploadIDBytes                 = 128
+	maxUploadChunks                  = 1024
+	maxUploadChunkBytes              = 64 << 20
+	maxChunkedFileBytes              = 4 << 30
+	chunkUploadTTL                   = time.Hour
+	maxActiveChunkUploads            = 32
+	maxConcurrentChunkRequests       = 8
+	maxChunkUploadTempBytes    int64 = maxChunkedFileBytes
 )
+
+var errChunkUploadCapacity = errors.New("chunk upload capacity exceeded")
 
 const untrustedContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
@@ -606,20 +612,85 @@ type chunkUploadMeta struct {
 	TotalBytes   int64
 	UpdatedAt    time.Time
 	Completed    bool
+	Expired      bool
+	released     bool
 }
 
 // ChunkUploadStore 保存单个 HTTP runtime 的分片上传状态。
 type ChunkUploadStore struct {
 	sync.Mutex
-	m       map[string]*chunkUploadMeta
-	rootDir string
+	m            map[string]*chunkUploadMeta
+	rootDir      string
+	active       int
+	activeBytes  atomic.Int64
+	maxActive    int
+	maxBytes     int64
+	requestSlots chan struct{}
+	closed       bool
+}
+
+type chunkUploadStoreOptions struct {
+	rootDir       string
+	maxActive     int
+	maxBytes      int64
+	maxConcurrent int
 }
 
 // NewChunkUploadStore 创建独立的分片上传状态存储。
-func NewChunkUploadStore() *ChunkUploadStore {
+func NewChunkUploadStore(options ...chunkUploadStoreOptions) *ChunkUploadStore {
+	opt := chunkUploadStoreOptions{
+		rootDir:       filepath.Join(os.TempDir(), "fkteams-chunks", uuid.NewString()),
+		maxActive:     maxActiveChunkUploads,
+		maxBytes:      maxChunkUploadTempBytes,
+		maxConcurrent: maxConcurrentChunkRequests,
+	}
+	if len(options) > 0 {
+		if options[0].rootDir != "" {
+			opt.rootDir = options[0].rootDir
+		}
+		if options[0].maxActive > 0 {
+			opt.maxActive = options[0].maxActive
+		}
+		if options[0].maxBytes > 0 {
+			opt.maxBytes = options[0].maxBytes
+		}
+		if options[0].maxConcurrent > 0 {
+			opt.maxConcurrent = options[0].maxConcurrent
+		}
+	}
 	return &ChunkUploadStore{
-		m:       make(map[string]*chunkUploadMeta),
-		rootDir: filepath.Join(os.TempDir(), "fkteams-chunks", uuid.NewString()),
+		m:            make(map[string]*chunkUploadMeta),
+		rootDir:      opt.rootDir,
+		maxActive:    opt.maxActive,
+		maxBytes:     opt.maxBytes,
+		requestSlots: make(chan struct{}, opt.maxConcurrent),
+	}
+}
+
+func (s *ChunkUploadStore) beginRequest() bool {
+	if s == nil {
+		return false
+	}
+	s.Lock()
+	defer s.Unlock()
+	if s.closed {
+		return false
+	}
+	select {
+	case s.requestSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *ChunkUploadStore) endRequest() {
+	if s == nil {
+		return
+	}
+	select {
+	case <-s.requestSlots:
+	default:
 	}
 }
 
@@ -627,11 +698,17 @@ func (s *ChunkUploadStore) getOrCreate(uploadID string, totalChunks int, filePat
 	key := sanitizeUploadID(uploadID)
 	s.Lock()
 	defer s.Unlock()
+	if s.closed {
+		return nil, fmt.Errorf("chunk upload store is closed")
+	}
 	if existing := s.m[key]; existing != nil {
 		if existing.TotalChunks != totalChunks || existing.FilePath != filePath || existing.RelativePath != relativePath {
 			return nil, fmt.Errorf("upload metadata does not match the existing upload")
 		}
 		return existing, nil
+	}
+	if s.maxActive > 0 && s.active >= s.maxActive {
+		return nil, errChunkUploadCapacity
 	}
 	meta := &chunkUploadMeta{
 		TotalChunks:  totalChunks,
@@ -642,25 +719,74 @@ func (s *ChunkUploadStore) getOrCreate(uploadID string, totalChunks int, filePat
 		UpdatedAt:    time.Now(),
 	}
 	s.m[key] = meta
+	s.active++
 	return meta, nil
 }
 
 func (s *ChunkUploadStore) removeExpired(now time.Time) {
 	s.Lock()
-	var expiredDirs []string
+	items := make(map[string]*chunkUploadMeta, len(s.m))
 	for key, meta := range s.m {
-		meta.mu.Lock()
-		expired := now.Sub(meta.UpdatedAt) >= chunkUploadTTL
-		dir := meta.ChunkDir
-		meta.mu.Unlock()
-		if expired {
-			delete(s.m, key)
-			expiredDirs = append(expiredDirs, dir)
-		}
+		items[key] = meta
 	}
 	s.Unlock()
-	for _, dir := range expiredDirs {
-		_ = os.RemoveAll(dir)
+
+	for key, meta := range items {
+		meta.mu.Lock()
+		expired := now.Sub(meta.UpdatedAt) >= chunkUploadTTL
+		if expired {
+			if err := os.RemoveAll(meta.ChunkDir); err != nil {
+				log.Printf("failed to remove expired chunk upload: path=%s, err=%v", meta.ChunkDir, err)
+				meta.mu.Unlock()
+				continue
+			}
+			s.Lock()
+			if s.m[key] == meta && now.Sub(meta.UpdatedAt) >= chunkUploadTTL {
+				delete(s.m, key)
+				meta.Expired = true
+				s.releaseLocked(meta)
+			}
+			s.Unlock()
+		}
+		meta.mu.Unlock()
+	}
+}
+
+func (s *ChunkUploadStore) reserveBytes(delta int64) bool {
+	if delta == 0 {
+		return true
+	}
+	if delta < 0 {
+		s.activeBytes.Add(delta)
+		return true
+	}
+	for {
+		current := s.activeBytes.Load()
+		if s.maxBytes > 0 && current+delta > s.maxBytes {
+			return false
+		}
+		if s.activeBytes.CompareAndSwap(current, current+delta) {
+			return true
+		}
+	}
+}
+
+func (s *ChunkUploadStore) finish(meta *chunkUploadMeta) {
+	s.Lock()
+	s.releaseLocked(meta)
+	s.Unlock()
+}
+
+func (s *ChunkUploadStore) releaseLocked(meta *chunkUploadMeta) {
+	if meta.released {
+		return
+	}
+	meta.released = true
+	if s.active > 0 {
+		s.active--
+	}
+	if meta.TotalBytes != 0 {
+		s.activeBytes.Add(-meta.TotalBytes)
 	}
 }
 
@@ -670,9 +796,14 @@ func (s *ChunkUploadStore) Close() {
 	}
 	s.Lock()
 	s.m = make(map[string]*chunkUploadMeta)
+	s.active = 0
+	s.closed = true
+	s.activeBytes.Store(0)
 	rootDir := s.rootDir
 	s.Unlock()
-	_ = os.RemoveAll(rootDir)
+	if err := os.RemoveAll(rootDir); err != nil {
+		log.Printf("failed to remove chunk upload store: path=%s, err=%v", rootDir, err)
+	}
 }
 
 // UploadChunkHandler 处理分片上传
@@ -681,6 +812,12 @@ func (s *ChunkUploadStore) Close() {
 // UploadChunkHandler 处理当前 HTTP runtime 的分片上传。
 func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		uploads := rt.ChunkUploads
+		if uploads == nil || !uploads.beginRequest() {
+			Fail(c, http.StatusTooManyRequests, "too many concurrent chunk upload requests")
+			return
+		}
+		defer uploads.endRequest()
 		defer func() {
 			if c.Request.MultipartForm != nil {
 				_ = c.Request.MultipartForm.RemoveAll()
@@ -756,16 +893,23 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 			return
 		}
 
-		uploads := rt.ChunkUploads
 		uploads.removeExpired(time.Now())
 		meta, err := uploads.getOrCreate(uploadID, totalChunks, finalPath, relativePath)
 		if err != nil {
+			if errors.Is(err, errChunkUploadCapacity) {
+				Fail(c, http.StatusTooManyRequests, err.Error())
+				return
+			}
 			Fail(c, http.StatusConflict, err.Error())
 			return
 		}
 
 		meta.mu.Lock()
 		defer meta.mu.Unlock()
+		if meta.Expired {
+			Fail(c, http.StatusGone, "chunk upload has expired")
+			return
+		}
 		meta.UpdatedAt = time.Now()
 		if meta.Completed {
 			writeCompletedChunkUploadResponse(c, uploadID, meta)
@@ -777,6 +921,17 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 			Fail(c, http.StatusRequestEntityTooLarge, "chunked file is too large")
 			return
 		}
+		reservedDelta := file.Size - previousSize
+		if !uploads.reserveBytes(reservedDelta) {
+			Fail(c, http.StatusTooManyRequests, errChunkUploadCapacity.Error())
+			return
+		}
+		reserved := true
+		defer func() {
+			if reserved {
+				uploads.activeBytes.Add(-reservedDelta)
+			}
+		}()
 		if err := os.MkdirAll(meta.ChunkDir, 0700); err != nil {
 			log.Printf("failed to create chunk dir: path=%s, err=%v", meta.ChunkDir, err)
 			Fail(c, http.StatusInternalServerError, "创建临时目录失败")
@@ -789,6 +944,9 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 			Fail(c, http.StatusInternalServerError, "保存分片失败")
 			return
 		}
+		actualDelta := written - previousSize
+		uploads.activeBytes.Add(actualDelta - reservedDelta)
+		reserved = false
 		meta.Received[chunkIndex] = written
 		meta.TotalBytes = meta.TotalBytes - previousSize + written
 		receivedCount := len(meta.Received)
@@ -821,7 +979,11 @@ func (rt *Runtime) UploadChunkHandler() gin.HandlerFunc {
 
 		meta.Completed = true
 		meta.UpdatedAt = time.Now()
-		_ = os.RemoveAll(meta.ChunkDir)
+		if err := os.RemoveAll(meta.ChunkDir); err != nil {
+			log.Printf("failed to remove completed chunk upload: path=%s, err=%v", meta.ChunkDir, err)
+		} else {
+			uploads.finish(meta)
+		}
 		writeCompletedChunkUploadResponse(c, uploadID, meta)
 	}
 }
