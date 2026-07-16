@@ -147,34 +147,36 @@ func (s *httpService) Start(ctx context.Context) error {
 
 // Stop 优雅关闭 HTTP 服务（5 秒超时）
 func (s *httpService) Stop(ctx context.Context) error {
+	var result error
 	if s.runtime != nil {
-		defer s.runtime.Close()
+		s.runtime.BeginShutdown()
 	}
-	if s.server == nil {
-		return nil
-	}
+	if s.server != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
 
-	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	if err := s.server.Shutdown(shutdownCtx); err != nil {
-		closeErr := s.server.Close()
-		if closeErr != nil {
-			return fmt.Errorf("http shutdown error: %w", errors.Join(err, closeErr))
-		}
-		return fmt.Errorf("http shutdown error: %w", err)
-	}
-	if s.serveDone != nil {
-		select {
-		case err := <-s.serveDone:
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				return fmt.Errorf("http serve error: %w", err)
+		if err := s.server.Shutdown(shutdownCtx); err != nil {
+			closeErr := s.server.Close()
+			if closeErr != nil {
+				result = fmt.Errorf("http shutdown error: %w", errors.Join(err, closeErr))
+			} else {
+				result = fmt.Errorf("http shutdown error: %w", err)
 			}
-		case <-shutdownCtx.Done():
-			return fmt.Errorf("wait for HTTP server stop: %w", shutdownCtx.Err())
+		} else if s.serveDone != nil {
+			select {
+			case err := <-s.serveDone:
+				if err != nil && !errors.Is(err, http.ErrServerClosed) {
+					result = fmt.Errorf("http serve error: %w", err)
+				}
+			case <-shutdownCtx.Done():
+				result = fmt.Errorf("wait for HTTP server stop: %w", shutdownCtx.Err())
+			}
 		}
 	}
-	return nil
+	if s.runtime != nil {
+		result = errors.Join(result, s.runtime.Shutdown(ctx))
+	}
+	return result
 }
 
 // Addr 返回服务监听地址

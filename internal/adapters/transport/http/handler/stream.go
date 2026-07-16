@@ -116,10 +116,16 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		stream.Publish(standardMessageEventPayload(sessionID, initialRunID, initialTurnID, "开始处理您的请求..."))
 
 		// 后台执行任务
-		go func() {
+		if !rt.Go(func() {
 			defer releaseRecorder()
 			rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
-		}()
+		}) {
+			taskCancel()
+			releaseRecorder()
+			stream.Done()
+			Fail(c, http.StatusServiceUnavailable, "HTTP runtime is shutting down")
+			return
+		}
 		unlockSession()
 
 		OK(c, gin.H{

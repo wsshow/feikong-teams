@@ -126,7 +126,9 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 					_ = writeJSON(errorEventPayload("", "session_id is required"))
 					continue
 				}
-				go rt.handleChatMessage(sm, wsMsg, writeJSON, state)
+				if !rt.Go(func() { rt.handleChatMessage(sm, wsMsg, writeJSON, state) }) {
+					_ = writeJSON(errorEventPayload(wsMsg.SessionID, "HTTP runtime is shutting down"))
+				}
 
 			case "steer", "steering":
 				rt.handleSteeringMessage(wsMsg, writeJSON)

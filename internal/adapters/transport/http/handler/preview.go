@@ -732,11 +732,11 @@ func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
 
 		// 异步清理过期链接
 		if len(expired) > 0 {
-			go func() {
+			rt.Go(func() {
 				if err := store.DeleteMany(expired); err != nil {
 					log.Printf("failed to persist expired preview link cleanup: err=%v", err)
 				}
-			}()
+			})
 		}
 
 		OK(c, links)

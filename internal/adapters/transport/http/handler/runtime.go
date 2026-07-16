@@ -50,6 +50,12 @@ type Runtime struct {
 
 	sessionOperationsMu sync.Mutex
 	sessionOperations   map[string]*sessionOperationLock
+	tasksMu             sync.Mutex
+	tasks               sync.WaitGroup
+	closing             bool
+	shutdownOnce        sync.Once
+	resourceCloseOnce   sync.Once
+	shutdownDone        chan struct{}
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
@@ -107,6 +113,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		Runtime:        opt.Runtime,
 		Interrupt:      opt.Interrupt,
 		ResetChannels:  opt.ResetChannels,
+		shutdownDone:   make(chan struct{}),
 	}
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
@@ -170,18 +177,70 @@ func (rt *Runtime) InitializationError() error {
 	return nil
 }
 
-// Close 停止后台任务并取消仍在运行的流。
-func (rt *Runtime) Close() {
+// Go 启动由当前 HTTP runtime 负责回收的后台任务。
+func (rt *Runtime) Go(task func()) bool {
+	if rt == nil || task == nil {
+		return false
+	}
+	rt.tasksMu.Lock()
+	if rt.closing {
+		rt.tasksMu.Unlock()
+		return false
+	}
+	rt.tasks.Add(1)
+	rt.tasksMu.Unlock()
+	go func() {
+		defer rt.tasks.Done()
+		task()
+	}()
+	return true
+}
+
+// BeginShutdown 拒绝新后台任务并取消仍在运行的流。
+func (rt *Runtime) BeginShutdown() {
 	if rt == nil {
 		return
 	}
-	if rt.Streams != nil {
-		rt.Streams.StopCleanup()
-		rt.Streams.CancelAll()
+	rt.shutdownOnce.Do(func() {
+		rt.tasksMu.Lock()
+		rt.closing = true
+		rt.tasksMu.Unlock()
+		if rt.Streams != nil {
+			rt.Streams.StopCleanup()
+			rt.Streams.CancelAll()
+		}
+		go func() {
+			rt.tasks.Wait()
+			close(rt.shutdownDone)
+		}()
+	})
+}
+
+// Shutdown 停止后台任务、关闭后台资源并等待任务退出。
+func (rt *Runtime) Shutdown(ctx context.Context) error {
+	if rt == nil {
+		return nil
 	}
-	if rt.ChunkUploads != nil {
-		rt.ChunkUploads.Close()
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	rt.BeginShutdown()
+	rt.resourceCloseOnce.Do(func() {
+		if rt.ChunkUploads != nil {
+			rt.ChunkUploads.Close()
+		}
+	})
+	select {
+	case <-rt.shutdownDone:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for HTTP runtime tasks: %w", ctx.Err())
+	}
+}
+
+// Close 无超时关闭 runtime，供尚未开始接收请求的启动失败路径使用。
+func (rt *Runtime) Close() {
+	_ = rt.Shutdown(context.Background())
 }
 
 func (rt *Runtime) acquireRecorder(sessionID string) (*eventlog.HistoryRecorder, func()) {
