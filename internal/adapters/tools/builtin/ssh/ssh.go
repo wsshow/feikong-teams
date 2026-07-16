@@ -1,11 +1,14 @@
 package ssh
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -48,29 +51,85 @@ func (c *SshClient) Connect() error {
 
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
-		return err
+		closeErr := sshClient.Close()
+		return errors.Join(err, closeErr)
 	}
 	c.sftpClient = sftpClient
 	return nil
 }
 
-func (c *SshClient) Close() (err error) {
+func (c *SshClient) Close() error {
+	var closeErrors []error
 	if c.sftpClient != nil {
-		err = c.sftpClient.Close()
+		closeErrors = append(closeErrors, c.sftpClient.Close())
+		c.sftpClient = nil
 	}
 	if c.sshClient != nil {
-		err = c.sshClient.Close()
+		closeErrors = append(closeErrors, c.sshClient.Close())
+		c.sshClient = nil
 	}
-	return err
+	return errors.Join(closeErrors...)
 }
 
-func (c *SshClient) Run(shell string) ([]byte, error) {
+func (c *SshClient) RunContext(ctx context.Context, shell string, outputLimit int64) ([]byte, bool, error) {
+	if c == nil || c.sshClient == nil {
+		return nil, false, fmt.Errorf("SSH client is not connected")
+	}
+	if outputLimit < 0 {
+		return nil, false, fmt.Errorf("SSH output limit must not be negative")
+	}
 	session, err := c.sshClient.NewSession()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer session.Close()
-	return session.CombinedOutput(shell)
+	output := &limitedSSHOutput{remaining: outputLimit}
+	session.Stdout = output
+	session.Stderr = output
+	if err := session.Start(shell); err != nil {
+		return nil, false, err
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Wait()
+	}()
+	select {
+	case err := <-done:
+		data, truncated := output.result()
+		return data, truncated, err
+	case <-ctx.Done():
+		_ = session.Close()
+		data, truncated := output.result()
+		return data, truncated, ctx.Err()
+	}
+}
+
+type limitedSSHOutput struct {
+	mu        sync.Mutex
+	buffer    bytes.Buffer
+	remaining int64
+	truncated bool
+}
+
+func (output *limitedSSHOutput) Write(data []byte) (int, error) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	originalLength := len(data)
+	if int64(len(data)) > output.remaining {
+		data = data[:output.remaining]
+		output.truncated = true
+	}
+	if len(data) > 0 {
+		_, _ = output.buffer.Write(data)
+		output.remaining -= int64(len(data))
+	}
+	return originalLength, nil
+}
+
+func (output *limitedSSHOutput) result() ([]byte, bool) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return bytes.Clone(output.buffer.Bytes()), output.truncated
 }
 
 func (c *SshClient) IsRemotePathExist(remotePath string) bool {

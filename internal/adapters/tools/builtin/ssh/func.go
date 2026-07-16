@@ -2,10 +2,14 @@ package ssh
 
 import (
 	"context"
-	"fkteams/internal/runtime/log"
 	"fmt"
 	"time"
+
+	"fkteams/internal/runtime/executil"
+	"fkteams/internal/runtime/log"
 )
+
+const maxSSHCommandOutputBytes int64 = 1 << 20
 
 // SSHTools SSH工具实例，每个agent可以有独立的实例
 type SSHTools struct {
@@ -45,9 +49,10 @@ type SSHExecuteRequest struct {
 
 // SSHExecuteResponse 执行远程命令响应
 type SSHExecuteResponse struct {
-	Output        string `json:"output" jsonschema:"description=命令输出内容（包含 stdout 和 stderr）"`
-	ExecutionTime string `json:"execution_time" jsonschema:"description=执行时长"`
-	ErrorMessage  string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
+	Output          string `json:"output" jsonschema:"description=命令输出内容（包含 stdout 和 stderr）"`
+	ExecutionTime   string `json:"execution_time" jsonschema:"description=执行时长"`
+	OutputTruncated bool   `json:"output_truncated,omitempty" jsonschema:"description=输出是否因超过大小限制而截断"`
+	ErrorMessage    string `json:"error_message,omitempty" jsonschema:"description=错误信息"`
 }
 
 // SSHExecute 在远程服务器执行命令
@@ -83,41 +88,31 @@ func (st *SSHTools) SSHExecute(ctx context.Context, req *SSHExecuteRequest) (*SS
 
 	// 3. 执行命令并计时
 	startTime := time.Now()
-	output, err := executeWithTimeout(st.client, req.Command, timeout)
+	output, truncated, err := executeWithTimeout(ctx, st.client, req.Command, timeout)
+	outputText := executil.String(output, truncated)
 	executionTime := time.Since(startTime)
 
 	if err != nil {
 		return &SSHExecuteResponse{
-			Output:        string(output),
-			ExecutionTime: executionTime.String(),
-			ErrorMessage:  fmt.Sprintf("命令执行失败: %v", err),
+			Output:          outputText,
+			ExecutionTime:   executionTime.String(),
+			OutputTruncated: truncated,
+			ErrorMessage:    fmt.Sprintf("命令执行失败: %v", err),
 		}, nil
 	}
 
 	return &SSHExecuteResponse{
-		Output:        string(output),
-		ExecutionTime: executionTime.String(),
+		Output:          outputText,
+		ExecutionTime:   executionTime.String(),
+		OutputTruncated: truncated,
 	}, nil
 }
 
 // executeWithTimeout 带超时的命令执行
-func executeWithTimeout(client *SshClient, cmd string, timeout time.Duration) ([]byte, error) {
-	done := make(chan error, 1)
-	output := make(chan []byte, 1)
-
-	go func() {
-		out, err := client.Run(cmd)
-		output <- out
-		done <- err
-	}()
-
-	select {
-	case err := <-done:
-		out := <-output
-		return out, err
-	case <-time.After(timeout):
-		return nil, fmt.Errorf("命令执行超时（%v）", timeout)
-	}
+func executeWithTimeout(ctx context.Context, client *SshClient, cmd string, timeout time.Duration) ([]byte, bool, error) {
+	execCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return client.RunContext(execCtx, cmd, maxSSHCommandOutputBytes)
 }
 
 // SSHFileUploadRequest 文件上传请求

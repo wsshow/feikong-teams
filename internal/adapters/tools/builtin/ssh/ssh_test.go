@@ -3,6 +3,7 @@ package ssh
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -10,6 +11,25 @@ func TestNewClientAndAddr(t *testing.T) {
 	client := NewClient("user", "pwd", "127.0.0.1:22")
 	if client.user != "user" || client.pwd != "pwd" || client.Addr() != "127.0.0.1:22" {
 		t.Fatalf("client = %#v", client)
+	}
+}
+
+func TestLimitedSSHOutputEnforcesCombinedLimit(t *testing.T) {
+	output := &limitedSSHOutput{remaining: 8}
+	var wg sync.WaitGroup
+	for _, value := range []string{"12345", "abcde"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := output.Write([]byte(value)); err != nil {
+				t.Errorf("Write() error = %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	data, truncated := output.result()
+	if text := string(data); !truncated || (text != "12345abc" && text != "abcde123") {
+		t.Fatalf("data = %q, truncated = %v", data, truncated)
 	}
 }
 
