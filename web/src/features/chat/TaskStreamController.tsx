@@ -5,6 +5,7 @@ import { streamSnapshot, streamStatus, subscribeStream, type StreamSnapshot } fr
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions, type AppDispatch } from "@/app/store";
 import type { ChatEvent } from "@/types/events";
+import { EventBatcher } from "./eventBatcher";
 import { clearStreamOffset, readStreamOffset, writeStreamOffset } from "./streamOffsets";
 
 const streamReconnectBaseDelayMs = 400;
@@ -90,40 +91,55 @@ async function followTaskStream(
 ) {
   let retryCount = 0;
   let fallbackOffset = initialOffset;
-  for (;;) {
-    if (signal.aborted) return;
-    try {
-      const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, dispatch, canConsume);
-      if (offset === undefined || signal.aborted) return;
-      dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
-      let terminal = false;
-      const result = await subscribeStream(sessionID, offset, (events) => {
-        if (!canConsume()) return;
-        retryCount = 0;
-        fallbackOffset = undefined;
-        for (const event of events) {
-          if (event.stream_event_id !== undefined) {
-            writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
+  let terminal = false;
+  const eventBatcher = new EventBatcher<ChatEvent>((events) => {
+    if (signal.aborted || !canConsume()) return;
+    terminal = applyStreamEvents(sessionID, events, dispatch) || terminal;
+  });
+  try {
+    for (;;) {
+      if (signal.aborted) return;
+      try {
+        const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, signal, dispatch, canConsume);
+        if (offset === undefined || signal.aborted) return;
+        dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
+        let connected = false;
+        const result = await subscribeStream(sessionID, offset, (events) => {
+          if (signal.aborted || !canConsume()) return;
+          retryCount = 0;
+          fallbackOffset = undefined;
+          for (const event of events) {
+            if (event.stream_event_id !== undefined) {
+              writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
+            }
           }
+          if (!connected) {
+            connected = true;
+            dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
+          }
+          eventBatcher.push(events);
+        }, signal);
+        eventBatcher.flush();
+        if (result === "done" && !signal.aborted) {
+          dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
+          if (terminal) return;
         }
-        dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
-        terminal = applyStreamEvents(sessionID, events, dispatch) || terminal;
-      }, signal);
-      if (result === "done") {
-        dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
-        if (terminal) return;
+      } catch (error) {
+        eventBatcher.flush();
+        if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
+        if (error instanceof APIError && error.status === 409) {
+          clearStreamOffset(sessionID);
+          fallbackOffset = undefined;
+        }
       }
-    } catch (error) {
-      if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
-      if (error instanceof APIError && error.status === 409) {
-        clearStreamOffset(sessionID);
-        fallbackOffset = undefined;
-      }
-    }
 
-    if (!await shouldReconnect(sessionID, dispatch)) return;
-    retryCount += 1;
-    await sleep(streamReconnectDelay(retryCount), signal);
+      if (!await shouldReconnect(sessionID, signal, dispatch)) return;
+      retryCount += 1;
+      await sleep(streamReconnectDelay(retryCount), signal);
+    }
+  } finally {
+    if (signal.aborted || !canConsume()) eventBatcher.discard();
+    else eventBatcher.flush();
   }
 }
 
@@ -133,7 +149,8 @@ async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatc
     if (signal.aborted) return;
     try {
       dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
-      const status = await streamStatus(sessionID);
+      const status = await streamStatus(sessionID, signal);
+      if (signal.aborted) return;
       if (status.status !== "processing" || status.has_task === false) {
         finishFromStatus(sessionID, status.status, status.finished_at || status.updated_at, dispatch);
         return;
@@ -141,6 +158,7 @@ async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatc
       dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
       let terminal = false;
       await subscribeStream(sessionID, Number(status.event_count || 0), (events) => {
+        if (signal.aborted) return;
         const event = [...events].reverse().find((item) => terminalEventStatus(item));
         if (!event) return;
         terminal = true;
@@ -151,7 +169,7 @@ async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatc
       if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
     }
 
-    if (!await shouldReconnect(sessionID, dispatch)) return;
+    if (!await shouldReconnect(sessionID, signal, dispatch)) return;
     retryCount += 1;
     await sleep(streamReconnectDelay(retryCount), signal);
   }
@@ -160,28 +178,31 @@ async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatc
 async function resolveSubscribeOffset(
   sessionID: string,
   fallbackOffset: number | undefined,
+  signal: AbortSignal,
   dispatch: AppDispatch,
   canConsume: () => boolean,
 ) {
-  if (!canConsume()) return undefined;
+  if (signal.aborted || !canConsume()) return undefined;
   if (fallbackOffset !== undefined) return fallbackOffset;
   const storedOffset = readStreamOffset(sessionID);
   if (storedOffset !== undefined) return storedOffset;
-  return replayStreamSnapshot(sessionID, dispatch, canConsume);
+  return replayStreamSnapshot(sessionID, signal, dispatch, canConsume);
 }
 
 async function replayStreamSnapshot(
   sessionID: string,
+  signal: AbortSignal,
   dispatch: AppDispatch,
   canConsume: () => boolean,
 ) {
   let nextOffset = 0;
   for (;;) {
-    if (!canConsume()) return undefined;
-    const snapshot = await streamSnapshot(sessionID, { offset: nextOffset, limit: 1000 });
+    if (signal.aborted || !canConsume()) return undefined;
+    const snapshot = await streamSnapshot(sessionID, { offset: nextOffset, limit: 1000, signal });
+    if (signal.aborted || !canConsume()) return undefined;
     if (snapshot.replay_truncated) {
-      const detail = await getSession(sessionID);
-      if (!canConsume()) return undefined;
+      const detail = await getSession(sessionID, signal);
+      if (signal.aborted || !canConsume()) return undefined;
       dispatch(chatActions.setSessionDetail(detail));
       nextOffset = Number(snapshot.earliest_offset || snapshot.snapshot_offset || 0);
     }
@@ -199,6 +220,8 @@ function applyStreamSnapshot(
   canConsume: () => boolean,
 ) {
   if (!canConsume()) return undefined;
+  if (snapshot.mode) dispatch(chatActions.setMode(snapshot.mode));
+  dispatch(chatActions.setCurrentAgent(snapshot.agent_name || ""));
   if (Array.isArray(snapshot.queue)) {
     dispatch(chatActions.setQueue(snapshot.queue));
   }
@@ -231,10 +254,12 @@ function applyStreamEvents(sessionID: string, events: ChatEvent[], dispatch: App
   return false;
 }
 
-async function shouldReconnect(sessionID: string, dispatch: AppDispatch) {
+async function shouldReconnect(sessionID: string, signal: AbortSignal, dispatch: AppDispatch) {
+  if (signal.aborted) return false;
   dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
   try {
-    const status = await streamStatus(sessionID);
+    const status = await streamStatus(sessionID, signal);
+    if (signal.aborted) return false;
     if (status.status === "processing" && status.has_task !== false) return true;
     if (isTerminalStreamStatus(status.status)) {
       markSessionFinished(sessionID, status.status, status.finished_at, dispatch);
@@ -246,6 +271,7 @@ async function shouldReconnect(sessionID: string, dispatch: AppDispatch) {
     dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
     return false;
   } catch (error) {
+    if (signal.aborted || isAbortError(error)) return false;
     if (isAuthenticationError(error)) return false;
     if (error instanceof APIError && error.status === 404) {
       clearStreamOffset(sessionID);

@@ -9,8 +9,8 @@ export function createSession(title = "") {
   return post<{ session_id: string }>("/api/fkteams/sessions", { title });
 }
 
-export function getSession(sessionID: string) {
-  return get<SessionDetail>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`);
+export function getSession(sessionID: string, signal?: AbortSignal) {
+  return get<SessionDetail>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`, { signal });
 }
 
 export function deleteSession(sessionID: string) {

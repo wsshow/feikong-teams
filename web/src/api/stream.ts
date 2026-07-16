@@ -2,7 +2,7 @@ import type { ChatEvent, QueueItem } from "@/types/events";
 import { expireAuthentication } from "@/lib/auth-session";
 import { APIError, del, get, patch, post } from "./client";
 
-export function streamStatus(sessionID: string) {
+export function streamStatus(sessionID: string, signal?: AbortSignal) {
   return get<{
     status: string;
     has_task?: boolean;
@@ -13,7 +13,7 @@ export function streamStatus(sessionID: string) {
     created_at?: string;
     finished_at?: string;
     updated_at?: string;
-  }>(`/api/fkteams/stream/status/${encodeURIComponent(sessionID)}`);
+  }>(`/api/fkteams/stream/status/${encodeURIComponent(sessionID)}`, { signal });
 }
 
 export interface StreamSnapshot {
@@ -36,13 +36,14 @@ export interface StreamSnapshot {
   finished_at?: string;
 }
 
-export function streamSnapshot(sessionID: string, options?: { offset?: number; limit?: number }) {
+export function streamSnapshot(sessionID: string, options?: { offset?: number; limit?: number; signal?: AbortSignal }) {
   const params = new URLSearchParams();
   if (options?.offset !== undefined) params.set("offset", String(options.offset));
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
   return get<StreamSnapshot>(
     `/api/fkteams/stream/snapshot/${encodeURIComponent(sessionID)}${query ? `?${query}` : ""}`,
+    { signal: options?.signal },
   );
 }
 
