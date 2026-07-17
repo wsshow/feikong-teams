@@ -15,7 +15,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/cloudwego/eino v0.9.5
+	github.com/cloudwego/eino v0.9.12
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.68
 	github.com/cloudwego/eino-ext/components/model/claude v0.1.19
 	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.6
@@ -46,12 +46,12 @@ require (
 	github.com/tencent-connect/botgo v0.2.1
 	github.com/urfave/cli/v3 v3.7.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
-	github.com/wsshow/dl v1.0.5
 	github.com/wsshow/docreader v1.1.1
 	github.com/wsshow/selfupdate v1.0.0
 	github.com/xuri/excelize/v2 v2.10.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.46.0
+	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/term v0.39.0
 	google.golang.org/genai v1.50.0
@@ -197,7 +197,6 @@ require (
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa // indirect
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
-	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
