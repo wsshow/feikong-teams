@@ -77,11 +77,11 @@ const (
 	InterruptAsk      InterruptKind = "ask"
 )
 
-type QueueKind string
+type QueueKind = domainmessage.QueueKind
 
 const (
-	QueueFollowUp QueueKind = "follow_up"
-	QueueSteering QueueKind = "steering"
+	QueueFollowUp = domainmessage.QueueFollowUp
+	QueueSteering = domainmessage.QueueSteering
 )
 
 var (
@@ -91,27 +91,8 @@ var (
 	ErrQueuedMessageNotFound = errors.New("queued message not found")
 )
 
-type QueuedMessage struct {
-	ID          string                      `json:"queue_id"`
-	Kind        QueueKind                   `json:"kind"`
-	Text        string                      `json:"text,omitempty"`
-	Parts       []domainmessage.ContentPart `json:"parts,omitempty"`
-	DisplayText string                      `json:"display_text,omitempty"`
-	CreatedAt   time.Time                   `json:"created_at"`
-	UpdatedAt   time.Time                   `json:"updated_at,omitempty"`
-}
-
-func (m QueuedMessage) Message() domainmessage.Message {
-	msg := domainmessage.Message{
-		Role:    domainmessage.RoleUser,
-		Content: m.Text,
-	}
-	if len(m.Parts) > 0 {
-		msg.Content = ""
-		msg.ContentParts = append([]domainmessage.ContentPart(nil), m.Parts...)
-	}
-	return msg
-}
+// QueuedMessage 复用领域队列项，持久化与执行使用同一结构。
+type QueuedMessage = domainmessage.QueuedMessage
 
 // Subscriber 接收推送事件（Push 模式，如 WebSocket 连接）
 type Subscriber interface {
@@ -188,9 +169,11 @@ func (s *streamSubscription) run(onError func()) {
 
 // StreamConfig 创建 Stream 时的配置
 type StreamConfig struct {
-	SessionID  string
-	Cancel     func()        // 取消任务的函数
-	CleanupTTL time.Duration // 任务完成后保留数据的时间（0=立即清理）
+	// QueueDisabled 用于仅执行单轮的同步请求。
+	QueueDisabled bool
+	SessionID     string
+	Cancel        func()        // 取消任务的函数
+	CleanupTTL    time.Duration // 任务完成后保留数据的时间（0=立即清理）
 
 	MaxRetainedEvents     int // 事件回放窗口的最大事件数
 	MaxRetainedEventBytes int // 事件回放窗口的最大估算字节数
@@ -621,7 +604,7 @@ func (s *Stream) EnqueueMessage(msg QueuedMessage) (QueuedMessage, error) {
 func (s *Stream) EnqueueMessageIfProcessing(msg QueuedMessage) (QueuedMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done || s.status != "processing" {
+	if s.done || s.status != "processing" || s.config.QueueDisabled {
 		return QueuedMessage{}, ErrQueueNotProcessing
 	}
 	return s.enqueueMessageLocked(msg)
