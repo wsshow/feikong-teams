@@ -1,3 +1,4 @@
+import { MigrationGate } from "@/features/migration/MigrationGate";
 import { lazy, Suspense, useEffect } from "react";
 import { Provider } from "react-redux";
 import { get } from "@/api/client";
@@ -56,9 +57,9 @@ function Root() {
     );
   }
   return (
-    <AppShell>
-      <Workspace />
-    </AppShell>
+    <MigrationGate>
+      <AppShell><Workspace /></AppShell>
+    </MigrationGate>
   );
 }
 

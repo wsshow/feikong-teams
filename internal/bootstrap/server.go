@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	channel "fkteams/internal/adapters/transport/channel"
 	httpserver "fkteams/internal/adapters/transport/http"
 	"fkteams/internal/adapters/transport/http/handler"
@@ -22,6 +23,11 @@ func (d *ExecutionDependencies) RunServer(ctx context.Context, mode httpserver.M
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	prepared, err := d.prepareStorage(ctx, mode, opts)
+	if err != nil {
+		return err
+	}
+	ctx = prepared
 	cfg := config.Get()
 
 	app := lifecycle.New()
@@ -48,10 +54,11 @@ func (d *ExecutionDependencies) RunServer(ctx context.Context, mode httpserver.M
 	}
 
 	runtime := handler.NewRuntime(handler.RuntimeOptions{
-		ExecutionGate:  d.ExecutionGate,
-		Dependencies:   d.Dependencies,
-		Providers:      d.ModelProviderRegistry,
-		SkillProviders: bootstrapskills.NewDefaultProviderRegistry(), Control: control,
+		MigrationStatus: d.MigrationStatus,
+		ExecutionGate:   d.ExecutionGate,
+		Dependencies:    d.Dependencies,
+		Providers:       d.ModelProviderRegistry,
+		SkillProviders:  bootstrapskills.NewDefaultProviderRegistry(), Control: control,
 	})
 
 	httpSvc := httpserver.NewService(httpserver.ServiceOptions{
@@ -62,12 +69,13 @@ func (d *ExecutionDependencies) RunServer(ctx context.Context, mode httpserver.M
 
 	// 注册消息通道
 	if svc, err := channel.SetupWithOptions(cfg.Channels.List(), channel.SetupOptions{
+		Documents:         d.Documents,
 		State:             state,
 		SchedulerProvider: schedulerProvider,
 		ExecutionGate:     d.ExecutionGate,
 		FactoryRegistry:   bootstrapchannels.RegisterDefaults(),
 	}); err != nil {
-		return fmt.Errorf("setup channels: %w", err)
+		return errors.Join(fmt.Errorf("setup channels: %w", err), d.closeStorage())
 	} else if svc != nil {
 		runtime.ResetChannels = svc.ResetRunners
 		app.RegisterService(svc)

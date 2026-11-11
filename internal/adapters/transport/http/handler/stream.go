@@ -726,7 +726,7 @@ func (rt *Runtime) StreamStatusHandler() gin.HandlerFunc {
 
 		// 无活跃任务，返回会话元数据（供前端判断会话是否存在）
 		sessionDir := rt.sessionDirPath(sessionID)
-		meta, err := eventlog.LoadMetadata(sessionDir)
+		meta, err := eventlog.LoadMetadata(sessionDir, rt.Documents)
 		if err != nil {
 			Fail(c, http.StatusNotFound, "session not found")
 			return

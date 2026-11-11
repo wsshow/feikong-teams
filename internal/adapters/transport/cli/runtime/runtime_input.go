@@ -150,13 +150,13 @@ func (m runtimeModel) handleSubmit(input string) (tea.Model, tea.Cmd) {
 			m.appendBlock(runtimeBlockSystem, "可用智能体", runtimeAgentsMarkdown(m.runtime.ctx))
 			return m, nil
 		case "list_chat_history":
-			m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true))
+			m.appendBlock(runtimeBlockSystem, "聊天历史", runtimeChatHistoryMarkdown(true, m.runtime.session.historyManager.Documents))
 			return m, nil
 		case "load_chat_history":
 			if args != "" {
 				return m.loadRuntimeSession(args), nil
 			}
-			picker, err := newSessionPicker()
+			picker, err := newSessionPicker(m.runtime.session.historyManager.Documents)
 			return m.openRuntimePicker(picker, err, "加载聊天历史")
 		case "save_chat_history":
 			return m.saveRuntimeChatHistory(), nil
@@ -312,7 +312,7 @@ func (m runtimeModel) openRuntimePicker(picker *runtimePicker, err error, title 
 func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
 	recorder := m.runtime.session.recorder()
 	historyFile := filepath.Join(m.runtime.session.historyDir, m.runtime.session.sessionID(), eventlog.TranscriptFileName)
-	store := eventlog.NewChatSessionStore(m.runtime.session.historyDir)
+	store := eventlog.NewChatSessionStore(m.runtime.session.historyDir, m.runtime.session.historyManager.Documents)
 	if err := appchat.NewSessionLifecycle(store).SaveActive(context.Background(), m.runtime.session.sessionID(), m.runtime.session.sessionTitle, recorder); err != nil {
 		m.appendBlock(runtimeBlockError, "保存聊天历史失败", err.Error())
 		return m
@@ -350,9 +350,11 @@ func (m runtimeModel) clearRuntimeChatHistory() runtimeModel {
 
 func (m runtimeModel) loadRuntimeSession(sessionID string) runtimeModel {
 	historyFile := filepath.Join(m.runtime.session.historyDir, sessionID, eventlog.TranscriptFileName)
-	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
-		m.appendBlock(runtimeBlockError, "加载聊天历史失败", "历史文件不存在: "+historyFile)
-		return m
+	if m.runtime.session.historyManager.Documents == nil {
+		if _, err := os.Stat(historyFile); os.IsNotExist(err) {
+			m.appendBlock(runtimeBlockError, "加载聊天历史失败", "历史文件不存在: "+historyFile)
+			return m
+		}
 	}
 
 	m.runtime.session.activeSessionID = sessionID

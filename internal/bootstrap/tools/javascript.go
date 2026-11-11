@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"strings"
 	"sync"
@@ -25,8 +26,8 @@ type javascriptHost struct {
 	serial   sync.Mutex
 }
 
-func newJavaScriptHost(registry *apptools.ToolGroupRegistry) (*javascriptHost, error) {
-	state, err := javascripttool.NewFileStateStore(appdataJavaScriptStateDir())
+func newJavaScriptHost(registry *apptools.ToolGroupRegistry, stores ...storageport.Documents) (*javascriptHost, error) {
+	state, err := javascripttool.NewFileStateStore(appdataJavaScriptStateDir(), stores...)
 	if err != nil {
 		return nil, err
 	}

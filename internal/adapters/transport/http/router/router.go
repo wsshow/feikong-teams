@@ -72,6 +72,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		apiV1.POST("/login", controlBody, handler.LoginHandler())
 		apiV1.POST("/logout", controlBody, handler.LogoutHandler())
 		apiV1.GET("/version", handler.VersionHandler())
+		apiV1.GET("/storage/migration", func(c *gin.Context) { handler.OK(c, gin.H{"migration": runtime.MigrationStatus, "ready": true}) })
 
 		// 智能体 API
 		apiV1.GET("/agents", runtime.GetAgentsHandler())

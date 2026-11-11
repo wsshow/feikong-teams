@@ -8,6 +8,7 @@ import (
 	appchat "fkteams/internal/app/chat"
 	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/log"
 	"fmt"
@@ -298,4 +299,9 @@ func (s *Session) turnHistory(recorder *eventlog.HistoryRecorder) appchat.Sessio
 		return temporaryHistory{recorder}
 	}
 	return recorder
+}
+
+// SetDocuments 绑定当前应用的持久化文档存储。
+func (s *Session) SetDocuments(documents storageport.Documents) {
+	s.historyManager.Documents = documents
 }

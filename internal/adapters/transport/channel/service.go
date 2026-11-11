@@ -9,12 +9,14 @@ import (
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/execution"
 	appschedule "fkteams/internal/app/schedule"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/log"
 	"fmt"
 )
 
 // SetupOptions 描述通道服务的显式依赖。
 type SetupOptions struct {
+	Documents         storageport.Documents
 	ExecutionGate     *config.ExecutionGate
 	State             *appstate.State
 	SchedulerProvider func() *appschedule.Service
@@ -33,6 +35,7 @@ func SetupWithOptions(entries []config.ChannelEntry, options SetupOptions) (*Ser
 	mgr := NewManager(nil, options.FactoryRegistry)
 	historyDir := appdata.SessionsDir()
 	sessions := eventlog.NewSessionHistoryManager()
+	sessions.Documents = options.Documents
 
 	// 为每个通道创建独立的 Bridge（支持不同 mode）
 	bridges := make(map[string]*Bridge)

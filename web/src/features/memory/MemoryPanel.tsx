@@ -54,7 +54,7 @@ export function MemoryPanel() {
   const visible = entries.filter((entry) => (!category || entry.type === category) && `${entry.summary} ${entry.detail} ${(entry.tags || []).join(" ")}`.toLowerCase().includes(query.toLowerCase()));
   return <div className="h-full overflow-auto p-4 sm:p-6">
     <div className="mx-auto max-w-5xl space-y-5">
-      <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">长期记忆</h1><p className="mt-1 text-sm text-muted-foreground">管理助手在不同会话中记住的信息。共 {entries.length} 条。</p></div><Button disabled={busy || !!draft} onClick={() => edit(fresh())}>新增记忆</Button></div>
+      <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">长期记忆</h1><p className="mt-1 text-sm text-muted-foreground">管理助手在不同会话中记住的信息。共 {entries.length} 条。</p></div><Button className="shrink-0 whitespace-nowrap" disabled={busy || !!draft} onClick={() => edit(fresh())}>新增记忆</Button></div>
       {error && <div role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{error}<Button variant="ghost" disabled={busy} onClick={() => setReload((value) => value + 1)}>重新加载</Button></div>}
       {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
       {draft && <form className="sketch-surface space-y-4 rounded-lg p-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>

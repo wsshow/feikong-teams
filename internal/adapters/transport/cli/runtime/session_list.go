@@ -1,8 +1,10 @@
 package runtime
 
 import (
+	"context"
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/cli/tui"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +14,21 @@ import (
 )
 
 // ListSessions 列出所有可用的聊天历史会话，interactive 表示是否在交互模式中调用。
-func ListSessions(interactive ...bool) {
+func ListSessions(interactive ...bool) { ListSessionsWithDocuments(nil, interactive...) }
+
+// ListSessionsWithDocuments 列出当前持久化后端中的会话。
+func ListSessionsWithDocuments(documents storageport.Documents, interactive ...bool) {
+	if documents != nil {
+		records, err := eventlog.NewSessionRepository(CLIHistoryDir, documents).ListSessions(context.Background())
+		if err != nil {
+			pterm.Error.Println(err)
+			return
+		}
+		for _, record := range records {
+			fmt.Printf("%s  %s\n", record.Metadata.ID, record.Metadata.Title)
+		}
+		return
+	}
 	entries, err := os.ReadDir(CLIHistoryDir)
 	if err != nil {
 		pterm.Error.Printfln("读取历史目录失败: %v", err)

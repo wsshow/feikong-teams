@@ -3,6 +3,7 @@ package execution
 
 import (
 	"context"
+	storageport "fkteams/internal/ports/storage"
 
 	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/agent/catalog/toolmeta"
@@ -14,6 +15,7 @@ import (
 
 // Dependencies 保存应用实例的执行能力；副本共享注册表，不包含会话状态或取消信号。
 type Dependencies struct {
+	Documents     storageport.Documents
 	Runtime       runtimeport.Runtime
 	Interrupt     runtimeport.InterruptRuntime
 	ModelRegistry *modelregistry.Registry
@@ -28,6 +30,7 @@ func (d Dependencies) Context(parent context.Context) context.Context {
 	if parent == nil {
 		parent = context.Background()
 	}
+	parent = context.WithValue(parent, documentsKey{}, documentDependency{d.Documents})
 	ctx := runtimeport.WithRuntime(parent, d.Runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, d.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, d.ModelRegistry)
@@ -43,6 +46,9 @@ func FromContext(ctx context.Context) Dependencies {
 	if ctx == nil {
 		return d
 	}
+	if dependency, ok := ctx.Value(documentsKey{}).(documentDependency); ok {
+		d.Documents = dependency.documents
+	}
 	d.Runtime, _ = runtimeport.RuntimeFromContext(ctx)
 	d.Interrupt, _ = runtimeport.InterruptRuntimeFromContext(ctx)
 	d.ModelRegistry, _ = modelregistry.RegistryFromContext(ctx)
@@ -52,3 +58,6 @@ func FromContext(ctx context.Context) Dependencies {
 	d.HookBus = hooks.FromContext(ctx)
 	return d
 }
+
+type documentsKey struct{}
+type documentDependency struct{ documents storageport.Documents }

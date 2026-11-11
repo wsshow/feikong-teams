@@ -455,7 +455,7 @@ func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []
 		EventSink:        rc.handleEvent,
 		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
 			rc.flush()
-			store := eventlog.NewChatSessionStore(b.historyDir)
+			store := eventlog.NewChatSessionStore(b.historyDir, b.sessions.Documents)
 			lifecycleErr := appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
 				SessionID:      sessionID,
 				TitleSource:    combinedInput,

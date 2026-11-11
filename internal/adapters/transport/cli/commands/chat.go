@@ -8,6 +8,7 @@ import (
 	cliruntime "fkteams/internal/adapters/transport/cli/runtime"
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/config"
+	"fkteams/internal/app/execution"
 	"fkteams/internal/app/lifecycle"
 	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -53,6 +54,17 @@ func runChat(ctx context.Context, cmd *ucli.Command, opts Options, agentName str
 		approve = cmd.Root().String("approve")
 	}
 
+	if opts.ConfigureServices == nil {
+		return fmt.Errorf("CLI application services are not configured")
+	}
+
+	if opts.PrepareStorage != nil {
+		var err error
+		ctx, err = opts.PrepareStorage(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	// 创建应用实例（CLI 模式排除 SIGINT，由 Session 处理）
 	app := lifecycle.New(
 		lifecycle.WithExitSignals(syscall.SIGTERM, syscall.SIGHUP),
@@ -99,6 +111,7 @@ func runChat(ctx context.Context, cmd *ucli.Command, opts Options, agentName str
 	var session *cliruntime.Session
 	app.OnReady(func(ctx context.Context) error {
 		session = cliruntime.NewSession(currentMode, inputHistory, createModeRunner)
+		session.SetDocuments(execution.FromContext(ctx).Documents)
 		session.SetMemoryManager(state.Memory())
 		if schedulerProvider != nil {
 			session.SetScheduleService(schedulerProvider())

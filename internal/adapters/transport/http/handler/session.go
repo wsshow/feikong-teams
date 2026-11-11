@@ -124,7 +124,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		sessionDir := rt.sessionDirPath(sessionID)
 		meta, metaErr := rt.SessionService.Get(c.Request.Context(), sessionID)
 
-		transcript, err := eventlog.LoadSessionTranscriptRecords(sessionDir)
+		transcript, err := eventlog.LoadSessionTranscriptRecords(sessionDir, rt.Documents)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				if !activeTask && metaErr != nil {

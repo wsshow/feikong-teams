@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,8 +71,8 @@ func runtimeAgentsMarkdown(ctx context.Context) string {
 	return sb.String()
 }
 
-func runtimeChatHistoryMarkdown(interactive bool) string {
-	items, err := runtimeSessionPickerItems()
+func runtimeChatHistoryMarkdown(interactive bool, stores ...storageport.Documents) string {
+	items, err := runtimeSessionPickerItems(stores...)
 	if err != nil {
 		return "读取历史目录失败: " + err.Error()
 	}

@@ -3,7 +3,12 @@ package bootstrap
 
 import (
 	"context"
+	sqlitestore "fkteams/internal/adapters/storage/sqlite"
+	domainmigration "fkteams/internal/domain/migration"
+	memoryport "fkteams/internal/ports/memory"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
+	"sync"
 	"time"
 
 	javascripthooks "fkteams/internal/adapters/hooks/javascript"
@@ -21,6 +26,12 @@ import (
 // ExecutionDependencies 保存一次应用实例所需的执行依赖。
 // 各注册表均为实例所有，避免入口依赖可变的进程级全局状态。
 type ExecutionDependencies struct {
+	MigrationStatus   domainmigration.Status
+	database          *sqlitestore.Database
+	unlockStorage     func() error
+	storageCloseOnce  sync.Once
+	storageCloseError error
+	MemoryStore       memoryport.Store
 	execution.Dependencies
 	ExecutionGate         *config.ExecutionGate
 	ModelProviderRegistry *modelproviders.Registry
@@ -28,6 +39,10 @@ type ExecutionDependencies struct {
 
 // NewExecutionDependencies 创建并连接默认 runtime、模型、工具和智能体注册表。
 func NewExecutionDependencies() (*ExecutionDependencies, error) {
+	return newExecutionDependencies(nil, nil)
+}
+
+func newExecutionDependencies(documents storageport.Documents, memories memoryport.Store) (*ExecutionDependencies, error) {
 	mcpProvider := mcpadapter.NewProvider()
 	runtimeDefaults, err := bootstrapruntimes.NewDefaults(bootstrapruntimes.Options{
 		MCPProvider: mcpProvider,
@@ -36,7 +51,7 @@ func NewExecutionDependencies() (*ExecutionDependencies, error) {
 		return nil, fmt.Errorf("initialize runtime dependencies: %w", err)
 	}
 
-	toolRegistry, err := bootstraptools.RegisterDefaults(mcpProvider)
+	toolRegistry, err := bootstraptools.RegisterDefaults(mcpProvider, documents)
 	if err != nil {
 		return nil, fmt.Errorf("register default tools: %w", err)
 	}
@@ -50,9 +65,11 @@ func NewExecutionDependencies() (*ExecutionDependencies, error) {
 	})
 
 	return &ExecutionDependencies{
+		MemoryStore:           memories,
 		ExecutionGate:         &config.ExecutionGate{},
 		ModelProviderRegistry: runtimeDefaults.ModelProviderRegistry,
 		Dependencies: execution.Dependencies{
+			Documents:     documents,
 			Runtime:       runtimeDefaults.Runtime,
 			Interrupt:     runtimeDefaults.Interrupt,
 			ModelRegistry: runtimeDefaults.ModelRegistry,

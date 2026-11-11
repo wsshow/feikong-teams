@@ -53,3 +53,36 @@ func TestEditorRejectsInvalidAndUnknownEntries(t *testing.T) {
 		t.Fatal("invalid writes changed memory")
 	}
 }
+
+func TestDisabledAutomaticMemoryStillAllowsManagement(t *testing.T) {
+	store := &memoryStoreFake{}
+	manager := newTestManager(t, store, nil, nil)
+	manager.SetEnabled(false)
+	entry, err := manager.SaveEntry(EditRequest{Type: domainmemory.Fact, Summary: "manual memory"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.Count() != 1 {
+		t.Fatal("manual memory unavailable")
+	}
+	if got := manager.Search("manual memory", 10); len(got) != 0 {
+		t.Fatal("disabled automatic retrieval returned memory")
+	}
+	if err := manager.DeleteEntry(entry.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagerPreservesSnapshotBeyondConfiguredCapacity(t *testing.T) {
+	store := &memoryStoreFake{entries: []MemoryEntry{{ID: "one", Type: domainmemory.Fact, Summary: "one"}, {ID: "two", Type: domainmemory.Fact, Summary: "two"}}}
+	manager := newTestManager(t, store, nil, &Config{MaxEntries: 1})
+	if manager.Count() != 2 {
+		t.Fatal("stored memory was truncated")
+	}
+	if _, err := manager.SaveEntry(EditRequest{ID: "one", Type: domainmemory.Fact, Summary: "edited"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.entries) != 2 {
+		t.Fatal("editing lost unviewed memory")
+	}
+}

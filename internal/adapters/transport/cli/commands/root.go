@@ -13,6 +13,8 @@ import (
 
 // Options 是 CLI 所需的应用装配能力，由组合根显式提供。
 type Options struct {
+	PrepareStorage    func(context.Context) (context.Context, error)
+	CloseStorage      func() error
 	RunServer         func(context.Context, httpserver.Mode, *httpserver.ServeOptions) error
 	ConfigureServices func(*lifecycle.Application) func() *appschedule.Service
 	SkillProviders    *appskill.ProviderRegistry
@@ -32,7 +34,7 @@ func Root(options ...Options) *ucli.Command {
 		Commands: []*ucli.Command{
 			webCommand(opts),
 			serveCommand(opts),
-			sessionCommand(),
+			sessionCommand(opts),
 			updateCommand(),
 			initCommand(),
 			generateCommand(),

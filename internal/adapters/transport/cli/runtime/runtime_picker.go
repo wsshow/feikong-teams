@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,8 +84,8 @@ func newFilePicker(baseDir string) (*runtimePicker, error) {
 	return p, nil
 }
 
-func newSessionPicker() (*runtimePicker, error) {
-	items, err := runtimeSessionPickerItems()
+func newSessionPicker(stores ...storageport.Documents) (*runtimePicker, error) {
+	items, err := runtimeSessionPickerItems(stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +355,18 @@ func (m runtimeModel) acceptPicker() (tea.Model, tea.Cmd) {
 	}
 }
 
-func runtimeSessionPickerItems() ([]runtimePickerItem, error) {
+func runtimeSessionPickerItems(stores ...storageport.Documents) ([]runtimePickerItem, error) {
+	if len(stores) > 0 && stores[0] != nil {
+		records, err := eventlog.NewSessionRepository(CLIHistoryDir, stores[0]).ListSessions(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		items := []runtimePickerItem{}
+		for _, record := range records {
+			items = append(items, runtimePickerItem{Label: record.Metadata.Title, Value: record.Metadata.ID})
+		}
+		return items, nil
+	}
 	entries, err := os.ReadDir(CLIHistoryDir)
 	if err != nil {
 		return nil, err

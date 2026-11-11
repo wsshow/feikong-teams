@@ -343,7 +343,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 				if session.isTemporary() {
 					return nil
 				}
-				store := eventlog.NewChatSessionStore(session.historyDir)
+				store := eventlog.NewChatSessionStore(session.historyDir, session.historyManager.Documents)
 				return appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
 					SessionID: session.sessionID(), TitleSource: session.sessionTitle, SuccessStatus: domainsession.StatusActive,
 					Error: runErr,
@@ -488,7 +488,7 @@ func (s *Session) SaveHistory(ctx context.Context) (bool, error) {
 	if recorder.GetMessageCount() == 0 {
 		return false, nil
 	}
-	store := eventlog.NewChatSessionStore(s.historyDir)
+	store := eventlog.NewChatSessionStore(s.historyDir, s.historyManager.Documents)
 	if err := appchat.NewSessionLifecycle(store).SaveActive(ctx, s.sessionID(), s.sessionTitle, recorder); err != nil {
 		return false, err
 	}

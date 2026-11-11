@@ -5,6 +5,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	sharestore "fkteams/internal/adapters/storage/file/share"
 	domainmessage "fkteams/internal/domain/message"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/log"
 	"net/http"
 	"os"
@@ -45,11 +46,14 @@ func sessionShareResponse(id string, entry *sharestore.SessionEntry) SessionShar
 	}
 }
 
-func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) ([]eventlog.AgentMessage, error) {
+func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool, stores ...storageport.Documents) ([]eventlog.AgentMessage, error) {
 	if !validateSessionID(sessionID) {
 		return nil, errors.New("invalid session ID")
 	}
 	recorder := eventlog.NewHistoryRecorder()
+	if len(stores) > 0 {
+		recorder.Documents = stores[0]
+	}
 	sessionDir := sessionDirPath(historyDir, sessionID)
 	recorder.SetSessionDir(sessionDir)
 	transcriptFile := filepath.Join(sessionDir, eventlog.TranscriptFileName)
@@ -79,12 +83,12 @@ func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) (
 	return messages, nil
 }
 
-func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool) ([]eventlog.TranscriptEvent, error) {
+func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool, stores ...storageport.Documents) ([]eventlog.TranscriptEvent, error) {
 	if !validateSessionID(sessionID) {
 		return nil, errors.New("invalid session ID")
 	}
 	transcriptFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.TranscriptFileName)
-	lines, err := eventlog.LoadTranscriptFromFile(transcriptFile)
+	lines, err := eventlog.LoadTranscriptFromFile(transcriptFile, stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +141,8 @@ func (rt *Runtime) CreateSessionShareHandler() gin.HandlerFunc {
 		}
 
 		sessionDir := rt.sessionDirPath(req.SessionID)
-		meta, metaErr := eventlog.LoadMetadata(sessionDir)
-		messages, err := sessionShareMessages(rt.HistoryDir, req.SessionID, req.AllowToolDetails)
+		meta, metaErr := eventlog.LoadMetadata(sessionDir, rt.Documents)
+		messages, err := sessionShareMessages(rt.HistoryDir, req.SessionID, req.AllowToolDetails, rt.Documents)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) || metaErr != nil {
 				Fail(c, http.StatusNotFound, "session history not found")
@@ -332,7 +336,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 			publicShareAttempts.Reset(attemptKey)
 		}
 
-		transcript, err := sessionShareTranscript(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails)
+		transcript, err := sessionShareTranscript(rt.HistoryDir, entry.SessionID, entry.AllowToolDetails, rt.Documents)
 		if err != nil {
 			log.Printf("failed to load public session share: share=%s, session=%s, err=%v", shareID, entry.SessionID, err)
 			Fail(c, http.StatusGone, "shared session unavailable")

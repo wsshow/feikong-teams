@@ -5,9 +5,11 @@ import (
 	memoryport "fkteams/internal/ports/memory"
 	"fkteams/internal/runtime/log"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -28,6 +30,7 @@ const (
 
 // Manager 记忆管理器
 type Manager struct {
+	enabled atomic.Bool
 	mu      sync.RWMutex
 	store   memoryport.Store
 	entries []MemoryEntry
@@ -94,11 +97,14 @@ func NewManager(store memoryport.Store, llmClient LLMClient, cfg *Config) (*Mana
 		extracting:       make(map[string]struct{}),
 		stopDone:         make(chan struct{}),
 	}
-	entries, err := store.Load(maxEntries)
+	m.enabled.Store(true)
+	// 加载完整快照，避免迁移或调整容量后下一次保存丢失未加载的记忆。
+	entries, err := store.Load(math.MaxInt)
 	if err != nil {
 		return nil, fmt.Errorf("load memory: %w", err)
 	}
 	m.entries = entries
+	m.maxEntries = max(m.maxEntries, len(entries))
 	m.rebuildIndex()
 	return m, nil
 }
@@ -106,6 +112,9 @@ func NewManager(store memoryport.Store, llmClient LLMClient, cfg *Config) (*Mana
 // ExtractAndStore 提取记忆并存储
 // 内部根据新增消息数量、内容长度和冷却时间智能判断是否触发 LLM 提取
 func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
+	if !m.enabled.Load() {
+		return
+	}
 	m.mu.RLock()
 	offset := m.extractedOffsets[sessionID]
 	lastTime := m.lastExtractTime[sessionID]
@@ -188,6 +197,9 @@ func (m *Manager) ExtractAndStoreAsync(messages []Message, sessionID string) boo
 
 // Search 检索记忆，使用 BM25 bigram 分词进行语义匹配
 func (m *Manager) Search(query string, topK int) []MemoryEntry {
+	if !m.enabled.Load() {
+		return nil
+	}
 	m.mu.RLock()
 	results := m.bm25.Search(query, m.entries, topK)
 
@@ -258,6 +270,9 @@ func (m *Manager) ResetLLM(llm LLMClient) {
 
 // FlushExtract 强制提取指定会话的剩余消息（退出前调用，跳过触发条件检查）
 func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionID string) {
+	if !m.enabled.Load() {
+		return
+	}
 	m.mu.RLock()
 	offset := m.extractedOffsets[sessionID]
 	llm := m.llm
@@ -315,7 +330,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 func (m *Manager) beginExtraction(sessionID string) bool {
 	m.taskMu.Lock()
 	defer m.taskMu.Unlock()
-	if m.stopping || m.paused {
+	if m.stopping || m.paused || !m.enabled.Load() {
 		return false
 	}
 	if _, exists := m.extracting[sessionID]; exists {
@@ -642,3 +657,6 @@ func (m *Manager) save() error {
 	m.dirty = false
 	return nil
 }
+
+// SetEnabled 控制自动检索和提取，保留独立的记忆管理能力。
+func (m *Manager) SetEnabled(enabled bool) { m.enabled.Store(enabled) }

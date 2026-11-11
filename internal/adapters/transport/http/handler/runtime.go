@@ -4,6 +4,7 @@ import (
 	"context"
 	filequeue "fkteams/internal/adapters/storage/file/queue"
 	sharestore "fkteams/internal/adapters/storage/file/share"
+	domainmigration "fkteams/internal/domain/migration"
 	"fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/log"
 	"fmt"
@@ -48,6 +49,7 @@ type Runtime struct {
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
 type RuntimeOptions struct {
+	MigrationStatus domainmigration.Status
 	execution.Dependencies
 	QueueStore     storage.QueueStore
 	ExecutionGate  *config.ExecutionGate
@@ -74,6 +76,9 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	if len(options) > 0 {
 		opt = options[0]
 	}
+	if opt.MigrationStatus.State == "" {
+		opt.MigrationStatus.State = "completed"
+	}
 	streams := opt.Streams
 	if streams == nil {
 		streams = taskstream.NewManager()
@@ -87,12 +92,13 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
+		rt.Sessions.Documents = rt.Documents
 	}
 	if rt.HistoryDir == "" {
 		rt.HistoryDir = appdata.SessionsDir()
 	}
 	if rt.QueueStore == nil {
-		rt.QueueStore = filequeue.NewStore(rt.HistoryDir)
+		rt.QueueStore = filequeue.NewStore(rt.HistoryDir, rt.Documents)
 	}
 	rt.Queues = appchat.NewQueueService(rt.Streams, rt.QueueStore, func(stream *taskstream.Stream, items []taskstream.QueuedMessage) {
 		publishQueueSnapshot(stream, stream.SessionID(), items)
@@ -107,13 +113,13 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		rt.ChunkUploads = NewChunkUploadStore()
 	}
 	if rt.PreviewLinks == nil {
-		rt.PreviewLinks = sharestore.NewPreviewLinkStore("")
+		rt.PreviewLinks = sharestore.NewPreviewLinkStore("", rt.Documents)
 	}
 	if rt.SessionShares == nil {
-		rt.SessionShares = sharestore.NewSessionShareStore("")
+		rt.SessionShares = sharestore.NewSessionShareStore("", rt.Documents)
 	}
 	if rt.SessionService == nil {
-		rt.SessionService = appsession.NewService(eventlog.NewSessionRepository(rt.HistoryDir))
+		rt.SessionService = appsession.NewService(eventlog.NewSessionRepository(rt.HistoryDir, rt.Documents))
 	}
 	if rt.Favicons == nil {
 		rt.Favicons = NewFaviconProxy(FaviconProxyOptions{})
@@ -314,7 +320,7 @@ func (rt *Runtime) withExecutionDependencies(ctx context.Context) context.Contex
 }
 
 func (rt *Runtime) chatLifecycle() *appchat.SessionLifecycle {
-	store := eventlog.NewChatSessionStore(rt.HistoryDir)
+	store := eventlog.NewChatSessionStore(rt.HistoryDir, rt.Documents)
 	return appchat.NewSessionLifecycle(store)
 }
 

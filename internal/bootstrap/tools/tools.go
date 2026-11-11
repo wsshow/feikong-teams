@@ -1,6 +1,7 @@
 package tools
 
 import (
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"path/filepath"
 
@@ -36,16 +37,22 @@ func appdataJavaScriptStateDir() string {
 }
 
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
-func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegistry, error) {
+func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Documents) (*apptools.ToolGroupRegistry, error) {
 	sessionsDir := appdata.SessionsDir()
+	var documents storageport.Documents
+	if len(stores) > 0 {
+		documents = stores[0]
+	}
+	histories := eventlog.NewSessionHistoryManager()
+	histories.Documents = documents
 	resolveCtx := apptools.ToolResolveContext{
 		WorkspaceDir:  appdata.WorkspaceDir(),
 		SessionsDir:   sessionsDir,
 		RuntimeDir:    runtimeDir(),
-		HistoryReader: eventlog.NewSessionMessageReader(sessionsDir, eventlog.NewSessionHistoryManager()),
+		HistoryReader: eventlog.NewSessionMessageReader(sessionsDir, histories),
 	}
 	registry := apptools.NewToolGroupRegistry(resolveCtx)
-	javascriptHost, err := newJavaScriptHost(registry)
+	javascriptHost, err := newJavaScriptHost(registry, documents)
 	if err != nil {
 		return nil, fmt.Errorf("initialize javascript host: %w", err)
 	}
@@ -82,7 +89,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 				IncludedTools: []string{"todo_add", "todo_update", "todo_list"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				todoTools, err := todotool.NewTodoTools(ctx.SessionsDir)
+				todoTools, err := todotool.NewTodoTools(ctx.SessionsDir, documents)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 				}

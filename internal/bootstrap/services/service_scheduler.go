@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 // SchedulerService 定时任务调度服务
 type SchedulerService struct {
+	Documents     storageport.Documents
 	executionGate *config.ExecutionGate
 	schedulerDir  string
 	mu            sync.Mutex
@@ -53,7 +55,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 		return nil
 	}
 
-	sched, err := filecron.NewScheduler(s.schedulerDir)
+	sched, err := filecron.NewScheduler(s.schedulerDir, s.Documents)
 	if err != nil {
 		return fmt.Errorf("initialize scheduler: %w", err)
 	}

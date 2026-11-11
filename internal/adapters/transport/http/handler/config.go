@@ -183,6 +183,9 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		}
 		if manager := memoryFromState(state); manager != nil {
 			manager.ResetLLM(memoryClient)
+			if configurable, ok := manager.(interface{ SetEnabled(bool) }); ok {
+				configurable.SetEnabled(newCfg.Memory.Enabled)
+			}
 		}
 
 		OK(c, gin.H{"auth_changed": authChanged})

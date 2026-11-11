@@ -170,13 +170,20 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 
 业务数据的存储位置与契约如下：
 
-| 数据 | 应用契约 | 文件实现 |
+| 数据 | 应用契约 | 默认持久化 |
 | --- | --- | --- |
-| 对话历史 | `chat.SessionHistory.Flush` | `adapters/storage/file/history` |
-| 长期记忆 | `ports/memory.Store` | `adapters/storage/file/memory` |
-| 调度结果 | `ports/scheduler.ResultStore` | `adapters/scheduler/filecron` |
-| 待执行队列 | `domain/message.QueuedMessage` | `adapters/storage/file/queue` |
-| 分享授权 | 具体分享存储 API | `adapters/storage/file/share` |
+| 对话历史与会话信息 | `chat.SessionHistory.Flush` / session store | SQLite 文档及追加片段 |
+| 长期记忆 | `ports/memory.Store` | SQLite `memories` |
+| 调度定义与执行状态 | scheduler store | SQLite 文档 |
+| 调度结果与报告 | `ports/scheduler.ResultStore` | 文件目录 |
+| 待执行队列 | `ports/storage.QueueStore` | SQLite 快照，附件留在文件目录 |
+| 分享授权 | 具体分享存储 API | SQLite 文档 |
+| 会话待办 | todo tools | SQLite 文档 |
+| JavaScript 扩展状态 | JavaScript StateStore | SQLite 文档 |
+
+组合根通过 `ports/storage.Documents` 为历史、队列、分享、调度和脚本适配器注入 SQLite 文档存储。文档使用应用根目录下的相对逻辑路径作为键；追加历史单独存为片段，避免每条消息重写完整会话。适配器继续负责领域格式与权限校验，未注入数据库的旧文件实现只用于兼容读取和测试。`modernc.org/sqlite` 通过实例 connector 使用，支持 `CGO_ENABLED=0`。
+
+`bootstrap.prepareStorage` 在任何业务写入、后台调度或记忆提取启动前取得应用目录锁。`app/migration.Service` 编排业务目录备份、格式及附件校验、数据库导入和逐条回读验证；事务同时提交完成标记。Web 旧数据先进入维护服务器和一次性升级弹窗，CLI/API 自动等待同一用例。失败时不启动业务，原文件与备份保留，重试从未提交状态重新执行。数据库连接与目录锁在后台任务排空后的 Cleanup 释放。备份与恢复说明见 [存储升级](storage.md)。
 
 分享存储复用同一个条目存储实现，统一并发、写入回滚与副本读取，具体条目负责自己的编码和校验。队列存储使用固定根目录读写附件。记忆加载失败必须返回错误，写入失败保留脏状态以供重试。服务停止和 cleanup 错误也从应用入口返回，不能只记录日志后报告成功。
 

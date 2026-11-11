@@ -333,8 +333,8 @@ type memoryStoreFake struct {
 	loadErr, saveErr error
 }
 
-func (s *memoryStoreFake) Load(int) ([]MemoryEntry, error) {
-	return append([]MemoryEntry(nil), s.entries...), s.loadErr
+func (s *memoryStoreFake) Load(limit int) ([]MemoryEntry, error) {
+	return append([]MemoryEntry(nil), s.entries[:min(max(limit, 0), len(s.entries))]...), s.loadErr
 }
 func (s *memoryStoreFake) Save(entries []MemoryEntry) error {
 	if s.saveErr != nil {
