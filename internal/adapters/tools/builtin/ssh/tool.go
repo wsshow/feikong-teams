@@ -11,36 +11,12 @@ func (st *SSHTools) GetTools() ([]runtimeport.Tool, error) {
 	if st == nil || st.client == nil {
 		return nil, fmt.Errorf("SSH 工具未初始化")
 	}
-
-	var tools []runtimeport.Tool
-
 	// 执行远程命令工具
-	executeTool, err := runtimeport.InferTool("ssh_execute", "在远程服务器执行 shell 命令。命令执行前会进行安全检查，拒绝执行危险命令。支持设置超时时间（默认60秒，最大300秒）", st.SSHExecute)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, executeTool)
 
-	// 文件上传工具
-	uploadTool, err := runtimeport.InferTool("ssh_upload", "上传工作区内的本地文件到远程服务器。支持最大 1 GiB 的单文件上传", st.SSHFileUpload)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, uploadTool)
-
-	// 文件下载工具
-	downloadTool, err := runtimeport.InferTool("ssh_download", "从远程服务器下载文件到工作区。支持最大 1 GiB 的单文件原子下载", st.SSHFileDownload)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, downloadTool)
-
-	// 列出远程目录工具
-	listDirTool, err := runtimeport.InferTool("ssh_list_dir", "列出远程服务器指定目录下的文件和文件夹，最多返回 10000 项或 1 MiB 文本", st.SSHListDir)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, listDirTool)
-
-	return tools, nil
+	return runtimeport.NewTools([]runtimeport.ToolDefinition{
+		{Name: "ssh_execute", Description: "在远程服务器执行 shell 命令。命令执行前会进行安全检查，拒绝执行危险命令。支持设置超时时间（默认60秒，最大300秒）", Handler: st.SSHExecute},
+		{Name: "ssh_upload", Description: "上传工作区内的本地文件到远程服务器。支持最大 1 GiB 的单文件上传", Handler: st.SSHFileUpload},
+		{Name: "ssh_download", Description: "从远程服务器下载文件到工作区。支持最大 1 GiB 的单文件原子下载", Handler: st.SSHFileDownload},
+		{Name: "ssh_list_dir", Description: "列出远程服务器指定目录下的文件和文件夹，最多返回 10000 项或 1 MiB 文本", Handler: st.SSHListDir},
+	})
 }

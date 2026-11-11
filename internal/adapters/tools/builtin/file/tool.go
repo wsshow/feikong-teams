@@ -11,55 +11,14 @@ func (ft *FileTools) GetTools() ([]runtimeport.Tool, error) {
 		return nil, fmt.Errorf("文件工具未初始化")
 	}
 
-	var tools []runtimeport.Tool
-
-	fileReadTool, err := runtimeport.InferTool("file_read", fileReadDesc, ft.FileRead)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileReadTool)
-
-	fileWriteTool, err := runtimeport.InferTool("file_write", fileWriteDesc, ft.FileWrite)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileWriteTool)
-
-	fileAppendTool, err := runtimeport.InferTool("file_append", fileAppendDesc, ft.FileAppend)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileAppendTool)
-
-	fileEditTool, err := runtimeport.InferTool("file_edit", fileEditDesc, ft.FileEdit)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileEditTool)
-
-	grepTool, err := runtimeport.InferTool("grep", grepDesc, ft.Grep)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, grepTool)
-
-	fileListTool, err := runtimeport.InferTool("file_list", fileListDesc, ft.FileList)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, fileListTool)
-
-	globTool, err := runtimeport.InferTool("glob", globDesc, ft.Glob)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, globTool)
-
-	filePatchTool, err := runtimeport.InferTool("file_patch", filePatchDesc, ft.FilePatch)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, filePatchTool)
-
-	return tools, nil
+	return runtimeport.NewTools([]runtimeport.ToolDefinition{
+		{Name: "file_read", Description: fileReadDesc, Handler: ft.FileRead},
+		{Name: "file_write", Description: fileWriteDesc, Handler: ft.FileWrite},
+		{Name: "file_append", Description: fileAppendDesc, Handler: ft.FileAppend},
+		{Name: "file_edit", Description: fileEditDesc, Handler: ft.FileEdit},
+		{Name: "grep", Description: grepDesc, Handler: ft.Grep},
+		{Name: "file_list", Description: fileListDesc, Handler: ft.FileList},
+		{Name: "glob", Description: globDesc, Handler: ft.Glob},
+		{Name: "file_patch", Description: filePatchDesc, Handler: ft.FilePatch},
+	})
 }

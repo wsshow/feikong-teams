@@ -37,13 +37,11 @@ func appdataJavaScriptStateDir() string {
 
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
 func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegistry, error) {
-	cfg := config.Get()
 	sessionsDir := appdata.SessionsDir()
 	resolveCtx := apptools.ToolResolveContext{
 		WorkspaceDir:  appdata.WorkspaceDir(),
 		SessionsDir:   sessionsDir,
 		RuntimeDir:    runtimeDir(),
-		Config:        cfg,
 		HistoryReader: eventlog.NewSessionMessageReader(sessionsDir, eventlog.NewSessionHistoryManager()),
 	}
 	registry := apptools.NewToolGroupRegistry(resolveCtx)
@@ -283,7 +281,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider) (*apptools.ToolGroupRegi
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				current := config.Get()
-				if override, ok := ctx.Config.(*config.Config); ok && override != nil {
+				if override := ctx.Config; override != nil {
 					current = override
 				}
 				definitions := current.JavaScript.Tools

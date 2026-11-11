@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fkteams/internal/app/config"
 	"slices"
 	"testing"
 
@@ -84,7 +85,8 @@ func TestToolGroupRegistryRejectsDuplicateAndResolves(t *testing.T) {
 }
 
 func TestToolGroupRegistryResolveUsesContextPatch(t *testing.T) {
-	registry := NewToolGroupRegistry(ToolResolveContext{Config: "base"})
+	base, override := &config.Config{}, &config.Config{}
+	registry := NewToolGroupRegistry(ToolResolveContext{Config: base})
 	err := registry.Register(ToolGroupRegistration{
 		Info: ToolGroupInfo{
 			Name:        "demo",
@@ -94,7 +96,7 @@ func TestToolGroupRegistryResolveUsesContextPatch(t *testing.T) {
 			Builtin:     true,
 		},
 		Factory: func(ctx ToolResolveContext) ([]runtimeport.Tool, error) {
-			if ctx.Config != "agent" {
+			if ctx.Config != override {
 				t.Fatalf("config = %#v, want agent override", ctx.Config)
 			}
 			return []runtimeport.Tool{registryTestTool{}}, nil
@@ -104,7 +106,7 @@ func TestToolGroupRegistryResolveUsesContextPatch(t *testing.T) {
 		t.Fatalf("register demo: %v", err)
 	}
 
-	ctx := WithResolveContextPatch(context.Background(), ToolResolveContext{Config: "agent"})
+	ctx := WithResolveContextPatch(context.Background(), ToolResolveContext{Config: override})
 	resolved, ok, err := registry.Resolve(ctx, "demo", nil)
 	if err != nil {
 		t.Fatalf("resolve demo: %v", err)

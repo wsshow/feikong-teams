@@ -7,14 +7,12 @@ import (
 	"fkteams/internal/app/agent/catalog/coder"
 	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/agent/catalog/coordinator"
-	"fkteams/internal/app/agent/catalog/custom"
 	"fkteams/internal/app/agent/catalog/fkteamshelper"
 	"fkteams/internal/app/agent/catalog/researcher"
 	"fkteams/internal/app/agent/catalog/visitor"
 	"fkteams/internal/app/config"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
-	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
 	"sync"
 )
@@ -212,7 +210,7 @@ func NewBuiltinAgent(ctx context.Context, id string, extraTools ...runtimeport.T
 			if spec.id != id {
 				continue
 			}
-			def := spec.definition(cfg)
+			def := spec.definition()
 			applyAgentConfig(&def, item)
 			def.Tools = append(def.Tools, extraTools...)
 			return buildConfiguredDefinition(ctx, cfg, def, item)
@@ -245,7 +243,7 @@ type builtinAgentSpec struct {
 	aliases          []string
 	teamMember       bool
 	enabledByDefault bool
-	definition       func(*config.Config) common.Definition
+	definition       func() common.Definition
 }
 
 func builtinAgentSpecs() []builtinAgentSpec {
@@ -255,9 +253,7 @@ func builtinAgentSpecs() []builtinAgentSpec {
 			displayName:      "协调者",
 			aliases:          []string{"小队长"},
 			enabledByDefault: true,
-			definition: func(*config.Config) common.Definition {
-				return coordinator.DefaultDefinition()
-			},
+			definition:       func() common.Definition { return coordinator.DefaultDefinition() },
 		},
 		{
 			id:               "coder",
@@ -265,9 +261,7 @@ func builtinAgentSpecs() []builtinAgentSpec {
 			aliases:          []string{"小码"},
 			teamMember:       true,
 			enabledByDefault: true,
-			definition: func(*config.Config) common.Definition {
-				return coder.DefaultDefinition()
-			},
+			definition:       coder.DefaultDefinition,
 		},
 		{
 			id:               "researcher",
@@ -275,9 +269,7 @@ func builtinAgentSpecs() []builtinAgentSpec {
 			aliases:          []string{"小搜"},
 			teamMember:       true,
 			enabledByDefault: true,
-			definition: func(*config.Config) common.Definition {
-				return researcher.DefaultDefinition()
-			},
+			definition:       researcher.DefaultDefinition,
 		},
 		{
 			id:               "fkteams_helper",
@@ -285,25 +277,21 @@ func builtinAgentSpecs() []builtinAgentSpec {
 			aliases:          []string{"非空小助手", "小助手", "helper", "help"},
 			teamMember:       true,
 			enabledByDefault: true,
-			definition: func(*config.Config) common.Definition {
-				return fkteamshelper.DefaultDefinition()
-			},
+			definition:       fkteamshelper.DefaultDefinition,
 		},
 		{
 			id:          "analyst",
 			displayName: "数据分析师",
 			aliases:     []string{"小析"},
 			teamMember:  true,
-			definition: func(*config.Config) common.Definition {
-				return analyst.DefaultDefinition()
-			},
+			definition:  analyst.DefaultDefinition,
 		},
 		{
 			id:          "remote",
 			displayName: "远程运维",
 			aliases:     []string{"小访", "visitor"},
 			teamMember:  true,
-			definition: func(*config.Config) common.Definition {
+			definition: func() common.Definition {
 				return visitor.DefaultDefinition("", "")
 			},
 		},
@@ -312,9 +300,7 @@ func builtinAgentSpecs() []builtinAgentSpec {
 			displayName: "通用助手",
 			aliases:     []string{"小助", "assistant"},
 			teamMember:  true,
-			definition: func(*config.Config) common.Definition {
-				return assistantagent.DefaultDefinition()
-			},
+			definition:  assistantagent.DefaultDefinition,
 		},
 	}
 }
@@ -349,7 +335,7 @@ func ConfigItems(cfg *config.Config) []config.AgentConfig {
 	result := make([]config.AgentConfig, 0, len(builtinAgentSpecs())+len(cfg.Agents.Items))
 	seen := make(map[string]bool, len(cfg.Agents.Items))
 	for _, spec := range builtinAgentSpecs() {
-		def := spec.definition(cfg)
+		def := spec.definition()
 		item := config.AgentConfig{
 			ID:          spec.id,
 			Name:        spec.displayName,
@@ -388,7 +374,7 @@ func agentInfoFromConfig(cfg *config.Config, agentCfg config.AgentConfig) AgentI
 		if spec.id != agentCfg.ID {
 			continue
 		}
-		def := spec.definition(cfg)
+		def := spec.definition()
 		applyAgentConfig(&def, agentCfg)
 		return AgentInfo{
 			Name:        agentCfg.ID,
@@ -426,12 +412,7 @@ func buildConfiguredDefinition(ctx context.Context, cfg *config.Config, def comm
 	if agentCfg.SSH != nil {
 		applySSHConfigToDefinition(&def, agentCfg.SSH)
 		ctx = apptools.WithResolveContextPatch(ctx, apptools.ToolResolveContext{
-			SSH: &apptools.SSHConfig{
-				Host:           agentCfg.SSH.Host,
-				Username:       agentCfg.SSH.Username,
-				Password:       agentCfg.SSH.Password,
-				KnownHostsFile: agentCfg.SSH.KnownHostsFile,
-			},
+			SSH: agentCfg.SSH,
 		})
 	}
 	if agentCfg.ModelID != "" {
@@ -439,12 +420,7 @@ func buildConfiguredDefinition(ctx context.Context, cfg *config.Config, def comm
 		if modelCfg == nil {
 			return nil, fmt.Errorf("model_id %q not found for agent %s", agentCfg.ModelID, agentCfg.ID)
 		}
-		chatModel, err := common.NewChatModelWithConfig(ctx, &modelregistry.Config{
-			Provider: modelregistry.Type(modelCfg.Provider),
-			APIKey:   modelCfg.APIKey,
-			BaseURL:  modelCfg.BaseURL,
-			Model:    modelCfg.Model,
-		})
+		chatModel, err := common.NewChatModelWithModelConfig(ctx, modelCfg)
 		if err != nil {
 			return nil, fmt.Errorf("create chat model: %w", err)
 		}
@@ -492,37 +468,11 @@ func customAgentInfo(cfg *config.Config, agentCfg config.AgentConfig) AgentInfo 
 		ModelID:     agentCfg.ModelID,
 		ToolNames:   append([]string(nil), agentCfg.Tools...),
 		Creator: func(ctx context.Context) (runtimeport.Agent, error) {
-			if agentCfg.SSH != nil {
-				ctx = apptools.WithResolveContextPatch(ctx, apptools.ToolResolveContext{
-					SSH: &apptools.SSHConfig{
-						Host:           agentCfg.SSH.Host,
-						Username:       agentCfg.SSH.Username,
-						Password:       agentCfg.SSH.Password,
-						KnownHostsFile: agentCfg.SSH.KnownHostsFile,
-					},
-				})
-			}
-			return custom.NewAgent(ctx, custom.Config{
-				Name:        agentID,
-				Description: agentCfg.Description,
-				Prompt:      agentCfg.Prompt,
-				Model:       resolveCustomModel(cfg, agentCfg),
-				ToolNames:   agentCfg.Tools,
-			})
+			return buildConfiguredDefinition(ctx, cfg, common.Definition{
+				Name: agentID, Description: agentCfg.Description, Instruction: agentCfg.Prompt,
+				Profile: common.ProfileFull, ToolNames: agentCfg.Tools,
+			}, agentCfg)
 		},
-	}
-}
-
-func resolveCustomModel(cfg *config.Config, agent config.AgentConfig) custom.Model {
-	mc := cfg.ResolveModel(agent.ModelID)
-	if mc == nil {
-		return custom.Model{}
-	}
-	return custom.Model{
-		Provider: mc.Provider,
-		Name:     mc.Model,
-		APIKey:   mc.APIKey,
-		BaseURL:  mc.BaseURL,
 	}
 }
 

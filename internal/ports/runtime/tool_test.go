@@ -128,3 +128,46 @@ func TestNewToolRejectsInvalidHandlers(t *testing.T) {
 		})
 	}
 }
+
+type declaredInput struct {
+	Value string `json:"value"`
+}
+
+func TestToolDefinitionsPreserveSchemaPolicyAndOrder(t *testing.T) {
+	handler := func(_ context.Context, input *declaredInput) (string, error) { return input.Value, nil }
+	definitions := []ToolDefinition{
+		{Name: "read", Description: "read value", Handler: handler, Policy: ToolPolicyMetadata{ReadOnly: true}},
+		{Name: "write", Description: "write value", Handler: handler, Policy: ToolPolicyMetadata{ApprovalStore: "file"}},
+	}
+	tools, err := NewTools(definitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil || info.Name != definitions[i].Name || info.Policy != definitions[i].Policy {
+			t.Fatalf("tool %d: %+v, %v", i, info, err)
+		}
+		if tool.(ToolInputTypeProvider).InputType().Elem().Name() != "declaredInput" {
+			t.Fatal("input schema type was lost")
+		}
+		result, err := tool.Invoke(context.Background(), ToolInvocation{Arguments: `{"value":"ok"}`})
+		if err != nil || result.Content != "ok" {
+			t.Fatalf("invoke: %+v, %v", result, err)
+		}
+	}
+}
+
+func TestToolDefinitionsRejectInvalidListsAtomically(t *testing.T) {
+	handler := func(context.Context, *declaredInput) (string, error) { return "", nil }
+	var nilHandler func(context.Context, *declaredInput) (string, error)
+	for _, definitions := range [][]ToolDefinition{
+		{{Name: "same", Handler: handler}, {Name: "same", Handler: handler}},
+		{{Name: "valid", Handler: handler}, {Name: "bad", Handler: nilHandler}},
+		{{Name: " ", Handler: handler}},
+	} {
+		if tools, err := NewTools(definitions); err == nil || tools != nil {
+			t.Fatalf("tools=%v, err=%v", tools, err)
+		}
+	}
+}

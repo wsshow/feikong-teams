@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fkteams/internal/app/config"
 	"fmt"
 	"sync"
 
@@ -16,17 +17,13 @@ type ToolResolveContext struct {
 	SessionsDir   string
 	RuntimeDir    string
 	Cleaner       *resources.Cleaner
-	Config        any
+	Config        *config.Config
 	SSH           *SSHConfig
 	HistoryReader storageport.SessionMessageReader
 }
 
-type SSHConfig struct {
-	Host           string
-	Username       string
-	Password       string
-	KnownHostsFile string
-}
+// SSHConfig 复用智能体连接配置。
+type SSHConfig = config.AgentSSH
 
 type resolveContextPatchKey struct{}
 
@@ -166,6 +163,9 @@ func (r *ToolGroupRegistry) ResolveContextFor(ctx context.Context, cleaner *reso
 	}
 	r.mu.RLock()
 	resolveCtx := r.resolveCtx
+	if resolveCtx.Config == nil {
+		resolveCtx.Config = config.Get()
+	}
 	r.mu.RUnlock()
 	if cleaner != nil {
 		resolveCtx.Cleaner = cleaner

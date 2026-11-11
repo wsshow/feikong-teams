@@ -55,6 +55,12 @@ func BuildAgent(ctx context.Context, def Definition) (runtimeport.Agent, error) 
 		def.Profile = ProfileWorkspace
 	}
 
+	switch def.Profile {
+	case ProfileBare, ProfileWorkspace, ProfileFull, ProfileTeam:
+	default:
+		return nil, fmt.Errorf("unknown agent profile: %s", def.Profile)
+	}
+
 	coreModel := def.Model
 	if coreModel == nil {
 		var err error

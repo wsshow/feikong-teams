@@ -71,6 +71,32 @@ type ToolInputSchemaProvider interface {
 	InputSchema() map[string]any
 }
 
+// ToolDefinition 声明工具元信息与处理函数，供批量构建复用。
+type ToolDefinition struct {
+	Name        string
+	Description string
+	Handler     any
+	Policy      ToolPolicyMetadata
+}
+
+// NewTools 按声明顺序构建工具；名称重复或任一声明无效时返回错误，不返回部分结果。
+func NewTools(definitions []ToolDefinition) ([]Tool, error) {
+	tools := make([]Tool, 0, len(definitions))
+	seen := make(map[string]bool, len(definitions))
+	for _, def := range definitions {
+		if strings.TrimSpace(def.Name) == "" || seen[def.Name] {
+			return nil, fmt.Errorf("empty or duplicate tool name: %q", def.Name)
+		}
+		seen[def.Name] = true
+		tool, err := NewTool(ToolInfo{Name: def.Name, Desc: def.Description, Policy: def.Policy}, def.Handler)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, tool)
+	}
+	return tools, nil
+}
+
 type functionTool struct {
 	info      ToolInfo
 	handler   reflect.Value
@@ -111,7 +137,7 @@ func validateFunctionToolHandler(name string, handler any) (reflect.Value, refle
 	}
 	handlerValue := reflect.ValueOf(handler)
 	handlerType := handlerValue.Type()
-	if handlerType.Kind() != reflect.Func || handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
+	if handlerType.Kind() != reflect.Func || handlerValue.IsNil() || handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
 		return reflect.Value{}, nil, fmt.Errorf("tool %s handler must be func(context.Context, *Input) (Output, error)", name)
 	}
 	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
