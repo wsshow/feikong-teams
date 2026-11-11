@@ -6,9 +6,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	sharestore "fkteams/internal/adapters/storage/file/share"
 	"fkteams/internal/app/appdata"
-	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"io"
@@ -20,7 +19,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,305 +34,6 @@ type PreviewLink struct {
 	ExpiresAt   int64    `json:"expires_at"`
 	CreatedAt   int64    `json:"created_at"`
 }
-
-// PreviewLinkStore 保存单个 HTTP runtime 的预览分享链接。
-type PreviewLinkStore struct {
-	sync.RWMutex
-	filePath string
-	m        map[string]*previewLinkEntry
-	loadErr  error
-}
-
-const shareFileName = "share.json"
-
-// shareFileEntry JSON 持久化条目
-type shareFileEntry struct {
-	FilePaths     []string `json:"file_paths"`
-	ResourcePaths []string `json:"resource_paths"`
-	PasswordHash  string   `json:"password_hash,omitempty"`
-	ExpiresAt     int64    `json:"expires_at"` // Unix 时间戳，0 表示永不过期
-	CreatedAt     int64    `json:"created_at"`
-}
-
-// NewPreviewLinkStore 创建预览分享存储，并从持久化文件加载现有链接。
-func NewPreviewLinkStore(filePath string) *PreviewLinkStore {
-	if filePath == "" {
-		filePath = shareLinksFilePath()
-	}
-	store := &PreviewLinkStore{
-		filePath: filePath,
-		m:        make(map[string]*previewLinkEntry),
-	}
-	store.loadErr = store.Load()
-	return store
-}
-
-func shareLinksFilePath() string {
-	return filepath.Join(appdata.ShareDir(), shareFileName)
-}
-
-// Load 从持久化文件加载未过期的预览分享链接。
-func (s *PreviewLinkStore) Load() error {
-	if s == nil {
-		return nil
-	}
-	entries, err := readShareEntries(s.filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("load preview links: %w", err)
-	}
-	loaded := make(map[string]*previewLinkEntry, len(entries))
-	now := time.Now()
-	for id, e := range entries {
-		if e == nil {
-			return fmt.Errorf("invalid preview link entry: %s", id)
-		}
-		var expiresAt time.Time
-		if e.ExpiresAt > 0 {
-			expiresAt = time.Unix(e.ExpiresAt, 0)
-			if now.After(expiresAt) {
-				continue // 跳过已过期
-			}
-		}
-		entry := newPreviewLinkEntry(
-			e.FilePaths,
-			e.ResourcePaths,
-			e.PasswordHash,
-			expiresAt,
-			time.Unix(e.CreatedAt, 0),
-		)
-		if err := validatePreviewLinkEntry(id, entry); err != nil {
-			return err
-		}
-		loaded[id] = entry
-	}
-	s.Lock()
-	s.m = loaded
-	s.Unlock()
-	return nil
-}
-
-func (s *PreviewLinkStore) LoadError() error {
-	if s == nil {
-		return nil
-	}
-	return s.loadErr
-}
-
-func readShareEntries(filePath string) (map[string]*shareFileEntry, error) {
-	data, err := readPersistedShareStore(filePath)
-	if err != nil {
-		return nil, err
-	}
-	var entries map[string]*shareFileEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, err
-	}
-	if len(entries) > maxPersistedShareEntries {
-		return nil, errShareStoreFull
-	}
-	return entries, nil
-}
-
-// Save 将预览分享链接持久化。
-func (s *PreviewLinkStore) Save() error {
-	if s == nil {
-		return nil
-	}
-	return s.SaveTo(s.filePath)
-}
-
-// SaveTo 将预览分享链接写入指定文件。
-func (s *PreviewLinkStore) SaveTo(filePath string) error {
-	if s == nil {
-		return nil
-	}
-	s.RLock()
-	defer s.RUnlock()
-	return s.saveLockedTo(filePath)
-}
-
-func (s *PreviewLinkStore) saveLockedTo(filePath string) error {
-	entries := make(map[string]*shareFileEntry, len(s.m))
-	for id, e := range s.m {
-		entries[id] = &shareFileEntry{
-			FilePaths:     e.FilePaths,
-			ResourcePaths: e.ResourcePaths,
-			PasswordHash:  e.PasswordHash,
-			ExpiresAt:     expiresAtUnix(e.ExpiresAt),
-			CreatedAt:     e.CreatedAt.Unix(),
-		}
-	}
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := validatePersistedShareStoreSize(data); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return err
-	}
-	return atomicfile.WriteFile(filePath, data, 0644)
-}
-
-func (s *PreviewLinkStore) Put(id string, entry *previewLinkEntry) error {
-	s.Lock()
-	defer s.Unlock()
-	if err := validatePreviewLinkEntry(id, entry); err != nil {
-		return err
-	}
-	previous, existed := s.m[id]
-	if !existed && len(s.m) >= maxPersistedShareEntries {
-		return errShareStoreFull
-	}
-	s.m[id] = entry
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		if existed {
-			s.m[id] = previous
-		} else {
-			delete(s.m, id)
-		}
-		return err
-	}
-	return nil
-}
-
-func (s *PreviewLinkStore) Delete(id string) (bool, error) {
-	s.Lock()
-	defer s.Unlock()
-	previous, existed := s.m[id]
-	if !existed {
-		return false, nil
-	}
-	delete(s.m, id)
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		s.m[id] = previous
-		return true, err
-	}
-	return true, nil
-}
-
-func (s *PreviewLinkStore) DeleteMany(ids []string) error {
-	s.Lock()
-	defer s.Unlock()
-	previous := make(map[string]*previewLinkEntry, len(ids))
-	for _, id := range ids {
-		if entry, ok := s.m[id]; ok {
-			previous[id] = entry
-			delete(s.m, id)
-		}
-	}
-	if len(previous) == 0 {
-		return nil
-	}
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		for id, entry := range previous {
-			s.m[id] = entry
-		}
-		return err
-	}
-	return nil
-}
-
-// previewLinkEntry 存储条目
-type previewLinkEntry struct {
-	FilePaths     []string // 用户显式分享的工作区相对路径列表
-	ResourcePaths []string // 创建链接时授权的普通文件清单
-	PasswordHash  string   // bcrypt 哈希 (空字符串表示无密码)
-	ExpiresAt     time.Time
-	CreatedAt     time.Time
-	resourceSet   map[string]struct{}
-}
-
-func newPreviewLinkEntry(filePaths, resourcePaths []string, passwordHash string, expiresAt, createdAt time.Time) *previewLinkEntry {
-	var copiedResources []string
-	if resourcePaths != nil {
-		copiedResources = append([]string{}, resourcePaths...)
-	}
-	entry := &previewLinkEntry{
-		FilePaths:     append([]string(nil), filePaths...),
-		ResourcePaths: copiedResources,
-		PasswordHash:  passwordHash,
-		ExpiresAt:     expiresAt,
-		CreatedAt:     createdAt,
-	}
-	entry.indexResources()
-	return entry
-}
-
-func validatePreviewLinkEntry(id string, entry *previewLinkEntry) error {
-	if id == "" || entry == nil {
-		return fmt.Errorf("invalid preview link entry")
-	}
-	if len(entry.FilePaths) == 0 || len(entry.FilePaths) > maxPreviewResourceFiles {
-		return fmt.Errorf("invalid preview link file paths")
-	}
-	if len(entry.ResourcePaths) > maxPreviewResourceFiles {
-		return fmt.Errorf("invalid preview link resource paths")
-	}
-	for _, path := range entry.FilePaths {
-		if path == "" {
-			return fmt.Errorf("invalid preview link file path")
-		}
-	}
-	return nil
-}
-
-func (e *previewLinkEntry) indexResources() {
-	if e == nil {
-		return
-	}
-	paths := e.ResourcePaths
-	if paths == nil {
-		paths = e.FilePaths
-	}
-	e.resourceSet = make(map[string]struct{}, len(paths))
-	for _, resourcePath := range paths {
-		e.resourceSet[filepath.Clean(resourcePath)] = struct{}{}
-	}
-}
-
-func (e *previewLinkEntry) allowsResource(resourcePath string) bool {
-	if e == nil {
-		return false
-	}
-	cleanPath := filepath.Clean(resourcePath)
-	if !e.resourceWithinSharedRoots(cleanPath) {
-		return false
-	}
-	if e.resourceSet != nil {
-		_, ok := e.resourceSet[cleanPath]
-		return ok
-	}
-	paths := e.ResourcePaths
-	if paths == nil {
-		paths = e.FilePaths
-	}
-	for _, allowedPath := range paths {
-		if filepath.Clean(allowedPath) == cleanPath {
-			return true
-		}
-	}
-	return false
-}
-
-func (e *previewLinkEntry) resourceWithinSharedRoots(resourcePath string) bool {
-	for _, rootPath := range e.FilePaths {
-		cleanRoot := filepath.Clean(rootPath)
-		if rootPath == "" || cleanRoot == "." {
-			return true
-		}
-		if resourcePath == cleanRoot || strings.HasPrefix(resourcePath, cleanRoot+string(filepath.Separator)) {
-			return true
-		}
-	}
-	return false
-}
-
-const maxPreviewResourceFiles = 10000
 
 func collectPreviewPaths(baseDir string, requested []string) ([]string, []string, error) {
 	cleanPaths := make([]string, 0, len(requested))
@@ -356,7 +55,7 @@ func collectPreviewPaths(baseDir string, requested []string) ([]string, []string
 				return nil, nil, fmt.Errorf("shared path is not a regular file")
 			}
 			resources[resolved.RelPath] = struct{}{}
-			if len(resources) > maxPreviewResourceFiles {
+			if len(resources) > sharestore.MaxPreviewResourceFiles {
 				return nil, nil, fmt.Errorf("share contains too many files")
 			}
 			continue
@@ -390,7 +89,7 @@ func collectPreviewPaths(baseDir string, requested []string) ([]string, []string
 				return err
 			}
 			resources[relativePath] = struct{}{}
-			if len(resources) > maxPreviewResourceFiles {
+			if len(resources) > sharestore.MaxPreviewResourceFiles {
 				return fmt.Errorf("shared directory contains too many files")
 			}
 			return nil
@@ -468,7 +167,7 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 		if expiresIn >= 0 {
 			expiresAt = now.Add(time.Duration(expiresIn) * time.Second)
 		}
-		entry := newPreviewLinkEntry(cleanPaths, resourcePaths, "", expiresAt, now)
+		entry := sharestore.NewPreviewEntry(cleanPaths, resourcePaths, "", expiresAt, now)
 
 		if req.Password != "" {
 			h := hashPassword(req.Password)
@@ -497,7 +196,7 @@ func (rt *Runtime) CreatePreviewLinkHandler() gin.HandlerFunc {
 			FilePath:    filePath,
 			FilePaths:   cleanPaths,
 			HasPassword: entry.PasswordHash != "",
-			ExpiresAt:   expiresAtUnix(entry.ExpiresAt),
+			ExpiresAt:   sharestore.ExpiresAtUnix(entry.ExpiresAt),
 			CreatedAt:   entry.CreatedAt.Unix(),
 		})
 	}
@@ -515,9 +214,7 @@ func (rt *Runtime) PreviewFileHandler() gin.HandlerFunc {
 		}
 
 		store := rt.PreviewLinks
-		store.RLock()
-		entry, exists := store.m[linkID]
-		store.RUnlock()
+		entry, exists := store.Lookup(linkID)
 
 		if !exists {
 			Fail(c, http.StatusNotFound, "链接不存在或已失效")
@@ -619,9 +316,7 @@ func (rt *Runtime) PreviewAuthHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		linkID := c.Param("linkId")
 		store := rt.PreviewLinks
-		store.RLock()
-		entry, exists := store.m[linkID]
-		store.RUnlock()
+		entry, exists := store.Lookup(linkID)
 		if !exists {
 			Fail(c, http.StatusNotFound, "preview link not found")
 			return
@@ -660,9 +355,7 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 		}
 
 		store := rt.PreviewLinks
-		store.RLock()
-		entry, exists := store.m[linkID]
-		store.RUnlock()
+		entry, exists := store.Lookup(linkID)
 
 		if !exists {
 			Fail(c, http.StatusNotFound, "链接不存在或已失效")
@@ -694,7 +387,7 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 				"require_password": true,
 				"authorized":       hasValidPreviewGrant(c, linkID, entry.PasswordHash),
 				"previewable":      !isMulti && isPreviewable(contentType),
-				"expires_at":       expiresAtUnix(entry.ExpiresAt),
+				"expires_at":       sharestore.ExpiresAtUnix(entry.ExpiresAt),
 			})
 			return
 		}
@@ -732,7 +425,7 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 			"require_password": entry.PasswordHash != "",
 			"authorized":       true,
 			"previewable":      !isMulti && isPreviewable(contentType),
-			"expires_at":       expiresAtUnix(entry.ExpiresAt),
+			"expires_at":       sharestore.ExpiresAtUnix(entry.ExpiresAt),
 		})
 	}
 }
@@ -741,14 +434,12 @@ func (rt *Runtime) PreviewInfoHandler() gin.HandlerFunc {
 func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		store := rt.PreviewLinks
-		store.RLock()
-		defer store.RUnlock()
 
 		now := time.Now()
 		links := make([]PreviewLink, 0)
 		expired := make([]string, 0)
 
-		for id, entry := range store.m {
+		for id, entry := range store.Snapshot() {
 			if !entry.ExpiresAt.IsZero() && now.After(entry.ExpiresAt) {
 				expired = append(expired, id)
 				continue
@@ -762,7 +453,7 @@ func (rt *Runtime) ListPreviewLinksHandler() gin.HandlerFunc {
 				FilePath:    filePath,
 				FilePaths:   entry.FilePaths,
 				HasPassword: entry.PasswordHash != "",
-				ExpiresAt:   expiresAtUnix(entry.ExpiresAt),
+				ExpiresAt:   sharestore.ExpiresAtUnix(entry.ExpiresAt),
 				CreatedAt:   entry.CreatedAt.Unix(),
 			})
 		}
@@ -878,15 +569,8 @@ func authorizePreviewPassword(c *gin.Context, linkID, passwordHash, password str
 	return true
 }
 
-// expiresAtUnix 将过期时间转为 Unix 时间戳，零值（永不过期）返回 0
-func expiresAtUnix(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return t.Unix()
-}
-
-func validatedPreviewResources(baseDir string, entry *previewLinkEntry) ([]string, error) {
+// sharestore.ExpiresAtUnix 将过期时间转为 Unix 时间戳，零值（永不过期）返回 0
+func validatedPreviewResources(baseDir string, entry *sharestore.PreviewEntry) ([]string, error) {
 	resourcePaths := append([]string(nil), entry.ResourcePaths...)
 	if entry.ResourcePaths == nil {
 		_, expanded, err := collectPreviewPaths(baseDir, entry.FilePaths)
@@ -896,7 +580,7 @@ func validatedPreviewResources(baseDir string, entry *previewLinkEntry) ([]strin
 		resourcePaths = expanded
 	}
 	for _, resourcePath := range resourcePaths {
-		if !entry.resourceWithinSharedRoots(filepath.Clean(resourcePath)) {
+		if !entry.ResourceWithinSharedRoots(filepath.Clean(resourcePath)) {
 			return nil, fmt.Errorf("shared resource is outside the selected paths")
 		}
 		_, info, err := resolveWorkspaceEntryNoSymlinks(baseDir, resourcePath)
@@ -960,9 +644,7 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 		}
 
 		store := rt.PreviewLinks
-		store.RLock()
-		entry, exists := store.m[linkID]
-		store.RUnlock()
+		entry, exists := store.Lookup(linkID)
 
 		if !exists {
 			Fail(c, http.StatusNotFound, "链接不存在或已失效")
@@ -1013,7 +695,7 @@ func (rt *Runtime) PreviewRenderHandler() gin.HandlerFunc {
 		}
 
 		// 仅允许访问创建分享链接时记录的资源，不隐式授权同目录文件。
-		if !entry.allowsResource(cleanTarget) {
+		if !entry.AllowsResource(cleanTarget) {
 			Fail(c, http.StatusForbidden, "禁止访问该路径")
 			return
 		}

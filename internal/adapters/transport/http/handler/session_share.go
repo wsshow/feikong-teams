@@ -1,24 +1,18 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fkteams/internal/adapters/storage/file/history"
-	"fkteams/internal/app/appdata"
-	"fkteams/internal/runtime/atomicfile"
+	sharestore "fkteams/internal/adapters/storage/file/share"
 	"fkteams/internal/runtime/log"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
-
-const sessionShareFileName = "session_share.json"
 
 // SessionShare 会话分享列表展示信息
 type SessionShare struct {
@@ -33,263 +27,7 @@ type SessionShare struct {
 	LastAccessedAt   int64  `json:"last_accessed_at,omitempty"`
 }
 
-type sessionShareEntry struct {
-	SessionID        string    `json:"session_id"`
-	Title            string    `json:"title"`
-	PasswordHash     string    `json:"password_hash,omitempty"`
-	AllowToolDetails bool      `json:"allow_tool_details"`
-	MessageCount     int       `json:"message_count"`
-	ExpiresAt        time.Time `json:"expires_at,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	LastAccessedAt   time.Time `json:"last_accessed_at,omitempty"`
-}
-
-type sessionShareFileEntry struct {
-	SessionID        string `json:"session_id"`
-	Title            string `json:"title"`
-	PasswordHash     string `json:"password_hash,omitempty"`
-	AllowToolDetails bool   `json:"allow_tool_details"`
-	MessageCount     int    `json:"message_count"`
-	ExpiresAt        int64  `json:"expires_at"`
-	CreatedAt        int64  `json:"created_at"`
-	LastAccessedAt   int64  `json:"last_accessed_at,omitempty"`
-}
-
-// SessionShareStore 保存单个 HTTP runtime 的会话分享状态。
-type SessionShareStore struct {
-	sync.RWMutex
-	filePath string
-	m        map[string]*sessionShareEntry
-	loadErr  error
-}
-
-// NewSessionShareStore 创建会话分享存储，并从持久化文件加载现有分享。
-func NewSessionShareStore(filePath string) *SessionShareStore {
-	if filePath == "" {
-		filePath = sessionSharesFilePath()
-	}
-	store := &SessionShareStore{
-		filePath: filePath,
-		m:        make(map[string]*sessionShareEntry),
-	}
-	store.loadErr = store.Load()
-	return store
-}
-
-func sessionSharesFilePath() string {
-	return filepath.Join(appdata.ShareDir(), sessionShareFileName)
-}
-
-// Load 从持久化文件加载未过期的会话分享。
-func (s *SessionShareStore) Load() error {
-	if s == nil {
-		return nil
-	}
-	entries, err := readSessionShareEntries(s.filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("load session shares: %w", err)
-	}
-	loaded := make(map[string]*sessionShareEntry, len(entries))
-	now := time.Now()
-	for id, e := range entries {
-		if e == nil {
-			return fmt.Errorf("invalid session share entry: %s", id)
-		}
-		var expiresAt time.Time
-		if e.ExpiresAt > 0 {
-			expiresAt = time.Unix(e.ExpiresAt, 0)
-			if now.After(expiresAt) {
-				continue
-			}
-		}
-		var lastAccessedAt time.Time
-		if e.LastAccessedAt > 0 {
-			lastAccessedAt = time.Unix(e.LastAccessedAt, 0)
-		}
-		entry := &sessionShareEntry{
-			SessionID:        e.SessionID,
-			Title:            e.Title,
-			PasswordHash:     e.PasswordHash,
-			AllowToolDetails: e.AllowToolDetails,
-			MessageCount:     e.MessageCount,
-			ExpiresAt:        expiresAt,
-			CreatedAt:        time.Unix(e.CreatedAt, 0),
-			LastAccessedAt:   lastAccessedAt,
-		}
-		if err := validateSessionShareEntry(id, entry); err != nil {
-			return err
-		}
-		loaded[id] = entry
-	}
-	s.Lock()
-	s.m = loaded
-	s.Unlock()
-	return nil
-}
-
-func (s *SessionShareStore) LoadError() error {
-	if s == nil {
-		return nil
-	}
-	return s.loadErr
-}
-
-func readSessionShareEntries(filePath string) (map[string]*sessionShareFileEntry, error) {
-	data, err := readPersistedShareStore(filePath)
-	if err != nil {
-		return nil, err
-	}
-	var entries map[string]*sessionShareFileEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, err
-	}
-	if len(entries) > maxPersistedShareEntries {
-		return nil, errShareStoreFull
-	}
-	return entries, nil
-}
-
-// Save 将会话分享持久化。
-func (s *SessionShareStore) Save() error {
-	if s == nil {
-		return nil
-	}
-	return s.SaveTo(s.filePath)
-}
-
-// SaveTo 将会话分享写入指定文件。
-func (s *SessionShareStore) SaveTo(filePath string) error {
-	if s == nil {
-		return nil
-	}
-	s.RLock()
-	defer s.RUnlock()
-	return s.saveLockedTo(filePath)
-}
-
-func (s *SessionShareStore) saveLockedTo(filePath string) error {
-	entries := make(map[string]*sessionShareFileEntry, len(s.m))
-	for id, e := range s.m {
-		entries[id] = &sessionShareFileEntry{
-			SessionID:        e.SessionID,
-			Title:            e.Title,
-			PasswordHash:     e.PasswordHash,
-			AllowToolDetails: e.AllowToolDetails,
-			MessageCount:     e.MessageCount,
-			ExpiresAt:        expiresAtUnix(e.ExpiresAt),
-			CreatedAt:        e.CreatedAt.Unix(),
-			LastAccessedAt:   expiresAtUnix(e.LastAccessedAt),
-		}
-	}
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal session shares: %w", err)
-	}
-	if err := validatePersistedShareStoreSize(data); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return fmt.Errorf("create share dir: %w", err)
-	}
-	if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
-		return fmt.Errorf("write session shares: %w", err)
-	}
-	return nil
-}
-
-func (s *SessionShareStore) Put(id string, entry *sessionShareEntry) error {
-	s.Lock()
-	defer s.Unlock()
-	if err := validateSessionShareEntry(id, entry); err != nil {
-		return err
-	}
-	previous, existed := s.m[id]
-	if !existed && len(s.m) >= maxPersistedShareEntries {
-		return errShareStoreFull
-	}
-	s.m[id] = entry
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		if existed {
-			s.m[id] = previous
-		} else {
-			delete(s.m, id)
-		}
-		return err
-	}
-	return nil
-}
-
-func (s *SessionShareStore) Delete(id string) (bool, error) {
-	s.Lock()
-	defer s.Unlock()
-	previous, existed := s.m[id]
-	if !existed {
-		return false, nil
-	}
-	delete(s.m, id)
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		s.m[id] = previous
-		return true, err
-	}
-	return true, nil
-}
-
-func (s *SessionShareStore) DeleteMany(ids []string) error {
-	s.Lock()
-	defer s.Unlock()
-	previous := make(map[string]*sessionShareEntry, len(ids))
-	for _, id := range ids {
-		if entry, ok := s.m[id]; ok {
-			previous[id] = entry
-			delete(s.m, id)
-		}
-	}
-	if len(previous) == 0 {
-		return nil
-	}
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		for id, entry := range previous {
-			s.m[id] = entry
-		}
-		return err
-	}
-	return nil
-}
-
-func (s *SessionShareStore) Touch(id string, at time.Time) error {
-	s.Lock()
-	defer s.Unlock()
-	entry := s.m[id]
-	if entry == nil {
-		return nil
-	}
-	const persistInterval = 5 * time.Minute
-	if !entry.LastAccessedAt.IsZero() && at.Sub(entry.LastAccessedAt) < persistInterval {
-		return nil
-	}
-	previous := entry.LastAccessedAt
-	entry.LastAccessedAt = at
-	if err := s.saveLockedTo(s.filePath); err != nil {
-		entry.LastAccessedAt = previous
-		return err
-	}
-	return nil
-}
-
-func validateSessionShareEntry(id string, entry *sessionShareEntry) error {
-	if id == "" || entry == nil || !validateSessionID(entry.SessionID) {
-		return fmt.Errorf("invalid session share entry")
-	}
-	if entry.MessageCount < 0 {
-		return fmt.Errorf("invalid session share message count")
-	}
-	return nil
-}
-
-func sessionShareResponse(id string, entry *sessionShareEntry) SessionShare {
+func sessionShareResponse(id string, entry *sharestore.SessionEntry) SessionShare {
 	if entry == nil {
 		return SessionShare{ID: id}
 	}
@@ -300,9 +38,9 @@ func sessionShareResponse(id string, entry *sessionShareEntry) SessionShare {
 		HasPassword:      entry.PasswordHash != "",
 		AllowToolDetails: entry.AllowToolDetails,
 		MessageCount:     entry.MessageCount,
-		ExpiresAt:        expiresAtUnix(entry.ExpiresAt),
+		ExpiresAt:        sharestore.ExpiresAtUnix(entry.ExpiresAt),
 		CreatedAt:        entry.CreatedAt.Unix(),
-		LastAccessedAt:   expiresAtUnix(entry.LastAccessedAt),
+		LastAccessedAt:   sharestore.ExpiresAtUnix(entry.LastAccessedAt),
 	}
 }
 
@@ -354,22 +92,6 @@ func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool)
 		lines[index].Detail = ""
 	}
 	return lines, nil
-}
-
-func (s *SessionShareStore) entryByID(id string) (*sessionShareEntry, bool, bool) {
-	s.RLock()
-	entry, exists := s.m[id]
-	s.RUnlock()
-	if !exists {
-		return nil, false, false
-	}
-	if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
-		if _, err := s.Delete(id); err != nil {
-			log.Printf("failed to persist expired session share cleanup: id=%s, err=%v", id, err)
-		}
-		return nil, false, true
-	}
-	return entry, true, false
 }
 
 // CreateSessionShareHandler 创建会话分享
@@ -432,7 +154,7 @@ func (rt *Runtime) CreateSessionShareHandler() gin.HandlerFunc {
 		if metaErr == nil && meta.Title != "" {
 			title = meta.Title
 		}
-		entry := &sessionShareEntry{
+		entry := &sharestore.SessionEntry{
 			SessionID:        req.SessionID,
 			Title:            title,
 			AllowToolDetails: req.AllowToolDetails,
@@ -468,15 +190,13 @@ func (rt *Runtime) ListSessionSharesHandler() gin.HandlerFunc {
 		shares := make([]SessionShare, 0)
 		store := rt.SessionShares
 
-		store.RLock()
-		for id, entry := range store.m {
+		for id, entry := range store.Snapshot() {
 			if !entry.ExpiresAt.IsZero() && now.After(entry.ExpiresAt) {
 				expired = append(expired, id)
 				continue
 			}
 			shares = append(shares, sessionShareResponse(id, entry))
 		}
-		store.RUnlock()
 
 		if len(expired) > 0 {
 			if err := store.DeleteMany(expired); err != nil {
@@ -521,7 +241,7 @@ func (rt *Runtime) DeleteSessionShareHandler() gin.HandlerFunc {
 func (rt *Runtime) GetPublicSessionShareInfoHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		shareID := c.Param("shareID")
-		entry, exists, expired := rt.SessionShares.entryByID(shareID)
+		entry, exists, expired := rt.SessionShares.EntryByID(shareID)
 		if expired {
 			Fail(c, http.StatusGone, "share expired")
 			return
@@ -535,7 +255,7 @@ func (rt *Runtime) GetPublicSessionShareInfoHandler() gin.HandlerFunc {
 			"title":              entry.Title,
 			"has_password":       entry.PasswordHash != "",
 			"message_count":      entry.MessageCount,
-			"expires_at":         expiresAtUnix(entry.ExpiresAt),
+			"expires_at":         sharestore.ExpiresAtUnix(entry.ExpiresAt),
 			"created_at":         entry.CreatedAt.Unix(),
 			"allow_tool_details": entry.AllowToolDetails,
 		})
@@ -548,7 +268,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		shareID := c.Param("shareID")
 		store := rt.SessionShares
-		entry, exists, expired := store.entryByID(shareID)
+		entry, exists, expired := store.EntryByID(shareID)
 		if expired {
 			Fail(c, http.StatusGone, "share expired")
 			return
@@ -605,7 +325,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 			"title":              entry.Title,
 			"events":             rt.transcriptToChatEvents(entry.SessionID, transcript),
 			"message_count":      entry.MessageCount,
-			"expires_at":         expiresAtUnix(entry.ExpiresAt),
+			"expires_at":         sharestore.ExpiresAtUnix(entry.ExpiresAt),
 			"created_at":         entry.CreatedAt.Unix(),
 			"allow_tool_details": entry.AllowToolDetails,
 		})

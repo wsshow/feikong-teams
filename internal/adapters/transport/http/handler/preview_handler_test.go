@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	sharestore "fkteams/internal/adapters/storage/file/share"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,7 +17,7 @@ import (
 
 func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.MkdirAll(filepath.Join(workspace, "docs"), 0755); err != nil {
@@ -43,7 +44,7 @@ func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 		t.Fatalf("preview link = %#v", link)
 	}
 
-	if _, err := os.Stat(rt.PreviewLinks.filePath); err != nil {
+	if _, err := os.Stat(rt.PreviewLinks.Path()); err != nil {
 		t.Fatalf("expected preview links to be persisted: %v", err)
 	}
 
@@ -90,24 +91,26 @@ func TestPreviewLinkHandlersLifecycle(t *testing.T) {
 
 func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.WriteFile(filepath.Join(workspace, "secret.txt"), []byte("secret body"), 0644); err != nil {
 		t.Fatalf("write secret: %v", err)
 	}
-	rt.PreviewLinks.Lock()
-	rt.PreviewLinks.m["protected"] = &previewLinkEntry{
+	if err := rt.PreviewLinks.Put("protected", &sharestore.PreviewEntry{
 		FilePaths:    []string{"secret.txt"},
 		PasswordHash: hashPassword("secret"),
 		CreatedAt:    time.Now(),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	rt.PreviewLinks.m["expired"] = &previewLinkEntry{
+	if err := rt.PreviewLinks.Put("expired", &sharestore.PreviewEntry{
 		FilePaths: []string{"secret.txt"},
 		ExpiresAt: time.Now().Add(-time.Minute),
 		CreatedAt: time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	rt.PreviewLinks.Unlock()
 
 	router := gin.New()
 	router.GET("/preview/:linkId/info", rt.PreviewInfoHandler())
@@ -197,9 +200,7 @@ func TestPreviewFilePasswordAndExpiry(t *testing.T) {
 	if resp.Code != http.StatusGone {
 		t.Fatalf("expired info status = %d, want 410", resp.Code)
 	}
-	rt.PreviewLinks.RLock()
-	_, exists := rt.PreviewLinks.m["expired"]
-	rt.PreviewLinks.RUnlock()
+	_, exists := rt.PreviewLinks.Lookup("expired")
 	if exists {
 		t.Fatal("expired preview link should be removed")
 	}
@@ -227,7 +228,7 @@ func TestPreviewGrantValidation(t *testing.T) {
 }
 
 func TestPreviewAuthRateLimitsInvalidPasswords(t *testing.T) {
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{
 		"rate-limited": {
 			FilePaths:    []string{"secret.txt"},
 			PasswordHash: hashPassword("secret"),
@@ -266,18 +267,18 @@ func TestPreviewAuthRateLimitsInvalidPasswords(t *testing.T) {
 
 func TestPreviewMarkdownDoesNotDownloadUnlessRequested(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.WriteFile(filepath.Join(workspace, "note.md"), []byte("# note\n"), 0644); err != nil {
 		t.Fatalf("write note: %v", err)
 	}
-	rt.PreviewLinks.Lock()
-	rt.PreviewLinks.m["markdown"] = &previewLinkEntry{
+	if err := rt.PreviewLinks.Put("markdown", &sharestore.PreviewEntry{
 		FilePaths: []string{"note.md"},
 		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	rt.PreviewLinks.Unlock()
 
 	router := gin.New()
 	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
@@ -312,7 +313,7 @@ func TestPreviewMarkdownDoesNotDownloadUnlessRequested(t *testing.T) {
 
 func TestPreviewFileMultiFileZip(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 
 	if err := os.WriteFile(filepath.Join(workspace, "a.txt"), []byte("a"), 0644); err != nil {
@@ -321,12 +322,12 @@ func TestPreviewFileMultiFileZip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, "b.txt"), []byte("b"), 0644); err != nil {
 		t.Fatalf("write b: %v", err)
 	}
-	rt.PreviewLinks.Lock()
-	rt.PreviewLinks.m["multi"] = &previewLinkEntry{
+	if err := rt.PreviewLinks.Put("multi", &sharestore.PreviewEntry{
 		FilePaths: []string{"a.txt", "b.txt"},
 		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	rt.PreviewLinks.Unlock()
 
 	router := gin.New()
 	router.GET("/preview/:linkId/file", rt.PreviewFileHandler())
@@ -353,7 +354,7 @@ func TestPreviewFileMultiFileZip(t *testing.T) {
 
 func TestCreatePreviewLinkRejectsInvalidRequests(t *testing.T) {
 	workspace := setupWorkspaceDir(t)
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 	if err := os.WriteFile(filepath.Join(workspace, "exists.txt"), []byte("ok"), 0644); err != nil {
 		t.Fatalf("write exists: %v", err)
@@ -404,7 +405,7 @@ func TestPreviewRenderUsesExplicitResourceManifest(t *testing.T) {
 		}
 	}
 
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.POST("/preview-links", rt.CreatePreviewLinkHandler())
@@ -458,7 +459,7 @@ func TestPreviewDirectoryDownloadUsesCreationManifest(t *testing.T) {
 		t.Fatalf("write existing file: %v", err)
 	}
 
-	rt := newPreviewTestRuntime(t, map[string]*previewLinkEntry{})
+	rt := newPreviewTestRuntime(t, map[string]*sharestore.PreviewEntry{})
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.POST("/preview-links", rt.CreatePreviewLinkHandler())

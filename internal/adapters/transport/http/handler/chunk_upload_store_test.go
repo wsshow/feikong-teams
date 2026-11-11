@@ -101,10 +101,8 @@ func TestChunkUploadStoreExpirationReleasesAccounting(t *testing.T) {
 	if got := store.activeBytes.Load(); got != 0 {
 		t.Fatalf("active bytes after expiration = %d, want 0", got)
 	}
-	store.Lock()
 	active := store.active
 	remaining := len(store.m)
-	store.Unlock()
 	if active != 0 || remaining != 0 {
 		t.Fatalf("store after expiration: active=%d remaining=%d", active, remaining)
 	}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	sharestore "fkteams/internal/adapters/storage/file/share"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"path/filepath"
@@ -34,8 +35,8 @@ type Runtime struct {
 	RunnerCache    *appagent.Cache
 	Connections    *WebSocketHub
 	ChunkUploads   *ChunkUploadStore
-	PreviewLinks   *PreviewLinkStore
-	SessionShares  *SessionShareStore
+	PreviewLinks   *sharestore.PreviewLinkStore
+	SessionShares  *sharestore.SessionShareStore
 	SessionService *appsession.Service
 	Favicons       *FaviconProxy
 	Scheduler      *appschedule.Service
@@ -68,8 +69,8 @@ type RuntimeOptions struct {
 	RunnerCache    *appagent.Cache
 	Connections    *WebSocketHub
 	ChunkUploads   *ChunkUploadStore
-	PreviewLinks   *PreviewLinkStore
-	SessionShares  *SessionShareStore
+	PreviewLinks   *sharestore.PreviewLinkStore
+	SessionShares  *sharestore.SessionShareStore
 	SessionService *appsession.Service
 	Favicons       *FaviconProxy
 	Scheduler      *appschedule.Service
@@ -135,10 +136,10 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		rt.ChunkUploads = NewChunkUploadStore()
 	}
 	if rt.PreviewLinks == nil {
-		rt.PreviewLinks = NewPreviewLinkStore("")
+		rt.PreviewLinks = sharestore.NewPreviewLinkStore("")
 	}
 	if rt.SessionShares == nil {
-		rt.SessionShares = NewSessionShareStore("")
+		rt.SessionShares = sharestore.NewSessionShareStore("")
 	}
 	if rt.SessionService == nil {
 		rt.SessionService = appsession.NewService(eventlog.NewSessionRepository(rt.HistoryDir))
