@@ -8,13 +8,8 @@ import (
 	"fkteams/internal/runtime/approval"
 )
 
-type ToolPolicy struct {
-	ReadOnly      bool
-	Destructive   bool
-	Serialize     bool
-	ApprovalStore string
-	ExternalPath  bool
-}
+// ToolPolicy 复用工具契约中的策略元数据。
+type ToolPolicy = runtimeport.ToolPolicyMetadata
 
 var toolPolicies = map[string]ToolPolicy{
 	// 文件
@@ -182,45 +177,40 @@ func IsPolicyRequired(info *runtimeport.ToolInfo) bool {
 
 // MarkPolicyRequired 标记工具必须在策略表中声明安全策略。
 func MarkPolicyRequired(tools []runtimeport.Tool) error {
-	for _, t := range tools {
-		info, err := t.Info(context.Background())
-		if err != nil {
-			return err
-		}
+	infos, err := runtimeport.ToolInfos(context.Background(), tools)
+	if err != nil {
+		return err
+	}
+	for _, info := range infos {
 		info.Policy.Required = true
 	}
 	return nil
 }
 
-// ClassifyTool 为工具设置策略元数据
-func ClassifyTool(t runtimeport.Tool) error {
-	info, err := t.Info(context.Background())
+// ClassifyTool 为工具设置策略元数据。
+func ClassifyTool(tool runtimeport.Tool) error { return ClassifyTools([]runtimeport.Tool{tool}) }
+
+// ClassifyTools 在校验完整列表后统一应用策略，失败时不留下部分修改。
+func ClassifyTools(tools []runtimeport.Tool) error {
+	infos, err := runtimeport.ToolInfos(context.Background(), tools)
 	if err != nil {
 		return err
 	}
-	policy, ok := PolicyForTool(info.Name)
-	if !ok {
-		if info.Policy.Required {
-			return fmt.Errorf("missing tool policy: %s", info.Name)
+	policies := make([]runtimeport.ToolPolicyMetadata, len(infos))
+	for i, info := range infos {
+		policy, ok := PolicyForTool(info.Name)
+		if !ok {
+			if info.Policy.Required {
+				return fmt.Errorf("missing tool policy: %s", info.Name)
+			}
+			policies[i] = info.Policy
+			continue
 		}
-		return nil
+		policy.Required = info.Policy.Required
+		policies[i] = policy
 	}
-	info.Policy = runtimeport.ToolPolicyMetadata{
-		ReadOnly:      policy.ReadOnly,
-		Destructive:   policy.Destructive,
-		Serialize:     policy.Serialize,
-		ApprovalStore: policy.ApprovalStore,
-		ExternalPath:  policy.ExternalPath,
-	}
-	return nil
-}
-
-// ClassifyTools 批量为工具列表设置元数据
-func ClassifyTools(tools []runtimeport.Tool) error {
-	for _, t := range tools {
-		if err := ClassifyTool(t); err != nil {
-			return err
-		}
+	for i, info := range infos {
+		info.Policy = policies[i]
 	}
 	return nil
 }

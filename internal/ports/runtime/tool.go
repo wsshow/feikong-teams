@@ -108,6 +108,9 @@ func InferTool(name, desc string, handler any) (Tool, error) {
 }
 
 func NewTool(info ToolInfo, handler any) (Tool, error) {
+	if strings.TrimSpace(info.Name) == "" || info.Name != strings.TrimSpace(info.Name) {
+		return nil, fmt.Errorf("invalid tool name: %q", info.Name)
+	}
 	handlerValue, inputType, err := validateFunctionToolHandler(info.Name, handler)
 	if err != nil {
 		return nil, err
@@ -141,7 +144,7 @@ func validateFunctionToolHandler(name string, handler any) (reflect.Value, refle
 		return reflect.Value{}, nil, fmt.Errorf("tool %s handler must be func(context.Context, *Input) (Output, error)", name)
 	}
 	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
-	if !handlerType.In(0).Implements(contextType) {
+	if handlerType.In(0) != contextType {
 		return reflect.Value{}, nil, fmt.Errorf("tool %s first argument must be context.Context", name)
 	}
 	inputType := handlerType.In(1)
@@ -149,13 +152,16 @@ func validateFunctionToolHandler(name string, handler any) (reflect.Value, refle
 		return reflect.Value{}, nil, fmt.Errorf("tool %s second argument must be pointer to struct", name)
 	}
 	errorType := reflect.TypeOf((*error)(nil)).Elem()
-	if !handlerType.Out(1).Implements(errorType) {
+	if handlerType.Out(1) != errorType {
 		return reflect.Value{}, nil, fmt.Errorf("tool %s second return value must be error", name)
 	}
 	return handlerValue, inputType, nil
 }
 
 func invokeFunctionToolHandler(ctx context.Context, handler reflect.Value, inputType reflect.Type, arguments string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	input := reflect.New(inputType.Elem())
 	if strings.TrimSpace(arguments) != "" {
 		if err := json.Unmarshal([]byte(arguments), input.Interface()); err != nil {
@@ -186,4 +192,34 @@ func isNilableToolValue(kind reflect.Kind) bool {
 	default:
 		return false
 	}
+}
+
+// ToolInfos 校验合并后的工具列表并按声明顺序返回元信息，拒绝空工具、空名称和重名。
+func ToolInfos(ctx context.Context, tools []Tool) ([]*ToolInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	infos := make([]*ToolInfo, 0, len(tools))
+	seen := make(map[string]bool, len(tools))
+	for i, tool := range tools {
+		if tool == nil || (isNilableToolValue(reflect.ValueOf(tool).Kind()) && reflect.ValueOf(tool).IsNil()) {
+			return nil, fmt.Errorf("tool at index %d is nil", i)
+		}
+		info, err := tool.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("inspect tool at index %d: %w", i, err)
+		}
+		if info == nil {
+			return nil, fmt.Errorf("tool at index %d has nil metadata", i)
+		}
+		if strings.TrimSpace(info.Name) == "" || info.Name != strings.TrimSpace(info.Name) {
+			return nil, fmt.Errorf("invalid tool name at index %d: %q", i, info.Name)
+		}
+		if seen[info.Name] {
+			return nil, fmt.Errorf("duplicate tool name: %s", info.Name)
+		}
+		seen[info.Name] = true
+		infos = append(infos, info)
+	}
+	return infos, nil
 }

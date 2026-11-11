@@ -171,3 +171,51 @@ func TestToolDefinitionsRejectInvalidListsAtomically(t *testing.T) {
 		}
 	}
 }
+
+type concreteContext struct{ context.Context }
+type concreteError struct{}
+
+func (concreteError) Error() string { return "failed" }
+
+func TestToolHandlerRejectsSignaturesThatCannotBeInvoked(t *testing.T) {
+	for _, handler := range []any{
+		func(concreteContext, *echoToolRequest) (string, error) { return "", nil },
+		func(context.Context, *echoToolRequest) (string, concreteError) { return "", concreteError{} },
+		func(context.Context, *echoToolRequest) (string, *concreteError) { return "", nil },
+	} {
+		if _, err := NewTool(ToolInfo{Name: "invalid"}, handler); err == nil {
+			t.Fatal("accepted unsafe reflection signature")
+		}
+	}
+}
+
+type metadataTestTool struct{ info *ToolInfo }
+
+func (t *metadataTestTool) Info(context.Context) (*ToolInfo, error) { return t.info, nil }
+func (*metadataTestTool) Invoke(context.Context, ToolInvocation) (*ToolResult, error) {
+	return nil, nil
+}
+
+func TestToolInfosRejectsInvalidMergedLists(t *testing.T) {
+	var typedNil *metadataTestTool
+	for _, tools := range [][]Tool{
+		{nil}, {typedNil}, {&metadataTestTool{}}, {&metadataTestTool{info: &ToolInfo{Name: " "}}},
+		{&metadataTestTool{info: &ToolInfo{Name: "same"}}, &metadataTestTool{info: &ToolInfo{Name: "same"}}},
+	} {
+		if infos, err := ToolInfos(context.Background(), tools); err == nil || infos != nil {
+			t.Fatalf("infos=%v, err=%v", infos, err)
+		}
+	}
+}
+
+func TestSingleAndBatchToolConstructionShareNameValidation(t *testing.T) {
+	handler := func(context.Context, *echoToolRequest) (string, error) { return "ok", nil }
+	for _, name := range []string{"", " ", " name", "name "} {
+		if _, err := InferTool(name, "", handler); err == nil {
+			t.Fatalf("single accepted %q", name)
+		}
+		if _, err := NewTools([]ToolDefinition{{Name: name, Handler: handler}}); err == nil {
+			t.Fatalf("batch accepted %q", name)
+		}
+	}
+}

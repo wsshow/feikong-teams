@@ -156,3 +156,12 @@ func (a minimalAgent) Name() string {
 func (a minimalAgent) Description() string {
 	return a.description
 }
+
+func TestBuildAgentRejectsAmbiguousToolsBeforeRuntimeConstruction(t *testing.T) {
+	runtime := &minimalEngine{}
+	ctx := runtimeport.WithRuntime(context.Background(), runtime)
+	_, err := BuildAgent(ctx, Definition{Name: "duplicate", Profile: ProfileBare, Model: testmodel.New(), Tools: []runtimeport.Tool{registryTestTool{}, registryTestTool{}}})
+	if err == nil || runtime.lastConfig != nil {
+		t.Fatalf("err=%v config=%v", err, runtime.lastConfig)
+	}
+}

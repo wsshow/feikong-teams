@@ -192,3 +192,24 @@ func TestClassifyToolAllowsUnmarkedExternalTool(t *testing.T) {
 		t.Fatalf("external tool should not require policy: %v", err)
 	}
 }
+
+func TestClassificationValidatesWholeListBeforeApplyingPolicies(t *testing.T) {
+	first := stubTool{info: &runtimeport.ToolInfo{Name: "file_write", Policy: runtimeport.ToolPolicyMetadata{Required: true}}}
+	missing := stubTool{info: &runtimeport.ToolInfo{Name: "missing", Policy: runtimeport.ToolPolicyMetadata{Required: true}}}
+	before := first.info.Policy
+	if err := ClassifyTools([]runtimeport.Tool{first, missing}); err == nil {
+		t.Fatal("missing policy accepted")
+	}
+	if first.info.Policy != before {
+		t.Fatal("failed classification partially changed policies")
+	}
+	if err := ClassifyTools([]runtimeport.Tool{first, first}); err == nil {
+		t.Fatal("duplicate tool accepted")
+	}
+	if err := ClassifyTools([]runtimeport.Tool{first}); err != nil {
+		t.Fatal(err)
+	}
+	if !first.info.Policy.Required || !first.info.Policy.Destructive || first.info.Policy.ApprovalStore != approval.StoreFile {
+		t.Fatal(first.info.Policy)
+	}
+}
