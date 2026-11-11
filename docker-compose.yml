@@ -1,6 +1,6 @@
 services:
   fkteams:
-    build: .
+    image: fkteams/fkteams:latest
     container_name: fkteams
     restart: unless-stopped
     ports:
@@ -12,12 +12,5 @@ services:
       # 应用数据目录（与 volumes 挂载路径对应）
       - FEIKONG_APP_DIR=/app
     volumes:
-      # 持久化数据目录
-      - ./data/config:/app/config
-      - ./data/workspace:/app/workspace
-      - ./data/scheduler:/app/scheduler
-      - ./data/history:/app/history
-      - ./data/sessions:/app/sessions
-      - ./data/share:/app/share
-      - ./data/skills:/app/skills
-      - ./data/log:/app/log
+      # 整体保存配置、SQLite 数据库、工作区与扩展状态。
+      - ./data:/app

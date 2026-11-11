@@ -40,6 +40,8 @@ powershell -c "irm https://raw.githubusercontent.com/wsshow/feikong-teams/main/i
 
 也可以从 [GitHub Releases](https://github.com/wsshow/feikong-teams/releases) 手动下载。自定义安装目录等说明见[部署指南](./docs/deployment.md#安装发行版)。
 
+Docker 用户可使用 [fkteams/fkteams](https://hub.docker.com/r/fkteams/fkteams) 镜像，支持 amd64、arm64，基于 Ubuntu 24.04 并预装常用开发工具。启动与数据持久化见 [Docker 部署指南](./docs/deployment.md#docker-部署)。
+
 ### 2. 配置模型
 
 ```bash

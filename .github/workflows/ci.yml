@@ -27,3 +27,8 @@ jobs:
 
       - name: Check
         run: make check
+
+      - name: Check Docker release scripts
+        run: |
+          python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+          bash -n .github/scripts/docker_smoke.sh .github/scripts/docker_context_test.sh
