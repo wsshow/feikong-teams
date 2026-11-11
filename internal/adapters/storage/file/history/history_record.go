@@ -312,20 +312,7 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		base.Usage = usageRecordFromEvent(event)
 		h.appendTranscriptEvent(base, target)
 	case EventToolCallStarted:
-		toolCalls := event.ToolCalls
-		if event.ToolCall != nil {
-			toolCalls = append([]message.ToolCall{*event.ToolCall}, toolCalls...)
-		}
-		if len(toolCalls) == 0 && event.ToolName != "" {
-			toolCalls = []message.ToolCall{{
-				ID:    event.ToolCallID,
-				Index: event.ToolCallIndex,
-				Function: message.FunctionCall{
-					Name:      event.ToolName,
-					Arguments: event.ToolArgs,
-				},
-			}}
-		}
+		toolCalls := events.ToolCallsFromEvent(event)
 		for i, tc := range toolCalls {
 			if tc.Function.Name == "" || events.IsInternalToolName(tc.Function.Name) {
 				continue
@@ -661,20 +648,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	case EventToolCallStarted:
 		ctx := h.ensureMessageContext(event)
-		toolCalls := event.ToolCalls
-		if event.ToolCall != nil {
-			toolCalls = append([]message.ToolCall{*event.ToolCall}, toolCalls...)
-		}
-		if len(toolCalls) == 0 && event.ToolName != "" {
-			toolCalls = []message.ToolCall{{
-				ID:    event.ToolCallID,
-				Index: event.ToolCallIndex,
-				Function: message.FunctionCall{
-					Name:      event.ToolName,
-					Arguments: event.ToolArgs,
-				},
-			}}
-		}
+		toolCalls := events.ToolCallsFromEvent(event)
 		for i, tc := range toolCalls {
 			if events.IsInternalToolName(tc.Function.Name) {
 				continue

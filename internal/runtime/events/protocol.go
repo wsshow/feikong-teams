@@ -6,8 +6,15 @@ import (
 	"fkteams/internal/domain/message"
 )
 
+// ToolCallsFromEvent 统一读取单个、列表及扁平字段中的工具调用，并消除单个与列表的重叠。
 func ToolCallsFromEvent(event Event) []message.ToolCall {
 	if event.ToolCall == nil {
+		if len(event.ToolCalls) == 0 && event.ToolName != "" {
+			return []message.ToolCall{{
+				ID: event.ToolCallID, Index: event.ToolCallIndex,
+				Function: message.FunctionCall{Name: event.ToolName, Arguments: event.ToolArgs},
+			}}
+		}
 		return event.ToolCalls
 	}
 	toolCalls := make([]message.ToolCall, 0, len(event.ToolCalls)+1)
@@ -31,6 +38,7 @@ func sameToolCall(left, right message.ToolCall) bool {
 	return left.Function.Name != "" && left.Function.Name == right.Function.Name && left.Function.Arguments == right.Function.Arguments
 }
 
+// ToolCallRefAt 按索引、位置和单调用标识解析关联引用，不把一个引用扩散到多条调用。
 func ToolCallRefAt(event Event, tool message.ToolCall, position int) string {
 	if tool.Index != nil && event.ToolCallRefs != nil {
 		if ref := event.ToolCallRefs[*tool.Index]; ref != "" {
@@ -42,7 +50,7 @@ func ToolCallRefAt(event Event, tool message.ToolCall, position int) string {
 			return ref
 		}
 	}
-	if event.ToolCall != nil && position == 0 && event.ToolCallRef != "" {
+	if position == 0 && event.ToolCallRef != "" && (event.ToolCall != nil || (len(event.ToolCalls) == 0 && event.ToolName != "")) {
 		return event.ToolCallRef
 	}
 	return ""

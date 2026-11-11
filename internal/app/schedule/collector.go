@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 
 	"fkteams/internal/domain/event"
-	"fkteams/internal/domain/message"
 	domainschedule "fkteams/internal/domain/schedule"
+	"fkteams/internal/runtime/events"
 )
 
 const truncatedOutputMarker = "\n\n> Output truncated because it exceeded the scheduler result limit."
@@ -145,16 +145,7 @@ func (c *markdownCollector) writeMessageDelta(e event.Event) {
 
 func (c *markdownCollector) writeToolStart(e event.Event) {
 	c.flushStream()
-	toolCalls := toolCallsFromEvent(e)
-	if len(toolCalls) == 0 && e.ToolName != "" {
-		toolCalls = append(toolCalls, message.ToolCall{
-			ID: e.ToolCallID,
-			Function: message.FunctionCall{
-				Name:      e.ToolName,
-				Arguments: e.ToolArgs,
-			},
-		})
-	}
+	toolCalls := events.ToolCallsFromEvent(e)
 	for _, tc := range toolCalls {
 		name := tc.Function.Name
 		if name == "" {
@@ -197,7 +188,7 @@ func (c *markdownCollector) writeToolEnd(e event.Event) {
 }
 
 func (c *markdownCollector) writeNotice(e event.Event) {
-	if e.Notice != nil && e.Notice.Code == "transfer" {
+	if e.Notice != nil && e.Notice.Code == event.NoticeTransfer {
 		c.flushStream()
 		c.buf.WriteString("\n\n> **[")
 		c.buf.WriteString(displayAgent(e.AgentName))
@@ -205,16 +196,6 @@ func (c *markdownCollector) writeNotice(e event.Event) {
 		c.buf.WriteString(e.Content)
 		c.lastAgent = ""
 	}
-}
-
-func toolCallsFromEvent(e event.Event) []message.ToolCall {
-	if e.ToolCall == nil {
-		return e.ToolCalls
-	}
-	toolCalls := make([]message.ToolCall, 0, len(e.ToolCalls)+1)
-	toolCalls = append(toolCalls, *e.ToolCall)
-	toolCalls = append(toolCalls, e.ToolCalls...)
-	return toolCalls
 }
 
 func summarizeToolResult(content string) string {

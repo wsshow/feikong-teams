@@ -65,7 +65,7 @@ func TestMarkdownCollectorCollectsToolsActionsAndErrors(t *testing.T) {
 	events := []event.Event{
 		{Type: event.TypeToolCallStarted, AgentName: "tasker", ToolCall: &toolCall},
 		{Type: event.TypeToolCallCompleted, ToolCallID: "call-1", Content: `{"message":"found 3 results"}`},
-		{Type: event.TypeSystemNotice, AgentName: "tasker", Content: "researcher", Notice: &event.NoticePayload{Code: "transfer"}},
+		{Type: event.TypeSystemNotice, AgentName: "tasker", Content: "researcher", Notice: &event.NoticePayload{Code: event.NoticeTransfer}},
 		{Type: event.TypeError, AgentName: "tasker", Error: "failed"},
 	}
 	for _, e := range events {
@@ -85,5 +85,16 @@ func TestMarkdownCollectorCollectsToolsActionsAndErrors(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("result missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestMarkdownCollectorDeduplicatesToolRepresentations(t *testing.T) {
+	handle, result := newMarkdownCollector()
+	call := message.ToolCall{ID: "call", Function: message.FunctionCall{Name: "read"}}
+	if err := handle(event.Event{Type: event.TypeToolCallStarted, ToolCall: &call, ToolCalls: []message.ToolCall{call}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(result(), "tool:"); got != 1 {
+		t.Fatalf("tool entries = %d", got)
 	}
 }

@@ -223,3 +223,20 @@ func TestValidateEventContractRequiresCorePayloadFields(t *testing.T) {
 		}
 	}
 }
+
+func TestToolCallsFromEventPreservesFlatIdentityWithoutDuplicatingExplicitCalls(t *testing.T) {
+	index := 3
+	e := Event{Type: EventToolCallStarted, ToolCallID: "flat", ToolCallIndex: &index, ToolCallRef: "flat-ref", ToolName: "search", ToolArgs: "query"}
+	calls := ToolCallsFromEvent(e)
+	if len(calls) != 1 || calls[0].ID != "flat" || calls[0].Index != &index || calls[0].Function.Name != "search" || calls[0].Function.Arguments != "query" {
+		t.Fatalf("calls = %+v", calls)
+	}
+	if ref := ToolCallRefAt(e, calls[0], 0); ref != "flat-ref" {
+		t.Fatalf("flat call ref = %q", ref)
+	}
+	e.ToolCalls = []message.ToolCall{{ID: "explicit", Function: message.FunctionCall{Name: "read"}}}
+	calls = ToolCallsFromEvent(e)
+	if len(calls) != 1 || calls[0].ID != "explicit" || ToolCallRefAt(e, calls[0], 0) != "" {
+		t.Fatalf("flat metadata overrode an explicit list: %+v", calls)
+	}
+}

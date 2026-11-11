@@ -957,3 +957,29 @@ func TestTranscriptFinalizesIncompleteMemberSeparately(t *testing.T) {
 		t.Fatalf("records = %+v", records)
 	}
 }
+
+func TestHistoryUsesCanonicalToolCallExtraction(t *testing.T) {
+	for _, representation := range []string{"flat", "single_and_list"} {
+		t.Run(representation, func(t *testing.T) {
+			dir := t.TempDir()
+			recorder := NewHistoryRecorder()
+			recorder.SetSessionDir(dir)
+			start := Event{Type: EventToolCallStarted, AgentName: "assistant", ToolName: "read", ToolCallID: "call", ToolCallRef: "ref"}
+			if representation == "single_and_list" {
+				call := message.ToolCall{ID: "call", Function: message.FunctionCall{Name: "read"}}
+				start.ToolCall, start.ToolCalls = &call, []message.ToolCall{call}
+			}
+			recorder.RecordEvent(start)
+			recorder.RecordEvent(Event{Type: EventToolCallCompleted, AgentName: "assistant", ToolCallID: "call", ToolCallRef: "ref", ToolResult: "result"})
+			recorder.FinalizeCurrent()
+			messages := recorder.GetMessages()
+			if len(messages) != 1 || len(messages[0].Events) != 1 || messages[0].Events[0].ToolCall == nil || messages[0].Events[0].ToolCall.Result != "result" {
+				t.Fatalf("memory projection = %+v", messages)
+			}
+			records, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+			if err != nil || len(records) != 2 || records[0].Type != TranscriptToolCallStart || records[1].Type != TranscriptToolCallEnd {
+				t.Fatalf("transcript = %+v, err = %v", records, err)
+			}
+		})
+	}
+}
