@@ -1,6 +1,9 @@
 package message
 
-import "strings"
+import (
+	"reflect"
+	"strings"
+)
 
 type Role string
 
@@ -27,6 +30,7 @@ type ContentPart struct {
 	Text       string          `json:"text,omitempty"`
 	URL        string          `json:"url,omitempty"`
 	Base64Data string          `json:"base64_data,omitempty"`
+	FileID     string          `json:"file_id,omitempty"`
 	MIMEType   string          `json:"mime_type,omitempty"`
 	Detail     string          `json:"detail,omitempty"`
 }
@@ -37,10 +41,52 @@ type FunctionCall struct {
 }
 
 type ToolCall struct {
-	ID       string       `json:"id"`
-	Index    *int         `json:"index,omitempty"`
-	Type     string       `json:"type,omitempty"`
-	Function FunctionCall `json:"function"`
+	ID       string         `json:"id"`
+	Index    *int           `json:"index,omitempty"`
+	Type     string         `json:"type,omitempty"`
+	Function FunctionCall   `json:"function"`
+	Extra    map[string]any `json:"extra,omitempty"`
+}
+
+// CloneMetadata 复制元数据中的嵌套映射和切片，隔离 SDK 对共享数据的修改。
+func CloneMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return nil
+	}
+	return cloneMetadataValue(reflect.ValueOf(metadata)).Interface().(map[string]any)
+}
+
+func cloneMetadataValue(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return value
+		}
+		result := reflect.New(value.Type()).Elem()
+		result.Set(cloneMetadataValue(value.Elem()))
+		return result
+	case reflect.Map:
+		if value.IsNil() {
+			return value
+		}
+		result := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			result.SetMapIndex(iter.Key(), cloneMetadataValue(iter.Value()))
+		}
+		return result
+	case reflect.Slice:
+		if value.IsNil() {
+			return value
+		}
+		result := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			result.Index(i).Set(cloneMetadataValue(value.Index(i)))
+		}
+		return result
+	default:
+		return value
+	}
 }
 
 type Message struct {

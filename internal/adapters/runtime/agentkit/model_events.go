@@ -183,7 +183,10 @@ func (o *modelObservation) finishLocked(output *schema.Message) error {
 	if output.ResponseMeta != nil && output.ResponseMeta.Usage != nil {
 		usage := output.ResponseMeta.Usage
 		end.PromptTokens, end.CompletionTokens, end.TotalTokens = usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens
-		end.Usage = &domainevent.UsagePayload{PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens}
+		end.Usage = &domainevent.UsagePayload{
+			PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens,
+			CachedTokens: usage.PromptTokenDetails.CachedTokens, CacheWriteTokens: usage.PromptTokenDetails.CacheWriteTokens,
+		}
 	}
 	o.scope.apply(&end, c)
 	if err := c.emitLocked(end); err != nil {

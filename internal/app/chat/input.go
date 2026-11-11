@@ -280,8 +280,7 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 			}
 			flushText()
 			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
-				ID:   tc.ID,
-				Type: "function",
+				ID: tc.ID, Index: tc.Index, Type: "function", Extra: domainmessage.CloneMetadata(tc.Extra),
 				Function: domainmessage.FunctionCall{
 					Name:      tc.Name,
 					Arguments: tc.Arguments,

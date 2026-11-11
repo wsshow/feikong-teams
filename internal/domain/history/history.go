@@ -35,6 +35,7 @@ type TranscriptEvent struct {
 	ContentParts  []message.ContentPart `json:"content_parts,omitempty"`
 	Name          string                `json:"name,omitempty"`
 	Args          string                `json:"args,omitempty"`
+	Extra         map[string]any        `json:"extra,omitempty"`
 	Result        string                `json:"result,omitempty"`
 	ResultRef     string                `json:"result_ref,omitempty"`
 	Summary       string                `json:"summary,omitempty"`
@@ -65,20 +66,23 @@ type ToolResultArtifact struct {
 }
 
 type ToolCallRecord struct {
-	Ref         string `json:"ref,omitempty"`
-	ID          string `json:"id"`
-	Index       *int   `json:"index,omitempty"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name,omitempty"`
-	Kind        string `json:"kind,omitempty"`
-	Target      string `json:"target,omitempty"`
-	Arguments   string `json:"arguments"`
-	Result      string `json:"result"`
-	Status      string `json:"status,omitempty"`
+	Ref         string         `json:"ref,omitempty"`
+	ID          string         `json:"id"`
+	Index       *int           `json:"index,omitempty"`
+	Name        string         `json:"name"`
+	DisplayName string         `json:"display_name,omitempty"`
+	Kind        string         `json:"kind,omitempty"`
+	Target      string         `json:"target,omitempty"`
+	Arguments   string         `json:"arguments"`
+	Extra       map[string]any `json:"extra,omitempty"`
+	Result      string         `json:"result"`
+	Status      string         `json:"status,omitempty"`
 }
 
 type UsageRecord struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
+	CachedTokens     int `json:"cached_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
 }

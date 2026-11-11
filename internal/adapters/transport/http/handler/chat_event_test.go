@@ -154,6 +154,15 @@ func TestConvertContentPartsPreservesAttachmentName(t *testing.T) {
 	}
 }
 
+func TestConvertContentPartsPreservesProviderFileReferences(t *testing.T) {
+	for _, kind := range []string{"image_url", "audio_url", "video_url", "file_url"} {
+		parts := convertContentParts([]ContentPart{{Type: kind, FileID: "files/media", MIMEType: "application/octet-stream"}})
+		if len(parts) != 1 || parts[0].FileID != "files/media" || parts[0].MIMEType != "application/octet-stream" || parts[0].URL != "" {
+			t.Fatalf("%s reference = %#v", kind, parts)
+		}
+	}
+}
+
 func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
 	toolIndex := 0
 	got := convertEventToMap(events.Event{
@@ -384,11 +393,14 @@ func TestFrontendEventContractFixture(t *testing.T) {
 		e := events.Event{Type: typ, EventID: fmt.Sprintf("event-%d", i+1), Sequence: int64(i + 1), CreatedAt: at, RunID: "run", TurnID: "turn", AgentName: "assistant"}
 		switch typ {
 		case domainevent.TypeUserMessage:
-			e.Message = &message.Message{Role: message.RoleUser, ContentParts: []message.ContentPart{{Type: message.ContentPartImageURL, URL: "/image.png"}}}
+			e.Message = &message.Message{Role: message.RoleUser, ContentParts: []message.ContentPart{{Type: message.ContentPartImageURL, URL: "/image.png"}, {Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf"}}}
 		case domainevent.TypeAssistantStarted, domainevent.TypeAssistantCompleted, domainevent.TypeAssistantText, domainevent.TypeAssistantReasoning:
 			e.MessageID = "message"
 			e.Role = message.RoleAssistant
 			e.Content = "answer"
+			if typ == domainevent.TypeAssistantCompleted {
+				e.Usage = &events.UsagePayload{PromptTokens: 2, CachedTokens: 1, CacheWriteTokens: 1, CompletionTokens: 3, TotalTokens: 5}
+			}
 			if typ == domainevent.TypeAssistantReasoning {
 				e.DeltaKind = events.DeltaReasoning
 			} else {
@@ -398,7 +410,7 @@ func TestFrontendEventContractFixture(t *testing.T) {
 			e.ToolName = "read_file"
 			e.ToolCallID = "call"
 			e.ToolCallRef = "tool_call:call"
-			e.ToolCall = &message.ToolCall{ID: "call", Function: message.FunctionCall{Name: "read_file", Arguments: `{"path":"note.txt"}`}}
+			e.ToolCall = &message.ToolCall{ID: "call", Function: message.FunctionCall{Name: "read_file", Arguments: `{"path":"note.txt"}`}, Extra: map[string]any{"provider": "metadata"}}
 			if typ != domainevent.TypeToolCallFailed {
 				e.Content = "result"
 			}
@@ -411,7 +423,7 @@ func TestFrontendEventContractFixture(t *testing.T) {
 			e.Content = "notice"
 			e.Notice = &events.NoticePayload{Level: "info", Message: "notice"}
 		case domainevent.TypeUsageReported:
-			e.Usage = &events.UsagePayload{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5}
+			e.Usage = &events.UsagePayload{PromptTokens: 2, CachedTokens: 1, CacheWriteTokens: 1, CompletionTokens: 3, TotalTokens: 5}
 		case domainevent.TypeError, domainevent.TypeTurnFailed, domainevent.Type(domainevent.NotifyInvalidAPIKey):
 			e.Error = "request failed"
 		case domainevent.TypeMemberStarted, domainevent.TypeMemberCompleted:
@@ -428,9 +440,9 @@ func TestFrontendEventContractFixture(t *testing.T) {
 	}
 	rt := &Runtime{RuntimeOptions: RuntimeOptions{Dependencies: execution.Dependencies{ToolDisplays: toolmeta.NewRegistry()}}}
 	history := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{
-		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Content: "question"},
-		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Content: "answer", Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5}},
-		{ID: "history-tool", At: at, Type: eventlog.TranscriptToolCallEnd, CallID: "call", Name: "read_file", Content: "result"},
+		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Content: "question", ContentParts: []message.ContentPart{{Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf"}}},
+		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Content: "answer", Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5, CachedTokens: 1, CacheWriteTokens: 2}},
+		{ID: "history-tool", At: at, Type: eventlog.TranscriptToolCallEnd, CallID: "call", Name: "read_file", Content: "result", Extra: map[string]any{"provider": "metadata"}},
 		{ID: "history-cancel", At: at, Type: eventlog.TranscriptCancelled, Content: "cancelled"},
 	})
 	data, err := json.MarshalIndent(struct {

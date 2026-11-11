@@ -91,6 +91,7 @@ func adaptToolCallsForRunner(toolCalls []domainmessage.ToolCall) []schema.ToolCa
 			ID:    tc.ID,
 			Index: tc.Index,
 			Type:  tc.Type,
+			Extra: domainmessage.CloneMetadata(tc.Extra),
 			Function: schema.FunctionCall{
 				Name:      tc.Function.Name,
 				Arguments: tc.Function.Arguments,
@@ -113,6 +114,7 @@ func adaptToolCallFromRunner(tc schema.ToolCall) domainmessage.ToolCall {
 		ID:    tc.ID,
 		Index: tc.Index,
 		Type:  tc.Type,
+		Extra: domainmessage.CloneMetadata(tc.Extra),
 		Function: domainmessage.FunctionCall{
 			Name:      tc.Function.Name,
 			Arguments: tc.Function.Arguments,
@@ -130,22 +132,18 @@ func adaptPartsForRunner(parts []domainmessage.ContentPart) []schema.MessageInpu
 		case domainmessage.ContentPartImageURL:
 			p.Type = schema.ChatMessagePartTypeImageURL
 			p.Image = &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{
-					URL:        stringPtr(part.URL),
-					Base64Data: stringPtr(part.Base64Data),
-					MIMEType:   part.MIMEType,
-				},
-				Detail: schema.ImageURLDetail(part.Detail),
+				MessagePartCommon: adaptPartCommonForRunner(part),
+				Detail:            schema.ImageURLDetail(part.Detail),
 			}
 		case domainmessage.ContentPartAudioURL:
 			p.Type = schema.ChatMessagePartTypeAudioURL
-			p.Audio = &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
+			p.Audio = &schema.MessageInputAudio{MessagePartCommon: adaptPartCommonForRunner(part)}
 		case domainmessage.ContentPartVideoURL:
 			p.Type = schema.ChatMessagePartTypeVideoURL
-			p.Video = &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
+			p.Video = &schema.MessageInputVideo{MessagePartCommon: adaptPartCommonForRunner(part)}
 		case domainmessage.ContentPartFileURL:
 			p.Type = schema.ChatMessagePartTypeFileURL
-			p.File = &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL)}}
+			p.File = &schema.MessageInputFile{MessagePartCommon: adaptPartCommonForRunner(part)}
 		}
 		result = append(result, p)
 	}
@@ -162,29 +160,23 @@ func adaptPartsFromRunner(parts []schema.MessageInputPart) []domainmessage.Conte
 		case schema.ChatMessagePartTypeImageURL:
 			p.Type = domainmessage.ContentPartImageURL
 			if part.Image != nil {
-				if part.Image.URL != nil {
-					p.URL = *part.Image.URL
-				}
-				if part.Image.Base64Data != nil {
-					p.Base64Data = *part.Image.Base64Data
-				}
-				p.MIMEType = part.Image.MIMEType
+				adaptPartCommonFromRunner(&p, part.Image.MessagePartCommon)
 				p.Detail = string(part.Image.Detail)
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			p.Type = domainmessage.ContentPartAudioURL
-			if part.Audio != nil && part.Audio.URL != nil {
-				p.URL = *part.Audio.URL
+			if part.Audio != nil {
+				adaptPartCommonFromRunner(&p, part.Audio.MessagePartCommon)
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			p.Type = domainmessage.ContentPartVideoURL
-			if part.Video != nil && part.Video.URL != nil {
-				p.URL = *part.Video.URL
+			if part.Video != nil {
+				adaptPartCommonFromRunner(&p, part.Video.MessagePartCommon)
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			p.Type = domainmessage.ContentPartFileURL
-			if part.File != nil && part.File.URL != nil {
-				p.URL = *part.File.URL
+			if part.File != nil {
+				adaptPartCommonFromRunner(&p, part.File.MessagePartCommon)
 			}
 		}
 		result = append(result, p)
@@ -199,18 +191,14 @@ func adaptOutputPartsForRunner(parts []domainmessage.ContentPart) []schema.Messa
 		switch part.Type {
 		case domainmessage.ContentPartImageURL:
 			p.Image = &schema.MessageOutputImage{
-				MessagePartCommon: schema.MessagePartCommon{
-					URL:        stringPtr(part.URL),
-					Base64Data: stringPtr(part.Base64Data),
-					MIMEType:   part.MIMEType,
-				},
+				MessagePartCommon: adaptPartCommonForRunner(part),
 			}
 		case domainmessage.ContentPartAudioURL:
-			p.Audio = &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data), MIMEType: part.MIMEType}}
+			p.Audio = &schema.MessageOutputAudio{MessagePartCommon: adaptPartCommonForRunner(part)}
 		case domainmessage.ContentPartVideoURL:
-			p.Video = &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data), MIMEType: part.MIMEType}}
+			p.Video = &schema.MessageOutputVideo{MessagePartCommon: adaptPartCommonForRunner(part)}
 		case domainmessage.ContentPartFileURL:
-			p.Extra = map[string]any{"url": part.URL, "mime_type": part.MIMEType}
+			p.Extra = map[string]any{"url": part.URL, "base64_data": part.Base64Data, "file_id": part.FileID, "mime_type": part.MIMEType}
 		}
 		result = append(result, p)
 	}
@@ -225,35 +213,17 @@ func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []domainmessag
 		case schema.ChatMessagePartTypeImageURL:
 			p.Type = domainmessage.ContentPartImageURL
 			if part.Image != nil {
-				if part.Image.URL != nil {
-					p.URL = *part.Image.URL
-				}
-				if part.Image.Base64Data != nil {
-					p.Base64Data = *part.Image.Base64Data
-				}
-				p.MIMEType = part.Image.MIMEType
+				adaptPartCommonFromRunner(&p, part.Image.MessagePartCommon)
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			p.Type = domainmessage.ContentPartAudioURL
 			if part.Audio != nil {
-				if part.Audio.URL != nil {
-					p.URL = *part.Audio.URL
-				}
-				if part.Audio.Base64Data != nil {
-					p.Base64Data = *part.Audio.Base64Data
-				}
-				p.MIMEType = part.Audio.MIMEType
+				adaptPartCommonFromRunner(&p, part.Audio.MessagePartCommon)
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			p.Type = domainmessage.ContentPartVideoURL
 			if part.Video != nil {
-				if part.Video.URL != nil {
-					p.URL = *part.Video.URL
-				}
-				if part.Video.Base64Data != nil {
-					p.Base64Data = *part.Video.Base64Data
-				}
-				p.MIMEType = part.Video.MIMEType
+				adaptPartCommonFromRunner(&p, part.Video.MessagePartCommon)
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			p.Type = domainmessage.ContentPartFileURL
@@ -264,11 +234,37 @@ func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []domainmessag
 				if mimeType, ok := part.Extra["mime_type"].(string); ok {
 					p.MIMEType = mimeType
 				}
+				if data, ok := part.Extra["base64_data"].(string); ok {
+					p.Base64Data = data
+				}
+				if id, ok := part.Extra["file_id"].(string); ok {
+					p.FileID = id
+				}
 			}
 		}
 		result = append(result, p)
 	}
 	return result
+}
+
+func adaptPartCommonForRunner(part domainmessage.ContentPart) schema.MessagePartCommon {
+	return schema.MessagePartCommon{
+		URL: stringPtr(part.URL), Base64Data: stringPtr(part.Base64Data),
+		FileID: stringPtr(part.FileID), MIMEType: part.MIMEType,
+	}
+}
+
+func adaptPartCommonFromRunner(part *domainmessage.ContentPart, common schema.MessagePartCommon) {
+	if common.URL != nil {
+		part.URL = *common.URL
+	}
+	if common.Base64Data != nil {
+		part.Base64Data = *common.Base64Data
+	}
+	if common.FileID != nil {
+		part.FileID = *common.FileID
+	}
+	part.MIMEType = common.MIMEType
 }
 
 func stringPtr(s string) *string {

@@ -27,12 +27,15 @@ describe("event protocol boundary", () => {
       { ...tool, tool_calls: [{ name: 1 }] },
       { ...tool, tool_call: { name: "read_file", arguments: {} } },
       { ...tool, tool_calls: [{ name: "read_file", index: -1 }] },
+      { ...tool, tool_call: { name: "read_file", extra: [] } },
       { ...tool, tool_calls: null },
       { ...tool, sequence: 1.5 },
       { ...tool, sequence: Number.NaN },
       { ...tool, stream_event_id: Number.MAX_SAFE_INTEGER + 1 },
       { ...tool, created_at: {} },
       { ...tool, content_parts: [{ type: "image_url", url: 42 }] },
+      { ...tool, content_parts: [{ type: "file_url", file_id: 42 }] },
+      { ...tool, content_parts: [{ type: "file_url", file_id: "" }] },
       { ...tool, content_parts: [{ type: "future_part" }] },
       { type: "queue_updated", queue: [{ queue_id: "q", kind: "unknown" }] },
       { type: "queue_updated", queue: [{ queue_id: "q", kind: "steering", parts: [false] }] },
@@ -41,9 +44,27 @@ describe("event protocol boundary", () => {
       { type: "ask_answered", ask_id: "a", ask_selected: [42] },
       { type: "approval_requested", detail: "a", approval: { decision: 1 } },
       { type: "usage_reported", usage: { total_tokens: "5" } },
+      { type: "usage_reported", usage: { total_tokens: 5, cache_write_tokens: -1 } },
+      { type: "usage_reported", usage: { total_tokens: 5, cached_tokens: "1" } },
       { type: "error", error: "failed", error_suggestions: {} },
     ];
     for (const value of malformed) expect(decodeChatEvent(value), JSON.stringify(value)).toBeUndefined();
+  });
+
+  test("retains provider tool metadata, file references and cache usage in live and historical events", () => {
+    const decoded = decodeChatEvents([...fixture.live, ...fixture.history]);
+    const tools = decoded.filter((event) => event.tool_call?.extra !== undefined);
+    expect(tools.length).toBeGreaterThan(0);
+    for (const event of tools) expect(event.tool_call?.extra).toEqual({ provider: "metadata" });
+    const attachments = decoded.flatMap((event) => event.content_parts || []).filter((part) => part.file_id);
+    expect(attachments.length).toBe(2);
+    for (const part of attachments) expect(part.file_id).toBe("files/report");
+    const usage = decoded.filter((event) => event.usage?.cache_write_tokens !== undefined);
+    expect(usage.length).toBe(4);
+    expect(usage.map((event) => event.usage?.cache_write_tokens)).toEqual([1, 1, 2, 2]);
+    for (const kind of ["image_url", "audio_url", "video_url", "file_url"]) {
+      expect(decodeChatEvent({ type: "user_message", content_parts: [{ type: kind, file_id: "files/media" }] })).toBeDefined();
+    }
   });
 
   test("requires the fields that distinguish each event payload", () => {

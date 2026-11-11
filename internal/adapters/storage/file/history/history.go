@@ -3,6 +3,7 @@ package eventlog
 import (
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	domainhistory "fkteams/internal/domain/history"
+	"fkteams/internal/domain/message"
 
 	"fkteams/internal/runtime/events"
 
@@ -87,6 +88,7 @@ type pendingToolCall struct {
 	Kind        string
 	Target      string
 	Arguments   string
+	Extra       map[string]any
 }
 
 type assistantMessageKey struct {
@@ -169,6 +171,7 @@ func toolCallRecordFromPending(tc pendingToolCall, result string) ToolCallRecord
 		Kind:        tc.Kind,
 		Target:      tc.Target,
 		Arguments:   tc.Arguments,
+		Extra:       message.CloneMetadata(tc.Extra),
 		Result:      result,
 	}
 	if record.DisplayName == "" || record.Kind == "" {
@@ -205,7 +208,7 @@ func historyEventEnvelope(event Event, typ MsgEventType) MessageEvent {
 	}
 }
 
-func (h *HistoryRecorder) pendingToolCallFromEvent(event Event, ref, id string, index *int, name, arguments string) pendingToolCall {
+func (h *HistoryRecorder) pendingToolCallFromEvent(event Event, ref, id string, index *int, name, arguments string, extra map[string]any) pendingToolCall {
 	display := h.formatToolDisplay(name)
 	return pendingToolCall{
 		Ref:         ref,
@@ -224,6 +227,7 @@ func (h *HistoryRecorder) pendingToolCallFromEvent(event Event, ref, id string, 
 		Kind:        display.Kind,
 		Target:      display.Target,
 		Arguments:   arguments,
+		Extra:       message.CloneMetadata(extra),
 	}
 }
 

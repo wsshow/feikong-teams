@@ -122,6 +122,8 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 		base.TotalTokens = item.Usage.TotalTokens
 		base.Usage = &events.UsagePayload{
 			PromptTokens:     item.Usage.PromptTokens,
+			CachedTokens:     item.Usage.CachedTokens,
+			CacheWriteTokens: item.Usage.CacheWriteTokens,
 			CompletionTokens: item.Usage.CompletionTokens,
 			TotalTokens:      item.Usage.TotalTokens,
 		}
@@ -131,6 +133,7 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 		usage.TurnID = base.TurnID
 		usage.MessageID = item.ID
 		usage.AgentName = item.Agent
+		usage.Usage = base.Usage
 		return []events.Event{base, usage}
 	case eventlog.TranscriptToolCallStart:
 		base.Type = events.EventToolCallStarted
@@ -205,7 +208,8 @@ func attachTranscriptToolCall(event *events.Event, item eventlog.TranscriptEvent
 	event.ToolName = name
 	event.ToolArgs = args
 	event.ToolCall = &domainmessage.ToolCall{
-		ID: id,
+		ID:    id,
+		Extra: domainmessage.CloneMetadata(item.Extra),
 		Function: domainmessage.FunctionCall{
 			Name:      name,
 			Arguments: args,

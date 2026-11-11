@@ -296,7 +296,10 @@ func usageRecordFromEvent(event Event) *UsageRecord {
 	promptTokens := event.PromptTokens
 	completionTokens := event.CompletionTokens
 	totalTokens := event.TotalTokens
+	var cachedTokens, cacheWriteTokens int
 	if event.Usage != nil {
+		cachedTokens = event.Usage.CachedTokens
+		cacheWriteTokens = event.Usage.CacheWriteTokens
 		if promptTokens == 0 {
 			promptTokens = event.Usage.PromptTokens
 		}
@@ -307,8 +310,11 @@ func usageRecordFromEvent(event Event) *UsageRecord {
 			totalTokens = event.Usage.TotalTokens
 		}
 	}
-	if promptTokens == 0 && completionTokens == 0 && totalTokens == 0 {
+	if promptTokens == 0 && completionTokens == 0 && totalTokens == 0 && cachedTokens == 0 && cacheWriteTokens == 0 {
 		return nil
 	}
-	return &UsageRecord{PromptTokens: promptTokens, CompletionTokens: completionTokens, TotalTokens: totalTokens}
+	return &UsageRecord{
+		PromptTokens: promptTokens, CompletionTokens: completionTokens, TotalTokens: totalTokens,
+		CachedTokens: cachedTokens, CacheWriteTokens: cacheWriteTokens,
+	}
 }

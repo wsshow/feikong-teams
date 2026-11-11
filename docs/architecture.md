@@ -152,6 +152,8 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 
 库的公共事件没有工具参数分片、产品消息 ID 和完整的多模态输出字段，所以适配器观察同一次模型响应以补齐这些信息，完整消息在产品中间件修复完成后发布；它不负责执行工具或推动模型循环。工具参数第一次出现就确定调用 ID，SDK 执行、`message_delta(tool_args)`、`message_end.tool_calls[]` 和 `tool_start/update/end` 使用相同的 `tool_call_ref`。
 
+工具调用的 `Extra` 作为供应商元数据保留在领域消息、工具历史和 transcript 中，恢复上下文时原样传回模型；跨 SDK 边界复制嵌套映射和切片，避免复用流分片修改已记录的元数据。多模态内容的 `file_id` 是供应商托管引用，通过消息、队列和 Web 协议传递，不能当作本地文件路径解析；实际支持取决于模型提供者。`Usage` 和历史用量记录保留 `cached_tokens`、`cache_write_tokens`，缓存明细已经包含在 prompt token 总数内，不额外累加到总用量。
+
 增量进入领域协议后统一使用 `Content`，不增加第二个 Delta 字段。UI DTO、历史投影和运行事实保持分层；显示需求不能改变持久化事实模型。
 
 ## 组合、配置与持久化
@@ -192,6 +194,8 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 `internal/architecture` 用层级白名单矩阵约束内部依赖方向（测试仅额外允许 testmodel）；需要组合根的集成测试放在 bootstrap。适配器边界测试限制 SDK 所属位置。运行回归测试覆盖流式工具关联、成员并行问答和恢复、工具 schema 传递、会话隔离、取消、事件接收器失败、默认拒绝、检查点清理、圆桌顺序及 Deep 工作区逃逸。
 
 跨包或运行行为变更运行 `make check`；并发变更另运行相关包的 `go test -race`。生成的 `web/dist` 与 `release` 不提交。
+
+当前 Claude 模型 adapter 依赖 `v0.1.26`，其 `Stream` 在协程合并前导空分片时写入了外层返回值 `err`，与函数返回路径存在数据竞争。`TestClaudeReportsCacheUsageThroughRunner` 使用本地 SSE 响应保留了复现路径，普通测试通过，`-race` 会报告该上游问题；升级到上游修复版本后应再次执行该测试确认。
 
 ### 关闭时的资源存活期
 

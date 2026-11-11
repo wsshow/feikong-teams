@@ -121,9 +121,10 @@ func TestStreamingUsageAttachesToAssistantCompleted(t *testing.T) {
 		Role:    schema.Assistant,
 		Content: "hello",
 		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
-			PromptTokens:     10,
-			CompletionTokens: 2,
-			TotalTokens:      12,
+			PromptTokens:       10,
+			PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: 3, CacheWriteTokens: 4},
+			CompletionTokens:   2,
+			TotalTokens:        12,
 		}},
 	}, nil); stopped {
 		t.Fatal("stream writer stopped before sending chunk")
@@ -162,6 +163,7 @@ func TestStreamingUsageAttachesToAssistantCompleted(t *testing.T) {
 			event.CompletionTokens == 2 &&
 			event.TotalTokens == 12 &&
 			event.Usage != nil &&
+			event.Usage.CachedTokens == 3 && event.Usage.CacheWriteTokens == 4 &&
 			event.Usage.TotalTokens == 12
 	}, "assistant completed")
 
@@ -199,6 +201,7 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 			domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
 				Index: &toolCallIndex,
 				Type:  "function",
+				Extra: map[string]any{"provider": "late-metadata"},
 				Function: domainmessage.FunctionCall{
 					Arguments: `"hello"}`,
 				},
@@ -217,6 +220,26 @@ func TestStreamingRunEmitsOrderedToolFlowEvents(t *testing.T) {
 	}
 
 	events := runAgentForTest(t, ctx, agent, true)
+	for _, event := range events {
+		if event.Type == domainevent.TypeAssistantCompleted && len(event.ToolCalls) > 0 {
+			if got := event.ToolCalls[0].Extra["provider"]; got != "late-metadata" {
+				t.Fatalf("streamed tool metadata = %#v", event.ToolCalls[0].Extra)
+			}
+		}
+	}
+	calls := model.StreamCalls()
+	if len(calls) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(calls))
+	}
+	var preserved bool
+	for _, msg := range calls[1].Input {
+		if len(msg.ToolCalls) > 0 && msg.ToolCalls[0].Extra["provider"] == "late-metadata" {
+			preserved = true
+		}
+	}
+	if !preserved {
+		t.Fatal("subsequent model call lost streamed tool metadata")
+	}
 	reasoningIdx := requireEventIndex(t, events, func(event domainevent.Event) bool {
 		return event.Type == domainevent.TypeAssistantReasoning &&
 			event.Role == domainmessage.RoleAssistant &&

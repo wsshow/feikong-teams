@@ -126,7 +126,11 @@ func (h *HistoryRecorder) recordToolResult(ctx *activeMessageContext, event Even
 	if event.ToolName == "" {
 		return
 	}
-	pending := h.pendingToolCallFromEvent(event, resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs)
+	var extra map[string]any
+	if event.ToolCall != nil {
+		extra = event.ToolCall.Extra
+	}
+	pending := h.pendingToolCallFromEvent(event, resultKey, event.ToolCallID, event.ToolCallIndex, event.ToolName, event.ToolArgs, extra)
 	if !events.IsInternalToolName(pending.Name) {
 		ctx.msg.Events = append(ctx.msg.Events, MessageEvent{
 			Type:      MsgTypeToolCall,
@@ -299,7 +303,8 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			reasoning = event.Message.ReasoningContent
 			parts = append(parts, event.Message.ContentParts...)
 		}
-		if content == "" && reasoning == "" && len(parts) == 0 {
+		base.Usage = usageRecordFromEvent(event)
+		if content == "" && reasoning == "" && len(parts) == 0 && base.Usage == nil {
 			return
 		}
 		base.Type = TranscriptAssistantMessage
@@ -309,7 +314,6 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		base.Content = content
 		base.Reasoning = reasoning
 		base.ContentParts = parts
-		base.Usage = usageRecordFromEvent(event)
 		h.appendTranscriptEvent(base, target)
 	case EventToolCallStarted:
 		toolCalls := events.ToolCallsFromEvent(event)
@@ -318,13 +322,14 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 				continue
 			}
 			ref := events.ToolCallRefAt(event, tc, i)
-			pending := h.pendingToolCallFromEvent(event, ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+			pending := h.pendingToolCallFromEvent(event, ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments, tc.Extra)
 			record := toolCallRecordFromPending(pending, "")
 			line := base
 			line.Type = TranscriptToolCallStart
 			line.CallID = pending.ID
 			line.Name = record.Name
 			line.Args = record.Arguments
+			line.Extra = message.CloneMetadata(record.Extra)
 			line.Display = record.DisplayName
 			line.Kind = record.Kind
 			line.Target = record.Target
@@ -446,7 +451,7 @@ func (h *HistoryRecorder) completeAssistantMessage(event Event) {
 		reasoning = event.Message.ReasoningContent
 		parts = append(parts, event.Message.ContentParts...)
 	}
-	replacement := make([]MessageEvent, 0, 2)
+	replacement := make([]MessageEvent, 0, 3)
 	if reasoning != "" {
 		evt := historyEventEnvelope(event, MsgTypeReasoning)
 		evt.Content = reasoning
@@ -455,6 +460,11 @@ func (h *HistoryRecorder) completeAssistantMessage(event Event) {
 	if content != "" || len(parts) > 0 {
 		evt := historyEventEnvelope(event, MsgTypeText)
 		evt.Content, evt.ContentParts = content, parts
+		replacement = append(replacement, evt)
+	}
+	if usage := usageRecordFromEvent(event); usage != nil {
+		evt := historyEventEnvelope(event, MsgTypeUsageReported)
+		evt.Usage = usage
 		replacement = append(replacement, evt)
 	}
 	updated := append([]MessageEvent(nil), ctx.msg.Events[:start]...)
@@ -466,7 +476,7 @@ func (h *HistoryRecorder) completeAssistantMessage(event Event) {
 			continue
 		}
 		positions[i] = len(updated)
-		if evt.RunID == event.RunID && evt.MessageID == event.MessageID && (evt.Type == MsgTypeText || evt.Type == MsgTypeReasoning) {
+		if evt.RunID == event.RunID && evt.MessageID == event.MessageID && (evt.Type == MsgTypeText || evt.Type == MsgTypeReasoning || evt.Type == MsgTypeUsageReported) {
 			continue
 		}
 		updated = append(updated, evt)
@@ -584,16 +594,13 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		})
 
 	case EventUsageReported:
-		if event.PromptTokens == 0 && event.CompletionTokens == 0 && event.TotalTokens == 0 {
+		usage := usageRecordFromEvent(event)
+		if usage == nil {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
 		evt := historyEventEnvelope(event, MsgTypeUsageReported)
-		evt.Usage = &UsageRecord{
-			PromptTokens:     event.PromptTokens,
-			CompletionTokens: event.CompletionTokens,
-			TotalTokens:      event.TotalTokens,
-		}
+		evt.Usage = usage
 		ctx.msg.Events = append(ctx.msg.Events, evt)
 
 	case events.EventAssistantReasoning, events.EventAssistantText:
@@ -669,13 +676,16 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 						ctx.pendingToolCalls[i].ID = tc.ID
 					}
 					ctx.pendingToolCalls[i].Arguments = tc.Function.Arguments
+					if tc.Extra != nil {
+						ctx.pendingToolCalls[i].Extra = message.CloneMetadata(tc.Extra)
+					}
 					h.updateToolCallEvent(ctx, ctx.pendingToolCalls[i], "")
 					updated = true
 					break
 				}
 			}
 			if !updated {
-				pending := h.pendingToolCallFromEvent(event, ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments)
+				pending := h.pendingToolCallFromEvent(event, ref, tc.ID, tc.Index, tc.Function.Name, tc.Function.Arguments, tc.Extra)
 				pending.EventIndex = h.appendToolCallEvent(ctx, pending)
 				ctx.pendingToolCalls = append(ctx.pendingToolCalls, pending)
 			}

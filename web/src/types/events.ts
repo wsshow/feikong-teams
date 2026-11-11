@@ -12,6 +12,7 @@ export interface ToolCallDTO {
   agent_name?: string;
   member_name?: string;
   content?: string;
+  extra?: Record<string, unknown>;
 }
 
 export interface QueueItem {
@@ -32,6 +33,7 @@ export interface ContentPartDTO {
   text?: string;
   url?: string;
   base64_data?: string;
+  file_id?: string;
   mime_type?: string;
   detail?: string;
 }
@@ -52,13 +54,13 @@ function hasString(value: Record<string, unknown>, key: string) { return typeof 
 function isContentPart(value: unknown): value is ContentPartDTO {
   if (!isRecord(value) || !fieldsMatch(value, {
     type: isString, name: isString, text: isString, url: isString,
-    base64_data: isString, mime_type: isString, detail: isString,
+    base64_data: isString, file_id: isString, mime_type: isString, detail: isString,
   })) return false;
   switch (value.type) {
     case "text": return typeof value.text === "string";
     case "image_base64": return hasString(value, "base64_data");
-    case "image_url": return hasString(value, "url") || hasString(value, "base64_data");
-    case "audio_url": case "video_url": case "file_url": return hasString(value, "url");
+    case "image_url": case "audio_url": case "video_url": case "file_url":
+      return hasString(value, "url") || hasString(value, "base64_data") || hasString(value, "file_id");
     default: return false;
   }
 }
@@ -67,7 +69,7 @@ function isToolCall(value: unknown): value is ToolCallDTO {
   return isRecord(value) && typeof value.name === "string" && fieldsMatch(value, {
     id: isString, ref: isString, index: isCount, name: isString, display_name: isString,
     kind: isString, target: isString, arguments: isString, result: isString,
-    status: isString, agent_name: isString, member_name: isString, content: isString,
+    status: isString, agent_name: isString, member_name: isString, content: isString, extra: isRecord,
   });
 }
 function isQueueItem(value: unknown): value is QueueItem {
@@ -77,7 +79,10 @@ function isQueueItem(value: unknown): value is QueueItem {
   });
 }
 const isQueue: Validator = (value) => Array.isArray(value) && value.every(isQueueItem);
-const isUsage: Validator = (value) => isRecord(value) && fieldsMatch(value, { prompt_tokens: isCount, completion_tokens: isCount, total_tokens: isCount });
+const isUsage: Validator = (value) => isRecord(value) && fieldsMatch(value, {
+  prompt_tokens: isCount, completion_tokens: isCount, total_tokens: isCount,
+  cached_tokens: isCount, cache_write_tokens: isCount,
+});
 const isNotice: Validator = (value) => isRecord(value) && fieldsMatch(value, { level: isString, message: isString, code: isString });
 const isApproval: Validator = (value) => isRecord(value) && fieldsMatch(value, { id: isString, message: isString, decision: isString });
 
@@ -102,7 +107,7 @@ const contentParts = field<ContentPartDTO[]>(isContentParts);
 const toolCall = field<ToolCallDTO>(isToolCall);
 const toolCalls = field<ToolCallDTO[]>((value) => Array.isArray(value) && value.every(isToolCall));
 interface ApprovalDTO { id?: string; message?: string; decision?: string }
-interface UsageDTO { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+interface UsageDTO { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cached_tokens?: number; cache_write_tokens?: number }
 interface NoticeDTO { level?: string; message?: string; code?: string }
 
 const envelope = {

@@ -13,6 +13,49 @@ import (
 	"fkteams/internal/runtime/events"
 )
 
+func TestTranscriptPreservesFileReferencesAndCacheUsage(t *testing.T) {
+	for _, content := range []string{"answer", ""} {
+		t.Run("content="+content, func(t *testing.T) {
+			dir := t.TempDir()
+			recorder := NewHistoryRecorder()
+			recorder.SetSessionDir(dir)
+			recorder.RecordEvent(Event{
+				Type: events.EventUserMessage, MessageID: "user",
+				Message: &message.Message{Role: message.RoleUser, ContentParts: []message.ContentPart{{
+					Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf",
+				}}},
+			})
+			recorder.RecordEvent(Event{
+				Type: events.EventAssistantCompleted, AgentName: "assistant", MessageID: "answer", RunID: "run",
+				Content: content, Usage: &events.UsagePayload{PromptTokens: 17, CachedTokens: 3, CacheWriteTokens: 4, CompletionTokens: 2, TotalTokens: 19},
+			})
+			recorder.FinalizeCurrent()
+			if err := recorder.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			loaded := NewHistoryRecorder()
+			if err := loaded.LoadFromFile(filepath.Join(dir, TranscriptFileName)); err != nil {
+				t.Fatal(err)
+			}
+			for _, history := range []*HistoryRecorder{recorder, loaded} {
+				messages := history.GetMessages()
+				if len(messages) != 2 || len(messages[0].Events[0].ContentParts) != 1 || messages[0].Events[0].ContentParts[0].FileID != "files/report" {
+					t.Fatalf("file reference lost: %#v", messages)
+				}
+				var found bool
+				for _, event := range messages[1].Events {
+					if event.Usage != nil {
+						found = event.Usage.CachedTokens == 3 && event.Usage.CacheWriteTokens == 4 && event.Usage.TotalTokens == 19
+					}
+				}
+				if !found {
+					t.Fatalf("cache usage lost: %#v", messages[1].Events)
+				}
+			}
+		})
+	}
+}
+
 func TestTranscriptProjectionBuildsTurnInput(t *testing.T) {
 	sessionDir := t.TempDir()
 	recorder := NewHistoryRecorder()

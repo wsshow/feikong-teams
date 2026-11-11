@@ -12,6 +12,43 @@ import (
 	domainmessage "fkteams/internal/domain/message"
 )
 
+func TestQueueStorePreservesOpaqueProviderFileReferences(t *testing.T) {
+	store := NewStore(t.TempDir())
+	items := []domainmessage.QueuedMessage{{ID: "item", Parts: []domainmessage.ContentPart{{
+		Type: domainmessage.ContentPartFileURL, FileID: "files/provider-report", MIMEType: "application/pdf",
+	}}}}
+	if err := store.Save("session", items); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.Load("session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 || len(restored[0].Parts) != 1 || restored[0].Parts[0].FileID != "files/provider-report" || restored[0].Parts[0].URL != "" {
+		t.Fatalf("provider file reference was not preserved: %#v", restored)
+	}
+	// 供应商引用不参与本地路径解析，也不能让另一个 URL 跳过原有路径检查。
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "image.png"), []byte("outside"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	attachmentDir := filepath.Join(store.dir, "session", "attachments", "queue")
+	if err := os.MkdirAll(attachmentDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(attachmentDir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	items[0].Parts[0] = domainmessage.ContentPart{
+		Type: domainmessage.ContentPartImageURL, FileID: "files/provider-image", URL: "attachments/queue/linked/image.png",
+	}
+	if err := store.Save("session", items); err == nil {
+		if _, err := store.Load("session"); err == nil {
+			t.Fatal("provider file reference bypassed attachment path validation")
+		}
+	}
+}
+
 func TestQueueStoreRejectsEscapingPaths(t *testing.T) {
 	store := NewStore(t.TempDir())
 	outside := t.TempDir()

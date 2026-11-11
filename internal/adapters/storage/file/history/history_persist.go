@@ -339,6 +339,7 @@ func transcriptToolCallRecord(event TranscriptEvent, result string) ToolCallReco
 		Kind:        event.Kind,
 		Target:      event.Target,
 		Arguments:   event.Args,
+		Extra:       message.CloneMetadata(event.Extra),
 		Result:      result,
 	}
 }
