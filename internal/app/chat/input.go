@@ -29,27 +29,7 @@ func BuildTurnInput(recorder HistoryProjector, userInput string) domainmessage.T
 
 // BuildTurnInputWithMemory 构建一轮输入并按需注入长期记忆。
 func BuildTurnInputWithMemory(recorder HistoryProjector, userInput string, manager MemorySearcher) domainmessage.TurnInput {
-	var contextMessages []domainmessage.Message
-
-	// 注入长期记忆
-	if manager != nil {
-		memories := manager.Search(userInput, 5)
-		if memCtx := appmemory.BuildMemoryContext(memories); memCtx != "" {
-			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memCtx})
-		}
-	}
-
-	// 对话历史
-	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
-	message := domainmessage.Message{Role: domainmessage.RoleUser, Content: userInput}
-
-	if debugContextEnabled() {
-		logMessages("BuildTurnInput", append(contextMessages, message))
-	}
-	return domainmessage.TurnInput{
-		Context: contextMessages,
-		Message: message,
-	}
+	return buildInput(recorder, domainmessage.Message{Role: domainmessage.RoleUser, Content: userInput}, userInput, manager)
 }
 
 // BuildMultimodalTurnInput 构建一轮多模态输入（长期记忆 + 对话历史 + 多模态内容）
@@ -59,30 +39,21 @@ func BuildMultimodalTurnInput(recorder HistoryProjector, textContent string, par
 
 // BuildMultimodalTurnInputWithMemory 构建多模态输入并按需注入长期记忆。
 func BuildMultimodalTurnInputWithMemory(recorder HistoryProjector, textContent string, parts []domainmessage.ContentPart, manager MemorySearcher) domainmessage.TurnInput {
-	var contextMessages []domainmessage.Message
+	return buildInput(recorder, domainmessage.Message{Role: domainmessage.RoleUser, ContentParts: parts}, textContent, manager)
+}
 
-	// 注入长期记忆（使用文本部分进行搜索）
+func buildInput(recorder HistoryProjector, message domainmessage.Message, query string, manager MemorySearcher) domainmessage.TurnInput {
+	var contextMessages []domainmessage.Message
 	if manager != nil {
-		memories := manager.Search(textContent, 5)
-		if memCtx := appmemory.BuildMemoryContext(memories); memCtx != "" {
-			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memCtx})
+		if memory := appmemory.BuildMemoryContext(manager.Search(query, 5)); memory != "" {
+			contextMessages = append(contextMessages, domainmessage.Message{Role: domainmessage.RoleSystem, Content: memory})
 		}
 	}
-
-	// 对话历史
 	contextMessages = append(contextMessages, buildHistoryMessages(recorder)...)
-	message := domainmessage.Message{
-		Role:         domainmessage.RoleUser,
-		ContentParts: parts,
-	}
-
 	if debugContextEnabled() {
-		logMessages("BuildMultimodalTurnInput", append(contextMessages, message))
+		logMessages("BuildTurnInput", append(contextMessages, message))
 	}
-	return domainmessage.TurnInput{
-		Context: contextMessages,
-		Message: message,
-	}
+	return domainmessage.TurnInput{Context: contextMessages, Message: message}
 }
 
 // TextPart 创建文本内容部分

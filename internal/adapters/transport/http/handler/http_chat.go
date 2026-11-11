@@ -2,10 +2,11 @@ package handler
 
 import (
 	"context"
+	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"net/http"
-	"strings"
+	"time"
 
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appstate"
@@ -28,10 +29,6 @@ type ChatRequest struct {
 	Contents  []ContentPart `json:"contents"`
 }
 
-// ChatHandler HTTP POST 聊天处理器，支持普通 JSON 响应和 SSE 流式响应
-
-// ChatHandlerWithState HTTP POST 聊天处理器，使用显式应用状态。
-
 // ChatHandlerWithState HTTP POST 聊天处理器，使用当前 HTTP runtime 的显式依赖。
 func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -50,12 +47,31 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		if sessionID == "" {
 			sessionID = uuid.New().String()
 		}
+		if !validateSessionID(sessionID) {
+			Fail(c, http.StatusBadRequest, "invalid session ID")
+			return
+		}
+		if req.Stream {
+			Fail(c, http.StatusBadRequest, "stream=true is not supported on /api/fkteams/chat; use /api/fkteams/stream/start")
+			return
+		}
 		mode := req.Mode
 		if mode == "" {
 			mode = "team"
 		}
 
-		ctx := appstate.WithState(c.Request.Context(), state)
+		releaseTask, accepted := rt.beginTask()
+		if !accepted {
+			Fail(c, http.StatusServiceUnavailable, "HTTP runtime is shutting down")
+			return
+		}
+		defer releaseTask()
+		ctx, cancelRequest := context.WithCancel(appstate.WithState(c.Request.Context(), state))
+		stop := context.AfterFunc(rt.taskContext, cancelRequest)
+		defer stop()
+		defer cancelRequest()
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		r, err := rt.resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
 			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
@@ -67,21 +83,33 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 
-		recorder, releaseRecorder := rt.acquireRecorder(sessionID)
+		unlock := rt.lockSessionOperation(sessionID)
+		taskCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		stream, admitted := rt.Streams.RegisterIfIdle(taskstream.StreamConfig{SessionID: sessionID, Cancel: cancel, Mode: mode, AgentName: req.AgentName, CleanupTTL: 5 * time.Minute, QueueDisabled: true})
+		if !admitted {
+			unlock()
+			Fail(c, http.StatusConflict, "session is already processing")
+			return
+		}
+		defer stream.Done()
+		recorder, releaseRecorder := rt.acquireRecorderLocked(sessionID)
 		defer releaseRecorder()
+		unlock()
+		if err := rt.updateSessionExecutionMetadata(sessionID, req.Message, mode, req.AgentName); err != nil {
+			stream.SetStatus("error")
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
-		if req.Stream {
-			Fail(c, http.StatusBadRequest, "stream=true is not supported on /api/fkteams/chat; use /api/fkteams/stream/start")
-			return
-		}
-		rt.handleSyncChat(c, ctx, r, recorder, turnInput, sessionID, userDisplayText, manager)
+		rt.handleSyncChat(c, taskCtx, r, recorder, turnInput, sessionID, userDisplayText, manager, stream)
 	}
 }
 
 // handleSyncChat 同步聊天响应（收集完整结果后返回）
-func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager) {
+func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtimeport.Runner, recorder *eventlog.HistoryRecorder, turnInput domainmessage.TurnInput, sessionID, userDisplayText string, manager appstate.MemoryManager, stream *taskstream.Stream) {
 	taskCtx, taskCancel := context.WithCancel(ctx)
 	defer taskCancel()
 	taskCtx = rt.withExecutionDependencies(taskCtx)
@@ -89,39 +117,30 @@ func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtime
 	var collectedEvents []events.Event
 
 	_, runErr := appchat.NewService().RunTurn(taskCtx, appchat.TurnRequest{
-		SessionID: sessionID,
-		Runner:    r,
-		Input:     turnInput,
-		Summary:   recorder,
+		SessionID:        sessionID,
+		Runner:           r,
+		Input:            turnInput,
+		Summary:          recorder,
+		History:          recorder,
+		NonInteractive:   true,
+		ApprovalRegistry: configuredApprovalRegistry(),
 		EventSink: func(event events.Event) error {
-			recorder.RecordEvent(event)
 			collectedEvents = append(collectedEvents, event)
 			return nil
 		},
-		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) {
-			if err != nil {
-				log.Printf("error processing event: %v", err)
-				rt.finishErrorChat(recorder, sessionID, userDisplayText, err)
-				return
-			}
-			rt.finishChat(recorder, sessionID, userDisplayText, manager)
+		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
+			return rt.finishChat(ctx, recorder, sessionID, userDisplayText, manager, err)
 		},
 	})
+	stream.SetStatus(string(appchat.CompletionStatus(runErr)))
 	if runErr != nil {
 		Fail(c, http.StatusInternalServerError, runErr.Error())
 		return
 	}
 
-	var content strings.Builder
-	for _, e := range collectedEvents {
-		if e.Content != "" {
-			content.WriteString(e.Content)
-		}
-	}
-
 	OK(c, gin.H{
 		"session_id": sessionID,
-		"content":    content.String(),
+		"content":    appchat.AssistantText(collectedEvents),
 		"events":     collectedEvents,
 	})
 }

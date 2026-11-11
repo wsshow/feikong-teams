@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/runtime/log"
 	"fmt"
@@ -177,65 +178,50 @@ func (app *Application) Run(ctx context.Context) error {
 
 	if err := app.executePhase(appCtx, PhaseInit); err != nil {
 		cancel()
-		app.cleanupStartupFailure()
-		return fmt.Errorf("init failed: %w", err)
+		return errors.Join(fmt.Errorf("init failed: %w", err), app.cleanupStartupFailure())
 	}
 
 	if err := app.executePhase(appCtx, PhaseSetup); err != nil {
 		cancel()
-		app.cleanupStartupFailure()
-		return fmt.Errorf("setup failed: %w", err)
+		return errors.Join(fmt.Errorf("setup failed: %w", err), app.cleanupStartupFailure())
 	}
 
 	// 启动所有注册的服务
 	if err := app.startServices(appCtx); err != nil {
 		cancel()
-		app.cleanupStartupFailure()
-		return fmt.Errorf("start failed: %w", err)
+		return errors.Join(fmt.Errorf("start failed: %w", err), app.cleanupStartupFailure())
 	}
 	if err := app.executePhase(appCtx, PhaseStart); err != nil {
 		cancel()
-		app.cleanupStartupFailure()
-		return fmt.Errorf("start hooks failed: %w", err)
+		return errors.Join(fmt.Errorf("start hooks failed: %w", err), app.cleanupStartupFailure())
 	}
 
 	if err := app.executePhase(appCtx, PhaseReady); err != nil {
 		cancel()
-		app.cleanupStartupFailure()
-		return fmt.Errorf("ready failed: %w", err)
+		return errors.Join(fmt.Errorf("ready failed: %w", err), app.cleanupStartupFailure())
 	}
 
 	// 阻塞等待退出信号
 	app.waitForExit(appCtx)
 	cancel()
-	app.shutdownStartedServices()
-
-	return nil
+	return app.shutdownStartedServices()
 }
 
-func (app *Application) cleanupStartupFailure() {
+func (app *Application) cleanupStartupFailure() error {
 	ctx, cancel := app.shutdownContext()
 	defer cancel()
-	app.stopServices(ctx)
-	if err := app.executePhaseBounded(ctx, PhaseCleanup); err != nil {
-		log.Printf("[lifecycle] cleanup after startup failure: %v", err)
-	}
+	stopErr := app.stopServices(ctx)
+	return errors.Join(stopErr, app.executePhaseBounded(ctx, PhaseCleanup))
 }
 
-func (app *Application) shutdownStartedServices() {
+func (app *Application) shutdownStartedServices() error {
 	ctx, cancel := app.shutdownContext()
 	defer cancel()
-
-	if err := app.executePhaseBounded(ctx, PhasePreStop); err != nil {
-		log.Printf("[lifecycle] prestop error: %v", err)
-	}
-	app.stopServices(ctx)
-	if err := app.executePhaseBounded(ctx, PhaseStop); err != nil {
-		log.Printf("[lifecycle] stop hooks error: %v", err)
-	}
-	if err := app.executePhaseBounded(ctx, PhaseCleanup); err != nil {
-		log.Printf("[lifecycle] cleanup error: %v", err)
-	}
+	preErr := app.executePhaseBounded(ctx, PhasePreStop)
+	serviceErr := app.stopServices(ctx)
+	stopErr := app.executePhaseBounded(ctx, PhaseStop)
+	cleanupErr := app.executePhaseBounded(ctx, PhaseCleanup)
+	return errors.Join(preErr, serviceErr, stopErr, cleanupErr)
 }
 
 func (app *Application) shutdownContext() (context.Context, context.CancelFunc) {
@@ -276,12 +262,13 @@ func (app *Application) executePhaseBounded(ctx context.Context, phase Phase) er
 	hooks := append([]HookFunc(nil), app.hooks[phase]...)
 	app.mu.Unlock()
 
+	var errs []error
 	for _, hook := range hooks {
 		if err := hook(ctx); err != nil {
-			return fmt.Errorf("[%s] hook error: %w", phase, err)
+			errs = append(errs, fmt.Errorf("[%s] hook error: %w", phase, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // startServices 按注册顺序启动所有服务
@@ -304,22 +291,24 @@ func (app *Application) startServices(ctx context.Context) error {
 }
 
 // stopServices 按注册逆序停止所有服务（LIFO）
-func (app *Application) stopServices(ctx context.Context) {
+func (app *Application) stopServices(ctx context.Context) error {
 	app.mu.Lock()
 	services := make([]Service, len(app.started))
 	copy(services, app.started)
 	app.started = nil
 	app.mu.Unlock()
 
+	var errs []error
 	for i := len(services) - 1; i >= 0; i-- {
 		svc := services[i]
 		err := svc.Stop(ctx)
 		if err != nil {
-			log.Printf("[lifecycle] service %s stop error: %v", svc.Name(), err)
+			errs = append(errs, fmt.Errorf("service %s stop failed: %w", svc.Name(), err))
 		} else {
 			log.Printf("[lifecycle] service stopped: %s", svc.Name())
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // waitForExit 等待退出信号（系统信号或 context 取消）

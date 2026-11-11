@@ -352,6 +352,8 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	defer sm.removeTask(sessionID, taskID)
 
 	// 获取 runner
+	releaseExecution := rt.ExecutionGate.Begin()
+	defer releaseExecution()
 	r, err := rt.resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
@@ -369,80 +371,13 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	currentTurnID := turnIDForRun(currentRunID)
 	stream.SetTurn(currentRunID, currentTurnID)
 
-	publishFn := func(event taskstream.Event) error {
-		stream.Publish(event)
-		return nil
-	}
-	interruptHandler := buildInterruptHandler(recorder, sessionID, publishFn, stream)
-	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID }, func() {
-		rt.persistQueueSnapshot(sessionID, stream)
-	})
-	currentInput := turnInput
-	currentDisplayText := userDisplayText
-	rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, mode, wsMsg.AgentName)
-	stream.Publish(standardMessageEventPayload(sessionID, currentRunID, currentTurnID, "开始处理您的请求..."))
-
-	chatService := appchat.NewService()
-	for {
-		_, runErr := chatService.RunTurn(taskCtx, appchat.TurnRequest{
-			SessionID:        sessionID,
-			RunID:            currentRunID,
-			Runner:           r,
-			Input:            currentInput,
-			Summary:          recorder,
-			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
-			NonInteractive:   true,
-			ApprovalRegistry: configuredApprovalRegistry(),
-			AskHandler:       buildMemberAskRuntimeHandler(stream, recorder, sessionID),
-			SteeringSource:   steeringSource,
-			EventSink: func(event events.Event) error {
-				if stream.Status() == "cancelled" {
-					return nil
-				}
-				recorder.RecordEvent(event)
-				return wsEventCallbackBuffered(sessionID, stream, rt.ToolDisplays)(event)
-			},
-		})
-		if runErr != nil {
-			if isConnectionClosed(taskCtx, runErr) {
-				log.Printf("task cancelled: session=%s", sessionID)
-				if stream.Status() != "cancelled" {
-					stream.SetStatus("cancelled")
-					stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
-				}
-				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
-				return
-			}
-			log.Printf("failed to run task: session=%s, err=%v", sessionID, runErr)
-			stream.SetStatus("error")
-			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
-			rt.finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
-			return
-		}
-
-		recorder.FinalizeCurrent()
-		rt.saveTurnHistory(recorder, sessionID)
-		if queued, ok := stream.DequeueNextMessageOrComplete(); ok {
-			publishQueueUpdated(stream, sessionID)
-			rt.persistQueueSnapshot(sessionID, stream)
-			currentDisplayText = queued.DisplayText
-			currentInput = buildQueuedChatInput(recorder, queued, manager)
-			currentRunID = queuedTurnRunID(sessionID, queued)
-			rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, mode, wsMsg.AgentName)
-			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
-			continue
-		}
-
-		if stream.Status() != "completed" {
-			if stream.Status() == "cancelled" {
-				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
-			}
-			return
-		}
-		stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
-		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
+	if err := rt.updateSessionExecutionMetadata(sessionID, userDisplayText, mode, wsMsg.AgentName); err != nil {
+		stream.SetStatus("error")
+		stream.Publish(errorEventPayload(sessionID, err.Error()))
 		return
 	}
+	stream.Publish(standardMessageEventPayload(sessionID, currentRunID, currentTurnID, "开始处理您的请求..."))
+	rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, currentRunID)
 }
 
 func (rt *Runtime) handleSteeringMessage(wsMsg WSMessage, writeJSON func(any) error) {

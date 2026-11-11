@@ -313,7 +313,7 @@ func (m runtimeModel) saveRuntimeChatHistory() runtimeModel {
 	recorder := m.runtime.session.recorder()
 	historyFile := filepath.Join(m.runtime.session.historyDir, m.runtime.session.sessionID(), eventlog.TranscriptFileName)
 	store := eventlog.NewChatSessionStore(m.runtime.session.historyDir)
-	if err := appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), m.runtime.session.sessionID(), m.runtime.session.sessionTitle, recorder); err != nil {
+	if err := appchat.NewSessionLifecycle(store).SaveActive(context.Background(), m.runtime.session.sessionID(), m.runtime.session.sessionTitle, recorder); err != nil {
 		m.appendBlock(runtimeBlockError, "保存聊天历史失败", err.Error())
 		return m
 	}

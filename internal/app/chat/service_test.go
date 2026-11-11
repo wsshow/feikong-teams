@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"fkteams/internal/app/tools/ask"
@@ -59,13 +60,14 @@ func TestRunTurnRejectsMissingDependencies(t *testing.T) {
 func TestRunTurnRecordsEventsBeforePublishing(t *testing.T) {
 	runner := &fakeRunner{}
 	var calls []string
+	history := &recordingHistory{calls: &calls}
 
 	_, err := NewService().RunTurn(context.Background(), TurnRequest{
 		SessionID: "session-1",
 		Runner:    runner,
 		Input:     message.TurnInput{Message: message.Message{Role: message.RoleUser, Content: "ping"}},
+		History:   history,
 		EventSink: func(event.Event) error {
-			calls = append(calls, "record")
 			calls = append(calls, "publish")
 			return nil
 		},
@@ -77,6 +79,13 @@ func TestRunTurnRecordsEventsBeforePublishing(t *testing.T) {
 		t.Fatalf("event calls = %#v, want record then publish", calls)
 	}
 }
+
+type recordingHistory struct {
+	failingHistory
+	calls *[]string
+}
+
+func (h *recordingHistory) RecordEvent(event.Event) { *h.calls = append(*h.calls, "record") }
 
 func TestRunTurnUsesHookBusFromContext(t *testing.T) {
 	runner := &fakeRunner{}
@@ -184,4 +193,27 @@ func (r *contextProbeRunner) Run(ctx context.Context, input message.TurnInput, o
 	}
 	r.askAnswer = resp.FreeText
 	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeAssistantCompleted}}, nil
+}
+
+func TestRunTurnReturnsPersistenceError(t *testing.T) {
+	history := &failingHistory{err: errors.New("disk full")}
+	_, err := NewService().RunTurn(context.Background(), TurnRequest{SessionID: "session", Runner: &fakeRunner{}, History: history})
+	if !errors.Is(err, history.err) || !history.finalized {
+		t.Fatalf("run = %v, history = %+v", err, history)
+	}
+}
+
+func TestAssistantTextUsesCompletedMessagesOnce(t *testing.T) {
+	got := AssistantText([]event.Event{
+		{Type: event.TypeUserMessage, Content: "question"},
+		{Type: event.TypeAssistantText, MessageID: "a", Content: "hel"},
+		{Type: event.TypeAssistantText, MessageID: "a", Content: "lo"},
+		{Type: event.TypeToolCallCompleted, Content: "tool result"},
+		{Type: event.TypeAssistantCompleted, MessageID: "a", Content: "hello"},
+		{Type: event.TypeAssistantCompleted, MessageID: "member", MemberCallID: "delegate", Content: "private"},
+		{Type: event.TypeAssistantCompleted, MessageID: "b", Content: " world"},
+	})
+	if got != "hello world" {
+		t.Fatalf("text = %q", got)
+	}
 }

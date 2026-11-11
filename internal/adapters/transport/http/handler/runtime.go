@@ -18,6 +18,8 @@ import (
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/app/config"
+	"fkteams/internal/app/lifecycle"
 	appschedule "fkteams/internal/app/schedule"
 	appsession "fkteams/internal/app/session"
 	appskill "fkteams/internal/app/skill"
@@ -29,27 +31,7 @@ import (
 
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
 type Runtime struct {
-	Streams        *taskstream.Manager
-	Sessions       *eventlog.SessionHistoryManager
-	HistoryDir     string
-	RunnerCache    *appagent.Cache
-	Connections    *WebSocketHub
-	ChunkUploads   *ChunkUploadStore
-	PreviewLinks   *sharestore.PreviewLinkStore
-	SessionShares  *sharestore.SessionShareStore
-	SessionService *appsession.Service
-	Favicons       *FaviconProxy
-	Scheduler      *appschedule.Service
-	AgentRegistry  *agents.Registry
-	ToolRegistry   *apptools.ToolGroupRegistry
-	ToolDisplays   *toolmeta.Registry
-	SkillProviders *appskill.ProviderRegistry
-	ModelRegistry  *modelregistry.Registry
-	Providers      *modelproviders.Registry
-	Runtime        runtimeport.Runtime
-	Interrupt      runtimeport.InterruptRuntime
-	HookBus        *hooks.Bus
-	ResetChannels  func()
+	RuntimeOptions
 
 	sessionOperationsMu sync.Mutex
 	sessionOperations   map[string]*sessionOperationLock
@@ -59,10 +41,14 @@ type Runtime struct {
 	shutdownOnce        sync.Once
 	resourceCloseOnce   sync.Once
 	shutdownDone        chan struct{}
+	taskContext         context.Context
+	cancelTasks         context.CancelFunc
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
 type RuntimeOptions struct {
+	ExecutionGate  *config.ExecutionGate
+	Control        *lifecycle.Control
 	Streams        *taskstream.Manager
 	Sessions       *eventlog.SessionHistoryManager
 	HistoryDir     string
@@ -96,30 +82,13 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	if streams == nil {
 		streams = taskstream.NewManager()
 	}
-	rt := &Runtime{
-		Streams:        streams,
-		Sessions:       opt.Sessions,
-		HistoryDir:     opt.HistoryDir,
-		RunnerCache:    opt.RunnerCache,
-		Connections:    opt.Connections,
-		ChunkUploads:   opt.ChunkUploads,
-		PreviewLinks:   opt.PreviewLinks,
-		SessionShares:  opt.SessionShares,
-		SessionService: opt.SessionService,
-		Favicons:       opt.Favicons,
-		Scheduler:      opt.Scheduler,
-		AgentRegistry:  opt.AgentRegistry,
-		ToolRegistry:   opt.ToolRegistry,
-		ToolDisplays:   opt.ToolDisplays,
-		SkillProviders: opt.SkillProviders,
-		ModelRegistry:  opt.ModelRegistry,
-		Providers:      opt.Providers,
-		Runtime:        opt.Runtime,
-		Interrupt:      opt.Interrupt,
-		HookBus:        opt.HookBus,
-		ResetChannels:  opt.ResetChannels,
-		shutdownDone:   make(chan struct{}),
+	opt.Streams = streams
+	if opt.ExecutionGate == nil {
+		opt.ExecutionGate = &config.ExecutionGate{}
 	}
+	taskContext, cancelTasks := context.WithCancel(context.Background())
+	rt := &Runtime{RuntimeOptions: opt, shutdownDone: make(chan struct{}), taskContext: taskContext, cancelTasks: cancelTasks}
+
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
 	}
@@ -184,21 +153,29 @@ func (rt *Runtime) InitializationError() error {
 
 // Go 启动由当前 HTTP runtime 负责回收的后台任务。
 func (rt *Runtime) Go(task func()) bool {
-	if rt == nil || task == nil {
+	if task == nil {
 		return false
+	}
+	release, accepted := rt.beginTask()
+	if !accepted {
+		return false
+	}
+	go func() { defer release(); task() }()
+	return true
+}
+
+func (rt *Runtime) beginTask() (func(), bool) {
+	if rt == nil {
+		return nil, false
 	}
 	rt.tasksMu.Lock()
+	defer rt.tasksMu.Unlock()
 	if rt.closing {
-		rt.tasksMu.Unlock()
-		return false
+		return nil, false
 	}
 	rt.tasks.Add(1)
-	rt.tasksMu.Unlock()
-	go func() {
-		defer rt.tasks.Done()
-		task()
-	}()
-	return true
+	var once sync.Once
+	return func() { once.Do(rt.tasks.Done) }, true
 }
 
 // BeginShutdown 拒绝新后台任务并取消仍在运行的流。
@@ -209,6 +186,7 @@ func (rt *Runtime) BeginShutdown() {
 	rt.shutdownOnce.Do(func() {
 		rt.tasksMu.Lock()
 		rt.closing = true
+		rt.cancelTasks()
 		rt.tasksMu.Unlock()
 		if rt.Streams != nil {
 			rt.Streams.StopCleanup()
@@ -235,9 +213,6 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 		rt.resourceCloseOnce.Do(func() {
 			if rt.ChunkUploads != nil {
 				rt.ChunkUploads.Close()
-			}
-			if rt.ToolRegistry != nil {
-				rt.ToolRegistry.ClearMCPToolCache()
 			}
 		})
 		return nil
@@ -331,53 +306,21 @@ func (rt *Runtime) withExecutionDependencies(ctx context.Context) context.Contex
 
 func (rt *Runtime) chatLifecycle() *appchat.SessionLifecycle {
 	store := eventlog.NewChatSessionStore(rt.HistoryDir)
-	return appchat.NewSessionLifecycle(store, store)
+	return appchat.NewSessionLifecycle(store)
 }
 
-func (rt *Runtime) saveTurnHistory(recorder *eventlog.HistoryRecorder, sessionID string) {
-	err := eventlog.NewChatSessionStore(rt.HistoryDir).SaveHistory(context.Background(), sessionID, recorder)
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-func (rt *Runtime) updateSessionExecutionMetadata(sessionID, userInput, mode, currentAgent string) {
-	err := rt.chatLifecycle().MarkProcessingWithTarget(context.Background(), sessionID, userInput, appchat.ExecutionTarget{
+func (rt *Runtime) updateSessionExecutionMetadata(sessionID, userInput, mode, currentAgent string) error {
+	return rt.chatLifecycle().MarkProcessingWithTarget(context.Background(), sessionID, userInput, appchat.ExecutionTarget{
 		Mode:         mode,
 		CurrentAgent: currentAgent,
 	})
-	appchat.LogLifecycleError("http", sessionID, err)
 }
 
-func (rt *Runtime) finishChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager) {
-	err := rt.chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
-		SessionID:       sessionID,
-		TitleSource:     userInput,
-		Status:          appchat.SessionStatusCompleted,
-		History:         recorder,
-		FinalizeHistory: true,
-		Memory:          manager,
-		MemoryMessages:  eventlog.ConvertMemoryMessages(recorder),
+// finishChat 将运行结果映射为会话状态，并透传持久化失败。
+func (rt *Runtime) finishChat(ctx context.Context, recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager, runErr error) error {
+	return rt.chatLifecycle().Finish(context.WithoutCancel(ctx), appchat.FinishRequest{
+		SessionID: sessionID, TitleSource: userInput, Status: appchat.CompletionStatus(runErr),
+		History: recorder, FinalizeHistory: true, Error: runErr,
+		Memory: manager, MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
 	})
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-func (rt *Runtime) finishCancelledChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string) {
-	err := rt.chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
-		SessionID:   sessionID,
-		TitleSource: userInput,
-		Status:      appchat.SessionStatusCancelled,
-		History:     recorder,
-	})
-	appchat.LogLifecycleError("http", sessionID, err)
-}
-
-func (rt *Runtime) finishErrorChat(recorder *eventlog.HistoryRecorder, sessionID, userInput string, err error) {
-	lifecycleErr := rt.chatLifecycle().Finish(context.Background(), appchat.FinishRequest{
-		SessionID:       sessionID,
-		TitleSource:     userInput,
-		Status:          appchat.SessionStatusError,
-		History:         recorder,
-		FinalizeHistory: true,
-		Error:           err,
-	})
-	appchat.LogLifecycleError("http", sessionID, lifecycleErr)
 }

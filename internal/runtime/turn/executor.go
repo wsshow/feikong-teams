@@ -2,6 +2,7 @@ package turn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"fkteams/internal/domain/message"
@@ -30,8 +31,16 @@ func (e *Executor) Run(ctx context.Context, req Request) (*runtimeport.RunResult
 
 // run 执行查询，处理事件和 HITL 中断。
 // 根据 Request 自动装配 context（session ID、事件回调、摘要持久化、审批注册表等）。
-func (e *Executor) run(ctx context.Context, cfg Request) (*runtimeport.RunResult, error) {
+func (e *Executor) run(ctx context.Context, cfg Request) (result *runtimeport.RunResult, err error) {
 	ctx = cfg.prepareContext(ctx, cfg.SessionID)
+	defer func() {
+		if cfg.OnFinish != nil {
+			err = errors.Join(err, cfg.OnFinish(context.WithoutCancel(ctx), result, err))
+		}
+	}()
+	if cfg.RunID == "" {
+		cfg.RunID = cfg.SessionID + ":" + session.NewID()
+	}
 
 	input, err := cfg.invokeBeforeRun(ctx)
 	if err != nil {
@@ -43,17 +52,11 @@ func (e *Executor) run(ctx context.Context, cfg Request) (*runtimeport.RunResult
 		cfg.OnStart(ctx)
 	}
 
-	result, err := cfg.Runner.Run(ctx, input, runtimeport.RunOptions{
+	result, err = cfg.Runner.Run(ctx, input, runtimeport.RunOptions{
 		RunID: cfg.RunID, Sink: events.Dispatch(ctx), InterruptHandler: runtimeport.InterruptHandler(cfg.interruptHandler()),
 	}.WithDefaults(cfg.SessionID))
 
-	if hookErr := cfg.invokeAfterRun(ctx, input, result, err); hookErr != nil && err == nil {
-		err = hookErr
-	}
-
-	if cfg.OnFinish != nil {
-		cfg.OnFinish(ctx, result, err)
-	}
+	err = errors.Join(err, cfg.invokeAfterRun(ctx, input, result, err))
 
 	return result, err
 }

@@ -2,22 +2,25 @@ package chat
 
 import (
 	"context"
+	"errors"
+	"fkteams/internal/domain/event"
 	"fmt"
+	"strings"
 
 	"fkteams/internal/app/tools/ask"
-	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/hooks"
 	"fkteams/internal/runtime/turn"
 )
 
 // EventHandler 处理一次对话运行期间产生的领域事件。
-type EventHandler func(event.Event) error
+type EventHandler = runtimeport.EventSink
 
 // ContextHook 在运行前补充上下文能力，例如转向输入和请求级元数据。
-type ContextHook func(context.Context) context.Context
+type ContextHook = turn.ContextHook
 
 // TurnRequest 描述一次用户输入到运行时执行的最小请求。
 type TurnRequest struct {
@@ -27,6 +30,7 @@ type TurnRequest struct {
 	Input            message.TurnInput
 	EventSink        EventHandler
 	Summary          turn.SummarySink
+	History          SessionHistory
 	InterruptHandler runtimeport.InterruptHandler
 	NonInteractive   bool
 	ApprovalRegistry *approval.Registry
@@ -34,7 +38,7 @@ type TurnRequest struct {
 	AskHandler       ask.RuntimeHandler
 	HookBus          *hooks.Bus
 	ContextHooks     []ContextHook
-	OnFinish         func(ctx context.Context, result *runtimeport.RunResult, err error)
+	OnFinish         func(ctx context.Context, result *runtimeport.RunResult, err error) error
 }
 
 // Service 是所有入口共享的聊天用例服务。
@@ -74,10 +78,22 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 		})
 	}
 
-	turnHooks := make([]turn.ContextHook, 0, len(contextHooks))
-	for _, hook := range contextHooks {
-		if hook != nil {
-			turnHooks = append(turnHooks, turn.ContextHook(hook))
+	if req.History != nil {
+		sink, finish := req.EventSink, req.OnFinish
+		req.EventSink = func(event events.Event) error {
+			req.History.RecordEvent(event)
+			if sink != nil {
+				return sink(event)
+			}
+			return nil
+		}
+		req.OnFinish = func(ctx context.Context, result *runtimeport.RunResult, runErr error) error {
+			req.History.FinalizeCurrent()
+			persistErr := req.History.Flush()
+			if finish != nil {
+				return errors.Join(persistErr, finish(ctx, result, errors.Join(runErr, persistErr)))
+			}
+			return persistErr
 		}
 	}
 
@@ -90,8 +106,45 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 		Summary:        req.Summary,
 		OnInterrupt:    turn.InterruptHandler(req.InterruptHandler),
 		NonInteractive: req.NonInteractive,
-		ContextHooks:   turnHooks,
+		ContextHooks:   contextHooks,
 		HookBus:        req.HookBus,
 		OnFinish:       req.OnFinish,
 	})
+}
+
+// AssistantText 投影主智能体的可见回答；完整消息替换对应增量，避免重复拼接工具或用户内容。
+func AssistantText(events []event.Event) string {
+	type output struct {
+		text     string
+		complete bool
+	}
+	var order []string
+	messages := make(map[string]output)
+	for _, e := range events {
+		if e.MemberCallID != "" || e.ParentToolCallID != "" {
+			continue
+		}
+		if e.Type != event.TypeAssistantText && e.Type != event.TypeAssistantCompleted {
+			continue
+		}
+		key := e.RunID + ":" + e.MessageID
+		current, exists := messages[key]
+		if !exists {
+			order = append(order, key)
+		}
+		if e.Type == event.TypeAssistantCompleted {
+			if e.Content != "" {
+				current.text = e.Content
+			}
+			current.complete = true
+		} else if !current.complete {
+			current.text += e.Content
+		}
+		messages[key] = current
+	}
+	var text strings.Builder
+	for _, key := range order {
+		text.WriteString(messages[key].text)
+	}
+	return text.String()
 }

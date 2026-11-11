@@ -9,7 +9,7 @@ import (
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools"
-	"fkteams/internal/runtime/log"
+	memoryport "fkteams/internal/ports/memory"
 	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
 	"net/http"
@@ -80,10 +80,6 @@ func GetConfigHandler() gin.HandlerFunc {
 	}
 }
 
-// UpdateConfigHandler 更新配置（敏感字段合并旧值）
-
-// UpdateConfigHandlerWithState 更新配置并使用显式应用状态重载依赖。
-
 // UpdateConfigHandlerWithState 更新配置并清理当前 HTTP runtime 的运行缓存。
 func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -93,6 +89,12 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 			return
 		}
 
+		release, err := rt.ExecutionGate.BeginUpdate()
+		if err != nil {
+			Fail(c, http.StatusConflict, err.Error())
+			return
+		}
+		defer release()
 		oldCfg := config.Get()
 
 		if err := newCfg.ValidateModels(); err != nil {
@@ -156,6 +158,12 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 			oldCfg.Server.Auth.Secret != newCfg.Server.Auth.Secret ||
 			oldCfg.Server.Auth.Enabled != newCfg.Server.Auth.Enabled
 
+		// 先构建可能失败的依赖，再发布配置。
+		memoryClient, err := prepareMemoryLLM(c.Request.Context(), &newCfg, state, rt.ModelRegistry)
+		if err != nil {
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
 		// 保存并重载
 		if err := config.Save(&newCfg); err != nil {
 			Fail(c, http.StatusInternalServerError, "failed to save config: "+err.Error())
@@ -173,7 +181,9 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 		if rt.ResetChannels != nil {
 			rt.ResetChannels()
 		}
-		resetMemoryLLM(c.Request.Context(), state, rt.ModelRegistry)
+		if manager := memoryFromState(state); manager != nil {
+			manager.ResetLLM(memoryClient)
+		}
 
 		OK(c, gin.H{"auth_changed": authChanged})
 	}
@@ -285,42 +295,31 @@ func restoreAgentSSHPasswords(items []config.AgentConfig, oldCfg *config.Config)
 	}
 }
 
-// resetMemoryLLM 使用当前配置重建 MemoryManager 的 LLM 客户端
-func resetMemoryLLM(ctx context.Context, state *appstate.State, registry *modelregistry.Registry) {
-	manager := memoryFromState(state)
-	if manager == nil {
-		return
+// prepareMemoryLLM 在发布配置之前构建新的记忆模型，失败时保留当前依赖。
+func prepareMemoryLLM(ctx context.Context, cfg *config.Config, state *appstate.State, registry *modelregistry.Registry) (memoryport.LLMClient, error) {
+	if memoryFromState(state) == nil || !cfg.Memory.Enabled {
+		return nil, nil
 	}
-	cfg := config.Get()
 	modelCfg := cfg.ResolveDefaultModel(config.ModelUseChat)
 	if registry == nil || modelCfg == nil {
-		log.Printf("[memory] model registry or default chat model is not configured")
-		return
+		return nil, fmt.Errorf("memory model registry or default chat model is not configured")
 	}
 	chatModel, err := registry.NewChatModel(ctx, &modelregistry.Config{
-		Provider:     modelregistry.Type(modelCfg.Provider),
-		APIKey:       modelCfg.APIKey,
-		BaseURL:      modelCfg.BaseURL,
-		Model:        modelCfg.Model,
-		ExtraHeaders: modelCfg.ParseExtraHeaders(),
+		Provider: modelregistry.Type(modelCfg.Provider), APIKey: modelCfg.APIKey,
+		BaseURL: modelCfg.BaseURL, Model: modelCfg.Model, ExtraHeaders: modelCfg.ParseExtraHeaders(),
 	})
 	if err != nil {
-		log.Printf("[memory] 重建模型失败，记忆服务继续使用旧模型: %v", err)
-		return
+		return nil, fmt.Errorf("prepare memory model: %w", err)
 	}
-	llmClient, err := memorymodel.NewLLMClient(chatModel)
-	if err != nil {
-		log.Printf("[memory] 适配模型失败，记忆服务继续使用旧模型: %v", err)
-		return
-	}
-	manager.ResetLLM(llmClient)
-	log.Println("[memory] 记忆服务模型已更新")
+	return memorymodel.NewLLMClient(chatModel)
 }
 
 // GetToolNamesHandler 获取可用工具名列表
 
 func (rt *Runtime) GetToolNamesHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		if rt.ToolRegistry == nil {
 			OK(c, []string{})
 			return
@@ -333,6 +332,8 @@ func (rt *Runtime) GetToolNamesHandler() gin.HandlerFunc {
 
 func (rt *Runtime) GetToolCatalogHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		if rt.ToolRegistry == nil {
 			OK(c, []tools.ToolGroupInfo{})
 			return

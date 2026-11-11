@@ -4,64 +4,47 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fkteams/internal/adapters/transport/http/handler"
+	"fkteams/internal/adapters/transport/http/router"
+	"fkteams/internal/app/appstate"
+	appschedule "fkteams/internal/app/schedule"
+	"fkteams/internal/runtime/log"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
-
-	modelproviders "fkteams/internal/adapters/model/providers"
-	channel "fkteams/internal/adapters/transport/channel"
-	"fkteams/internal/adapters/transport/http/handler"
-	"fkteams/internal/adapters/transport/http/router"
-	agents "fkteams/internal/app/agent/catalog"
-	"fkteams/internal/app/agent/catalog/toolmeta"
-	"fkteams/internal/app/appstate"
-	"fkteams/internal/app/config"
-	"fkteams/internal/app/lifecycle"
-	appschedule "fkteams/internal/app/schedule"
-	apptools "fkteams/internal/app/tools"
-	"fkteams/internal/app/version"
-	bootstrapchannels "fkteams/internal/bootstrap/channels"
-	bootstrapservices "fkteams/internal/bootstrap/services"
-	bootstrapskills "fkteams/internal/bootstrap/skills"
-	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/hooks"
-	"fkteams/internal/runtime/log"
-	modelregistry "fkteams/internal/runtime/model"
-
-	"github.com/gin-gonic/gin"
 )
 
-// serverMode 服务模式
-type serverMode int
+// Mode 描述 HTTP 服务是否提供 Web 界面。
+type Mode int
 
 const (
-	ModeWeb serverMode = iota // 含 Web 界面
-	ModeAPI                   // 纯 API 服务
+	ModeWeb Mode = iota // 含 Web 界面
+	ModeAPI             // 纯 API 服务
 )
 
-// httpService HTTP 服务，实现 lifecycle.Service 接口
-type httpService struct {
-	host          string     // 监听地址
-	port          int        // 监听端口
-	logLevel      string     // 日志级别
-	mode          serverMode // 服务模式
-	state         *appstate.State
-	resetChannels func()
-	scheduler     *bootstrapservices.SchedulerService
-	runtime       *handler.Runtime
-	server        *http.Server // HTTP 服务实例
-	listener      net.Listener
-	serveDone     chan error
-	listen        func(network, address string) (net.Listener, error)
+// Service HTTP 服务，实现 lifecycle.Service 接口
+type Service struct {
+	host              string // 监听地址
+	port              int    // 监听端口
+	logLevel          string // 日志级别
+	mode              Mode   // 服务模式
+	state             *appstate.State
+	schedulerProvider func() *appschedule.Service
+	runtime           *handler.Runtime
+	server            *http.Server // HTTP 服务实例
+	listener          net.Listener
+	serveDone         chan error
+	listen            func(network, address string) (net.Listener, error)
 }
 
 // Name 返回服务名称
-func (s *httpService) Name() string { return "http" }
+func (s *Service) Name() string { return "http" }
 
 // Start 启动 HTTP 服务（非阻塞）
-func (s *httpService) Start(ctx context.Context) error {
+func (s *Service) Start(ctx context.Context) error {
 	if s.logLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -75,28 +58,11 @@ func (s *httpService) Start(ctx context.Context) error {
 		h   http.Handler
 		err error
 	)
-	runtimeAdapter, _ := runtimeport.RuntimeFromContext(ctx)
-	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
-	modelRegistry, _ := modelregistry.RegistryFromContext(ctx)
-	providerRegistry, _ := modelproviders.RegistryFromContext(ctx)
-	toolRegistry, _ := apptools.RegistryFromContext(ctx)
-	agentRegistry, _ := agents.RegistryFromContext(ctx)
-	toolDisplays, _ := toolmeta.RegistryFromContext(ctx)
-	hookBus := hooks.FromContext(ctx)
-	s.runtime = handler.NewRuntime(handler.RuntimeOptions{
-		Runtime:        runtimeAdapter,
-		Interrupt:      interrupt,
-		HookBus:        hookBus,
-		AgentRegistry:  agentRegistry,
-		ToolRegistry:   toolRegistry,
-		ToolDisplays:   toolDisplays,
-		ModelRegistry:  modelRegistry,
-		Providers:      providerRegistry,
-		SkillProviders: bootstrapskills.NewDefaultProviderRegistry(),
-		ResetChannels:  s.resetChannels,
-	})
-	if s.scheduler != nil {
-		s.runtime.Scheduler = s.scheduler.AppService()
+	if s.runtime == nil {
+		s.runtime = handler.NewRuntime()
+	}
+	if s.schedulerProvider != nil {
+		s.runtime.Scheduler = s.schedulerProvider()
 	}
 	if s.mode == ModeAPI {
 		h, err = router.InitAPIWithRuntime(s.state, s.runtime)
@@ -149,7 +115,7 @@ func (s *httpService) Start(ctx context.Context) error {
 }
 
 // Stop 优雅关闭 HTTP 服务（5 秒超时）
-func (s *httpService) Stop(ctx context.Context) error {
+func (s *Service) Stop(ctx context.Context) error {
 	var result error
 	if s.runtime != nil {
 		s.runtime.BeginShutdown()
@@ -183,7 +149,7 @@ func (s *httpService) Stop(ctx context.Context) error {
 }
 
 // Addr 返回服务监听地址
-func (s *httpService) Addr() string {
+func (s *Service) Addr() string {
 	if s.server != nil {
 		return s.server.Addr
 	}
@@ -196,124 +162,17 @@ type ServeOptions struct {
 	Port int
 }
 
-// run 启动服务的公共逻辑。
-func run(ctx context.Context, mode serverMode, opts *ServeOptions) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	cfg := config.Get()
-
-	app := lifecycle.New()
-	appCfg := app.Config()
-	state := app.State()
-
-	// 注册关闭回调供 API 调用
-	lifecycle.SetShutdownFunc(func() { app.Shutdown() })
-
-	if appCfg.MemoryEnabled {
-		app.RegisterService(bootstrapservices.NewMemoryService(appCfg.WorkspaceDir, state))
-	}
-	var schedulerSvc *bootstrapservices.SchedulerService
-	if appCfg.SchedulerEnabled {
-		schedulerSvc = bootstrapservices.NewSchedulerService(appCfg.SchedulerDir)
-		app.RegisterService(schedulerSvc)
-	}
-
-	host := "127.0.0.1"
-	if cfg.Server.Host != "" {
-		host = cfg.Server.Host
-	}
-	port := cfg.Server.Port
-	if opts != nil {
-		if opts.Host != "" {
-			host = opts.Host
-		}
-		if opts.Port > 0 {
-			port = opts.Port
-		}
-	}
-
-	httpSvc := &httpService{
-		host:      host,
-		port:      port,
-		logLevel:  cfg.Server.LogLevel,
-		mode:      mode,
-		state:     state,
-		scheduler: schedulerSvc,
-	}
-	app.RegisterService(httpSvc)
-
-	// 注册消息通道
-	var schedulerProvider func() *appschedule.Service
-	if schedulerSvc != nil {
-		schedulerProvider = schedulerSvc.AppService
-	}
-	if svc, err := channel.SetupWithOptions(cfg.Channels.List(), channel.SetupOptions{
-		State:             state,
-		SchedulerProvider: schedulerProvider,
-		FactoryRegistry:   bootstrapchannels.RegisterDefaults(),
-	}); err != nil {
-		return fmt.Errorf("setup channels: %w", err)
-	} else if svc != nil {
-		httpSvc.resetChannels = svc.ResetRunners
-		app.RegisterService(svc)
-	}
-
-	app.OnReady(func(ctx context.Context) error {
-		addr := httpSvc.Addr()
-		if mode == ModeAPI {
-			fmt.Printf("欢迎来到非空小队 - API 服务模式: %s\n", version.Get())
-			fmt.Printf("当前服务运行在 [%s]\n", addr)
-		} else {
-			fmt.Printf("欢迎来到非空小队 - 服务端模式: %s\n", version.Get())
-			fmt.Printf("当前服务运行在 [%s]\n", addr)
-			fmt.Printf("前端页面地址: http://%s\n", addr)
-		}
-		if appCfg.MemoryEnabled {
-			fmt.Println("全局长期记忆已启用")
-		}
-		return nil
-	})
-
-	app.OnCleanup(func(ctx context.Context) error {
-		state.RunProcessCleanup()
-
-		// 如有待重启请求，启动新进程
-		if err := lifecycle.ExecutePendingRestart(); err != nil {
-			log.Printf("[server] restart failed: %v", err)
-		}
-
-		fmt.Printf("服务安全退出\n")
-		return nil
-	})
-
-	if err := app.Run(ctx); err != nil {
-		return fmt.Errorf("application error: %w", err)
-	}
-	return nil
+// ServiceOptions 是 HTTP 传输层需要的显式依赖，不负责创建应用及后台服务。
+type ServiceOptions struct {
+	Listen            ServeOptions
+	Mode              Mode
+	LogLevel          string
+	State             *appstate.State
+	Runtime           *handler.Runtime
+	SchedulerProvider func() *appschedule.Service
 }
 
-// Run 启动 Web 服务器模式
-func Run() error {
-	return RunContext(context.Background())
-}
-
-// RunContext 使用显式 context 启动 Web 服务器模式。
-func RunContext(ctx context.Context) error {
-	return RunWebContext(ctx, ServeOptions{})
-}
-
-// RunWebContext 使用显式 context 和监听选项启动 Web 服务器模式。
-func RunWebContext(ctx context.Context, opts ServeOptions) error {
-	return run(ctx, ModeWeb, &opts)
-}
-
-// RunServe 启动纯 API 服务（无 Web 界面）
-func RunServe(opts ServeOptions) error {
-	return RunServeContext(context.Background(), opts)
-}
-
-// RunServeContext 使用显式 context 启动纯 API 服务（无 Web 界面）。
-func RunServeContext(ctx context.Context, opts ServeOptions) error {
-	return run(ctx, ModeAPI, &opts)
+// NewService 创建 HTTP 服务，由组合根注册到应用生命周期。
+func NewService(opts ServiceOptions) *Service {
+	return &Service{host: opts.Listen.Host, port: opts.Listen.Port, mode: opts.Mode, logLevel: opts.LogLevel, state: opts.State, runtime: opts.Runtime, schedulerProvider: opts.SchedulerProvider}
 }

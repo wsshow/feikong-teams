@@ -240,8 +240,8 @@ func TestApplicationShutdownContextBoundsCooperativeService(t *testing.T) {
 	})
 
 	startedAt := time.Now()
-	if err := app.Run(context.Background()); err != nil {
-		t.Fatalf("Run returned error: %v", err)
+	if err := app.Run(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run error = %v, want deadline exceeded", err)
 	}
 	if elapsed := time.Since(startedAt); elapsed > time.Second {
 		t.Fatalf("shutdown elapsed = %v, want bounded shutdown", elapsed)
@@ -319,22 +319,44 @@ func TestExecutePhaseCopiesHooks(t *testing.T) {
 	}
 }
 
-func TestStopServicesIgnoresStopErrors(t *testing.T) {
+func TestStopServicesReturnsErrorsAndStillStopsEveryService(t *testing.T) {
 	app := New(WithExitSignals())
 	var order []string
-	app.RegisterService(&fakeService{name: "one", order: &order, stopErr: errors.New("stop failed")})
+	stopErr := errors.New("stop failed")
+	app.RegisterService(&fakeService{name: "one", order: &order, stopErr: stopErr})
 	app.RegisterService(&fakeService{name: "two", order: &order})
 
 	if err := app.startServices(context.Background()); err != nil {
 		t.Fatalf("startServices returned error: %v", err)
 	}
 	order = nil
-	app.stopServices(context.Background())
-	app.stopServices(context.Background())
+	if err := app.stopServices(context.Background()); !errors.Is(err, stopErr) {
+		t.Fatalf("stop = %v", err)
+	}
+	if err := app.stopServices(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	want := []string{"stop:two", "stop:one"}
 	if got := strings.Join(order, ","); got != strings.Join(want, ",") {
 		t.Fatalf("order = %#v, want %#v", order, want)
+	}
+}
+
+func TestShutdownReturnsFailuresAndStillRunsAllCleanupHooks(t *testing.T) {
+	app := New(WithExitSignals())
+	stopErr, cleanupErr := errors.New("stop failed"), errors.New("cleanup failed")
+	var order []string
+	app.RegisterService(&fakeService{name: "one", order: &order, stopErr: stopErr})
+	app.OnReady(func(context.Context) error { app.Shutdown(); return nil })
+	app.OnCleanup(func(context.Context) error { order = append(order, "cleanup:first"); return cleanupErr })
+	app.OnCleanup(func(context.Context) error { order = append(order, "cleanup:last"); return nil })
+	err := app.Run(context.Background())
+	if !errors.Is(err, stopErr) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("Run = %v", err)
+	}
+	if got := strings.Join(order, ","); got != "start:one,stop:one,cleanup:first,cleanup:last" {
+		t.Fatalf("order = %s", got)
 	}
 }
 

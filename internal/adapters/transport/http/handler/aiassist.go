@@ -20,6 +20,8 @@ const statusClientClosedRequest = 499
 
 func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		var req appaiassist.AgentDraftRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -44,6 +46,8 @@ func (rt *Runtime) GenerateAgentDraftsHandler() gin.HandlerFunc {
 
 func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		var req appaiassist.SkillDraftRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -68,6 +72,8 @@ func (rt *Runtime) GenerateSkillDraftHandler() gin.HandlerFunc {
 
 func (rt *Runtime) GenerateJavaScriptDraftHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		var req appaiassist.JavaScriptDraftRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -164,6 +170,8 @@ func enrichSkillDraftRequest(req *appaiassist.SkillDraftRequest) {
 
 func (rt *Runtime) RewriteTextHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		var req appaiassist.RewriteTextRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())

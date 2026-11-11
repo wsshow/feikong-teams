@@ -223,6 +223,7 @@ type Stream struct {
 	steering     []QueuedMessage
 	followUps    []QueuedMessage
 	queuedBytes  int
+	queueClosed  bool
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
@@ -604,7 +605,7 @@ func (s *Stream) EnqueueMessage(msg QueuedMessage) (QueuedMessage, error) {
 func (s *Stream) EnqueueMessageIfProcessing(msg QueuedMessage) (QueuedMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done || s.status != "processing" || s.config.QueueDisabled {
+	if s.done || s.status != "processing" || s.config.QueueDisabled || s.queueClosed {
 		return QueuedMessage{}, ErrQueueNotProcessing
 	}
 	return s.enqueueMessageLocked(msg)
@@ -688,9 +689,9 @@ func (s *Stream) DequeueNextMessage() (QueuedMessage, bool) {
 	return s.dequeueNextMessageLocked()
 }
 
-// DequeueNextMessageOrComplete 原子地取得下一条消息；队列为空时将 processing 切换为 completed。
+// DequeueNextMessageOrSeal 原子地取得下一条消息；队列为空时关闭入队，状态在持久化收尾后更新。
 // 与 EnqueueMessageIfProcessing 配合，保证已接受的消息不会落入“检查空队列”和“任务完成”之间的缝隙。
-func (s *Stream) DequeueNextMessageOrComplete() (QueuedMessage, bool) {
+func (s *Stream) DequeueNextMessageOrSeal() (QueuedMessage, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.done || s.status != "processing" {
@@ -699,7 +700,7 @@ func (s *Stream) DequeueNextMessageOrComplete() (QueuedMessage, bool) {
 	if msg, ok := s.dequeueNextMessageLocked(); ok {
 		return msg, true
 	}
-	s.status = "completed"
+	s.queueClosed = true
 	return QueuedMessage{}, false
 }
 

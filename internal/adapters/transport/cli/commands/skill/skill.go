@@ -6,15 +6,16 @@ import (
 
 	"fkteams/internal/app/appdata"
 	appskill "fkteams/internal/app/skill"
-	bootstrapskills "fkteams/internal/bootstrap/skills"
 
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
 
 // Command 创建 skill 子命令
-func Command(initConfig func() error) *ucli.Command {
-	providers := bootstrapskills.NewDefaultProviderRegistry()
+func Command(initConfig func() error, providers *appskill.ProviderRegistry) *ucli.Command {
+	if providers == nil {
+		providers = appskill.NewProviderRegistry()
+	}
 	return &ucli.Command{
 		Name:  "skill",
 		Usage: "技能管理",

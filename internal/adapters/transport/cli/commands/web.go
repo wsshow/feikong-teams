@@ -4,12 +4,13 @@ import (
 	"context"
 	httpserver "fkteams/internal/adapters/transport/http"
 	"fkteams/internal/app/config"
+	"fmt"
 
 	ucli "github.com/urfave/cli/v3"
 )
 
 // webCommand 创建 web 子命令
-func webCommand() *ucli.Command {
+func webCommand(opts Options) *ucli.Command {
 	return &ucli.Command{
 		Name:  "web",
 		Usage: "启动 Web 服务器",
@@ -29,7 +30,10 @@ func webCommand() *ucli.Command {
 			if err := config.Init(); err != nil {
 				return err
 			}
-			return httpserver.RunWebContext(ctx, httpserver.ServeOptions{
+			if opts.RunServer == nil {
+				return fmt.Errorf("server application is not configured")
+			}
+			return opts.RunServer(ctx, httpserver.ModeWeb, &httpserver.ServeOptions{
 				Host: cmd.String("host"),
 				Port: int(cmd.Int("port")),
 			})

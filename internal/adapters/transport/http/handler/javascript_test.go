@@ -2,17 +2,28 @@ package handler
 
 import (
 	"context"
+	javascripttool "fkteams/internal/adapters/tools/javascript"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/events"
 	"testing"
 
-	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	"fkteams/internal/app/config"
-	bootstraptools "fkteams/internal/bootstrap/tools"
+	apptools "fkteams/internal/app/tools"
 )
 
 func TestJavaScriptToolTestRunsDraftAndCollectsNotices(t *testing.T) {
-	registry, err := bootstraptools.RegisterDefaults(mcpadapter.NewProvider())
-	if err != nil {
-		t.Fatalf("RegisterDefaults() error = %v", err)
+	registry := apptools.NewToolGroupRegistry(apptools.ToolResolveContext{})
+	if err := registry.Register(apptools.ToolGroupRegistration{
+		Info: apptools.ToolGroupInfo{Name: "javascript", DisplayName: "JavaScript", Description: "test tools", Category: "extension"},
+		Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+			tool, err := javascripttool.NewToolWithOptions(ctx.Config.JavaScript.Tools[0], javascripttool.Options{NoticeEmitter: testNoticeEmitter{}})
+			if err != nil {
+				return nil, err
+			}
+			return []runtimeport.Tool{tool}, nil
+		},
+	}); err != nil {
+		t.Fatal(err)
 	}
 	resp, err := testJavaScriptTool(context.Background(), registry, javaScriptToolTestRequest{
 		Tool: config.JavaScriptTool{
@@ -44,4 +55,12 @@ func TestJavaScriptToolTestRejectsInvalidDefinition(t *testing.T) {
 	if err == nil {
 		t.Fatal("testJavaScriptTool() error = nil, want validation error")
 	}
+}
+
+type testNoticeEmitter struct{}
+
+func (testNoticeEmitter) Notice(ctx context.Context, scriptID, level, message string) error {
+	event := events.SystemNotice("", "", "javascript_extension", message)
+	event.Notice.Level = level
+	return events.DispatchEvent(ctx, event)
 }

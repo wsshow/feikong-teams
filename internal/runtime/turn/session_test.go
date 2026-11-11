@@ -2,6 +2,7 @@ package turn
 
 import (
 	"context"
+	"errors"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
@@ -53,7 +54,7 @@ func TestExecutorRunConfiguresRequestCapabilities(t *testing.T) {
 	eventHandler := func(events.Event) error { return nil }
 	startHandler := func(context.Context) {}
 	interruptHandler := FixedDecisionHandler(approval.Reject)
-	finishHandler := func(context.Context, *runtimeport.RunResult, error) {}
+	finishHandler := func(context.Context, *runtimeport.RunResult, error) error { return nil }
 	bus := hooks.NewBus()
 
 	runner := &runnerStub{}
@@ -86,5 +87,44 @@ func TestExecutorRunRejectsMissingDependencies(t *testing.T) {
 	}
 	if _, err := NewExecutor().Run(context.Background(), Request{Runner: &runnerStub{}}); err == nil {
 		t.Fatal("expected missing session ID error")
+	}
+}
+
+func TestExecutorFinalizesRejectedRun(t *testing.T) {
+	bus := hooks.NewBus()
+	bus.RegisterFunc("reject", []hooks.HookPoint{hooks.HookBeforeRun}, func(hooks.Context, hooks.Invocation) (hooks.Result, error) {
+		return hooks.Result{Action: hooks.ActionReject}, nil
+	}, hooks.Options{})
+	runner := &runnerStub{}
+	calls := 0
+	saveErr := errors.New("storage unavailable")
+	_, err := NewExecutor().Run(context.Background(), Request{
+		Runner: runner, SessionID: "session", HookBus: bus,
+		Input: TurnInput{Message: message.Message{Content: "must not run"}},
+		OnFinish: func(ctx context.Context, result *runtimeport.RunResult, runErr error) error {
+			calls++
+			if runErr == nil || result != nil {
+				t.Error("rejected run must finish with an error and no result")
+			}
+			return saveErr
+		},
+	})
+	if err == nil || !errors.Is(err, saveErr) || calls != 1 || runner.input.Message.Content != "" {
+		t.Fatalf("err=%v, finishes=%d, input=%+v", err, calls, runner.input)
+	}
+}
+
+func TestExecutorGeneratesDistinctRunIDs(t *testing.T) {
+	runner := &runnerStub{}
+	req := Request{Runner: runner, SessionID: "same-session"}
+	if _, err := NewExecutor().Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	first := runner.opts.RunID
+	if _, err := NewExecutor().Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if first == runner.opts.RunID || first == req.SessionID {
+		t.Fatal("run IDs must identify executions, not sessions")
 	}
 }

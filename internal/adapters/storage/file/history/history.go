@@ -120,8 +120,9 @@ type HistoryRecorder struct {
 	summarizedCount int    // 已被摘要覆盖的消息数量
 }
 
+// SetSessionDir 绑定持久化目录；空目录将记录器切换为仅内存模式。
 func (h *HistoryRecorder) SetSessionDir(sessionDir string) {
-	if h == nil || sessionDir == "" {
+	if h == nil {
 		return
 	}
 	h.mu.Lock()

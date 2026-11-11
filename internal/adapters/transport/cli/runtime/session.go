@@ -95,7 +95,11 @@ func (s *Session) recorder() *eventlog.HistoryRecorder {
 	if s.historyDir == "" {
 		s.historyDir = appdata.SessionsDir()
 	}
-	return s.historyManager.GetOrCreate(s.sessionID(), s.historyDir)
+	recorder := s.historyManager.GetOrCreate(s.sessionID(), s.historyDir)
+	if s.isTemporary() {
+		recorder.SetSessionDir("")
+	}
+	return recorder
 }
 
 func (s *Session) setTitleFromInput(input string) {
@@ -144,7 +148,7 @@ func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
 }
 
 // HandleDirect 非交互模式：执行单次查询后退出
-func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSignals chan os.Signal, query string) {
+func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSignals chan os.Signal, query string) error {
 	s.InputHistory = append(s.InputHistory, query)
 
 	s.activateSession(true)
@@ -162,14 +166,13 @@ func (s *Session) HandleDirect(ctx context.Context, r runtimeport.Runner, exitSi
 	if s.callbackBuilder != nil {
 		executor.SetCallbackBuilder(s.callbackBuilder)
 	}
-	if err := executor.Execute(ctx, query); err != nil {
-		log.Printf("执行查询失败: %v", err)
-	}
+	err := executor.Execute(ctx, query)
 
 	select {
 	case exitSignals <- syscall.SIGTERM:
 	default:
 	}
+	return err
 }
 
 // HandleInteractive 交互模式：启动 REPL 循环

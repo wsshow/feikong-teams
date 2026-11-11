@@ -23,6 +23,7 @@ import (
 // ExecutionDependencies 保存一次应用实例所需的执行依赖。
 // 各注册表均为实例所有，避免入口依赖可变的进程级全局状态。
 type ExecutionDependencies struct {
+	ExecutionGate         *config.ExecutionGate
 	Runtime               runtimeport.Runtime
 	InterruptRuntime      runtimeport.InterruptRuntime
 	ModelRegistry         *modelregistry.Registry
@@ -57,6 +58,7 @@ func NewExecutionDependencies() (*ExecutionDependencies, error) {
 	})
 
 	return &ExecutionDependencies{
+		ExecutionGate:         &config.ExecutionGate{},
 		Runtime:               runtimeDefaults.Runtime,
 		InterruptRuntime:      runtimeDefaults.Interrupt,
 		ModelRegistry:         runtimeDefaults.ModelRegistry,

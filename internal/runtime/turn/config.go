@@ -29,7 +29,7 @@ type Request struct {
 	// Input 本轮运行输入
 	Input message.TurnInput
 
-	// RunID 本轮运行 ID；为空时使用 SessionID
+	// RunID 本轮运行 ID；为空时生成唯一标识
 	RunID string
 
 	// EventCallback 接收智能体执行期间的事件
@@ -54,5 +54,5 @@ type Request struct {
 	HookBus *hooks.Bus
 
 	// OnFinish 执行结束回调（含错误）。用于保存历史、更新元数据、提取记忆等
-	OnFinish func(ctx context.Context, result *runtimeport.RunResult, err error)
+	OnFinish func(ctx context.Context, result *runtimeport.RunResult, err error) error
 }

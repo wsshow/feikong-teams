@@ -41,7 +41,7 @@ func (a testAddr) String() string  { return string(a) }
 
 func TestHTTPServiceStartReturnsListenError(t *testing.T) {
 	wantErr := errors.New("address unavailable")
-	service := &httpService{
+	service := &Service{
 		mode:  ModeAPI,
 		state: appstate.New(),
 		listen: func(string, string) (net.Listener, error) {
@@ -57,7 +57,7 @@ func TestHTTPServiceStartReturnsListenError(t *testing.T) {
 
 func TestHTTPServiceUsesBoundAddressAndWaitsForServeExit(t *testing.T) {
 	listener := newBlockingListener()
-	service := &httpService{
+	service := &Service{
 		mode:  ModeAPI,
 		state: appstate.New(),
 		listen: func(string, string) (net.Listener, error) {

@@ -2,26 +2,15 @@ package commands
 
 import (
 	"context"
-	"fkteams/internal/runtime/log"
-	"fmt"
-	"syscall"
-
-	inputhistory "fkteams/internal/adapters/storage/file/inputhistory"
-	"fkteams/internal/adapters/transport/cli/eventview"
-	cliruntime "fkteams/internal/adapters/transport/cli/runtime"
-	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/config"
-	"fkteams/internal/app/lifecycle"
-	bootstrapservices "fkteams/internal/bootstrap/services"
-	runtimeport "fkteams/internal/ports/runtime"
-
+	"fmt"
 	"github.com/pterm/pterm"
 	ucli "github.com/urfave/cli/v3"
 )
 
 // agentCommand 创建 agent 子命令
-func agentCommand() *ucli.Command {
+func agentCommand(opts Options) *ucli.Command {
 	return &ucli.Command{
 		Name:  "agent",
 		Usage: "指定单个 Agent 执行任务",
@@ -79,152 +68,12 @@ func agentCommand() *ucli.Command {
 				Usage: "自动批准指定操作类别 (all/command/file/git/dispatch，逗号分隔)",
 			},
 		},
-		Action: agentAction,
-	}
-}
-
-// agentAction 执行单 Agent 任务
-func agentAction(ctx context.Context, cmd *ucli.Command) error {
-	if err := config.InitAndValidate(); err != nil {
-		return err
-	}
-
-	agentName := cmd.String("name")
-	if agentName == "" {
-		return fmt.Errorf("请通过 --name/-n 指定 Agent 名称，或使用 agent list 查看可用列表")
-	}
-	query := cmd.String("query")
-	if query == "" {
-		query = cmd.Root().String("query")
-	}
-	pipeInput, isPipe, err := cliruntime.ReadPipeInput()
-	if err != nil {
-		return fmt.Errorf("read piped input: %w", err)
-	}
-	if isPipe {
-		if pipeInput != "" {
-			if query != "" {
-				query = query + "\n" + pipeInput
-			} else {
-				query = pipeInput
+		Action: func(ctx context.Context, cmd *ucli.Command) error {
+			name := cmd.String("name")
+			if name == "" {
+				return fmt.Errorf("agent name is required; use --name or agent list")
 			}
-		} else if query == "" {
-			return fmt.Errorf("检测到管道输入但内容为空，请提供查询内容或使用 -q 参数")
-		}
+			return runChat(ctx, cmd, opts, name)
+		},
 	}
-	resumeSession := cmd.Root().String("resume")
-	temporarySession := cmd.Bool("temporary") || cmd.Root().Bool("temporary")
-
-	agentInfo, err := agents.AgentByName(ctx, agentName)
-	if err != nil {
-		return err
-	}
-	if agentInfo == nil {
-		pterm.Error.Printfln("未找到 Agent: %s", agentName)
-		pterm.DefaultSection.Println("可用的 Agent 列表")
-		var items []pterm.BulletListItem
-		registry, err := agents.List(ctx)
-		if err != nil {
-			return err
-		}
-		for _, info := range registry {
-			items = append(items, pterm.BulletListItem{
-				Level: 0,
-				Text:  pterm.Bold.Sprint(info.Name) + "  " + pterm.FgGray.Sprint(info.Description),
-			})
-		}
-		_ = pterm.DefaultBulletList.WithItems(items).Render()
-		return nil
-	}
-
-	app := lifecycle.New(
-		lifecycle.WithExitSignals(syscall.SIGTERM, syscall.SIGHUP),
-	)
-	cfg := app.Config()
-	state := app.State()
-
-	var inputHistory []string
-	app.OnInit(func(ctx context.Context) error {
-		var err error
-		inputHistory, err = inputhistory.Load(cfg.InputHistoryPath, 100)
-		if err != nil {
-			return fmt.Errorf("加载输入历史失败: %w", err)
-		}
-		return nil
-	})
-
-	var agentRunner runtimeport.Runner
-	app.OnSetup(func(ctx context.Context) error {
-		var err error
-		agent, err := agentInfo.Creator(ctx)
-		if err != nil {
-			return fmt.Errorf("create agent %s: %w", agentName, err)
-		}
-		agentRunner, err = appagent.CreateAgentRunner(ctx, agent)
-		return err
-	})
-
-	var schedulerSvc *bootstrapservices.SchedulerService
-	if cfg.SchedulerEnabled {
-		schedulerSvc = bootstrapservices.NewSchedulerService(cfg.SchedulerDir)
-		app.RegisterService(schedulerSvc)
-	}
-
-	var session *cliruntime.Session
-	app.OnReady(func(ctx context.Context) error {
-		session = cliruntime.NewSession(cliruntime.ModeTeam, inputHistory, nil)
-		session.SetMemoryManager(state.Memory())
-		if schedulerSvc != nil {
-			session.SetScheduleService(schedulerSvc.AppService())
-		}
-		session.SetCurrentAgent(agentName)
-		session.SetTemporary(temporarySession)
-		if resumeSession != "" {
-			session.SetResumeSessionID(resumeSession)
-		}
-
-		approve := cmd.String("approve")
-		if approve == "" {
-			approve = cmd.Root().String("approve")
-		}
-		session.ApproveStores = approve
-
-		format := cmd.String("format")
-		if format == "json" {
-			session.SetCallbackBuilder(eventview.JSONEventCallback)
-		}
-
-		if query != "" {
-			session.StartSignalHandler(app.ExitCh())
-			session.HandleDirect(ctx, agentRunner, app.ExitCh(), query)
-		} else {
-			session.HandleInteractive(ctx, agentRunner, app.ExitCh())
-		}
-		return nil
-	})
-
-	app.OnPreStop(func(ctx context.Context) error {
-		if !temporarySession {
-			if session != nil && session.SaveHistory(ctx) {
-				if query == "" {
-					session.PrintResumeHint()
-				}
-			}
-		}
-		return nil
-	})
-
-	app.OnCleanup(func(ctx context.Context) error {
-		state.RunProcessCleanup()
-		history := inputHistory
-		if session != nil {
-			history = session.InputHistory
-		}
-		if err := inputhistory.Save(cfg.InputHistoryPath, history); err != nil {
-			log.Printf("保存输入历史失败: %v", err)
-		}
-		return nil
-	})
-
-	return app.Run(ctx)
 }

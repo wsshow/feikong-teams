@@ -42,6 +42,8 @@ func (rt *Runtime) TestJavaScriptToolHandler(state *appstate.State) gin.HandlerF
 			Fail(c, http.StatusServiceUnavailable, "tool registry is not configured")
 			return
 		}
+		releaseExecution := rt.ExecutionGate.Begin()
+		defer releaseExecution()
 		var req javaScriptToolTestRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			Fail(c, http.StatusBadRequest, "invalid request: "+err.Error())

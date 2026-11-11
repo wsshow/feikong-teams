@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	clicommands "fkteams/internal/adapters/transport/cli/commands"
 	"fkteams/internal/bootstrap"
 
 	"github.com/pterm/pterm"
@@ -22,5 +21,5 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return clicommands.Root().Run(dependencies.Context(ctx), args)
+	return dependencies.Command().Run(dependencies.Context(ctx), args)
 }

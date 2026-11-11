@@ -18,6 +18,9 @@ func (b *Bus) InvokeBeforeRun(ctx context.Context, input message.TurnInput) (mes
 	if err != nil {
 		return input, err
 	}
+	if err := actionError(result, "run"); err != nil {
+		return input, err
+	}
 	if payload, ok := result.Payload.(BeforeRunPayload); ok {
 		input = payload.Input
 	}

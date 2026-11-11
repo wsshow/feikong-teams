@@ -219,8 +219,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		apiV1.POST("/providers/models", smallJSONBody, runtime.GetProviderModelsHandler())
 
 		// 系统管理 API
-		apiV1.POST("/shutdown", controlBody, handler.ShutdownHandler())
-		apiV1.POST("/restart", controlBody, handler.RestartHandler())
+		apiV1.POST("/shutdown", controlBody, runtime.ShutdownHandler())
+		apiV1.POST("/restart", controlBody, runtime.RestartHandler())
 	}
 }
 

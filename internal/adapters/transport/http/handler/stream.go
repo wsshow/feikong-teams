@@ -25,13 +25,7 @@ import (
 )
 
 // StreamStartRequest 启动流式任务请求
-type StreamStartRequest struct {
-	SessionID string        `json:"session_id"`
-	Message   string        `json:"message"`
-	Mode      string        `json:"mode"`
-	AgentName string        `json:"agent_name"`
-	Contents  []ContentPart `json:"contents"`
-}
+type StreamStartRequest = ChatRequest
 
 // StreamStartHandler 启动流式任务（任务在后台执行，前端通过 SSE 订阅事件流）
 
@@ -78,6 +72,13 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		}
 
 		ctx := appstate.WithState(context.Background(), state)
+		releaseExecution := rt.ExecutionGate.Begin()
+		executionTransferred := false
+		defer func() {
+			if !executionTransferred {
+				releaseExecution()
+			}
+		}()
 		r, err := rt.resolveRunner(ctx, mode, req.AgentName)
 		if err != nil {
 			log.Printf("failed to resolve runner: mode=%s, agent=%s, err=%v", mode, req.AgentName, err)
@@ -113,7 +114,14 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
-		rt.updateSessionExecutionMetadata(sessionID, userDisplayText, mode, req.AgentName)
+		if err := rt.updateSessionExecutionMetadata(sessionID, userDisplayText, mode, req.AgentName); err != nil {
+			taskCancel()
+			releaseRecorder()
+			stream.SetStatus("error")
+			stream.Done()
+			Fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
 		initialRunID := newTurnRunID(sessionID)
 		initialTurnID := turnIDForRun(initialRunID)
 		stream.SetTurn(initialRunID, initialTurnID)
@@ -121,6 +129,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 
 		// 后台执行任务
 		if !rt.Go(func() {
+			defer releaseExecution()
 			defer releaseRecorder()
 			rt.runStreamTask(taskCtx, stream, sessionID, r, recorder, turnInput, userDisplayText, manager, initialRunID)
 		}) {
@@ -130,6 +139,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			Fail(c, http.StatusServiceUnavailable, "HTTP runtime is shutting down")
 			return
 		}
+		executionTransferred = true
 		unlockSession()
 
 		OK(c, gin.H{
@@ -390,18 +400,13 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID }, func() {
 		rt.persistQueueSnapshot(sessionID, stream)
 	})
-	currentInput := turnInput
+
 	currentDisplayText := userDisplayText
-	chatService := appchat.NewService()
-	for {
-		_, runErr := chatService.RunTurn(ctx, appchat.TurnRequest{
-			SessionID:        sessionID,
-			RunID:            currentRunID,
-			Runner:           r,
-			Input:            currentInput,
-			Summary:          recorder,
-			InterruptHandler: runtimeport.InterruptHandler(interruptHandler),
-			NonInteractive:   true,
+	request := func(input domainmessage.TurnInput) appchat.TurnRequest {
+		return appchat.TurnRequest{
+			SessionID: sessionID, RunID: currentRunID, Runner: r, Input: input,
+			Summary: recorder, History: recorder,
+			InterruptHandler: interruptHandler, NonInteractive: true,
 			ApprovalRegistry: configuredApprovalRegistry(),
 			AskHandler:       buildMemberAskRuntimeHandler(stream, recorder, sessionID),
 			SteeringSource:   steeringSource,
@@ -409,51 +414,37 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 				if stream.Status() == "cancelled" {
 					return context.Canceled
 				}
-				recorder.RecordEvent(event)
 				stream.Publish(standardEventPayload(sessionID, event, rt.ToolDisplays))
 				return nil
 			},
-		})
-		if runErr != nil {
-			if isConnectionClosed(ctx, runErr) {
-				log.Printf("stream task cancelled: session=%s", sessionID)
-				if stream.Status() != "cancelled" {
-					stream.SetStatus("cancelled")
-					stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
-				}
-				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
-				return
-			}
-			log.Printf("stream task error: session=%s, err=%v", sessionID, runErr)
-			stream.SetStatus("error")
-			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
-			rt.finishErrorChat(recorder, sessionID, currentDisplayText, runErr)
-			return
 		}
-
-		recorder.FinalizeCurrent()
-		rt.saveTurnHistory(recorder, sessionID)
-		if queued, ok := stream.DequeueNextMessageOrComplete(); ok {
+	}
+	runErr := appchat.NewService().RunQueued(ctx, appchat.QueueRequest{
+		Stream: stream, First: request(turnInput),
+		Next: func(queued taskstream.QueuedMessage) (appchat.TurnRequest, error) {
 			publishQueueUpdated(stream, sessionID)
 			rt.persistQueueSnapshot(sessionID, stream)
 			currentDisplayText = queued.DisplayText
-			currentInput = buildQueuedChatInput(recorder, queued, manager)
 			currentRunID = queuedTurnRunID(sessionID, queued)
-			rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, stream.Mode(), stream.AgentName())
-			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
-			continue
-		}
-
-		if stream.Status() != "completed" {
-			if stream.Status() == "cancelled" {
-				rt.finishCancelledChat(recorder, sessionID, currentDisplayText)
+			if err := rt.updateSessionExecutionMetadata(sessionID, currentDisplayText, stream.Mode(), stream.AgentName()); err != nil {
+				return appchat.TurnRequest{}, err
 			}
-			return
+			publishQueuedExecutionStart(stream, sessionID, queued, currentRunID)
+			return request(buildQueuedChatInput(recorder, queued, manager)), nil
+		},
+		Finish: func(runErr error) error {
+			return rt.finishChat(context.WithoutCancel(ctx), recorder, sessionID, currentDisplayText, manager, runErr)
+		},
+	})
+	if runErr != nil {
+		if isConnectionClosed(ctx, runErr) {
+			stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
+		} else {
+			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
 		}
-		stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
-		rt.finishChat(recorder, sessionID, currentDisplayText, manager)
 		return
 	}
+	stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
 }
 
 // StreamStopHandler 停止正在运行的流式任务

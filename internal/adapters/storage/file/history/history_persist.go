@@ -11,19 +11,33 @@ import (
 	"fkteams/internal/domain/message"
 )
 
+// Flush 确认已绑定会话的增量历史已可靠写入。
+func (h *HistoryRecorder) Flush() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.flushLocked()
+}
+
+func (h *HistoryRecorder) flushLocked() error {
+	if h.persistErr != nil {
+		return fmt.Errorf("persist transcript: %w", h.persistErr)
+	}
+	if h.sessionDir == "" {
+		return fmt.Errorf("history session directory is not configured")
+	}
+	if err := os.MkdirAll(h.sessionDir, 0755); err != nil {
+		return fmt.Errorf("create session dir: %w", err)
+	}
+	return nil
+}
+
 func (h *HistoryRecorder) SaveToFile(filePath string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.sessionDir == "" {
 		h.sessionDir = filepath.Dir(filePath)
 	}
-	if err := os.MkdirAll(h.sessionDir, 0755); err != nil {
-		return fmt.Errorf("create session dir: %w", err)
-	}
-	if h.persistErr != nil {
-		return fmt.Errorf("persist transcript: %w", h.persistErr)
-	}
-	return nil
+	return h.flushLocked()
 }
 
 func (h *HistoryRecorder) LoadFromFile(filePath string) error {

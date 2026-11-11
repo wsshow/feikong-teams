@@ -19,12 +19,10 @@ import (
 	appschedule "fkteams/internal/app/schedule"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
-	"fkteams/internal/domain/session"
+	domainsession "fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
-
-	"github.com/pterm/pterm"
 )
 
 // QueryState 查询状态管理
@@ -245,7 +243,7 @@ var CLIHistoryDir = appdata.SessionsDir()
 
 // NewDirectSessionID 生成基于 UUID 的唯一会话 ID
 func NewDirectSessionID() string {
-	return session.NewID()
+	return domainsession.NewID()
 }
 
 // Execute 执行查询
@@ -264,6 +262,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)
+	defer cancelFunc()
 
 	e.view.Start(input)
 	innerCallback := e.view.EventCallback(recorder)
@@ -307,12 +306,13 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 
 	startTime := time.Now()
 	currentInput := turnInput
+	currentRunID := ""
 	steeringSource := func(context.Context) ([]domainmessage.Message, error) {
 		message, ok := e.drainSteeringMessage()
 		if !ok {
 			return nil, nil
 		}
-		runID := session.sessionID()
+		runID := currentRunID
 		turnID := events.TurnID(runID, 1)
 		recorder.RecordEvent(events.UserMessage(runID, turnID, fmt.Sprintf("%s:steering", turnID), message))
 		if err := innerCallback(events.Event{
@@ -325,8 +325,10 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		return []domainmessage.Message{message}, nil
 	}
 	for {
+		currentRunID = session.sessionID() + ":" + NewDirectSessionID()
 		_, err := appchat.NewService().RunTurn(queryCtx, appchat.TurnRequest{
 			SessionID:        session.sessionID(),
+			RunID:            currentRunID,
 			Runner:           e.runner,
 			Input:            currentInput,
 			Summary:          recorder,
@@ -339,22 +341,33 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 					return appschedule.WithService(ctx, e.scheduler)
 				},
 			},
+			OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, runErr error) error {
+				if session.isTemporary() {
+					recorder.FinalizeCurrent()
+					return nil
+				}
+				status := appchat.CompletionStatus(runErr)
+				if runErr == nil {
+					status = domainsession.StatusActive
+				}
+				store := eventlog.NewChatSessionStore(session.historyDir)
+				return appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
+					SessionID: session.sessionID(), TitleSource: session.sessionTitle, Status: status,
+					History: recorder, FinalizeHistory: true, Error: runErr,
+				})
+			},
 			EventSink: func(event events.Event) error {
 				return innerCallback(event)
 			},
 		})
 
-		recorder.FinalizeCurrent()
 		if err != nil {
 			if queryCtx.Err() != nil {
-				recorder.RecordCancelled("任务已取消")
-				store := eventlog.NewChatSessionStore(session.historyDir)
-				appchat.LogLifecycleError("cli", session.sessionID(), appchat.NewSessionLifecycle(store, store).SaveActive(context.Background(), session.sessionID(), session.sessionTitle, recorder))
 				e.view.Interrupted()
-				return nil
+				return err
 			}
 			e.view.Error(err)
-			return nil
+			return err
 		}
 
 		if next, ok := e.drainSteeringMessage(); ok && queryCtx.Err() == nil {
@@ -474,17 +487,19 @@ func (s *Session) FlushMemoryWithManager(ctx context.Context, manager appstate.M
 }
 
 // SaveHistory 保存当前 CLI 实例的可恢复会话历史。
-func (s *Session) SaveHistory(ctx context.Context) bool {
+func (s *Session) SaveHistory(ctx context.Context) (bool, error) {
+	if s.isTemporary() {
+		return false, nil
+	}
 	recorder := s.recorder()
 	if recorder.GetMessageCount() == 0 {
-		return false
+		return false, nil
 	}
 	store := eventlog.NewChatSessionStore(s.historyDir)
-	if err := appchat.NewSessionLifecycle(store, store).SaveActive(ctx, s.sessionID(), s.sessionTitle, recorder); err != nil {
-		pterm.Error.Printfln("保存聊天历史失败: %v", err)
-		return false
+	if err := appchat.NewSessionLifecycle(store).SaveActive(ctx, s.sessionID(), s.sessionTitle, recorder); err != nil {
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 // truncateTitle 截断标题，最多 50 个字符（对中文安全）

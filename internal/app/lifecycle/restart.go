@@ -1,81 +1,48 @@
 package lifecycle
 
 import (
-	"fkteams/internal/runtime/env"
-	"fkteams/internal/runtime/log"
-	"os"
-	"os/exec"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-var (
-	shutdownFn   func()
-	shutdownOnce sync.Once
-	shutdownMu   sync.Mutex
-
+// Control 是应用实例的关闭与重启入口；回调由组合根注入。
+type Control struct {
+	shutdown       func()
+	restart        func() error
+	once           sync.Once
 	pendingRestart atomic.Bool
-)
-
-// SetShutdownFunc 设置关闭回调函数（由 server 层在启动时调用）
-func SetShutdownFunc(fn func()) {
-	shutdownMu.Lock()
-	defer shutdownMu.Unlock()
-	shutdownFn = fn
 }
 
-// TriggerShutdown 触发优雅关闭（延迟 200ms 确保 HTTP 响应送达）
-func TriggerShutdown() {
-	shutdownMu.Lock()
-	fn := shutdownFn
-	shutdownMu.Unlock()
-
-	if fn != nil {
-		go func() {
-			time.Sleep(200 * time.Millisecond)
-			shutdownOnce.Do(fn)
-		}()
-	}
+// NewControl 创建与单个应用绑定的生命周期控制器。
+func NewControl(shutdown func(), restart func() error) *Control {
+	return &Control{shutdown: shutdown, restart: restart}
 }
 
-// TriggerRestart 标记待重启并触发关闭
-func TriggerRestart() {
-	pendingRestart.Store(true)
-	TriggerShutdown()
+// Available 表示当前实例能否响应关闭请求。
+func (c *Control) Available() bool { return c != nil && c.shutdown != nil }
+
+// Shutdown 延迟关闭，让传输层有机会送出响应；每个实例至多触发一次。
+func (c *Control) Shutdown() {
+	if !c.Available() {
+		return
+	}
+	c.once.Do(func() { time.AfterFunc(200*time.Millisecond, c.shutdown) })
 }
 
-// IsShutdownAvailable 返回是否已注册关闭回调
-func IsShutdownAvailable() bool {
-	shutdownMu.Lock()
-	defer shutdownMu.Unlock()
-	return shutdownFn != nil
+// Restart 请求关闭，并在应用清理结束后由组合根执行重启。
+func (c *Control) Restart() {
+	if !c.Available() {
+		return
+	}
+	c.pendingRestart.Store(true)
+	c.Shutdown()
 }
 
-// ExecutePendingRestart 在 cleanup 阶段调用，如有待重启则启动新进程。
-// 以下情况跳过 self-restart，由外部进程管理器（systemd/Docker）接管：
-//   - PID 1（容器 init 进程）
-//   - 设置了 FEIKONG_NO_SELF_RESTART 环境变量（适用于 systemd 等场景）
-func ExecutePendingRestart() error {
-	if !pendingRestart.Load() {
-		return nil
+// ExecutePendingRestart 在应用清理完成后执行一次重启。
+func (c *Control) ExecutePendingRestart() error {
+	if c != nil && c.pendingRestart.Swap(false) && c.restart != nil {
+		return c.restart()
 	}
-	if os.Getpid() == 1 {
-		log.Info("skip self-restart: running as PID 1 (container), relying on restart policy")
-		return nil
-	}
-	if env.Get(env.NoSelfRestart) != "" {
-		log.Info("skip self-restart: FEIKONG_NO_SELF_RESTART is set, relying on external process manager")
-		return nil
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(executable, os.Args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	log.Info("starting new process for restart")
-	return cmd.Start()
+	return nil
 }

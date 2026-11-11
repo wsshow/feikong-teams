@@ -7,8 +7,34 @@ import (
 	"testing"
 
 	domainmessage "fkteams/internal/domain/message"
+	runtimeport "fkteams/internal/ports/runtime"
+	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 )
+
+type approvalProbeRunner struct {
+	called bool
+	err    error
+}
+
+func (r *approvalProbeRunner) Run(ctx context.Context, _ domainmessage.TurnInput, _ runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+	r.called = true
+	r.err = approval.Require(ctx, approval.StoreCommand, "probe", "probe approval")
+	return &runtimeport.RunResult{}, r.err
+}
+
+func TestBridgeUsesAutomaticApprovalPolicy(t *testing.T) {
+	channel := &fakeChannel{name: "approval_policy"}
+	manager := NewManager(nil, NewFactoryRegistry())
+	manager.channels[channel.name] = channel
+	bridge := NewBridgeWithOptions(manager, "team", BridgeOptions{HistoryDir: t.TempDir()})
+	runner := &approvalProbeRunner{}
+	bridge.runner = runner
+	bridge.processBatch(context.Background(), "session", []queuedMessage{{channelName: channel.name, chatID: "chat", userInput: "test"}})
+	if !runner.called || runner.err != nil {
+		t.Fatalf("called=%v, approval=%v", runner.called, runner.err)
+	}
+}
 
 func TestEnqueueSessionMessagePublishesAndCountsPending(t *testing.T) {
 	q := &sessionQueue{ch: make(chan queuedMessage, 1)}

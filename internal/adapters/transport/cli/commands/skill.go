@@ -8,6 +8,6 @@ import (
 )
 
 // skillCommand 创建 skill 子命令
-func skillCommand() *ucli.Command {
-	return skill.Command(config.Init)
+func skillCommand(opts Options) *ucli.Command {
+	return skill.Command(config.Init, opts.SkillProviders)
 }

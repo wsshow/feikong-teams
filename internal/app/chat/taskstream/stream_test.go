@@ -584,7 +584,7 @@ func TestEnqueueAndCompletionTransitionAreAtomic(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, dequeued = s.DequeueNextMessageOrComplete()
+			_, dequeued = s.DequeueNextMessageOrSeal()
 		}()
 		close(start)
 		wg.Wait()
@@ -596,14 +596,14 @@ func TestEnqueueAndCompletionTransitionAreAtomic(t *testing.T) {
 			if s.Status() != "processing" {
 				t.Fatalf("iteration %d status = %q after dequeue", i, s.Status())
 			}
-			if _, ok := s.DequeueNextMessageOrComplete(); ok || s.Status() != "completed" {
-				t.Fatalf("iteration %d empty queue did not complete stream", i)
+			if _, ok := s.DequeueNextMessageOrSeal(); ok || s.Status() != "processing" {
+				t.Fatalf("iteration %d empty queue did not seal stream", i)
 			}
-		} else if s.Status() != "completed" {
+		} else if s.Status() != "processing" {
 			t.Fatalf("iteration %d rejected enqueue status = %q", i, s.Status())
 		}
 		if _, err := s.EnqueueMessageIfProcessing(QueuedMessage{Text: "too late"}); err == nil {
-			t.Fatalf("iteration %d accepted message after completion", i)
+			t.Fatalf("iteration %d accepted message after sealing", i)
 		}
 	}
 }
@@ -624,7 +624,7 @@ func TestCancellationAndCompletionTransitionAreAtomic(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, dequeued = s.DequeueNextMessageOrComplete()
+			_, dequeued = s.DequeueNextMessageOrSeal()
 		}()
 		close(start)
 		wg.Wait()

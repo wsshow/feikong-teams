@@ -1,28 +1,44 @@
 package commands
 
 import (
+	"context"
+	httpserver "fkteams/internal/adapters/transport/http"
+	"fkteams/internal/app/lifecycle"
+	appschedule "fkteams/internal/app/schedule"
+	appskill "fkteams/internal/app/skill"
 	"fkteams/internal/app/version"
 
 	ucli "github.com/urfave/cli/v3"
 )
 
+// Options 是 CLI 所需的应用装配能力，由组合根显式提供。
+type Options struct {
+	RunServer         func(context.Context, httpserver.Mode, *httpserver.ServeOptions) error
+	ConfigureServices func(*lifecycle.Application) func() *appschedule.Service
+	SkillProviders    *appskill.ProviderRegistry
+}
+
 // Root 创建根命令
-func Root() *ucli.Command {
+func Root(options ...Options) *ucli.Command {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	return &ucli.Command{
 		Name:    "fkteams",
 		Usage:   "多智能体协作 AI 助手",
 		Authors: []any{"FeiKong"},
 		Version: version.Get().String(),
 		Commands: []*ucli.Command{
-			webCommand(),
-			serveCommand(),
+			webCommand(opts),
+			serveCommand(opts),
 			sessionCommand(),
 			updateCommand(),
 			initCommand(),
 			generateCommand(),
-			agentCommand(),
+			agentCommand(opts),
 			toolCommand(),
-			skillCommand(),
+			skillCommand(opts),
 			modelCommand(),
 			loginCommand(),
 			logoutCommand(),
@@ -55,6 +71,6 @@ func Root() *ucli.Command {
 				Usage: "自动批准指定操作类别 (all/command/file/git/dispatch，逗号分隔)",
 			},
 		},
-		Action: chatAction,
+		Action: func(ctx context.Context, cmd *ucli.Command) error { return runChat(ctx, cmd, opts, "") },
 	}
 }

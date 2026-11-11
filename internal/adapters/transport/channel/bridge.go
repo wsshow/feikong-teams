@@ -11,6 +11,7 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
+	"fkteams/internal/app/config"
 	appschedule "fkteams/internal/app/schedule"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -56,12 +57,13 @@ const (
 
 // Bridge 连接通道消息与智能体执行引擎
 type Bridge struct {
-	manager    *Manager
-	mode       string // 运行模式: team, deep, roundtable, agent
-	agentID    string
-	state      *appstate.State
-	historyDir string
-	sessions   *eventlog.SessionHistoryManager
+	executionGate *config.ExecutionGate
+	manager       *Manager
+	mode          string // 运行模式: team, deep, roundtable, agent
+	agentID       string
+	state         *appstate.State
+	historyDir    string
+	sessions      *eventlog.SessionHistoryManager
 
 	runnerMu  sync.Mutex
 	runner    runtimeport.Runner
@@ -89,6 +91,7 @@ type Bridge struct {
 
 // BridgeOptions 描述通道桥接器的显式依赖。
 type BridgeOptions struct {
+	ExecutionGate     *config.ExecutionGate
 	State             *appstate.State
 	HistoryDir        string
 	Sessions          *eventlog.SessionHistoryManager
@@ -120,14 +123,15 @@ func NewBridgeWithOptions(manager *Manager, mode string, options BridgeOptions) 
 		sessions = eventlog.NewSessionHistoryManager()
 	}
 	return &Bridge{
-		manager:    manager,
-		mode:       mode,
-		agentID:    options.AgentID,
-		state:      options.State,
-		historyDir: historyDir,
-		sessions:   sessions,
-		scheduler:  options.SchedulerProvider,
-		queues:     make(map[string]*sessionQueue),
+		executionGate: options.ExecutionGate,
+		manager:       manager,
+		mode:          mode,
+		agentID:       options.AgentID,
+		state:         options.State,
+		historyDir:    historyDir,
+		sessions:      sessions,
+		scheduler:     options.SchedulerProvider,
+		queues:        make(map[string]*sessionQueue),
 	}
 }
 
@@ -411,6 +415,8 @@ func (b *Bridge) sessionWorker(runCtx context.Context, stopCh <-chan struct{}, s
 
 // processBatch 处理一批消息：合并用户输入，通知用户，执行引擎
 func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []queuedMessage) {
+	releaseExecution := b.executionGate.Begin()
+	defer releaseExecution()
 	defer func() {
 		for _, message := range batch {
 			releaseQueuedMessage(message)
@@ -470,41 +476,27 @@ func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []
 		Runner:           r,
 		Input:            turnInput,
 		Summary:          recorder,
+		History:          recorder,
 		NonInteractive:   true,
 		ApprovalRegistry: approval.NewAutoApproveRegistry(),
-		EventSink: func(event events.Event) error {
-			recorder.RecordEvent(event)
-			return rc.handleEvent(event)
-		},
-		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) {
-			if err != nil {
-				log.Printf("[bridge] run error: session=%s, err=%v", sessionID, err)
-				recorder.RecordEvent(events.Event{
-					Type:    events.EventError,
-					Content: err.Error(),
-					Error:   err.Error(),
-				})
-			}
-			recorder.FinalizeCurrent()
+		EventSink:        rc.handleEvent,
+		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
 			rc.flush()
-			status := "completed"
-			if err != nil {
-				status = "error"
-			}
 			store := eventlog.NewChatSessionStore(b.historyDir)
-			lifecycleErr := appchat.NewSessionLifecycle(store, store).Finish(ctx, appchat.FinishRequest{
+			lifecycleErr := appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
 				SessionID:      sessionID,
 				TitleSource:    combinedInput,
 				DefaultTitle:   "通道会话",
-				Status:         status,
+				Status:         appchat.CompletionStatus(err),
+				Error:          err,
 				History:        recorder,
 				Memory:         b.memoryManager(),
 				MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
 			})
-			appchat.LogLifecycleError("channel", sessionID, lifecycleErr)
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")
 			}
+			return lifecycleErr
 		},
 	})
 	if runErr != nil {

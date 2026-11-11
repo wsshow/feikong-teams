@@ -61,8 +61,8 @@ func TestRuntimeShutdownWaitsForOwnedTasks(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Shutdown(): %v", err)
 	}
-	if provider.clears.Load() != 1 {
-		t.Fatalf("MCP cache clears = %d, want 1", provider.clears.Load())
+	if provider.clears.Load() != 0 {
+		t.Fatalf("shared MCP cache clears = %d, want 0", provider.clears.Load())
 	}
 }
 

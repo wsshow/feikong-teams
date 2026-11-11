@@ -2,6 +2,7 @@ package eventlog
 
 import (
 	"context"
+	"fkteams/internal/domain/session"
 	"path/filepath"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func TestMetadataUpdatesAcrossStoresDoNotLoseFields(t *testing.T) {
 	go func() {
 		chatDone <- chatStore.UpdateMetadata(context.Background(), appchat.MetadataUpdate{
 			SessionID:    sessionID,
-			Status:       appchat.SessionStatusCompleted,
+			Status:       session.StatusCompleted,
 			Mode:         &mode,
 			CurrentAgent: &agent,
 		})

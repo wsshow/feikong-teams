@@ -2,18 +2,12 @@ package chat
 
 import (
 	"context"
+	"errors"
+	"fkteams/internal/app/appstate"
+	"fkteams/internal/domain/session"
 
 	"fkteams/internal/domain/event"
 	domainmemory "fkteams/internal/domain/memory"
-	"fkteams/internal/runtime/log"
-)
-
-const (
-	SessionStatusActive     = "active"
-	SessionStatusProcessing = "processing"
-	SessionStatusCompleted  = "completed"
-	SessionStatusCancelled  = "cancelled"
-	SessionStatusError      = "error"
 )
 
 // SessionHistory 描述聊天用例需要编排的历史记录能力。
@@ -21,18 +15,14 @@ type SessionHistory interface {
 	FinalizeCurrent()
 	RecordEvent(event.Event)
 	RecordCancelled(message string)
-}
-
-// HistoryStore 保存指定会话的历史记录。
-type HistoryStore interface {
-	SaveHistory(ctx context.Context, sessionID string, history SessionHistory) error
+	Flush() error
 }
 
 // MetadataUpdate 描述一次会话 metadata 状态变更。
 type MetadataUpdate struct {
 	SessionID          string
 	TitleSource        string
-	Status             string
+	Status             session.Status
 	DefaultTitle       string
 	CreateIfMissing    bool
 	UpdateDefaultTitle bool
@@ -52,15 +42,12 @@ type MetadataStore interface {
 }
 
 // MemoryExtractor 是对话结束后长期记忆提取需要的最小能力。
-type MemoryExtractor interface {
-	ExtractAndStoreAsync(messages []domainmemory.Message, sessionID string) bool
-	FlushExtract(ctx context.Context, messages []domainmemory.Message, sessionID string)
-}
+type MemoryExtractor = appstate.MemoryExtractor
 
 type FinishRequest struct {
 	SessionID       string
 	TitleSource     string
-	Status          string
+	Status          session.Status
 	DefaultTitle    string
 	History         SessionHistory
 	FinalizeHistory bool
@@ -71,19 +58,30 @@ type FinishRequest struct {
 
 // SessionLifecycle 统一编排一次会话运行后的历史、metadata 和记忆收尾。
 type SessionLifecycle struct {
-	history  HistoryStore
 	metadata MetadataStore
 }
 
-func NewSessionLifecycle(history HistoryStore, metadata MetadataStore) *SessionLifecycle {
-	return &SessionLifecycle{history: history, metadata: metadata}
+// CompletionStatus 统一执行结果到会话状态的映射，保证传输状态和持久化状态一致。
+func CompletionStatus(err error) session.Status {
+	if errors.Is(err, context.Canceled) {
+		return session.StatusCancelled
+	}
+	if err != nil {
+		return session.StatusError
+	}
+	return session.StatusCompleted
+}
+
+// NewSessionLifecycle 使用显式元数据存储创建会话收尾用例。
+func NewSessionLifecycle(metadata MetadataStore) *SessionLifecycle {
+	return &SessionLifecycle{metadata: metadata}
 }
 
 func (l *SessionLifecycle) MarkProcessing(ctx context.Context, sessionID, titleSource string) error {
 	return l.updateMetadata(ctx, MetadataUpdate{
 		SessionID:          sessionID,
 		TitleSource:        titleSource,
-		Status:             SessionStatusProcessing,
+		Status:             session.StatusProcessing,
 		DefaultTitle:       "未命名会话",
 		CreateIfMissing:    true,
 		UpdateDefaultTitle: true,
@@ -95,7 +93,7 @@ func (l *SessionLifecycle) MarkProcessingWithTarget(ctx context.Context, session
 	return l.updateMetadata(ctx, MetadataUpdate{
 		SessionID:          sessionID,
 		TitleSource:        titleSource,
-		Status:             SessionStatusProcessing,
+		Status:             session.StatusProcessing,
 		DefaultTitle:       "未命名会话",
 		CreateIfMissing:    true,
 		UpdateDefaultTitle: true,
@@ -105,11 +103,12 @@ func (l *SessionLifecycle) MarkProcessingWithTarget(ctx context.Context, session
 }
 
 func (l *SessionLifecycle) Finish(ctx context.Context, req FinishRequest) error {
+	var persistErr error
 	if req.History != nil {
 		switch req.Status {
-		case SessionStatusCancelled:
+		case session.StatusCancelled:
 			req.History.RecordCancelled("任务已取消")
-		case SessionStatusError:
+		case session.StatusError:
 			if req.Error != nil {
 				req.History.RecordEvent(event.Event{
 					Type:    event.TypeError,
@@ -125,8 +124,9 @@ func (l *SessionLifecycle) Finish(ctx context.Context, req FinishRequest) error 
 				req.History.FinalizeCurrent()
 			}
 		}
-		if err := l.saveHistory(ctx, req.SessionID, req.History); err != nil {
-			return err
+		persistErr = req.History.Flush()
+		if persistErr != nil {
+			req.Status = session.StatusError
 		}
 	}
 	if err := l.updateMetadata(ctx, MetadataUpdate{
@@ -137,33 +137,28 @@ func (l *SessionLifecycle) Finish(ctx context.Context, req FinishRequest) error 
 		CreateIfMissing:    true,
 		UpdateDefaultTitle: true,
 	}); err != nil {
-		return err
+		return errors.Join(persistErr, err)
 	}
-	if req.Status == SessionStatusCompleted {
+	if req.Status == session.StatusCompleted {
 		ExtractMemoryAsync(req.Memory, req.MemoryMessages, req.SessionID)
 	}
-	return nil
+	return persistErr
 }
 
 func (l *SessionLifecycle) SaveActive(ctx context.Context, sessionID, titleSource string, history SessionHistory) error {
-	if err := l.saveHistory(ctx, sessionID, history); err != nil {
-		return err
+	if history != nil {
+		if err := history.Flush(); err != nil {
+			return err
+		}
 	}
 	return l.updateMetadata(ctx, MetadataUpdate{
 		SessionID:          sessionID,
 		TitleSource:        titleSource,
-		Status:             SessionStatusActive,
+		Status:             session.StatusActive,
 		DefaultTitle:       "未命名会话",
 		CreateIfMissing:    true,
 		UpdateDefaultTitle: true,
 	})
-}
-
-func (l *SessionLifecycle) saveHistory(ctx context.Context, sessionID string, history SessionHistory) error {
-	if l == nil || l.history == nil || history == nil {
-		return nil
-	}
-	return l.history.SaveHistory(ctx, sessionID, history)
 }
 
 func (l *SessionLifecycle) updateMetadata(ctx context.Context, update MetadataUpdate) error {
@@ -192,10 +187,4 @@ func FlushMemory(ctx context.Context, manager MemoryExtractor, messages []domain
 		ctx = context.Background()
 	}
 	manager.FlushExtract(ctx, messages, sessionID)
-}
-
-func LogLifecycleError(scope, sessionID string, err error) {
-	if err != nil {
-		log.Printf("[%s] session lifecycle failed: session=%s, err=%v", scope, sessionID, err)
-	}
 }

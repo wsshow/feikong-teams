@@ -6,7 +6,7 @@ import (
 )
 
 // InterruptHandler 中断处理回调，接收中断上下文列表，返回审批目标映射
-type InterruptHandler func(ctx context.Context, interrupts []runtimeport.Interrupt) (targets runtimeport.InterruptDecisions, err error)
+type InterruptHandler = runtimeport.InterruptHandler
 
 type InterruptInfoHandler func(info any) (decision any, ok bool)
 

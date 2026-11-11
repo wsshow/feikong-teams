@@ -20,6 +20,7 @@ import (
 
 // SetupOptions 描述通道服务的显式依赖。
 type SetupOptions struct {
+	ExecutionGate     *config.ExecutionGate
 	State             *appstate.State
 	SchedulerProvider func() *appschedule.Service
 	FactoryRegistry   *FactoryRegistry
@@ -42,6 +43,7 @@ func SetupWithOptions(entries []config.ChannelEntry, options SetupOptions) (*Ser
 	bridges := make(map[string]*Bridge)
 	for _, entry := range entries {
 		bridge := NewBridgeWithOptions(mgr, entry.Mode, BridgeOptions{
+			ExecutionGate:     options.ExecutionGate,
 			State:             options.State,
 			HistoryDir:        historyDir,
 			Sessions:          sessions,
