@@ -214,11 +214,12 @@ export function Sidebar() {
       ) : null}
       <aside
         className={cn(
-          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col border-r bg-sidebar/95 text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
+          "sketch-rule fixed inset-y-0 left-0 z-40 h-[100dvh] shrink-0 scroll-pt-10 overflow-y-auto overflow-x-hidden overscroll-contain border-r bg-sidebar/95 text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
           sidebarOpen
             ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-[12px_0_32px_hsl(218_30%_20%/0.16)] md:w-[292px] md:shadow-none"
             : "w-[min(292px,calc(100vw-3rem))] -translate-x-full md:w-16 md:translate-x-0",
         )}
+        onScroll={closeSessionMenu}
       >
       <div
         className={cn(
@@ -251,13 +252,15 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <nav className="space-y-0.5 px-2 pb-3">
+      <div className="sticky top-0 z-10 bg-sidebar px-2 pb-0.5">
         <SidebarNavItem
           icon={Plus}
           label="新建会话"
           open={sidebarOpen}
           onClick={handleNewSession}
         />
+      </div>
+      <nav className="space-y-0.5 px-2 pb-3">
         {panels.map((panel) => (
           <SidebarNavItem
             key={panel.key}
@@ -275,7 +278,7 @@ export function Sidebar() {
           <div className="px-3 pb-1">
             <div className="text-xs text-muted-foreground">最近会话</div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto px-2 pb-2" onScroll={closeSessionMenu}>
+          <div className="px-2 pb-2">
             {sortedSessions.length === 0 ? (
               <div className="px-2 py-8 text-base text-muted-foreground">暂无会话</div>
             ) : (
