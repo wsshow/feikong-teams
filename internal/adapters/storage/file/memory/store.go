@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	domainmemory "fkteams/internal/domain/memory"
 	"fkteams/internal/runtime/atomicfile"
-	"fkteams/internal/runtime/log"
 )
 
 const (
@@ -22,27 +22,27 @@ const (
 
 // memoryTypeFile 记忆类型到文件名和标题的映射
 var memoryTypeFile = []struct {
-	Type  MemoryType
+	Type  domainmemory.MemoryType
 	File  string
 	Title string
 }{
-	{Preference, "preference.md", "用户偏好"},
-	{Fact, "fact.md", "个人信息"},
-	{Feedback, "feedback.md", "行为反馈"},
-	{Lesson, "lesson.md", "避坑记录"},
-	{Decision, "decision.md", "已确定方案"},
-	{Insight, "insight.md", "认知洞察"},
-	{Experience, "experience.md", "操作经验"},
+	{domainmemory.Preference, "preference.md", "用户偏好"},
+	{domainmemory.Fact, "fact.md", "个人信息"},
+	{domainmemory.Feedback, "feedback.md", "行为反馈"},
+	{domainmemory.Lesson, "lesson.md", "避坑记录"},
+	{domainmemory.Decision, "decision.md", "已确定方案"},
+	{domainmemory.Insight, "insight.md", "认知洞察"},
+	{domainmemory.Experience, "experience.md", "操作经验"},
 }
 
 // saveAllMarkdown 按类型保存到多个 Markdown 文件
-func saveAllMarkdown(dir string, entries []MemoryEntry) error {
+func saveAllMarkdown(dir string, entries []domainmemory.MemoryEntry) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// 按类型分组
-	grouped := make(map[MemoryType][]MemoryEntry)
+	grouped := make(map[domainmemory.MemoryType][]domainmemory.MemoryEntry)
 	for _, e := range entries {
 		grouped[e.Type] = append(grouped[e.Type], e)
 	}
@@ -68,7 +68,7 @@ func saveAllMarkdown(dir string, entries []MemoryEntry) error {
 }
 
 // writeMarkdownFile 写入单个类型的 Markdown 文件
-func writeMarkdownFile(path, title string, entries []MemoryEntry) error {
+func writeMarkdownFile(path, title string, entries []domainmemory.MemoryEntry) error {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", title)
 
@@ -98,11 +98,11 @@ func writeMarkdownFile(path, title string, entries []MemoryEntry) error {
 }
 
 // loadAllMarkdown 从目录加载所有类型的 Markdown 文件
-func loadAllMarkdown(dir string, maxEntries int) []MemoryEntry {
+func loadAllMarkdown(dir string, maxEntries int) ([]domainmemory.MemoryEntry, error) {
 	if maxEntries <= 0 {
-		return nil
+		return nil, nil
 	}
-	var all []MemoryEntry
+	var all []domainmemory.MemoryEntry
 	for _, tf := range memoryTypeFile {
 		remaining := maxEntries - len(all)
 		if remaining <= 0 {
@@ -112,17 +112,17 @@ func loadAllMarkdown(dir string, maxEntries int) []MemoryEntry {
 		entries, err := loadMarkdownFile(path, tf.Type, remaining)
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
-				log.Warnf("[memory] warn: load %s failed: %v", tf.File, err)
+				return nil, fmt.Errorf("load %s: %w", tf.File, err)
 			}
 			continue
 		}
 		all = append(all, entries...)
 	}
-	return all
+	return all, nil
 }
 
 // loadMarkdownFile 从单个 Markdown 文件加载记忆条目
-func loadMarkdownFile(path string, memType MemoryType, maxEntries int) ([]MemoryEntry, error) {
+func loadMarkdownFile(path string, memType domainmemory.MemoryType, maxEntries int) ([]domainmemory.MemoryEntry, error) {
 	if maxEntries <= 0 {
 		return nil, nil
 	}
@@ -139,8 +139,8 @@ func loadMarkdownFile(path string, memType MemoryType, maxEntries int) ([]Memory
 		return nil, fmt.Errorf("memory file exceeds %d bytes", maxMemoryMarkdownBytes)
 	}
 
-	var entries []MemoryEntry
-	var current *MemoryEntry
+	var entries []domainmemory.MemoryEntry
+	var current *domainmemory.MemoryEntry
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64<<10), maxMemoryLineBytes)
 
@@ -155,7 +155,7 @@ func loadMarkdownFile(path string, memType MemoryType, maxEntries int) ([]Memory
 					break
 				}
 			}
-			current = &MemoryEntry{
+			current = &domainmemory.MemoryEntry{
 				Summary: strings.TrimSpace(strings.TrimPrefix(line, "## ")),
 				Type:    memType,
 			}
@@ -208,12 +208,12 @@ func loadMarkdownFile(path string, memType MemoryType, maxEntries int) ([]Memory
 }
 
 // writeIndexFile 生成 MEMORY.md 入口索引，人类可读
-func writeIndexFile(dir string, entries []MemoryEntry) error {
+func writeIndexFile(dir string, entries []domainmemory.MemoryEntry) error {
 	if len(entries) == 0 {
 		return removeMemoryFile(filepath.Join(dir, "MEMORY.md"))
 	}
 
-	grouped := make(map[MemoryType][]MemoryEntry)
+	grouped := make(map[domainmemory.MemoryType][]domainmemory.MemoryEntry)
 	for _, e := range entries {
 		grouped[e.Type] = append(grouped[e.Type], e)
 	}
@@ -242,4 +242,20 @@ func removeMemoryFile(path string) error {
 		return err
 	}
 	return nil
+}
+
+// Store 使用 Markdown 文件保存长期记忆。
+type Store struct{ dir string }
+
+// NewStore 创建文件存储；实际访问错误由 Load 和 Save 返回。
+func NewStore(dir string) *Store { return &Store{dir: dir} }
+
+// Load 读取至多 limit 条记忆。
+func (s *Store) Load(limit int) ([]domainmemory.MemoryEntry, error) {
+	return loadAllMarkdown(s.dir, limit)
+}
+
+// Save 保存完整记忆快照。
+func (s *Store) Save(entries []domainmemory.MemoryEntry) error {
+	return saveAllMarkdown(s.dir, entries)
 }

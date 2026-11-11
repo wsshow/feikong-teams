@@ -2,8 +2,9 @@ package memory
 
 import (
 	"context"
+	memoryport "fkteams/internal/ports/memory"
 	"fkteams/internal/runtime/log"
-	"path/filepath"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -27,11 +28,11 @@ const (
 
 // Manager 记忆管理器
 type Manager struct {
-	mu       sync.RWMutex
-	storeDir string
-	entries  []MemoryEntry
-	bm25     *BM25
-	llm      LLMClient
+	mu      sync.RWMutex
+	store   memoryport.Store
+	entries []MemoryEntry
+	bm25    *BM25
+	llm     LLMClient
 
 	maxEntries   int
 	minScore     float64
@@ -44,6 +45,7 @@ type Manager struct {
 	paused           bool
 	stopOnce         sync.Once
 	stopDone         chan struct{}
+	stopErr          error
 	extractionSlots  chan struct{}
 	extracting       map[string]struct{}
 	extractedOffsets map[string]int
@@ -60,7 +62,10 @@ type Config struct {
 }
 
 // NewManager 创建记忆管理器
-func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager {
+func NewManager(store memoryport.Store, llmClient LLMClient, cfg *Config) (*Manager, error) {
+	if store == nil {
+		return nil, fmt.Errorf("memory store is required")
+	}
 	maxEntries := defaultMaxEntries
 	minScore := defaultMinScore
 	evictionDays := defaultEvictionDays
@@ -76,7 +81,7 @@ func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager 
 		}
 	}
 	m := &Manager{
-		storeDir:         filepath.Join(workspaceDir, "memory"),
+		store:            store,
 		bm25:             &BM25{},
 		llm:              llmClient,
 		maxEntries:       maxEntries,
@@ -89,9 +94,13 @@ func NewManager(workspaceDir string, llmClient LLMClient, cfg *Config) *Manager 
 		extracting:       make(map[string]struct{}),
 		stopDone:         make(chan struct{}),
 	}
-	m.load()
+	entries, err := store.Load(maxEntries)
+	if err != nil {
+		return nil, fmt.Errorf("load memory: %w", err)
+	}
+	m.entries = entries
 	m.rebuildIndex()
-	return m
+	return m, nil
 }
 
 // ExtractAndStore 提取记忆并存储
@@ -155,8 +164,8 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 		if err := m.save(); err != nil {
 			log.Warnf("[memory] warn: save failed: %v", err)
 		} else {
-			log.Infof("[memory] saved to %s (added: %d, updated: %d, total: %d)",
-				m.storeDir, added, updated, len(m.entries))
+			log.Infof("[memory] saved (added: %d, updated: %d, total: %d)",
+				added, updated, len(m.entries))
 		}
 	}
 }
@@ -215,17 +224,14 @@ func (m *Manager) Wait(ctx context.Context) error {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if m.dirty {
-				if err := m.save(); err != nil {
-					log.Warnf("[memory] warn: final save failed: %v", err)
-				}
-				m.dirty = false
+				m.stopErr = m.save()
 			}
 			close(m.stopDone)
 		}()
 	})
 	select {
 	case <-m.stopDone:
-		return nil
+		return m.stopErr
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -625,12 +631,12 @@ func (m *Manager) rebuildIndex() {
 	m.bm25.Build(m.entries)
 }
 
-func (m *Manager) load() {
-	m.entries = loadAllMarkdown(m.storeDir, m.maxEntries)
-}
-
-// save 保存到 Markdown 文件
+// save 仅在写入成功后清除脏标记，失败时允许下一次同步重试。
 func (m *Manager) save() error {
+	m.dirty = true
+	if err := m.store.Save(m.entries); err != nil {
+		return err
+	}
 	m.dirty = false
-	return saveAllMarkdown(m.storeDir, m.entries)
+	return nil
 }

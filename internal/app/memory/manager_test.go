@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,9 +11,9 @@ import (
 )
 
 func TestManagerFlushExtractPersistsAndLoadsMarkdown(t *testing.T) {
-	workspace := t.TempDir()
+	store := &memoryStoreFake{}
 	llm := &fakeLLMClient{response: `[{"type":"preference","summary":"偏好中文","detail":"回复使用中文且简洁","tags":["中文","简洁"]}]`}
-	manager := NewManager(workspace, llm, nil)
+	manager := newTestManager(t, store, llm, nil)
 
 	manager.FlushExtract(context.Background(), longConversationMessages(), "session-1")
 
@@ -25,14 +23,8 @@ func TestManagerFlushExtractPersistsAndLoadsMarkdown(t *testing.T) {
 	if llm.calls != 1 {
 		t.Fatalf("llm calls = %d, want 1", llm.calls)
 	}
-	if _, err := os.Stat(filepath.Join(workspace, "memory", "preference.md")); err != nil {
-		t.Fatalf("preference.md should exist: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(workspace, "memory", "MEMORY.md")); err != nil {
-		t.Fatalf("MEMORY.md should exist: %v", err)
-	}
 
-	reloaded := NewManager(workspace, nil, nil)
+	reloaded := newTestManager(t, store, nil, nil)
 	entries := reloaded.List()
 	if len(entries) != 1 || entries[0].Summary != "偏好中文" || entries[0].Type != Preference {
 		t.Fatalf("reloaded entries = %#v", entries)
@@ -41,7 +33,7 @@ func TestManagerFlushExtractPersistsAndLoadsMarkdown(t *testing.T) {
 
 func TestManagerFlushExtractSkipsShortContent(t *testing.T) {
 	llm := &fakeLLMClient{response: `[]`}
-	manager := NewManager(t.TempDir(), llm, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, llm, nil)
 
 	manager.FlushExtract(context.Background(), []Message{{Role: "user", Content: "短内容"}}, "session-1")
 
@@ -54,7 +46,7 @@ func TestManagerFlushExtractSkipsShortContent(t *testing.T) {
 }
 
 func TestManagerListDeleteAndClear(t *testing.T) {
-	manager := NewManager(t.TempDir(), nil, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, nil, nil)
 	manager.entries = []MemoryEntry{
 		{ID: "1", Type: Preference, Summary: "偏好中文", Detail: "中文回复", CreatedAt: time.Now()},
 		{ID: "2", Type: Fact, Summary: "Go 工程师", Detail: "熟悉 Go", CreatedAt: time.Now()},
@@ -81,13 +73,14 @@ func TestManagerListDeleteAndClear(t *testing.T) {
 	if manager.Count() != 0 {
 		t.Fatalf("count after clear = %d, want 0", manager.Count())
 	}
-	if _, err := os.Stat(filepath.Join(manager.storeDir, "MEMORY.md")); !os.IsNotExist(err) {
-		t.Fatalf("MEMORY.md should be removed after clear, err=%v", err)
+	if saved := manager.store.(*memoryStoreFake).entries; len(saved) != 0 {
+		t.Fatalf("saved after clear = %+v", saved)
 	}
+
 }
 
 func TestManagerShouldExtract(t *testing.T) {
-	manager := NewManager(t.TempDir(), nil, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, nil, nil)
 	longMessages := []Message{
 		{Role: "user", Content: strings.Repeat("用户偏好", 80)},
 		{Role: "assistant", Content: "收到"},
@@ -113,7 +106,7 @@ func TestManagerWaitTracksAsyncWorkAndRejectsNewTasks(t *testing.T) {
 		started: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	manager := NewManager(t.TempDir(), llm, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, llm, nil)
 	messages := []Message{
 		{Role: "user", Content: strings.Repeat("用户偏好", 80)},
 		{Role: "assistant", Content: "收到"},
@@ -147,7 +140,7 @@ func TestManagerWaitTracksAsyncWorkAndRejectsNewTasks(t *testing.T) {
 }
 
 func TestManagerWaitTracksHitStatsUpdate(t *testing.T) {
-	manager := NewManager(t.TempDir(), nil, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, nil, nil)
 	manager.entries = []MemoryEntry{{
 		ID: "1", Type: Preference, Summary: "偏好中文", Detail: "使用中文回复",
 	}}
@@ -169,7 +162,7 @@ func TestManagerWaitHonorsContextDeadline(t *testing.T) {
 		started: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	manager := NewManager(t.TempDir(), llm, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, llm, nil)
 	messages := []Message{
 		{Role: "user", Content: strings.Repeat("用户偏好", 80)},
 		{Role: "assistant", Content: "收到"},
@@ -196,7 +189,7 @@ func TestManagerRejectsDuplicateSessionExtraction(t *testing.T) {
 		started: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	manager := NewManager(t.TempDir(), llm, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, llm, nil)
 	messages := asyncExtractionMessages()
 	if !manager.ExtractAndStoreAsync(messages, "session-1") {
 		t.Fatal("first extraction should be accepted")
@@ -219,7 +212,7 @@ func TestManagerLimitsConcurrentExtractions(t *testing.T) {
 		started: make(chan struct{}, maxConcurrentExtractions),
 		release: make(chan struct{}),
 	}
-	manager := NewManager(t.TempDir(), llm, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, llm, nil)
 	messages := asyncExtractionMessages()
 	for i := 0; i < maxConcurrentExtractions; i++ {
 		if !manager.ExtractAndStoreAsync(messages, fmt.Sprintf("session-%d", i)) {
@@ -246,7 +239,7 @@ func TestManagerLimitsConcurrentExtractions(t *testing.T) {
 }
 
 func TestManagerBoundsTrackedSessionProgress(t *testing.T) {
-	manager := NewManager(t.TempDir(), nil, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, nil, nil)
 	manager.mu.Lock()
 	for i := 0; i <= maxTrackedSessions; i++ {
 		manager.setSessionProgressLocked(fmt.Sprintf("session-%d", i), i, time.Now())
@@ -263,7 +256,7 @@ func TestManagerBoundsTrackedSessionProgress(t *testing.T) {
 }
 
 func TestManagerDuplicateDetection(t *testing.T) {
-	manager := NewManager(t.TempDir(), nil, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, nil, nil)
 	manager.entries = []MemoryEntry{{
 		Type:    Preference,
 		Summary: "偏好简洁回复",
@@ -332,5 +325,44 @@ func (c *blockingLLMClient) Complete(ctx context.Context, _ string) (string, err
 		return `[]`, nil
 	case <-ctx.Done():
 		return "", ctx.Err()
+	}
+}
+
+type memoryStoreFake struct {
+	entries          []MemoryEntry
+	loadErr, saveErr error
+}
+
+func (s *memoryStoreFake) Load(int) ([]MemoryEntry, error) {
+	return append([]MemoryEntry(nil), s.entries...), s.loadErr
+}
+func (s *memoryStoreFake) Save(entries []MemoryEntry) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.entries = append([]MemoryEntry(nil), entries...)
+	return nil
+}
+func newTestManager(t *testing.T, store *memoryStoreFake, llm LLMClient, cfg *Config) *Manager {
+	t.Helper()
+	manager, err := NewManager(store, llm, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manager
+}
+func TestManagerDoesNotHideStorageFailures(t *testing.T) {
+	failure := errors.New("disk unavailable")
+	if _, err := NewManager(&memoryStoreFake{loadErr: failure}, nil, nil); !errors.Is(err, failure) {
+		t.Fatalf("load = %v", err)
+	}
+	store := &memoryStoreFake{saveErr: failure}
+	manager := newTestManager(t, store, nil, nil)
+	if err := manager.save(); !errors.Is(err, failure) || !manager.dirty {
+		t.Fatalf("save = %v, dirty = %v", err, manager.dirty)
+	}
+	store.saveErr = nil
+	if err := manager.save(); err != nil || manager.dirty {
+		t.Fatalf("retry = %v, dirty = %v", err, manager.dirty)
 	}
 }

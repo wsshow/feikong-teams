@@ -3,11 +3,13 @@ package services
 import (
 	"context"
 	memorymodel "fkteams/internal/adapters/model/memory"
+	memorystore "fkteams/internal/adapters/storage/file/memory"
 	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/memory"
 	"fkteams/internal/runtime/log"
 	"fmt"
+	"path/filepath"
 )
 
 // MemoryService 长期记忆服务，封装 memory.Manager 的生命周期管理。
@@ -39,7 +41,11 @@ func (s *MemoryService) Start(ctx context.Context) error {
 		log.Printf("[memory] 适配模型失败，记忆服务未启动: %v", err)
 		return nil
 	}
-	s.state.SetMemory(memory.NewManager(s.workspaceDir, llmClient, nil))
+	manager, err := memory.NewManager(memorystore.NewStore(filepath.Join(s.workspaceDir, "memory")), llmClient, nil)
+	if err != nil {
+		return err
+	}
+	s.state.SetMemory(manager)
 	return nil
 }
 
