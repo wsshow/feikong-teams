@@ -222,12 +222,20 @@ func displayAgent(agentName string) string {
 }
 
 func truncateMarkdownLine(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) <= limit {
 		return s
 	}
-	if limit <= 3 {
-		return s[:limit]
+	marker := ""
+	if limit > 3 {
+		marker = "..."
 	}
-	return s[:limit-3] + "..."
+	cut := limit - len(marker)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + marker
 }

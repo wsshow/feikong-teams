@@ -98,3 +98,14 @@ func TestMarkdownCollectorDeduplicatesToolRepresentations(t *testing.T) {
 		t.Fatalf("tool entries = %d", got)
 	}
 }
+
+func TestTruncateMarkdownLinePreservesUTF8AndByteLimit(t *testing.T) {
+	for _, value := range []string{"中文摘要 中文参数", "a中b文", "plain ascii"} {
+		for limit := -1; limit <= len(value)+1; limit++ {
+			got := truncateMarkdownLine(value, limit)
+			if !utf8.ValidString(got) || len(got) > max(limit, 0) {
+				t.Fatalf("truncate(%q, %d) = %q", value, limit, got)
+			}
+		}
+	}
+}
