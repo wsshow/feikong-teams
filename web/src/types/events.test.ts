@@ -36,6 +36,7 @@ describe("event protocol boundary", () => {
       { ...tool, content_parts: [{ type: "image_url", url: 42 }] },
       { ...tool, content_parts: [{ type: "file_url", file_id: 42 }] },
       { ...tool, content_parts: [{ type: "file_url", file_id: "" }] },
+      { ...tool, content_parts: [{ type: "file_url", file_id: "files/report", extra: [] }] },
       { ...tool, content_parts: [{ type: "future_part" }] },
       { type: "queue_updated", queue: [{ queue_id: "q", kind: "unknown" }] },
       { type: "queue_updated", queue: [{ queue_id: "q", kind: "steering", parts: [false] }] },
@@ -58,7 +59,10 @@ describe("event protocol boundary", () => {
     for (const event of tools) expect(event.tool_call?.extra).toEqual({ provider: "metadata" });
     const attachments = decoded.flatMap((event) => event.content_parts || []).filter((part) => part.file_id);
     expect(attachments.length).toBe(2);
-    for (const part of attachments) expect(part.file_id).toBe("files/report");
+    for (const part of attachments) {
+      expect(part.file_id).toBe("files/report");
+      expect(part.extra).toEqual({ provider: "part-metadata" });
+    }
     const usage = decoded.filter((event) => event.usage?.cache_write_tokens !== undefined);
     expect(usage.length).toBe(4);
     expect(usage.map((event) => event.usage?.cache_write_tokens)).toEqual([1, 1, 2, 2]);

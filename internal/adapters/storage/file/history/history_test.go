@@ -484,10 +484,10 @@ func TestHistoryRecorderUsesPositionToolRefsWhenToolCallIndexMissing(t *testing.
 	if len(messages) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages))
 	}
-	if len(messages[0].Events) != 1 || messages[0].Events[0].ToolCall == nil {
-		t.Fatalf("events = %#v, want one tool call", messages[0].Events)
+	if len(messages[0].Events) != 2 || messages[0].Events[0].Message == nil || messages[0].Events[1].ToolCall == nil {
+		t.Fatalf("events = %#v, want a source message and one tool call", messages[0].Events)
 	}
-	toolCall := messages[0].Events[0].ToolCall
+	toolCall := messages[0].Events[1].ToolCall
 	if toolCall.Ref != "tool_call:call_1" {
 		t.Fatalf("tool ref = %q, want tool_call:call_1", toolCall.Ref)
 	}
@@ -746,8 +746,8 @@ func TestTranscriptRecorderExternalizesLongToolResults(t *testing.T) {
 	if end.Result != "" || end.ResultRef == "" || !end.Truncated {
 		t.Fatalf("tool record = %#v, want externalized result", end)
 	}
-	if end.CallID != "call_1" || end.Name != "" || end.Args != "" {
-		t.Fatalf("tool end = %#v, want only call id and result fields", end)
+	if end.CallID != "call_1" || end.Message == nil || end.Message.ToolName != "fetch" || end.Args != "" {
+		t.Fatalf("tool end = %#v, want a tool message and external result reference", end)
 	}
 	if _, err := os.Stat(filepath.Join(dir, end.ResultRef)); err != nil {
 		t.Fatalf("result artifact missing: %v", err)

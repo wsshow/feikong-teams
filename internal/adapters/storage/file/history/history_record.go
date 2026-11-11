@@ -275,16 +275,10 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 
 	switch event.Type {
 	case events.EventUserMessage:
-		content := event.Content
-		parts := []message.ContentPart(nil)
-		if event.Message != nil {
-			content = event.Message.DisplayText()
-			parts = append(parts, event.Message.ContentParts...)
-		}
+		msg := messageFromEvent(event, message.RoleUser)
 		base.Type = TranscriptUserMessage
 		base.Agent = ""
-		base.Content = content
-		base.ContentParts = parts
+		base.Message = &msg
 		h.appendTranscriptEvent(base, target)
 	case events.EventAssistantReasoning, events.EventAssistantText:
 		h.bufferAssistantMessage(event)
@@ -295,25 +289,16 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		}
 		ctx := h.ensureMessageContext(event)
 		delete(ctx.pendingAssistant, assistantMessageKey{event.RunID, event.MessageID})
-		content := event.Content
-		reasoning := event.ReasoningContent
-		parts := []message.ContentPart(nil)
-		if event.Message != nil {
-			content = event.Message.DisplayText()
-			reasoning = event.Message.ReasoningContent
-			parts = append(parts, event.Message.ContentParts...)
-		}
+		msg := messageFromEvent(event, message.RoleAssistant)
 		base.Usage = usageRecordFromEvent(event)
-		if content == "" && reasoning == "" && len(parts) == 0 && base.Usage == nil {
+		if msg.Content == "" && msg.ReasoningContent == "" && len(msg.ContentParts) == 0 && len(msg.ToolCalls) == 0 && len(msg.Extra) == 0 && base.Usage == nil {
 			return
 		}
 		base.Type = TranscriptAssistantMessage
-		if content == "" {
+		if msg.DisplayText() == "" {
 			base.Type = TranscriptAgentStep
 		}
-		base.Content = content
-		base.Reasoning = reasoning
-		base.ContentParts = parts
+		base.Message = &msg
 		h.appendTranscriptEvent(base, target)
 	case EventToolCallStarted:
 		toolCalls := events.ToolCallsFromEvent(event)
@@ -351,7 +336,7 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		line := base
 		line.Type = TranscriptToolCallEnd
 		line.CallID = event.ToolCallID
-		line.Result = resultPayload.Result
+		line.Message = &message.Message{Role: message.RoleTool, ToolCallID: event.ToolCallID, ToolName: toolName, Content: resultPayload.Result}
 		line.ResultRef = resultPayload.ResultRef
 		line.Summary = resultPayload.Summary
 		line.Truncated = resultPayload.Truncated
@@ -399,6 +384,42 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 	}
 }
 
+func messageFromEvent(event Event, role message.Role) message.Message {
+	if event.Message != nil {
+		msg := event.Message.Clone()
+		if msg.Role == "" {
+			msg.Role = role
+		}
+		return msg
+	}
+	return message.Message{
+		Role: role, Content: event.Content, ReasoningContent: event.ReasoningContent,
+		ToolCalls: events.ToolCallsFromEvent(event),
+	}.Clone()
+}
+
+func assistantMessageEvents(envelope MessageEvent, msg message.Message, usage *UsageRecord) []MessageEvent {
+	var result []MessageEvent
+	if msg.ReasoningContent != "" {
+		evt := envelope
+		evt.Type, evt.Content = MsgTypeReasoning, msg.ReasoningContent
+		result = append(result, evt)
+	}
+	if msg.DisplayText() != "" || len(msg.ContentParts) > 0 || len(msg.ToolCalls) > 0 || len(msg.Extra) > 0 {
+		evt := envelope
+		evt.Type, evt.Content, evt.ContentParts, evt.Message = MsgTypeText, msg.DisplayText(), msg.ContentParts, &msg
+		result = append(result, evt)
+	} else if len(result) > 0 {
+		result[0].Message = &msg
+	}
+	if usage != nil {
+		evt := envelope
+		evt.Type, evt.Usage = MsgTypeUsageReported, usage
+		result = append(result, evt)
+	}
+	return result
+}
+
 // bufferAssistantMessage 保留未收到完整消息的增量，供取消或失败时定稿。
 func (h *HistoryRecorder) bufferAssistantMessage(event Event) {
 	if event.Content == "" || event.Role == message.RoleTool || event.Role == message.RoleUser {
@@ -429,6 +450,10 @@ func (h *HistoryRecorder) bufferAssistantMessage(event Event) {
 func (h *HistoryRecorder) flushAssistantMessages(ctx *activeMessageContext) {
 	for _, key := range ctx.assistantOrder {
 		if pending, ok := ctx.pendingAssistant[key]; ok {
+			if pending.firstEvent >= 0 && pending.firstEvent < len(ctx.msg.Events) {
+				msg := messageFromEvent(pending.event, message.RoleAssistant)
+				ctx.msg.Events[pending.firstEvent].Message = &msg
+			}
 			h.recordTranscript(pending.event)
 		}
 	}
@@ -444,29 +469,7 @@ func (h *HistoryRecorder) completeAssistantMessage(event Event) {
 	if exists {
 		start = pending.firstEvent
 	}
-	content, reasoning := event.Content, event.ReasoningContent
-	var parts []message.ContentPart
-	if event.Message != nil {
-		content = event.Message.DisplayText()
-		reasoning = event.Message.ReasoningContent
-		parts = append(parts, event.Message.ContentParts...)
-	}
-	replacement := make([]MessageEvent, 0, 3)
-	if reasoning != "" {
-		evt := historyEventEnvelope(event, MsgTypeReasoning)
-		evt.Content = reasoning
-		replacement = append(replacement, evt)
-	}
-	if content != "" || len(parts) > 0 {
-		evt := historyEventEnvelope(event, MsgTypeText)
-		evt.Content, evt.ContentParts = content, parts
-		replacement = append(replacement, evt)
-	}
-	if usage := usageRecordFromEvent(event); usage != nil {
-		evt := historyEventEnvelope(event, MsgTypeUsageReported)
-		evt.Usage = usage
-		replacement = append(replacement, evt)
-	}
+	replacement := assistantMessageEvents(historyEventEnvelope(event, ""), messageFromEvent(event, message.RoleAssistant), usageRecordFromEvent(event))
 	updated := append([]MessageEvent(nil), ctx.msg.Events[:start]...)
 	updated = append(updated, replacement...)
 	positions := make([]int, len(ctx.msg.Events)+1)
@@ -569,13 +572,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	switch event.Type {
 	case events.EventUserMessage:
-		msg := message.Message{Role: message.RoleUser, Content: event.Content}
-		if event.Message != nil {
-			msg = *event.Message
-			if msg.Role == "" {
-				msg.Role = message.RoleUser
-			}
-		}
+		msg := messageFromEvent(event, message.RoleUser)
 		if msg.Role != message.RoleUser || msg.IsEmpty() {
 			return
 		}
@@ -583,6 +580,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		evt := historyEventEnvelope(event, MsgTypeText)
 		evt.Content = msg.DisplayText()
 		evt.ContentParts = append([]message.ContentPart(nil), msg.ContentParts...)
+		evt.Message = &msg
 		createdAt := event.CreatedAt
 		h.messages = append(h.messages, AgentMessage{
 			AgentName: "user",

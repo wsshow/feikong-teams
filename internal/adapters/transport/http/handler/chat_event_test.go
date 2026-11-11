@@ -163,6 +163,22 @@ func TestConvertContentPartsPreservesProviderFileReferences(t *testing.T) {
 	}
 }
 
+func TestTranscriptProjectionReadsCanonicalToolCallGroups(t *testing.T) {
+	rt := &Runtime{RuntimeOptions: RuntimeOptions{Dependencies: execution.Dependencies{ToolDisplays: toolmeta.NewRegistry()}}}
+	source := &message.Message{Role: message.RoleAssistant, Content: "calling", ToolCalls: []message.ToolCall{
+		{ID: "first", Function: message.FunctionCall{Name: "lookup", Arguments: `{"key":"a"}`}},
+		{ID: "second", Function: message.FunctionCall{Name: "lookup", Arguments: `{"key":"b"}`}},
+	}}
+	got := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{{ID: "source", Type: eventlog.TranscriptAssistantMessage, Message: source, Content: "stale display text"}})
+	if len(got) != 1 || got[0]["content"] != "calling" {
+		t.Fatalf("canonical message projection = %#v", got)
+	}
+	calls, ok := got[0]["tool_calls"].([]map[string]any)
+	if !ok || len(calls) != 2 || calls[0]["ref"] != "tool_call:first" || calls[1]["ref"] != "tool_call:second" {
+		t.Fatalf("canonical tool group was split or lost its references: %#v", got)
+	}
+}
+
 func TestConvertEventToMapMergesTopLevelToolRefIntoSingleToolCall(t *testing.T) {
 	toolIndex := 0
 	got := convertEventToMap(events.Event{
@@ -393,7 +409,7 @@ func TestFrontendEventContractFixture(t *testing.T) {
 		e := events.Event{Type: typ, EventID: fmt.Sprintf("event-%d", i+1), Sequence: int64(i + 1), CreatedAt: at, RunID: "run", TurnID: "turn", AgentName: "assistant"}
 		switch typ {
 		case domainevent.TypeUserMessage:
-			e.Message = &message.Message{Role: message.RoleUser, ContentParts: []message.ContentPart{{Type: message.ContentPartImageURL, URL: "/image.png"}, {Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf"}}}
+			e.Message = &message.Message{Role: message.RoleUser, ContentParts: []message.ContentPart{{Type: message.ContentPartImageURL, URL: "/image.png"}, {Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf", Extra: map[string]any{"provider": "part-metadata"}}}}
 		case domainevent.TypeAssistantStarted, domainevent.TypeAssistantCompleted, domainevent.TypeAssistantText, domainevent.TypeAssistantReasoning:
 			e.MessageID = "message"
 			e.Role = message.RoleAssistant
@@ -440,8 +456,8 @@ func TestFrontendEventContractFixture(t *testing.T) {
 	}
 	rt := &Runtime{RuntimeOptions: RuntimeOptions{Dependencies: execution.Dependencies{ToolDisplays: toolmeta.NewRegistry()}}}
 	history := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{
-		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Content: "question", ContentParts: []message.ContentPart{{Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf"}}},
-		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Content: "answer", Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5, CachedTokens: 1, CacheWriteTokens: 2}},
+		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Message: &message.Message{Role: message.RoleUser, Content: "question", ContentParts: []message.ContentPart{{Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf", Extra: map[string]any{"provider": "part-metadata"}}}}},
+		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Message: &message.Message{Role: message.RoleAssistant, Content: "answer"}, Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5, CachedTokens: 1, CacheWriteTokens: 2}},
 		{ID: "history-tool", At: at, Type: eventlog.TranscriptToolCallEnd, CallID: "call", Name: "read_file", Content: "result", Extra: map[string]any{"provider": "metadata"}},
 		{ID: "history-cancel", At: at, Type: eventlog.TranscriptCancelled, Content: "cancelled"},
 	})

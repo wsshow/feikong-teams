@@ -75,7 +75,7 @@ func TestAdaptMediaReferencesRoundTrip(t *testing.T) {
 		} {
 			for _, source := range []string{"url", "base64", "file_id"} {
 				t.Run(string(role)+"/"+string(kind)+"/"+source, func(t *testing.T) {
-					part := domainmessage.ContentPart{Type: kind, MIMEType: "application/octet-stream"}
+					part := domainmessage.ContentPart{Type: kind, MIMEType: "application/octet-stream", Extra: map[string]any{"provider": "part-metadata"}}
 					switch source {
 					case "url":
 						part.URL = "https://example.com/media"
@@ -84,9 +84,9 @@ func TestAdaptMediaReferencesRoundTrip(t *testing.T) {
 					case "file_id":
 						part.FileID = "files/provider-media"
 					}
-					input := []domainmessage.Message{{Role: role, ContentParts: []domainmessage.ContentPart{part}}}
+					input := []domainmessage.Message{{Role: role, ContentParts: []domainmessage.ContentPart{part}, Extra: map[string]any{"provider": "message-metadata"}}}
 					got := AdaptMessagesFromRunner(AdaptMessages(input))
-					if len(got) != 1 || got[0].Role != role || !reflect.DeepEqual(got[0].ContentParts, input[0].ContentParts) {
+					if len(got) != 1 || got[0].Role != role || !reflect.DeepEqual(got[0].ContentParts, input[0].ContentParts) || !reflect.DeepEqual(got[0].Extra, input[0].Extra) {
 						t.Fatalf("media round trip = %#v, want %#v", got, input)
 					}
 				})

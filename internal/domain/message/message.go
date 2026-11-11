@@ -33,6 +33,7 @@ type ContentPart struct {
 	FileID     string          `json:"file_id,omitempty"`
 	MIMEType   string          `json:"mime_type,omitempty"`
 	Detail     string          `json:"detail,omitempty"`
+	Extra      map[string]any  `json:"extra,omitempty"`
 }
 
 type FunctionCall struct {
@@ -90,14 +91,39 @@ func cloneMetadataValue(value reflect.Value) reflect.Value {
 }
 
 type Message struct {
-	Role             Role          `json:"role"`
-	Content          string        `json:"content,omitempty"`
-	ReasoningContent string        `json:"reasoning_content,omitempty"`
-	ToolCalls        []ToolCall    `json:"tool_calls,omitempty"`
-	ToolCallID       string        `json:"tool_call_id,omitempty"`
-	ToolName         string        `json:"tool_name,omitempty"`
-	ContentParts     []ContentPart `json:"content_parts,omitempty"`
-	Name             string        `json:"name,omitempty"`
+	Role             Role           `json:"role"`
+	Content          string         `json:"content,omitempty"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
+	ToolName         string         `json:"tool_name,omitempty"`
+	ContentParts     []ContentPart  `json:"content_parts,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	Extra            map[string]any `json:"extra,omitempty"`
+}
+
+// Clone 返回独立消息副本，隔离工具、内容分段和供应商元数据的修改。
+func (m Message) Clone() Message {
+	m.Extra = CloneMetadata(m.Extra)
+	if m.ToolCalls != nil {
+		calls := append([]ToolCall{}, m.ToolCalls...)
+		for i := range calls {
+			calls[i].Extra = CloneMetadata(calls[i].Extra)
+			if calls[i].Index != nil {
+				index := *calls[i].Index
+				calls[i].Index = &index
+			}
+		}
+		m.ToolCalls = calls
+	}
+	if m.ContentParts != nil {
+		parts := append([]ContentPart{}, m.ContentParts...)
+		for i := range parts {
+			parts[i].Extra = CloneMetadata(parts[i].Extra)
+		}
+		m.ContentParts = parts
+	}
+	return m
 }
 
 type TurnInput struct {
@@ -113,6 +139,7 @@ func (m Message) IsEmpty() bool {
 		m.ToolCallID == "" &&
 		m.ToolName == "" &&
 		len(m.ContentParts) == 0 &&
+		len(m.Extra) == 0 &&
 		m.Name == ""
 }
 

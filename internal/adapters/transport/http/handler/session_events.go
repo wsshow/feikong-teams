@@ -84,6 +84,7 @@ func attachTranscriptMember(event *events.Event, metadata *eventlog.SubagentMeta
 }
 
 func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string) []events.Event {
+	item = item.Normalize()
 	base := events.Event{
 		EventID:    item.ID,
 		CreatedAt:  item.At,
@@ -97,22 +98,24 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 		base.Type = events.EventUserMessage
 		base.Role = domainmessage.RoleUser
 		base.Content = item.Content
-		base.Message = &domainmessage.Message{
-			Role:         domainmessage.RoleUser,
-			Content:      item.Content,
-			ContentParts: append([]domainmessage.ContentPart(nil), item.ContentParts...),
-		}
+		base.Message = item.Message
 		return []events.Event{base}
 	case eventlog.TranscriptAgentStep, eventlog.TranscriptAssistantMessage:
 		base.Type = events.EventAssistantCompleted
 		base.Role = domainmessage.RoleAssistant
 		base.Content = item.Content
 		base.ReasoningContent = item.Reasoning
-		base.Message = &domainmessage.Message{
-			Role:             domainmessage.RoleAssistant,
-			Content:          item.Content,
-			ReasoningContent: item.Reasoning,
-			ContentParts:     append([]domainmessage.ContentPart(nil), item.ContentParts...),
+		base.Message = item.Message
+		base.ToolCalls = item.Message.ToolCalls
+		if len(base.ToolCalls) > 0 {
+			base.ToolCallRefs = make(map[int]string, len(base.ToolCalls))
+			for i, call := range base.ToolCalls {
+				index := i
+				if call.Index != nil {
+					index = *call.Index
+				}
+				base.ToolCallRefs[index] = "tool_call:" + call.ID
+			}
 		}
 		if item.Usage == nil {
 			return []events.Event{base}
@@ -120,13 +123,8 @@ func transcriptEventToRuntimeEvents(item eventlog.TranscriptEvent, turnID string
 		base.PromptTokens = item.Usage.PromptTokens
 		base.CompletionTokens = item.Usage.CompletionTokens
 		base.TotalTokens = item.Usage.TotalTokens
-		base.Usage = &events.UsagePayload{
-			PromptTokens:     item.Usage.PromptTokens,
-			CachedTokens:     item.Usage.CachedTokens,
-			CacheWriteTokens: item.Usage.CacheWriteTokens,
-			CompletionTokens: item.Usage.CompletionTokens,
-			TotalTokens:      item.Usage.TotalTokens,
-		}
+		counts := *item.Usage
+		base.Usage = &counts
 		usage := events.Usage(item.Agent, "", item.Usage.PromptTokens, item.Usage.CompletionTokens, item.Usage.TotalTokens)
 		usage.EventID = item.ID + ":usage"
 		usage.CreatedAt = item.At

@@ -4,9 +4,28 @@ import (
 	"fkteams/internal/app/memory"
 	domainhistory "fkteams/internal/domain/history"
 	domainmessage "fkteams/internal/domain/message"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestContextProjectionUsesCanonicalMessagesInsteadOfDisplayFields(t *testing.T) {
+	source := domainmessage.Message{Role: domainmessage.RoleAssistant, Content: "original", Extra: map[string]any{"provider": "metadata"}, ToolCalls: []domainmessage.ToolCall{{
+		ID: "call", Function: domainmessage.FunctionCall{Name: "lookup", Arguments: `{}`},
+	}}}
+	result := domainmessage.Message{Role: domainmessage.RoleTool, ToolCallID: "call", ToolName: "lookup", Content: "original result"}
+	got := ProjectAgentMessages([]domainhistory.AgentMessage{{AgentName: "assistant", Events: []domainhistory.MessageEvent{
+		{Type: domainhistory.MsgTypeText, MessageID: "source", Content: "display text", Message: &source},
+		{Type: domainhistory.MsgTypeToolCall, ToolCall: &domainhistory.ToolCallRecord{ID: "display-id", Name: "display-name", Arguments: "display args", Result: "display result"}, Message: &result},
+	}}})
+	if !reflect.DeepEqual(got, []domainmessage.Message{source, result}) {
+		t.Fatalf("display fields affected model history: %#v", got)
+	}
+	got[0].Extra["provider"] = "changed"
+	if source.Extra["provider"] != "metadata" {
+		t.Fatal("model context aliases recorded message metadata")
+	}
+}
 
 type testHistory struct {
 	messages        []domainhistory.AgentMessage

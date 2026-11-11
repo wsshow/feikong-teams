@@ -69,14 +69,16 @@ func (h *HistoryRecorder) GetMessages() []AgentMessage {
 }
 
 func (h *HistoryRecorder) snapshotMessagesLocked() []AgentMessage {
-	messages := make([]AgentMessage, len(h.messages))
-	copy(messages, h.messages)
+	messages := make([]AgentMessage, 0, len(h.messages)+len(h.activeOrder))
+	for _, msg := range h.messages {
+		messages = append(messages, msg.Clone())
+	}
 	for _, key := range h.activeOrder {
 		ctx := h.activeMessages[key]
 		if ctx == nil || len(ctx.msg.Events) == 0 {
 			continue
 		}
-		msg := ctx.msg
+		msg := ctx.msg.Clone()
 		msg.EndTime = time.Now()
 		messages = append(messages, msg)
 	}
@@ -90,7 +92,7 @@ func (h *HistoryRecorder) GetAgentMessages(agentName string) []AgentMessage {
 	result := make([]AgentMessage, 0)
 	for _, msg := range h.messages {
 		if msg.AgentName == agentName {
-			result = append(result, msg)
+			result = append(result, msg.Clone())
 		}
 	}
 	return result

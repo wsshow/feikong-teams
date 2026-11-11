@@ -36,6 +36,7 @@ export interface ContentPartDTO {
   file_id?: string;
   mime_type?: string;
   detail?: string;
+  extra?: Record<string, unknown>;
 }
 
 type Validator = (value: unknown) => boolean;
@@ -54,7 +55,7 @@ function hasString(value: Record<string, unknown>, key: string) { return typeof 
 function isContentPart(value: unknown): value is ContentPartDTO {
   if (!isRecord(value) || !fieldsMatch(value, {
     type: isString, name: isString, text: isString, url: isString,
-    base64_data: isString, file_id: isString, mime_type: isString, detail: isString,
+    base64_data: isString, file_id: isString, mime_type: isString, detail: isString, extra: isRecord,
   })) return false;
   switch (value.type) {
     case "text": return typeof value.text === "string";

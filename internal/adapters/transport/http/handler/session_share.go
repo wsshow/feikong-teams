@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fkteams/internal/adapters/storage/file/history"
 	sharestore "fkteams/internal/adapters/storage/file/share"
+	domainmessage "fkteams/internal/domain/message"
 	"fkteams/internal/runtime/log"
 	"net/http"
 	"os"
@@ -62,9 +63,14 @@ func sessionShareMessages(historyDir, sessionID string, allowToolDetails bool) (
 	for msgIndex := range messages {
 		events := messages[msgIndex].Events
 		for eventIndex := range events {
+			events[eventIndex].Message = nil
+			for i := range events[eventIndex].ContentParts {
+				events[eventIndex].ContentParts[i].Extra = nil
+			}
 			if events[eventIndex].ToolCall != nil {
 				events[eventIndex].ToolCall.Arguments = ""
 				events[eventIndex].ToolCall.Result = ""
+				events[eventIndex].ToolCall.Extra = nil
 			}
 			events[eventIndex].Detail = ""
 		}
@@ -89,7 +95,24 @@ func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool)
 		lines[index].Args = ""
 		lines[index].Result = ""
 		lines[index].ResultRef = ""
+		lines[index].Summary = ""
+		lines[index].Extra = nil
 		lines[index].Detail = ""
+		if source := lines[index].Message; source != nil {
+			source.Extra = nil
+			for i := range source.ToolCalls {
+				source.ToolCalls[i].Function.Arguments = ""
+				source.ToolCalls[i].Extra = nil
+			}
+			for i := range source.ContentParts {
+				source.ContentParts[i].Extra = nil
+			}
+			if source.Role == domainmessage.RoleTool {
+				source.Content, source.ReasoningContent = "", ""
+				source.ContentParts = nil
+			}
+			lines[index] = lines[index].Normalize()
+		}
 	}
 	return lines, nil
 }

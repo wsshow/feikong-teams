@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	domainevent "fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 )
 
@@ -29,6 +30,7 @@ type TranscriptEvent struct {
 	Type          TranscriptEventType   `json:"type"`
 	Agent         string                `json:"agent,omitempty"`
 	CallID        string                `json:"call_id,omitempty"`
+	Message       *message.Message      `json:"message,omitempty"`
 	Content       string                `json:"content,omitempty"`
 	Detail        string                `json:"detail,omitempty"`
 	Reasoning     string                `json:"reasoning,omitempty"`
@@ -79,13 +81,8 @@ type ToolCallRecord struct {
 	Status      string         `json:"status,omitempty"`
 }
 
-type UsageRecord struct {
-	PromptTokens     int `json:"prompt_tokens,omitempty"`
-	CachedTokens     int `json:"cached_tokens,omitempty"`
-	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
-	CompletionTokens int `json:"completion_tokens,omitempty"`
-	TotalTokens      int `json:"total_tokens,omitempty"`
-}
+// UsageRecord 与运行时事件共用领域用量契约，新增计数字段无需重复映射。
+type UsageRecord = domainevent.UsagePayload
 
 type AskRecord struct {
 	ID          string   `json:"id,omitempty"`
@@ -129,10 +126,48 @@ type MessageEvent struct {
 	Content      string                `json:"content,omitempty"`
 	Detail       string                `json:"detail,omitempty"`
 	ContentParts []message.ContentPart `json:"content_parts,omitempty"`
+	Message      *message.Message      `json:"-"` // 规范消息供上下文投影使用，展示 JSON 不重复输出。
 	Error        *FriendlyError        `json:"error,omitempty"`
 	ToolCall     *ToolCallRecord       `json:"tool_call,omitempty"`
 	Ask          *AskRecord            `json:"ask,omitempty"`
 	Usage        *UsageRecord          `json:"usage,omitempty"`
+}
+
+// Normalize 将旧载荷归一化为领域消息，并从消息生成兼容展示字段。
+func (e TranscriptEvent) Normalize() TranscriptEvent {
+	if e.Message == nil {
+		var role message.Role
+		switch e.Type {
+		case TranscriptUserMessage:
+			role = message.RoleUser
+		case TranscriptAssistantMessage, TranscriptAgentStep:
+			role = message.RoleAssistant
+		case TranscriptToolCallEnd:
+			role = message.RoleTool
+		default:
+			return e
+		}
+		e.Message = &message.Message{
+			Role: role, Content: e.Content, ReasoningContent: e.Reasoning,
+			ContentParts: e.ContentParts, ToolCallID: e.CallID, ToolName: e.Name,
+		}
+		if role == message.RoleAssistant {
+			e.Message.Name = e.Agent
+		}
+		if role == message.RoleTool {
+			e.Message.Content = e.Result
+		}
+	}
+	m := e.Message.Clone()
+	e.Message = &m
+	switch e.Type {
+	case TranscriptUserMessage, TranscriptAssistantMessage, TranscriptAgentStep:
+		e.Content, e.Reasoning, e.ContentParts = m.DisplayText(), m.ReasoningContent, m.ContentParts
+	case TranscriptToolCallEnd:
+		e.CallID, e.Name = m.ToolCallID, m.ToolName
+		e.Result = m.Content
+	}
+	return e
 }
 
 type AgentMessage struct {

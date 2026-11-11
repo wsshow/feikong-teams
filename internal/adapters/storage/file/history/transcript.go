@@ -185,7 +185,7 @@ func loadTranscriptRecords(filePath string, repairTail bool) ([]TranscriptEvent,
 				}
 				return nil, fmt.Errorf("decode transcript record %d: %w", line, err)
 			}
-			events = append(events, event)
+			events = append(events, event.Normalize())
 		}
 		lastGoodOffset = offset
 		if readErr == io.EOF {
@@ -293,28 +293,21 @@ func (h *HistoryRecorder) toolResultPayload(toolName, content string) toolResult
 }
 
 func usageRecordFromEvent(event Event) *UsageRecord {
-	promptTokens := event.PromptTokens
-	completionTokens := event.CompletionTokens
-	totalTokens := event.TotalTokens
-	var cachedTokens, cacheWriteTokens int
+	var usage UsageRecord
 	if event.Usage != nil {
-		cachedTokens = event.Usage.CachedTokens
-		cacheWriteTokens = event.Usage.CacheWriteTokens
-		if promptTokens == 0 {
-			promptTokens = event.Usage.PromptTokens
-		}
-		if completionTokens == 0 {
-			completionTokens = event.Usage.CompletionTokens
-		}
-		if totalTokens == 0 {
-			totalTokens = event.Usage.TotalTokens
-		}
+		usage = *event.Usage
 	}
-	if promptTokens == 0 && completionTokens == 0 && totalTokens == 0 && cachedTokens == 0 && cacheWriteTokens == 0 {
+	if event.PromptTokens != 0 {
+		usage.PromptTokens = event.PromptTokens
+	}
+	if event.CompletionTokens != 0 {
+		usage.CompletionTokens = event.CompletionTokens
+	}
+	if event.TotalTokens != 0 {
+		usage.TotalTokens = event.TotalTokens
+	}
+	if usage == (UsageRecord{}) {
 		return nil
 	}
-	return &UsageRecord{
-		PromptTokens: promptTokens, CompletionTokens: completionTokens, TotalTokens: totalTokens,
-		CachedTokens: cachedTokens, CacheWriteTokens: cacheWriteTokens,
-	}
+	return &usage
 }

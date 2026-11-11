@@ -255,5 +255,6 @@ func (h *HistoryRecorder) updateToolCallEvent(ctx *activeMessageContext, tc pend
 	}
 	record := toolCallRecordFromPending(tc, result)
 	ctx.msg.Events[tc.EventIndex].ToolCall = ptrToolCallRecord(record)
+	ctx.msg.Events[tc.EventIndex].Message = &message.Message{Role: message.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: result}
 	return true
 }

@@ -131,6 +131,7 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]Age
 	}
 
 	for _, event := range events {
+		event = event.Normalize()
 		ts := event.At
 		if ts.IsZero() {
 			ts = time.Now()
@@ -154,19 +155,12 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]Age
 					MessageID:    messageID,
 					Content:      event.Content,
 					ContentParts: append([]message.ContentPart(nil), event.ContentParts...),
+					Message:      event.Message,
 				}},
 			})
 		case TranscriptAgentStep, TranscriptAssistantMessage:
 			msg := ensure(event.Agent, ts)
-			if event.Reasoning != "" {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Reasoning})
-			}
-			if event.Content != "" || len(event.ContentParts) > 0 {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, ContentParts: append([]message.ContentPart(nil), event.ContentParts...)})
-			}
-			if event.Usage != nil {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeUsageReported, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Usage: event.Usage})
-			}
+			msg.Events = append(msg.Events, assistantMessageEvents(MessageEvent{CreatedAt: ts, TurnID: turnID, MessageID: messageID}, *event.Message, event.Usage)...)
 		case TranscriptToolCallStart:
 			msg := ensure(event.Agent, ts)
 			record := transcriptToolCallRecord(event, "")
@@ -181,11 +175,12 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]Age
 			if idx, ok := toolEventIndex[event.CallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
 				msg.Events[idx].ToolCall.Result = result
 				msg.Events[idx].ToolCall.Status = "done"
+				msg.Events[idx].Message = toolMessageFromTranscript(event)
 				continue
 			}
 			record := transcriptToolCallRecord(event, result)
 			record.Status = "done"
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record, Message: toolMessageFromTranscript(event)})
 		case TranscriptAskRequested, TranscriptAskAnswered:
 			msg := ensure(event.Agent, ts)
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeAsk, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Ask: event.Ask})
@@ -286,6 +281,7 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 	}
 	toolEventIndex := make(map[string]int)
 	for _, event := range events {
+		event = event.Normalize()
 		ts := event.At
 		turnID := historyTurnID("", 1)
 		messageID := event.ID
@@ -295,15 +291,7 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 		msg.EndTime = ts
 		switch event.Type {
 		case TranscriptAgentStep, TranscriptAssistantMessage:
-			if event.Reasoning != "" {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeReasoning, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Reasoning})
-			}
-			if event.Content != "" || len(event.ContentParts) > 0 {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeText, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, ContentParts: append([]message.ContentPart(nil), event.ContentParts...)})
-			}
-			if event.Usage != nil {
-				msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeUsageReported, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Usage: event.Usage})
-			}
+			msg.Events = append(msg.Events, assistantMessageEvents(MessageEvent{CreatedAt: ts, TurnID: turnID, MessageID: messageID}, *event.Message, event.Usage)...)
 		case TranscriptToolCallStart:
 			record := transcriptToolCallRecord(event, "")
 			record.Status = "running"
@@ -316,11 +304,12 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 			if idx, ok := toolEventIndex[event.CallID]; ok && idx >= 0 && idx < len(msg.Events) && msg.Events[idx].ToolCall != nil {
 				msg.Events[idx].ToolCall.Result = result
 				msg.Events[idx].ToolCall.Status = "done"
+				msg.Events[idx].Message = toolMessageFromTranscript(event)
 				continue
 			}
 			record := transcriptToolCallRecord(event, result)
 			record.Status = "done"
-			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record})
+			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeToolCall, CreatedAt: ts, TurnID: turnID, MessageID: messageID, ToolCall: &record, Message: toolMessageFromTranscript(event)})
 		case TranscriptSystemNotice:
 			msg.Events = append(msg.Events, MessageEvent{Type: MsgTypeNotice, CreatedAt: ts, TurnID: turnID, MessageID: messageID, Content: event.Content, Detail: event.Detail})
 		case TranscriptError:
@@ -328,6 +317,17 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 		}
 	}
 	return msg
+}
+
+func toolMessageFromTranscript(event TranscriptEvent) *message.Message {
+	if event.Type != TranscriptToolCallEnd || event.Message == nil {
+		return nil
+	}
+	msg := event.Message.Clone()
+	if msg.Content == "" {
+		msg.Content = transcriptToolResult(event)
+	}
+	return &msg
 }
 
 func transcriptToolCallRecord(event TranscriptEvent, result string) ToolCallRecord {

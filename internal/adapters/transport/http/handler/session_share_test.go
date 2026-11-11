@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,53 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestSessionShareRedactsCanonicalToolDetails(t *testing.T) {
+	rt := newSessionShareTestRuntime(t, map[string]*sharestore.SessionEntry{})
+	sessionID := "canonical-share"
+	recorder := eventlog.NewHistoryRecorder()
+	recorder.SetSessionDir(filepath.Join(rt.HistoryDir, sessionID))
+	call := message.ToolCall{
+		ID: "call", Function: message.FunctionCall{Name: "lookup", Arguments: `{"query":"private-arguments"}`},
+		Extra: map[string]any{"provider": "private-metadata"},
+	}
+	source := message.Message{
+		Role: message.RoleAssistant, Content: "public answer", ToolCalls: []message.ToolCall{call},
+		Extra:        map[string]any{"provider": "private-metadata"},
+		ContentParts: []message.ContentPart{{Type: message.ContentPartText, Text: "public answer", Extra: map[string]any{"provider": "private-metadata"}}},
+	}
+	recorder.RecordEvent(runtimeevents.Event{Type: runtimeevents.EventAssistantCompleted, AgentName: "assistant", MessageID: "message", Message: &source})
+	recorder.RecordEvent(runtimeevents.ToolCallStarted(runtimeevents.ToolEvent{AgentName: "assistant", ToolCallID: call.ID, ToolCallRef: "tool_call:call", ToolName: call.Function.Name, ToolCall: &call}))
+	recorder.RecordEvent(runtimeevents.ToolCallCompleted(runtimeevents.ToolEvent{AgentName: "assistant", ToolCallID: call.ID, ToolCallRef: "tool_call:call", ToolName: call.Function.Name, ToolResult: strings.Repeat("private-result", 500)}))
+	recorder.FinalizeCurrent()
+	if err := recorder.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	for _, allow := range []bool{false, true} {
+		transcript, err := sessionShareTranscript(rt.HistoryDir, sessionID, allow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages, err := sessionShareMessages(rt.HistoryDir, sessionID, allow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range []any{transcript, messages, rt.transcriptToChatEvents(sessionID, transcript)} {
+			data, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), "public answer") {
+				t.Fatal("sharing removed the public answer")
+			}
+			for _, detail := range []string{"private-arguments", "private-result", "private-metadata"} {
+				if strings.Contains(string(data), detail) != allow {
+					t.Fatalf("share allow_tool_details=%v did not enforce %q: %s", allow, detail, data)
+				}
+			}
+		}
+	}
+}
 
 func TestPublicSessionShareRequiresPassword(t *testing.T) {
 	rt := newSessionShareTestRuntime(t, map[string]*sharestore.SessionEntry{})

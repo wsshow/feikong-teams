@@ -18,6 +18,7 @@ func AdaptMessages(messages []domainmessage.Message) []adk.Message {
 			ToolCallID:       msg.ToolCallID,
 			ToolName:         msg.ToolName,
 			Name:             msg.Name,
+			Extra:            domainmessage.CloneMetadata(msg.Extra),
 		}
 		if len(msg.ContentParts) > 0 {
 			if msg.Role == domainmessage.RoleAssistant {
@@ -51,6 +52,7 @@ func adaptMessageFromRunner(msg *schema.Message) domainmessage.Message {
 		ToolName:         msg.ToolName,
 		ContentParts:     parts,
 		Name:             msg.Name,
+		Extra:            domainmessage.CloneMetadata(msg.Extra),
 	}
 }
 
@@ -125,7 +127,7 @@ func adaptToolCallFromRunner(tc schema.ToolCall) domainmessage.ToolCall {
 func adaptPartsForRunner(parts []domainmessage.ContentPart) []schema.MessageInputPart {
 	result := make([]schema.MessageInputPart, 0, len(parts))
 	for _, part := range parts {
-		p := schema.MessageInputPart{Text: part.Text}
+		p := schema.MessageInputPart{Text: part.Text, Extra: domainmessage.CloneMetadata(part.Extra)}
 		switch part.Type {
 		case domainmessage.ContentPartText:
 			p.Type = schema.ChatMessagePartTypeText
@@ -153,7 +155,7 @@ func adaptPartsForRunner(parts []domainmessage.ContentPart) []schema.MessageInpu
 func adaptPartsFromRunner(parts []schema.MessageInputPart) []domainmessage.ContentPart {
 	result := make([]domainmessage.ContentPart, 0, len(parts))
 	for _, part := range parts {
-		p := domainmessage.ContentPart{Text: part.Text}
+		p := domainmessage.ContentPart{Text: part.Text, Extra: domainmessage.CloneMetadata(part.Extra)}
 		switch part.Type {
 		case schema.ChatMessagePartTypeText:
 			p.Type = domainmessage.ContentPartText
@@ -187,7 +189,7 @@ func adaptPartsFromRunner(parts []schema.MessageInputPart) []domainmessage.Conte
 func adaptOutputPartsForRunner(parts []domainmessage.ContentPart) []schema.MessageOutputPart {
 	result := make([]schema.MessageOutputPart, 0, len(parts))
 	for _, part := range parts {
-		p := schema.MessageOutputPart{Type: schema.ChatMessagePartType(part.Type), Text: part.Text}
+		p := schema.MessageOutputPart{Type: schema.ChatMessagePartType(part.Type), Text: part.Text, Extra: domainmessage.CloneMetadata(part.Extra)}
 		switch part.Type {
 		case domainmessage.ContentPartImageURL:
 			p.Image = &schema.MessageOutputImage{
@@ -198,7 +200,10 @@ func adaptOutputPartsForRunner(parts []domainmessage.ContentPart) []schema.Messa
 		case domainmessage.ContentPartVideoURL:
 			p.Video = &schema.MessageOutputVideo{MessagePartCommon: adaptPartCommonForRunner(part)}
 		case domainmessage.ContentPartFileURL:
-			p.Extra = map[string]any{"url": part.URL, "base64_data": part.Base64Data, "file_id": part.FileID, "mime_type": part.MIMEType}
+			if p.Extra == nil {
+				p.Extra = make(map[string]any)
+			}
+			p.Extra["url"], p.Extra["base64_data"], p.Extra["file_id"], p.Extra["mime_type"] = part.URL, part.Base64Data, part.FileID, part.MIMEType
 		}
 		result = append(result, p)
 	}
@@ -208,7 +213,7 @@ func adaptOutputPartsForRunner(parts []domainmessage.ContentPart) []schema.Messa
 func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []domainmessage.ContentPart {
 	result := make([]domainmessage.ContentPart, 0, len(parts))
 	for _, part := range parts {
-		p := domainmessage.ContentPart{Type: domainmessage.ContentPartType(part.Type), Text: part.Text}
+		p := domainmessage.ContentPart{Type: domainmessage.ContentPartType(part.Type), Text: part.Text, Extra: domainmessage.CloneMetadata(part.Extra)}
 		switch part.Type {
 		case schema.ChatMessagePartTypeImageURL:
 			p.Type = domainmessage.ContentPartImageURL
@@ -239,6 +244,12 @@ func adaptOutputPartsFromRunner(parts []schema.MessageOutputPart) []domainmessag
 				}
 				if id, ok := part.Extra["file_id"].(string); ok {
 					p.FileID = id
+				}
+				for _, key := range []string{"url", "base64_data", "file_id", "mime_type"} {
+					delete(p.Extra, key)
+				}
+				if len(p.Extra) == 0 {
+					p.Extra = nil
 				}
 			}
 		}

@@ -224,6 +224,21 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 		return []domainmessage.Message{{Role: domainmessage.RoleAssistant, Name: msg.AgentName, Content: content}}
 	}
 	if isUserAgentName(msg.AgentName) {
+		for _, event := range msg.Events {
+			if event.Message == nil {
+				continue
+			}
+			source := event.Message.Clone()
+			source.Content = source.DisplayText()
+			if notice := omittedContentPartsNotice(source.ContentParts, domainhistory.AttachmentsForMessage(msg, messageIndex)); notice != "" {
+				if source.Content != "" {
+					source.Content += "\n\n"
+				}
+				source.Content += notice
+			}
+			source.ContentParts = nil
+			return []domainmessage.Message{source}
+		}
 		var text strings.Builder
 		var parts []domainmessage.ContentPart
 		for _, event := range msg.Events {
@@ -248,6 +263,29 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 	var messages []domainmessage.Message
 	var textBuf strings.Builder
 	var reasoningBuf strings.Builder
+	// 新记录以完整消息为事实来源；展示用的工具记录只补充执行结果。
+	sourceMessages := make(map[string]bool)
+	sourceCalls := make(map[string]bool)
+	completedCalls := make(map[string]bool)
+	var pendingCalls []domainmessage.ToolCall
+	for _, event := range msg.Events {
+		if event.Message == nil || event.Message.Role != domainmessage.RoleAssistant {
+			continue
+		}
+		sourceMessages[event.RunID+"\x00"+event.MessageID] = true
+		for _, call := range event.Message.ToolCalls {
+			sourceCalls[call.ID] = true
+		}
+	}
+	flushPendingCalls := func() {
+		for _, call := range pendingCalls {
+			if !completedCalls[call.ID] {
+				messages = append(messages, domainmessage.Message{Role: domainmessage.RoleTool, ToolCallID: call.ID, ToolName: call.Function.Name})
+				completedCalls[call.ID] = true
+			}
+		}
+		pendingCalls = nil
+	}
 
 	flushText := func() {
 		content := strings.TrimSpace(textBuf.String())
@@ -262,10 +300,32 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 		if reasoning != "" {
 			m.ReasoningContent = reasoning
 		}
+		flushPendingCalls()
 		messages = append(messages, m)
 	}
 
 	for _, event := range msg.Events {
+		if event.Message != nil && event.Message.Role == domainmessage.RoleTool && sourceCalls[event.Message.ToolCallID] {
+			flushText()
+			if !completedCalls[event.Message.ToolCallID] {
+				messages = append(messages, event.Message.Clone())
+				completedCalls[event.Message.ToolCallID] = true
+			}
+			continue
+		}
+		if event.Message != nil && event.Message.Role == domainmessage.RoleAssistant {
+			flushText()
+			flushPendingCalls()
+			source := event.Message.Clone()
+			if source.DisplayText() != "" || len(source.ContentParts) > 0 || len(source.ToolCalls) > 0 {
+				messages = append(messages, source)
+				pendingCalls = source.ToolCalls
+			}
+			continue
+		}
+		if sourceMessages[event.RunID+"\x00"+event.MessageID] && (event.Type == domainhistory.MsgTypeText || event.Type == domainhistory.MsgTypeReasoning) {
+			continue
+		}
 		switch event.Type {
 		case domainhistory.MsgTypeText:
 			textBuf.WriteString(event.Content)
@@ -279,14 +339,24 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 				continue
 			}
 			flushText()
-			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
-				ID: tc.ID, Index: tc.Index, Type: "function", Extra: domainmessage.CloneMetadata(tc.Extra),
-				Function: domainmessage.FunctionCall{
-					Name:      tc.Name,
-					Arguments: tc.Arguments,
-				},
-			}}})
-			messages = append(messages, domainmessage.Message{Role: domainmessage.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name})
+			if sourceCalls[tc.ID] && completedCalls[tc.ID] {
+				continue
+			}
+			if !sourceCalls[tc.ID] {
+				messages = append(messages, domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{
+					ID: tc.ID, Index: tc.Index, Type: "function", Extra: domainmessage.CloneMetadata(tc.Extra),
+					Function: domainmessage.FunctionCall{Name: tc.Name, Arguments: tc.Arguments},
+				}}})
+			}
+			result := domainmessage.Message{Role: domainmessage.RoleTool, Content: tc.Result, ToolCallID: tc.ID, ToolName: tc.Name}
+			if event.Message != nil && event.Message.Role == domainmessage.RoleTool {
+				result = event.Message.Clone()
+				if result.ToolName == "" {
+					result.ToolName = tc.Name
+				}
+			}
+			messages = append(messages, result)
+			completedCalls[tc.ID] = true
 
 		case domainhistory.MsgTypeNotice:
 			if event.Content != "" {
@@ -302,6 +372,7 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 	}
 
 	flushText()
+	flushPendingCalls()
 	return messages
 }
 
