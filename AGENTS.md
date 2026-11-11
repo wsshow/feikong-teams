@@ -100,6 +100,7 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 
 ### 工具
 
+- 工具列表统一使用 `ports/runtime.ToolDefinition` 与 `runtimeport.NewTools()` 声明，保持明确的请求、响应类型；复用流程，不为每个声明创建小文件。
 - 新工具组通过 `internal/app/tools.ToolGroupRegistry` 注册，不要在 `internal/app/tools/tools.go` 增加 switch 分支。
 - 依赖存储、调度器或第三方 SDK 的实现放在 `internal/adapters/tools`，通过 `internal/bootstrap/tools` 接入；`internal/app/tools` 不得反向导入 adapter。
 - go-git 实现只放在 `internal/adapters/tools/builtin/git`；SSH/SFTP 实现只放在 `internal/adapters/tools/builtin/ssh`。
@@ -109,12 +110,13 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 ### 配置与模型
 
 - 新配置项同步加入 `internal/app/config/config.go` 的 `GenerateExample()`；运行时配置通过 `config.Get()` 读取，保留 `atomic.Pointer` 热重载机制。
+- HTTP、消息通道与调度执行共用组合根注入的 `config.ExecutionGate`；配置写入必须在空闲边界更新配置及派生依赖，运行任务存在时返回冲突。
 - 新模型提供者通过 `internal/adapters/model/providers` 的实例级工厂注册，并实现模型创建与列表查询。
 
 ### 生命周期与后台服务
 
 - 新后台服务实现 `internal/app/lifecycle.Service` 的 `Name`、`Start`、`Stop`；具体组合层服务放在 `internal/bootstrap/services`。
-- 服务按注册顺序启动，按逆序（LIFO）停止。
+- 服务按注册顺序启动，按逆序（LIFO）停止；停止和收尾错误必须向调用方返回。关闭与重启使用实例级 `lifecycle.Control`。
 - `turn.Request.OnInterrupt` 未设置时必须保持固定拒绝的安全默认值。
 
 ### 事件、Hooks 与流式任务
@@ -136,7 +138,7 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 - 不得绕过或弱化 workspace 路径限制、符号链接检查、危险命令检测、工具权限元数据和 HITL 审批。
 - 不在日志、错误、测试夹具或文档中写入 API key、token、密码、会话凭据等秘密。
 - 修改文件、Git、SSH、命令执行、MCP 或上传下载路径时，补充路径逃逸、拒绝策略或权限边界测试。
-- 破坏性操作必须保持显式授权；后台和非交互场景默认拒绝高风险操作。
+- 消息通道明确默认自动审批，由 Bridge 注入自动审批注册表；其他后台及未配置审批策略的非交互执行默认拒绝高风险操作。自动审批不豁免路径限制、危险命令检测和工具权限元数据。
 
 ## 验证与交付
 
@@ -152,4 +154,4 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 
 `README.md` 只维护面向新用户的稳定概览。新增或移除主要入口、核心能力，或安装与快速开始方式发生变化时才更新 README；局部功能、兼容性修复、内部重构和实现细节无需修改。面向用户的详细行为变化按需更新相应 `docs/` 专题文档，架构边界变化更新 `docs/architecture.md`。
 
-提交信息遵循 Conventional Commits，使用 `feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:` 等类型加中文说明。除非用户明确要求，不要自行创建提交、推送或 PR。
+提交信息遵循 Conventional Commits：`<type>(<scope>): <summary>`，scope 可省略；type/scope 用小写英文，摘要可用中文。常用类型为 `feat`、`fix`、`refactor`、`perf`、`docs`、`test`、`build`、`ci`、`style`、`chore`、`revert`。除非用户明确要求，不要自行创建提交、推送或 PR。

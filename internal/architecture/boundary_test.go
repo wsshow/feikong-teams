@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -347,6 +348,21 @@ func TestToolPolicyUsesTypedMetadata(t *testing.T) {
 }
 
 func assertBoundary(t *testing.T, rel, importPath string) {
+	// 内部依赖采用白名单矩阵，新增层默认不可被内层引用。
+	allowed := map[string][]string{
+		"domain":   {"domain"},
+		"ports":    {"domain", "ports"},
+		"runtime":  {"domain", "ports", "runtime"},
+		"app":      {"domain", "ports", "runtime", "app"},
+		"adapters": {"domain", "ports", "runtime", "app", "adapters"},
+	}
+	source := strings.Split(rel, "/")
+	target := strings.Split(strings.TrimPrefix(importPath, "fkteams/"), "/")
+	if len(source) > 1 && len(target) > 1 && strings.HasPrefix(importPath, "fkteams/internal/") {
+		if layers, ok := allowed[source[1]]; ok && !(strings.HasSuffix(rel, "_test.go") && target[1] == "testmodel") && !slices.Contains(layers, target[1]) {
+			t.Errorf("%s imports forbidden layer %s: %s", rel, target[1], importPath)
+		}
+	}
 	switch {
 	case strings.HasPrefix(rel, "internal/domain/"):
 		forbidden := []string{

@@ -10,6 +10,8 @@
 用户消息 → Channel（QQ/Discord/微信）→ Bridge → 智能体引擎 → Bridge → Channel → 回复用户
 ```
 
+消息通道默认自动批准工具审批，由 Bridge 为每次执行注入自动审批注册表。文件和命令仍受工作区、路径及工具策略约束。
+
 ## 通用配置
 
 所有通道配置位于 `config/config.toml` 的 `[channels.*]` 下，共有以下通用字段：

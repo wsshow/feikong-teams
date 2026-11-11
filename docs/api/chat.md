@@ -70,7 +70,9 @@
 }
 ```
 
-`events` 是原始 Agent 事件数组，按执行顺序返回。
+`content` 汇总主智能体的可见回答，完整消息替换对应增量，避免重复拼接；`events` 保留按执行顺序返回的完整事件数组。
+
+同一会话在同步、SSE 和 WebSocket 入口之间共享执行占用。同步请求运行期间不能追加队列；请等待当前请求结束。历史与会话状态保存成功后才返回成功响应。
 
 **失败响应**：
 
@@ -80,7 +82,9 @@
 | 400 | `message or contents is required` | 消息为空 |
 | 400 | `stream=true is not supported on /api/fkteams/chat; use /api/fkteams/stream/start` | 请求内 SSE 已移除 |
 | 400 | Runner 错误详情 | `agent_name` 指定的智能体不可用 |
-| 500 | Runner 错误详情 | Runner 创建或执行失败 |
+| 409 | `session is already processing` | 会话正在执行其他请求 |
+| 503 | `HTTP runtime is shutting down` | 服务正在关闭 |
+| 500 | 错误详情 | Runner 创建、执行或历史持久化失败 |
 
 ## WebSocket
 
