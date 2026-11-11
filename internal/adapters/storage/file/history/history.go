@@ -89,7 +89,19 @@ type pendingToolCall struct {
 	Arguments   string
 }
 
+type assistantMessageKey struct {
+	runID     string
+	messageID string
+}
+
+type pendingAssistantMessage struct {
+	event      Event
+	firstEvent int
+}
+
 type activeMessageContext struct {
+	pendingAssistant map[assistantMessageKey]pendingAssistantMessage
+	assistantOrder   []assistantMessageKey
 	msg              AgentMessage
 	pendingToolCalls []pendingToolCall
 	toolResultChunks map[string]string

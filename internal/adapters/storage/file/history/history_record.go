@@ -282,14 +282,15 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		base.Content = content
 		base.ContentParts = parts
 		h.appendTranscriptEvent(base, target)
-	case events.EventAssistantReasoning:
-		return
-	case events.EventAssistantText:
+	case events.EventAssistantReasoning, events.EventAssistantText:
+		h.bufferAssistantMessage(event)
 		return
 	case events.EventAssistantCompleted:
-		if event.Role == message.RoleTool {
+		if event.Role == message.RoleTool || event.Role == message.RoleUser {
 			return
 		}
+		ctx := h.ensureMessageContext(event)
+		delete(ctx.pendingAssistant, assistantMessageKey{event.RunID, event.MessageID})
 		content := event.Content
 		reasoning := event.ReasoningContent
 		parts := []message.ContentPart(nil)
@@ -406,11 +407,106 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 	}
 }
 
+// bufferAssistantMessage 保留未收到完整消息的增量，供取消或失败时定稿。
+func (h *HistoryRecorder) bufferAssistantMessage(event Event) {
+	if event.Content == "" || event.Role == message.RoleTool || event.Role == message.RoleUser {
+		return
+	}
+	ctx := h.ensureMessageContext(event)
+	if ctx.pendingAssistant == nil {
+		ctx.pendingAssistant = make(map[assistantMessageKey]pendingAssistantMessage)
+	}
+	key := assistantMessageKey{event.RunID, event.MessageID}
+	pending, exists := ctx.pendingAssistant[key]
+	if !exists {
+		pending = pendingAssistantMessage{event: event, firstEvent: len(ctx.msg.Events)}
+		pending.event.Type = events.EventAssistantCompleted
+		pending.event.Content = ""
+		pending.event.ReasoningContent = ""
+		pending.event.Message = nil
+		ctx.assistantOrder = append(ctx.assistantOrder, key)
+	}
+	if event.Type == events.EventAssistantReasoning {
+		pending.event.ReasoningContent += event.Content
+	} else {
+		pending.event.Content += event.Content
+	}
+	ctx.pendingAssistant[key] = pending
+}
+
+func (h *HistoryRecorder) flushAssistantMessages(ctx *activeMessageContext) {
+	for _, key := range ctx.assistantOrder {
+		if pending, ok := ctx.pendingAssistant[key]; ok {
+			h.recordTranscript(pending.event)
+		}
+	}
+	ctx.assistantOrder = nil
+}
+
+// completeAssistantMessage 让内存与落盘投影都以完整消息为准，也支持没有增量的非流式执行。
+func (h *HistoryRecorder) completeAssistantMessage(event Event) {
+	ctx := h.ensureMessageContext(event)
+	key := assistantMessageKey{event.RunID, event.MessageID}
+	pending, exists := ctx.pendingAssistant[key]
+	start := len(ctx.msg.Events)
+	if exists {
+		start = pending.firstEvent
+	}
+	content, reasoning := event.Content, event.ReasoningContent
+	var parts []message.ContentPart
+	if event.Message != nil {
+		content = event.Message.DisplayText()
+		reasoning = event.Message.ReasoningContent
+		parts = append(parts, event.Message.ContentParts...)
+	}
+	replacement := make([]MessageEvent, 0, 2)
+	if reasoning != "" {
+		evt := historyEventEnvelope(event, MsgTypeReasoning)
+		evt.Content = reasoning
+		replacement = append(replacement, evt)
+	}
+	if content != "" || len(parts) > 0 {
+		evt := historyEventEnvelope(event, MsgTypeText)
+		evt.Content, evt.ContentParts = content, parts
+		replacement = append(replacement, evt)
+	}
+	updated := append([]MessageEvent(nil), ctx.msg.Events[:start]...)
+	updated = append(updated, replacement...)
+	positions := make([]int, len(ctx.msg.Events)+1)
+	for i, evt := range ctx.msg.Events {
+		if i < start {
+			positions[i] = i
+			continue
+		}
+		positions[i] = len(updated)
+		if evt.RunID == event.RunID && evt.MessageID == event.MessageID && (evt.Type == MsgTypeText || evt.Type == MsgTypeReasoning) {
+			continue
+		}
+		updated = append(updated, evt)
+	}
+	positions[len(ctx.msg.Events)] = len(updated)
+	// 工具和并行消息保存的是事件下标，投影长度变化后同步映射到新位置。
+	for i := range ctx.pendingToolCalls {
+		tc := &ctx.pendingToolCalls[i]
+		if tc.EventIndex >= 0 {
+			tc.EventIndex = positions[tc.EventIndex]
+		}
+	}
+	for otherKey, other := range ctx.pendingAssistant {
+		if otherKey != key {
+			other.firstEvent = positions[other.firstEvent]
+			ctx.pendingAssistant[otherKey] = other
+		}
+	}
+	ctx.msg.Events = updated
+}
+
 func (h *HistoryRecorder) finalizeActiveMessage(key string) {
 	ctx := h.activeMessages[key]
 	if ctx == nil {
 		return
 	}
+	h.flushAssistantMessages(ctx)
 	h.flushChunkedToolResults(ctx)
 	if len(ctx.msg.Events) > 0 {
 		ctx.msg.EndTime = time.Now()
@@ -457,6 +553,21 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if event.Type == events.EventUserMessage {
+		h.finalizeAllActiveMessages()
+	}
+	if event.Type == EventError || event.Type == events.EventCancelled {
+		if event.AgentName == "" && event.MemberCallID == "" && event.RunPath == "" {
+			for _, key := range h.sortedActiveKeysLocked() {
+				h.flushAssistantMessages(h.activeMessages[key])
+			}
+		} else {
+			h.flushAssistantMessages(h.ensureMessageContext(event))
+		}
+	}
+	if event.Type == events.EventAssistantCompleted && event.Role != message.RoleTool && event.Role != message.RoleUser {
+		h.completeAssistantMessage(event)
+	}
 	h.recordTranscript(event)
 
 	switch event.Type {
@@ -523,7 +634,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 		switch deltaKind {
 		case events.DeltaReasoning:
 
-			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning {
+			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeReasoning && ctx.msg.Events[n-1].RunID == event.RunID && ctx.msg.Events[n-1].MessageID == event.MessageID {
 				ctx.msg.Events[n-1].Content += content
 			} else {
 				evt := historyEventEnvelope(event, MsgTypeReasoning)
@@ -532,7 +643,7 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 			}
 		case events.DeltaOutput, "":
 
-			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText {
+			if n := len(ctx.msg.Events); n > 0 && ctx.msg.Events[n-1].Type == MsgTypeText && ctx.msg.Events[n-1].RunID == event.RunID && ctx.msg.Events[n-1].MessageID == event.MessageID {
 				ctx.msg.Events[n-1].Content += content
 			} else {
 				evt := historyEventEnvelope(event, MsgTypeText)

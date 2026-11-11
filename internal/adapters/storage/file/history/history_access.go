@@ -18,6 +18,10 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 	if strings.TrimSpace(message) == "" {
 		message = "任务已取消"
 	}
+	h.finalizeAllActiveMessages()
+	if len(h.messages) > 0 && isSystemAgentName(h.messages[len(h.messages)-1].AgentName) && messageHasEventType(h.messages[len(h.messages)-1].Events, MsgTypeCancelled) {
+		return
+	}
 	now := time.Now()
 	h.appendTranscriptEvent(TranscriptEvent{
 		At:      now,
@@ -26,10 +30,6 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 		Content: message,
 	}, nil)
 	cancelEvent := MessageEvent{Type: MsgTypeCancelled, Content: message}
-	h.finalizeAllActiveMessages()
-	if len(h.messages) > 0 && isSystemAgentName(h.messages[len(h.messages)-1].AgentName) && messageHasEventType(h.messages[len(h.messages)-1].Events, MsgTypeCancelled) {
-		return
-	}
 	h.messages = append(h.messages, AgentMessage{
 		AgentName: "system",
 		StartTime: now,

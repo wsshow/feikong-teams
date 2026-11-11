@@ -845,3 +845,115 @@ func hasEventType(msg AgentMessage, typ MsgEventType) bool {
 	}
 	return false
 }
+
+func TestTranscriptPreservesIncompleteMessagesAtEveryExit(t *testing.T) {
+	for _, exit := range []string{"cancel", "error", "finalize", "next_input"} {
+		t.Run(exit, func(t *testing.T) {
+			dir := t.TempDir()
+			recorder := NewHistoryRecorder()
+			recorder.SetSessionDir(dir)
+			recorder.RecordEvent(Event{Type: EventAssistantReasoning, AgentName: "assistant", MessageID: "partial", Content: "thinking"})
+			recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "assistant", MessageID: "partial", Content: "partial "})
+			recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "assistant", MessageID: "partial", Content: "answer"})
+			switch exit {
+			case "cancel":
+				recorder.RecordCancelled("cancelled")
+				recorder.RecordCancelled("cancelled")
+			case "error":
+				recorder.RecordEvent(Event{Type: EventError, Error: "model failed"})
+			case "next_input":
+				recorder.RecordEvent(Event{Type: events.EventUserMessage, Content: "next"})
+			}
+			recorder.FinalizeCurrent()
+			recorder.FinalizeCurrent()
+			if err := recorder.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			records, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCount := 2
+			if exit == "finalize" {
+				wantCount = 1
+			}
+			if len(records) != wantCount || records[0].Content != "partial answer" || records[0].Reasoning != "thinking" {
+				t.Fatalf("transcript = %+v", records)
+			}
+			loaded := NewHistoryRecorder()
+			if err := loaded.LoadFromFile(filepath.Join(dir, TranscriptFileName)); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(loaded.GetFullHistory(), "partial answer") {
+				t.Fatal("partial response was lost on reload")
+			}
+		})
+	}
+}
+
+func TestTranscriptCompletedContentReplacesDraftWithoutDuplicatePersistence(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "assistant", MessageID: "a", Content: "draft A"})
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "assistant", MessageID: "b", Content: "draft B"})
+	recorder.RecordEvent(Event{Type: EventToolCallStarted, AgentName: "assistant", ToolCallRef: "ref", ToolCall: &message.ToolCall{ID: "tool", Function: message.FunctionCall{Name: "read"}}})
+	recorder.RecordEvent(Event{Type: events.EventAssistantCompleted, AgentName: "assistant", MessageID: "a", Content: "final A", ReasoningContent: "reason A"})
+	recorder.RecordEvent(Event{Type: events.EventAssistantCompleted, AgentName: "assistant", MessageID: "b", Content: "final B"})
+	recorder.RecordEvent(Event{Type: EventToolCallCompleted, AgentName: "assistant", ToolCallRef: "ref", ToolCallID: "tool", ToolResult: "result"})
+	recorder.RecordEvent(Event{Type: events.EventAssistantCompleted, AgentName: "assistant", MessageID: "c", Content: "non-stream"})
+	recorder.FinalizeCurrent()
+	if got := recorder.GetMessages()[0]; got.GetTextContent() != "final Afinal Bnon-stream" || got.GetReasoningContent() != "reason A" {
+		t.Fatalf("live message = %+v", got)
+	}
+	toolCount := 0
+	for _, e := range recorder.GetMessages()[0].Events {
+		if e.ToolCall != nil {
+			toolCount++
+			if e.ToolCall.Result != "result" {
+				t.Fatalf("tool result was disconnected: %+v", e.ToolCall)
+			}
+		}
+	}
+	if toolCount != 1 {
+		t.Fatalf("tool count = %d", toolCount)
+	}
+	records, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answers []string
+	for _, r := range records {
+		if r.Type == TranscriptAssistantMessage {
+			answers = append(answers, r.Content)
+		}
+	}
+	if strings.Join(answers, "|") != "final A|final B|non-stream" {
+		t.Fatalf("persisted answers = %v", answers)
+	}
+}
+
+func TestTranscriptFinalizesIncompleteMemberSeparately(t *testing.T) {
+	dir := t.TempDir()
+	recorder := NewHistoryRecorder()
+	recorder.SetSessionDir(dir)
+	recorder.RecordEvent(Event{Type: EventAssistantText, AgentName: "main", MessageID: "main", Content: "main partial"})
+	recorder.RecordEvent(Event{Type: EventAssistantReasoning, AgentName: "member", MessageID: "member", MemberCallID: "call", MemberToolName: "delegate", Content: "member reasoning"})
+	recorder.RecordCancelled("cancelled")
+	records, err := LoadSessionTranscriptRecords(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberCount := 0
+	for _, r := range records {
+		if r.Member != nil {
+			memberCount++
+			if r.Member.ParentCallID != "call" || r.Event.Type != TranscriptAgentStep || r.Event.Reasoning != "member reasoning" {
+				t.Fatalf("member = %+v", r)
+			}
+		}
+	}
+	if memberCount != 1 || len(records) != 3 {
+		t.Fatalf("records = %+v", records)
+	}
+}
