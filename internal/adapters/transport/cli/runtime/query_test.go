@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 )
 
 type failingQueryRunner struct{ err error }
@@ -68,5 +70,34 @@ func TestPresentationCallbackDoesNotOwnHistory(t *testing.T) {
 				t.Fatalf("temporary=%v transcript=%v", temporary, err)
 			}
 		})
+	}
+}
+
+func TestSignalHandlerStopsAndUnsubscribes(t *testing.T) {
+	session := NewSession(ModeTeam, nil, nil)
+	signals, exit := make(chan os.Signal, 1), make(chan os.Signal, 1)
+	stop := session.handleSignals(signals, exit)
+	signals <- syscall.SIGTERM
+	select {
+	case sig := <-exit:
+		if sig != syscall.SIGTERM {
+			t.Fatal(sig)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("signal not forwarded")
+	}
+	stop()
+	stop()
+	signals <- syscall.SIGTERM
+	select {
+	case <-exit:
+		t.Fatal("stopped handler forwarded signal")
+	case <-time.After(20 * time.Millisecond):
+	}
+	// 真实 Notify 注册也必须可重复启动、停止，不留下 signal 包持有的通道。
+	for range 3 {
+		stopReal := session.StartSignalHandler(exit)
+		stopReal()
+		stopReal()
 	}
 }

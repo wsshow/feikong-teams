@@ -186,3 +186,7 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 `internal/architecture` 用层级白名单矩阵约束内部依赖方向（测试仅额外允许 testmodel）；需要组合根的集成测试放在 bootstrap。适配器边界测试限制 SDK 所属位置。运行回归测试覆盖流式工具关联、成员并行问答和恢复、工具 schema 传递、会话隔离、取消、事件接收器失败、默认拒绝、检查点清理、圆桌顺序及 Deep 工作区逃逸。
 
 跨包或运行行为变更运行 `make check`；并发变更另运行相关包的 `go test -race`。生成的 `web/dist` 与 `release` 不提交。
+
+### 关闭时的资源存活期
+
+应用 context 取消会立即传递给 HTTP 任务、消息通道和调度器，阻止继续调度。服务按 LIFO 等待真实退出，之后才运行 Cleanup 并关闭共享 MCP 连接。`ShutdownTimeout` 只限制 `Application.Run` 调用方的等待时间；超时后收尾仍继续，嵌入方通过 `WaitShutdown(ctx)` 等待最终结果，排空期间不能重新运行同一应用。CLI 信号监听由当前直接查询持有，退出时注销 `signal.Notify` 并等待监听协程结束。

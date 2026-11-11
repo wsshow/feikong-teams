@@ -427,11 +427,10 @@ func (s *Scheduler) recoverStaleRunningTasks() {
 	}
 }
 
-// Stop 停止调度器
-func (s *Scheduler) Stop(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+// BeginShutdown 停止调度并取消执行，不等待任务退出。
+func (s *Scheduler) BeginShutdown() { s.beginShutdown() }
+
+func (s *Scheduler) beginShutdown() <-chan struct{} {
 	s.lifecycleMu.Lock()
 	s.mu.Lock()
 	var runCancel context.CancelFunc
@@ -470,6 +469,19 @@ func (s *Scheduler) Stop(ctx context.Context) error {
 			s.mu.Unlock()
 		}(done)
 	}
+	return done
+}
+
+// Stop 请求停止并等待任务退出，超时不会提前释放任务依赖。
+func (s *Scheduler) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := s.beginShutdown()
+	if done == nil {
+		return nil
+	}
+
 	select {
 	case <-done:
 		return nil

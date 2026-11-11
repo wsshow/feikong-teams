@@ -24,6 +24,7 @@ type SchedulerService struct {
 	mu            sync.Mutex
 	scheduler     *filecron.Scheduler
 	service       *appschedule.Service
+	stopParent    func() bool
 }
 
 // NewSchedulerService 创建调度服务
@@ -87,6 +88,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	})
 	sched.SetExecutor(executor)
 	sched.Start()
+	s.stopParent = context.AfterFunc(ctx, sched.BeginShutdown)
 	s.scheduler = sched
 	s.service = appService
 	return nil
@@ -99,6 +101,10 @@ func (s *SchedulerService) Stop(ctx context.Context) error {
 	if s.scheduler != nil {
 		if err := s.scheduler.Stop(ctx); err != nil {
 			return err
+		}
+		if s.stopParent != nil {
+			s.stopParent()
+			s.stopParent = nil
 		}
 		s.scheduler = nil
 	}

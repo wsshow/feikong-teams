@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -166,5 +167,46 @@ func TestQueueUpdateReturnsStorageFailureWithoutPublishing(t *testing.T) {
 	}
 	if page := stream.EventsSince(0); len(page) != 0 {
 		t.Fatalf("failed edit published events: %v", page)
+	}
+}
+
+func TestRuntimeParentCancellationDrainsTasksAfterTimeout(t *testing.T) {
+	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
+	rt := newTestRuntime(t)
+	parent, cancelParent := context.WithCancel(context.Background())
+	if err := rt.Start(parent); err != nil {
+		t.Fatal(err)
+	}
+	cancelled, release := make(chan struct{}), make(chan struct{})
+	if !rt.Go(func() { <-rt.taskContext.Done(); close(cancelled); <-release }) {
+		t.Fatal("task rejected")
+	}
+	cancelParent()
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("lifecycle cancellation did not reach task")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := rt.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	select {
+	case <-rt.shutdownDone:
+		t.Fatal("runtime closed before task exited")
+	default:
+	}
+	if rt.Go(func() {}) {
+		t.Fatal("accepted task during shutdown")
+	}
+	close(release)
+	select {
+	case <-rt.shutdownDone:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown abandoned after timeout")
+	}
+	if err := rt.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }

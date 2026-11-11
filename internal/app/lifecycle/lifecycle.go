@@ -58,7 +58,7 @@ type Service interface {
 	Name() string
 	// Start 启动服务
 	Start(ctx context.Context) error
-	// Stop 停止服务
+	// Stop 停止服务并等待所有使用其依赖的任务退出；ctx 只限制等待时间。
 	Stop(ctx context.Context) error
 }
 
@@ -72,7 +72,14 @@ type Application struct {
 	mu           sync.Mutex           // 保护并发访问
 	running      bool                 // 是否正在执行生命周期
 	currentPhase Phase                // 当前生命周期阶段
-	exitCh       chan os.Signal       // 退出信号通道
+	shutdown     *shutdownResult
+	exitCh       chan os.Signal // 退出信号通道
+}
+
+// shutdownResult 的 err 在关闭 done 之前写入，由通道同步读取。
+type shutdownResult struct {
+	done chan struct{}
+	err  error
 }
 
 // New 创建 Application 实例
@@ -165,12 +172,8 @@ func (app *Application) Run(ctx context.Context) error {
 	}
 	app.running = true
 	app.started = nil
+	app.shutdown = nil
 	app.mu.Unlock()
-	defer func() {
-		app.mu.Lock()
-		app.running = false
-		app.mu.Unlock()
-	}()
 
 	appCtx, cancel := context.WithCancel(ctx)
 	appCtx = appstate.WithState(appCtx, app.state)
@@ -207,21 +210,65 @@ func (app *Application) Run(ctx context.Context) error {
 	return app.shutdownStartedServices()
 }
 
-func (app *Application) cleanupStartupFailure() error {
+func (app *Application) cleanupStartupFailure() error { return app.finishShutdown(false) }
+
+func (app *Application) shutdownStartedServices() error { return app.finishShutdown(true) }
+
+// finishShutdown 将调用方的等待预算与依赖的真实存活期分开。
+// 超时仅结束等待，后台仍按 LIFO 排空服务，最后才释放共享资源。
+func (app *Application) finishShutdown(normal bool) error {
+	result := &shutdownResult{done: make(chan struct{})}
+	app.mu.Lock()
+	app.shutdown = result
+	app.mu.Unlock()
+	go func() {
+		ctx := context.Background()
+		var preErr, stopErr error
+		if normal {
+			preErr = app.executePhaseBounded(ctx, PhasePreStop)
+		}
+		serviceErr := app.stopServices(ctx)
+		if normal {
+			stopErr = app.executePhaseBounded(ctx, PhaseStop)
+		}
+		cleanupErr := app.executePhaseBounded(ctx, PhaseCleanup)
+		result.err = errors.Join(preErr, serviceErr, stopErr, cleanupErr)
+		app.mu.Lock()
+		app.running = false
+		close(result.done)
+		app.mu.Unlock()
+	}()
 	ctx, cancel := app.shutdownContext()
 	defer cancel()
-	stopErr := app.stopServices(ctx)
-	return errors.Join(stopErr, app.executePhaseBounded(ctx, PhaseCleanup))
+	return waitShutdown(ctx, result)
 }
 
-func (app *Application) shutdownStartedServices() error {
-	ctx, cancel := app.shutdownContext()
-	defer cancel()
-	preErr := app.executePhaseBounded(ctx, PhasePreStop)
-	serviceErr := app.stopServices(ctx)
-	stopErr := app.executePhaseBounded(ctx, PhaseStop)
-	cleanupErr := app.executePhaseBounded(ctx, PhaseCleanup)
-	return errors.Join(preErr, serviceErr, stopErr, cleanupErr)
+// WaitShutdown 等待最近一次关闭真正完成，供嵌入方在 Run 超时后确认资源已释放。
+func (app *Application) WaitShutdown(ctx context.Context) error {
+	app.mu.Lock()
+	result := app.shutdown
+	app.mu.Unlock()
+	if result == nil {
+		return fmt.Errorf("application shutdown has not started")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return waitShutdown(ctx, result)
+}
+
+func waitShutdown(ctx context.Context, result *shutdownResult) error {
+	select {
+	case <-result.done:
+		return result.err
+	default:
+	}
+	select {
+	case <-result.done:
+		return result.err
+	case <-ctx.Done():
+		return fmt.Errorf("wait for application shutdown: %w", ctx.Err())
+	}
 }
 
 func (app *Application) shutdownContext() (context.Context, context.CancelFunc) {

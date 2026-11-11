@@ -116,7 +116,8 @@ func runChat(ctx context.Context, cmd *ucli.Command, opts Options, agentName str
 		}
 
 		if query != "" {
-			session.StartSignalHandler(app.ExitCh())
+			stopSignals := session.StartSignalHandler(app.ExitCh())
+			defer stopSignals()
 			return session.HandleDirect(ctx, r, app.ExitCh(), query)
 		} else {
 			session.HandleInteractive(ctx, r, app.ExitCh())

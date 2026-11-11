@@ -46,6 +46,7 @@ type Runtime struct {
 	shutdownDone        chan struct{}
 	taskContext         context.Context
 	cancelTasks         context.CancelFunc
+	stopParent          func() bool
 }
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
@@ -143,6 +144,14 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	if err := rt.InitializationError(); err != nil {
 		return err
 	}
+	stopParent := context.AfterFunc(ctx, rt.BeginShutdown)
+	rt.tasksMu.Lock()
+	if rt.closing {
+		stopParent()
+	} else {
+		rt.stopParent = stopParent
+	}
+	rt.tasksMu.Unlock()
 	rt.Streams.StartCleanup(ctx, time.Minute)
 	return nil
 }
@@ -197,13 +206,23 @@ func (rt *Runtime) BeginShutdown() {
 		rt.tasksMu.Lock()
 		rt.closing = true
 		rt.cancelTasks()
+		stopParent := rt.stopParent
+		rt.stopParent = nil
 		rt.tasksMu.Unlock()
+		if stopParent != nil {
+			stopParent()
+		}
 		if rt.Streams != nil {
 			rt.Streams.StopCleanup()
 			rt.Streams.CancelAll()
 		}
 		go func() {
 			rt.tasks.Wait()
+			rt.resourceCloseOnce.Do(func() {
+				if rt.ChunkUploads != nil {
+					rt.ChunkUploads.Close()
+				}
+			})
 			close(rt.shutdownDone)
 		}()
 	})
@@ -220,11 +239,6 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 	rt.BeginShutdown()
 	select {
 	case <-rt.shutdownDone:
-		rt.resourceCloseOnce.Do(func() {
-			if rt.ChunkUploads != nil {
-				rt.ChunkUploads.Close()
-			}
-		})
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("wait for HTTP runtime tasks: %w", ctx.Err())

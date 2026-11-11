@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/pterm/pterm"
@@ -127,25 +128,41 @@ func (s *Session) activateSession(nonInteractive bool) {
 	}
 }
 
-// StartSignalHandler 监听系统信号（SIGINT 运行时取消查询；其他信号转发为退出信号）
-func (s *Session) StartSignalHandler(exitSignals chan os.Signal) {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+// StartSignalHandler 监听系统信号，返回的停止函数注销通知并等待处理协程退出。
+func (s *Session) StartSignalHandler(exitSignals chan os.Signal) func() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	stop := s.handleSignals(signals, exitSignals)
+	return sync.OnceFunc(func() { signal.Stop(signals); stop() })
+}
+
+func (s *Session) handleSignals(signals <-chan os.Signal, exitSignals chan<- os.Signal) func() {
+	stop, done := make(chan struct{}), make(chan struct{})
 	go func() {
-		for sig := range sigChan {
-			switch sig {
-			case syscall.SIGINT, os.Interrupt:
-				if s.queryState.IsRunning() {
-					HandleCtrlC(s.queryState)
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			case sig, ok := <-signals:
+				if !ok {
+					return
 				}
-			default:
-				select {
-				case exitSignals <- sig:
+				switch sig {
+				case syscall.SIGINT, os.Interrupt:
+					if s.queryState.IsRunning() {
+						HandleCtrlC(s.queryState)
+					}
 				default:
+					select {
+					case exitSignals <- sig:
+					default:
+					}
 				}
 			}
 		}
 	}()
+	return sync.OnceFunc(func() { close(stop); <-done })
 }
 
 // HandleDirect 非交互模式：执行单次查询后退出

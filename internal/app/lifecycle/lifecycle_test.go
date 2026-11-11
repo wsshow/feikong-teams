@@ -216,46 +216,79 @@ func TestApplicationRunStopsOnContextCancel(t *testing.T) {
 	}
 }
 
-func TestApplicationShutdownContextBoundsCooperativeService(t *testing.T) {
+func TestShutdownTimeoutDoesNotReleaseLiveDependencies(t *testing.T) {
 	app := New(WithExitSignals(), WithShutdownTimeout(20*time.Millisecond))
 	var order []string
-	stopStarted := make(chan struct{})
-	cleanupStarted := make(chan struct{})
-	app.RegisterService(&fakeService{
-		name:  "blocking",
-		order: &order,
-		stopFn: func(ctx context.Context) error {
-			close(stopStarted)
-			<-ctx.Done()
+	stopStarted, release, cleanup := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	stopErr := errors.New("late stop failure")
+	app.RegisterService(&fakeService{name: "resource", order: &order})
+	app.RegisterService(&fakeService{name: "worker", order: &order, stopFn: func(ctx context.Context) error {
+		close(stopStarted)
+		select {
+		case <-release:
+			return stopErr
+		case <-ctx.Done():
+			t.Error("worker lifetime limited by caller wait")
 			return ctx.Err()
-		},
-	})
-	app.OnReady(func(context.Context) error {
-		app.Shutdown()
-		return nil
-	})
-	app.OnCleanup(func(context.Context) error {
-		close(cleanupStarted)
-		return nil
-	})
-
+		}
+	}})
+	app.OnReady(func(context.Context) error { app.Shutdown(); return nil })
+	app.OnCleanup(func(context.Context) error { close(cleanup); return nil })
 	startedAt := time.Now()
 	if err := app.Run(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Run error = %v, want deadline exceeded", err)
+		t.Fatalf("Run=%v", err)
 	}
-	if elapsed := time.Since(startedAt); elapsed > time.Second {
-		t.Fatalf("shutdown elapsed = %v, want bounded shutdown", elapsed)
+	if time.Since(startedAt) > time.Second {
+		t.Fatal("caller wait exceeded budget")
 	}
+	<-stopStarted
 	select {
-	case <-stopStarted:
+	case <-cleanup:
+		t.Fatal("cleanup released a live dependency")
 	default:
-		t.Fatal("service stop was not attempted")
+	}
+	if err := app.Run(context.Background()); err == nil {
+		t.Fatal("restarted while previous shutdown was draining")
+	}
+	close(release)
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := app.WaitShutdown(waitCtx); !errors.Is(err, stopErr) {
+		t.Fatalf("WaitShutdown=%v", err)
+	}
+	if got := strings.Join(order, ","); got != "start:resource,start:worker,stop:worker,stop:resource" {
+		t.Fatal(got)
 	}
 	select {
-	case <-cleanupStarted:
-	case <-time.After(time.Second):
-		t.Fatal("cleanup hook was not attempted after timeout")
+	case <-cleanup:
+	default:
+		t.Fatal("cleanup did not run after worker exited")
 	}
+}
+
+func TestStartupFailureAlsoDefersCleanupUntilServicesDrain(t *testing.T) {
+	app := New(WithExitSignals(), WithShutdownTimeout(20*time.Millisecond))
+	var order []string
+	release, cleanup := make(chan struct{}), make(chan struct{})
+	app.RegisterService(&fakeService{name: "worker", order: &order, stopFn: func(context.Context) error { <-release; return nil }})
+	startErr := errors.New("start hook failed")
+	app.OnStart(func(context.Context) error { return startErr })
+	app.OnCleanup(func(context.Context) error { close(cleanup); return nil })
+	if err := app.Run(context.Background()); !errors.Is(err, startErr) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	select {
+	case <-cleanup:
+		t.Fatal("early cleanup")
+	default:
+	}
+	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := app.WaitShutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	<-cleanup
 }
 
 func TestApplicationAccessorsAndShutdownBuffer(t *testing.T) {
