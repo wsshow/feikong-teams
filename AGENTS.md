@@ -117,6 +117,7 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 
 - 新后台服务实现 `internal/app/lifecycle.Service` 的 `Name`、`Start`、`Stop`；具体组合层服务放在 `internal/bootstrap/services`。
 - 服务按注册顺序启动，按逆序（LIFO）停止；停止和收尾错误必须向调用方返回。关闭与重启使用实例级 `lifecycle.Control`。
+- 服务的 `Start(ctx)` 必须将应用取消传递给所属任务，`Stop(ctx)` 等待任务真实退出。应用关闭超时只结束调用方等待，后台继续排空后再执行 Cleanup；嵌入方通过 `WaitShutdown(ctx)` 确认资源释放，不得在任务仍运行时清理共享依赖。
 - `turn.Request.OnInterrupt` 未设置时必须保持固定拒绝的安全默认值。
 
 ### 事件、Hooks 与流式任务
@@ -127,6 +128,9 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 - Hook payload 在 `internal/ports/hooks` 定义为实现 `hooks.Payload` 的明确结构体；不要以 `any` 作为 `Invocation` 或 `Result` 的 payload 契约。新增 hook point 时同步增加便捷调用函数和架构边界测试。
 - WebSocket `steer`、`/stream/steer` 和终端运行中 Enter 进入 steering 通道，由 `SteeringSource` 在下一次模型调用前消费；运行中的普通 `chat`/`follow_up` 只追加后续任务。
 - 流式队列项必须有稳定 `queue_id`，并通过 `queue_updated` 向 Web/SSE/WS 同步。只能编辑、删除或排序尚未消费的项；终端暂停时将未消费 steering 回填输入框。
+- 持久化队列的恢复、编辑与消费统一通过 `chat.QueueService`；入口不得自行组合 Stream 修改、文件保存和通知。保存失败不能确认修改成功，取消后的 steering 保留给下一次运行。
+- 回合历史通过 `TurnRequest.History` 注入，由 `chat.Service` 统一记录、定稿与保存；视图只接收事件，`SessionLifecycle` 只负责历史提交后的 metadata 和记忆更新。
+- 前端事件字段在 `web/src/types/events.ts` 的声明中同时定义类型和校验，历史兼容字段只在 decoder 归一化。协议变化同步更新 Go/Bun 共用的 `chat-events.json` 样本及相关测试。
 
 ### 传输与消息通道
 
