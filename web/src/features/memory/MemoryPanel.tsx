@@ -1,0 +1,73 @@
+import { useEffect, useState } from "react";
+import { get, put, del } from "@/api/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDialog } from "@/components/ui/action-dialog";
+
+const categories = { preference: "用户偏好", fact: "个人信息", feedback: "行为反馈", lesson: "避坑记录", decision: "已确定方案", insight: "认知洞察", experience: "操作经验" };
+type MemoryType = keyof typeof categories;
+type Entry = { id: string; type: MemoryType; summary: string; detail: string; tags: string[]; created_at?: string; hit_count?: number };
+const fresh = (): Entry => ({ id: "", type: "fact", summary: "", detail: "", tags: [] });
+
+export function MemoryPanel() {
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
+  const [draft, setDraft] = useState<Entry | null>(null);
+  const [tags, setTags] = useState("");
+  const [target, setTarget] = useState<Entry | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    get<Entry[]>("/api/fkteams/memory", { signal: controller.signal })
+      .then((items) => { setEntries(items); setError(""); })
+      .catch((e: unknown) => { if (!controller.signal.aborted) setError(String(e)); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [reload]);
+  function edit(entry: Entry) { setDraft({ ...entry, tags: [...entry.tags || []] }); setTags((entry.tags || []).join(", ")); setNotice(""); }
+  async function save() {
+    if (!draft || busy) return;
+    setBusy(true); setError("");
+    try {
+      const saved = await put<Entry>("/api/fkteams/memory", { ...draft, tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean) });
+      setEntries((old) => [...old.filter((entry) => entry.id !== saved.id), saved]);
+      setDraft(null); setNotice("记忆已保存");
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  }
+  async function remove() {
+    if (!target || busy) return;
+    setBusy(true); setError("");
+    try {
+      await del(`/api/fkteams/memory/${encodeURIComponent(target.id)}`);
+      setEntries((old) => old.filter((entry) => entry.id !== target.id));
+      if (draft?.id === target.id) setDraft(null);
+      setTarget(null); setNotice("记忆已删除");
+    } catch (e) { setError(String(e)); setTarget(null); } finally { setBusy(false); }
+  }
+  const visible = entries.filter((entry) => (!category || entry.type === category) && `${entry.summary} ${entry.detail} ${(entry.tags || []).join(" ")}`.toLowerCase().includes(query.toLowerCase()));
+  return <div className="h-full overflow-auto p-4 sm:p-6">
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">长期记忆</h1><p className="mt-1 text-sm text-muted-foreground">管理助手在不同会话中记住的信息。共 {entries.length} 条。</p></div><Button disabled={busy || !!draft} onClick={() => edit(fresh())}>新增记忆</Button></div>
+      {error && <div role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{error}<Button variant="ghost" disabled={busy} onClick={() => setReload((value) => value + 1)}>重新加载</Button></div>}
+      {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+      {draft && <form className="sketch-surface space-y-4 rounded-lg p-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <h2 className="font-semibold">{draft.id ? "编辑记忆" : "新增记忆"}</h2>
+        <label className="block space-y-1 text-sm"><span>类型</span><select className="h-9 w-full rounded-md border bg-background px-3" value={draft.type} disabled={busy} onChange={(e) => setDraft({ ...draft, type: e.target.value as MemoryType })}>{Object.entries(categories).map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></label>
+        <label className="block space-y-1 text-sm"><span>摘要</span><Input required maxLength={1000} value={draft.summary} disabled={busy} onChange={(e) => setDraft({ ...draft, summary: e.target.value })} /></label>
+        <label className="block space-y-1 text-sm"><span>详情</span><Textarea rows={5} maxLength={16000} value={draft.detail} disabled={busy} onChange={(e) => setDraft({ ...draft, detail: e.target.value })} /></label>
+        <label className="block space-y-1 text-sm"><span>标签，用逗号分隔</span><Input value={tags} disabled={busy} onChange={(e) => setTags(e.target.value)} /></label>
+        <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={busy} onClick={() => setDraft(null)}>取消</Button><Button disabled={busy || !draft.summary.trim()}>{busy ? "正在保存" : "保存记忆"}</Button></div>
+      </form>}
+      <div className="flex flex-col gap-3 sm:flex-row"><Input aria-label="搜索记忆" placeholder="搜索摘要、详情或标签" value={query} onChange={(e) => setQuery(e.target.value)} /><select aria-label="筛选记忆类型" className="h-9 rounded-md border bg-background px-3" value={category} onChange={(e) => setCategory(e.target.value)}><option value="">全部类型</option>{Object.entries(categories).map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></div>
+      {loading ? <p role="status" className="py-8 text-center text-muted-foreground">正在加载记忆</p> : !visible.length ? <p className="py-8 text-center text-muted-foreground">{entries.length ? "没有匹配的记忆" : "暂无记忆。可以手动添加，或在配置中启用自动提取。"}</p> : <ul className="divide-y rounded-lg border bg-card">{visible.map((entry) => <li key={entry.id} className="space-y-2 p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs text-muted-foreground">{categories[entry.type]} · 命中 {entry.hit_count || 0} 次</p><h2 className="mt-1 break-words font-semibold">{entry.summary}</h2></div><div className="flex shrink-0 gap-1"><Button size="sm" variant="ghost" disabled={busy || !!draft} onClick={() => edit(entry)}>编辑</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => setTarget(entry)}>删除</Button></div></div><p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{entry.detail}</p>{!!entry.tags?.length && <p className="text-xs text-muted-foreground">{entry.tags.join(" · ")}</p>}</li>)}</ul>}
+      <ConfirmDialog open={!!target} title="删除这条记忆？" description={target?.summary} confirmLabel="删除记忆" destructive busy={busy} onCancel={() => setTarget(null)} onConfirm={() => void remove()} />
+    </div>
+  </div>;
+}

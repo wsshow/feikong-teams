@@ -9,7 +9,7 @@ import type { SkillInfo } from "@/types/skills";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import { appendBufferedChatEvent, rememberChatEvent } from "@/features/chat/eventBuffer";
 
-export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "skills";
+export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "skills" | "memory";
 
 const initialChatState: ChatState = {
   activeSessionID: chatSessionIDFromPath(location.pathname),

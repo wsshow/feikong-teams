@@ -1,6 +1,7 @@
 import type { AppPanel } from "@/app/store";
 
 export function panelFromPath(path: string): AppPanel {
+  if (path === "/memory") return "memory";
   if (path === "/config") return "config";
   if (path === "/files") return "files";
   if (path === "/schedules") return "schedules";
@@ -25,6 +26,8 @@ export function chatPath(sessionID?: string) {
 
 export function panelPath(panel: AppPanel) {
   switch (panel) {
+    case "memory":
+      return "/memory";
     case "config":
       return "/config";
     case "files":

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -76,8 +77,13 @@ func writeMarkdownFile(path, title string, entries []domainmemory.MemoryEntry) e
 		sb.WriteString("## ")
 		sb.WriteString(e.Summary)
 		sb.WriteString("\n\n")
-		sb.WriteString("- 详情: ")
-		sb.WriteString(e.Detail)
+		fmt.Fprintf(&sb, "- ID: %s\n- 来源会话: %s\n", e.ID, e.SessionID)
+		detailJSON, err := json.Marshal(e.Detail)
+		if err != nil {
+			return err
+		}
+		sb.WriteString("- 详情JSON: ")
+		sb.Write(detailJSON)
 		sb.WriteString("\n")
 		sb.WriteString("- 标签: ")
 		sb.WriteString(strings.Join(e.Tags, ", "))
@@ -166,7 +172,15 @@ func loadMarkdownFile(path string, memType domainmemory.MemoryType, maxEntries i
 			continue
 		}
 
-		if strings.HasPrefix(line, "- 详情: ") {
+		if strings.HasPrefix(line, "- ID: ") {
+			current.ID = strings.TrimPrefix(line, "- ID: ")
+		} else if strings.HasPrefix(line, "- 来源会话: ") {
+			current.SessionID = strings.TrimPrefix(line, "- 来源会话: ")
+		} else if strings.HasPrefix(line, "- 详情JSON: ") {
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "- 详情JSON: ")), &current.Detail); err != nil {
+				return nil, fmt.Errorf("decode memory detail: %w", err)
+			}
+		} else if strings.HasPrefix(line, "- 详情: ") {
 			current.Detail = strings.TrimPrefix(line, "- 详情: ")
 		} else if strings.HasPrefix(line, "- 标签: ") {
 			tagsStr := strings.TrimPrefix(line, "- 标签: ")
@@ -201,6 +215,9 @@ func loadMarkdownFile(path string, memType domainmemory.MemoryType, maxEntries i
 
 	// 生成唯一 ID（同类型同秒的条目通过索引区分）
 	for i := range entries {
+		if entries[i].ID != "" {
+			continue
+		}
 		entries[i].ID = fmt.Sprintf("%s_%d_%d", entries[i].Type, entries[i].CreatedAt.Unix(), i)
 	}
 

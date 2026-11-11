@@ -200,6 +200,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		memory := apiV1.Group("/memory")
 		{
 			memory.GET("", handler.GetMemoryListHandlerWithState(state))
+			memory.PUT("", smallJSONBody, handler.SaveMemoryEntryHandler(state))
+			memory.DELETE("/:id", controlBody, handler.DeleteMemoryEntryHandler(state))
 			memory.DELETE("", smallJSONBody, handler.DeleteMemoryHandlerWithState(state))
 			memory.POST("/clear", controlBody, handler.ClearMemoryHandlerWithState(state))
 		}

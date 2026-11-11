@@ -13,6 +13,7 @@ import { authExpiredEvent, authRestoredEvent } from "@/lib/auth-session";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
 import type { AgentInfo, VersionInfo } from "@/types/api";
 
+const MemoryPanel = lazy(() => import("@/features/memory/MemoryPanel").then((module) => ({ default: module.MemoryPanel })));
 const ChatPage = lazy(() => import("@/features/chat/ChatPage").then((module) => ({ default: module.ChatPage })));
 const ConfigPanel = lazy(() => import("@/features/config/ConfigPanel").then((module) => ({ default: module.ConfigPanel })));
 const FileManager = lazy(() => import("@/features/files/FileManager").then((module) => ({ default: module.FileManager })));
@@ -106,6 +107,8 @@ function Workspace() {
 
   const panel = (() => {
     switch (activePanel) {
+      case "memory":
+        return <MemoryPanel />;
       case "config":
         return <ConfigPanel />;
       case "files":

@@ -80,12 +80,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function resolveTitle(
-  activePanel: "chat" | "config" | "files" | "schedules" | "shares" | "skills",
+  activePanel: "chat" | "config" | "files" | "schedules" | "shares" | "skills" | "memory",
   activeSessionID: string,
   sessions: Array<{ session_id: string; title?: string }>,
 ) {
   if (activePanel !== "chat") {
     return {
+      memory: "记忆",
       files: "文件",
       schedules: "任务",
       shares: "分享",

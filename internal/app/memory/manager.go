@@ -148,6 +148,7 @@ func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessi
 			added++
 		case actionUpdate:
 			// 保留旧条目的命中统计
+			entry.ID = m.entries[idx].ID
 			entry.HitCount = m.entries[idx].HitCount
 			entry.LastHitAt = m.entries[idx].LastHitAt
 			m.entries[idx] = entry
@@ -293,6 +294,7 @@ func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionI
 			m.entries = append(m.entries, entry)
 			added++
 		case actionUpdate:
+			entry.ID = m.entries[idx].ID
 			entry.HitCount = m.entries[idx].HitCount
 			entry.LastHitAt = m.entries[idx].LastHitAt
 			m.entries[idx] = entry

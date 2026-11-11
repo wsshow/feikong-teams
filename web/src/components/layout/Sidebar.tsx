@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  Database,
   FolderOpen,
   MoreVertical,
   MessageSquare,
@@ -29,6 +30,7 @@ import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
 import { SessionShareDialog } from "./SessionShareDialog";
 
 const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
+  { key: "memory", label: "记忆", icon: Database },
   { key: "files", label: "文件", icon: FolderOpen },
   { key: "schedules", label: "任务", icon: CalendarClock },
   { key: "shares", label: "分享", icon: Share2 },

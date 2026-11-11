@@ -107,3 +107,18 @@ func TestLoadMarkdownRejectsOversizedFileAndLine(t *testing.T) {
 		t.Fatal("expected oversized memory line to be rejected")
 	}
 }
+
+func TestEditableMemoryRoundTrip(t *testing.T) {
+	store := NewStore(t.TempDir())
+	entries := []domainmemory.MemoryEntry{{ID: "stable", Type: domainmemory.Fact, Summary: "summary", Detail: "first\nsecond", SessionID: "source"}}
+	if err := store.Save(entries); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "stable" || got[0].SessionID != "source" || got[0].Detail != entries[0].Detail {
+		t.Fatalf("lost editable fields: %#v", got)
+	}
+}
