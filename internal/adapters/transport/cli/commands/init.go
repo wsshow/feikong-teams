@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"fkteams/internal/bootstrap/environment"
+	"fkteams/internal/adapters/environment"
 
 	ucli "github.com/urfave/cli/v3"
 )
