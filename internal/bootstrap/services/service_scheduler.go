@@ -8,13 +8,9 @@ import (
 
 	"fkteams/internal/adapters/scheduler/filecron"
 	appagent "fkteams/internal/app/agent"
-	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/config"
+	"fkteams/internal/app/execution"
 	appschedule "fkteams/internal/app/schedule"
-	apptools "fkteams/internal/app/tools"
-	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/hooks"
-	modelregistry "fkteams/internal/runtime/model"
 )
 
 // SchedulerService 定时任务调度服务
@@ -63,12 +59,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	}
 
 	appService := appschedule.NewService(sched)
-	runtime, _ := runtimeport.RuntimeFromContext(ctx)
-	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
-	agentRegistry, _ := agents.RegistryFromContext(ctx)
-	models, _ := modelregistry.RegistryFromContext(ctx)
-	tools, _ := apptools.RegistryFromContext(ctx)
-	hookBus := hooks.FromContext(ctx)
+	dependencies := execution.FromContext(ctx)
 	store, err := filecron.NewResultStore(filepath.Join(s.schedulerDir, "tasks"))
 	if err != nil {
 		return err
@@ -78,13 +69,7 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 		return fmt.Errorf("initialize scheduler executor: %w", err)
 	}
 	executor.WithExecutionGate(s.executionGate).WithContextHook(func(ctx context.Context) context.Context {
-		ctx = runtimeport.WithRuntime(ctx, runtime)
-		ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
-		ctx = agents.WithRegistry(ctx, agentRegistry)
-		ctx = modelregistry.WithRegistry(ctx, models)
-		ctx = apptools.WithRegistry(ctx, tools)
-		ctx = hooks.WithBus(ctx, hookBus)
-		return appschedule.WithService(ctx, appService)
+		return appschedule.WithService(dependencies.Context(ctx), appService)
 	})
 	sched.SetExecutor(executor)
 	sched.Start()

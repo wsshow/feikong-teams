@@ -14,21 +14,18 @@ import (
 	modelproviders "fkteams/internal/adapters/model/providers"
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
-	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/config"
+	"fkteams/internal/app/execution"
 	"fkteams/internal/app/lifecycle"
 	appschedule "fkteams/internal/app/schedule"
 	appsession "fkteams/internal/app/session"
 	appskill "fkteams/internal/app/skill"
-	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/hooks"
-	modelregistry "fkteams/internal/runtime/model"
 )
 
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
@@ -51,6 +48,7 @@ type Runtime struct {
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
 type RuntimeOptions struct {
+	execution.Dependencies
 	QueueStore     storage.QueueStore
 	ExecutionGate  *config.ExecutionGate
 	Control        *lifecycle.Control
@@ -65,15 +63,8 @@ type RuntimeOptions struct {
 	SessionService *appsession.Service
 	Favicons       *FaviconProxy
 	Scheduler      *appschedule.Service
-	AgentRegistry  *agents.Registry
-	ToolRegistry   *apptools.ToolGroupRegistry
-	ToolDisplays   *toolmeta.Registry
 	SkillProviders *appskill.ProviderRegistry
-	ModelRegistry  *modelregistry.Registry
 	Providers      *modelproviders.Registry
-	Runtime        runtimeport.Runtime
-	Interrupt      runtimeport.InterruptRuntime
-	HookBus        *hooks.Bus
 	ResetChannels  func()
 }
 
@@ -317,14 +308,8 @@ func (rt *Runtime) resolveRunner(ctx context.Context, mode, agentName string) (r
 // withExecutionDependencies 为一次智能体执行装配请求级依赖。
 // 普通 HTTP 查询直接使用 Runtime 字段，不经过 context 服务定位。
 func (rt *Runtime) withExecutionDependencies(ctx context.Context) context.Context {
-	ctx = runtimeport.WithRuntime(ctx, rt.Runtime)
-	ctx = runtimeport.WithInterruptRuntime(ctx, rt.Interrupt)
-	ctx = modelregistry.WithRegistry(ctx, rt.ModelRegistry)
+	ctx = rt.Dependencies.Context(ctx)
 	ctx = modelproviders.WithRegistry(ctx, rt.Providers)
-	ctx = apptools.WithRegistry(ctx, rt.ToolRegistry)
-	ctx = toolmeta.WithRegistry(ctx, rt.ToolDisplays)
-	ctx = agents.WithRegistry(ctx, rt.AgentRegistry)
-	ctx = hooks.WithBus(ctx, rt.HookBus)
 	return appschedule.WithService(ctx, rt.Scheduler)
 }
 

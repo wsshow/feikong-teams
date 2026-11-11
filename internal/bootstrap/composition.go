@@ -12,26 +12,18 @@ import (
 	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/config"
-	apptools "fkteams/internal/app/tools"
+	"fkteams/internal/app/execution"
 	bootstrapruntimes "fkteams/internal/bootstrap/runtimes"
 	bootstraptools "fkteams/internal/bootstrap/tools"
-	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
-	modelregistry "fkteams/internal/runtime/model"
 )
 
 // ExecutionDependencies 保存一次应用实例所需的执行依赖。
 // 各注册表均为实例所有，避免入口依赖可变的进程级全局状态。
 type ExecutionDependencies struct {
+	execution.Dependencies
 	ExecutionGate         *config.ExecutionGate
-	Runtime               runtimeport.Runtime
-	InterruptRuntime      runtimeport.InterruptRuntime
-	ModelRegistry         *modelregistry.Registry
 	ModelProviderRegistry *modelproviders.Registry
-	ToolRegistry          *apptools.ToolGroupRegistry
-	ToolDisplayRegistry   *toolmeta.Registry
-	AgentRegistry         *agents.Registry
-	HookBus               *hooks.Bus
 }
 
 // NewExecutionDependencies 创建并连接默认 runtime、模型、工具和智能体注册表。
@@ -59,14 +51,16 @@ func NewExecutionDependencies() (*ExecutionDependencies, error) {
 
 	return &ExecutionDependencies{
 		ExecutionGate:         &config.ExecutionGate{},
-		Runtime:               runtimeDefaults.Runtime,
-		InterruptRuntime:      runtimeDefaults.Interrupt,
-		ModelRegistry:         runtimeDefaults.ModelRegistry,
 		ModelProviderRegistry: runtimeDefaults.ModelProviderRegistry,
-		ToolRegistry:          toolRegistry,
-		ToolDisplayRegistry:   toolmeta.NewRegistry(),
-		AgentRegistry:         agents.NewRegistry(),
-		HookBus:               hookBus,
+		Dependencies: execution.Dependencies{
+			Runtime:       runtimeDefaults.Runtime,
+			Interrupt:     runtimeDefaults.Interrupt,
+			ModelRegistry: runtimeDefaults.ModelRegistry,
+			ToolRegistry:  toolRegistry,
+			ToolDisplays:  toolmeta.NewRegistry(),
+			AgentRegistry: agents.NewRegistry(),
+			HookBus:       hookBus,
+		},
 	}, nil
 }
 
@@ -79,12 +73,5 @@ func (d *ExecutionDependencies) Context(parent context.Context) context.Context 
 		return parent
 	}
 
-	ctx := runtimeport.WithRuntime(parent, d.Runtime)
-	ctx = runtimeport.WithInterruptRuntime(ctx, d.InterruptRuntime)
-	ctx = modelregistry.WithRegistry(ctx, d.ModelRegistry)
-	ctx = modelproviders.WithRegistry(ctx, d.ModelProviderRegistry)
-	ctx = apptools.WithRegistry(ctx, d.ToolRegistry)
-	ctx = toolmeta.WithRegistry(ctx, d.ToolDisplayRegistry)
-	ctx = agents.WithRegistry(ctx, d.AgentRegistry)
-	return hooks.WithBus(ctx, d.HookBus)
+	return modelproviders.WithRegistry(d.Dependencies.Context(parent), d.ModelProviderRegistry)
 }

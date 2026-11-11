@@ -29,6 +29,8 @@ AgentKit、Eino 及模型 SDK 只允许在 `internal/adapters/runtime/agentkit/`
 
 不建立进程级默认实例，不通过 `init()`、空白 import 或包级 setter 注册依赖。需要的能力由应用实例持有并注入。只有一个默认执行实现时，组合根直接创建它，不再维护未被消费的运行时注册表。
 
+`app/execution.Dependencies` 统一声明 Runtime、中断能力、模型/工具/工具展示/智能体注册表和 HookBus。组合根、HTTP、消息通道与调度器复用它的 `Context` / `FromContext` 绑定规则；后台任务只提取能力引用，再绑定自己的上下文，不捕获请求的取消信号或会话数据。模型提供者等具体 adapter 依赖仍由组合层单独装配。
+
 ## 一次对话的链路
 
 ```text

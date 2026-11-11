@@ -6,20 +6,17 @@ import (
 
 	"fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
-	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/config"
+	"fkteams/internal/app/execution"
 	appschedule "fkteams/internal/app/schedule"
-	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
-	"fkteams/internal/runtime/hooks"
 	"fkteams/internal/runtime/log"
-	modelregistry "fkteams/internal/runtime/model"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,15 +66,9 @@ type Bridge struct {
 	runner    runtimeport.Runner
 	runnerErr error
 
-	runtimeMu sync.RWMutex
-	runtime   runtimeport.Runtime
-	interrupt runtimeport.InterruptRuntime
-	agents    *agents.Registry
-	models    *modelregistry.Registry
-	tools     *apptools.ToolGroupRegistry
-	displays  *toolmeta.Registry
-	hookBus   *hooks.Bus
-	scheduler func() *appschedule.Service
+	runtimeMu    sync.RWMutex
+	dependencies execution.Dependencies
+	scheduler    func() *appschedule.Service
 
 	queueMu   sync.Mutex
 	queues    map[string]*sessionQueue // per-session 消息队列
@@ -220,36 +211,18 @@ func (b *Bridge) ResetRunner() {
 }
 
 // SetRuntimeDependencies 设置当前通道服务实例使用的 runtime 依赖。
-func (b *Bridge) SetRuntimeDependencies(runtime runtimeport.Runtime, interrupt runtimeport.InterruptRuntime, agentRegistry *agents.Registry, models *modelregistry.Registry, tools *apptools.ToolGroupRegistry, displays *toolmeta.Registry, hookBus *hooks.Bus) {
+func (b *Bridge) SetRuntimeDependencies(dependencies execution.Dependencies) {
 	b.runtimeMu.Lock()
-	b.runtime = runtime
-	b.interrupt = interrupt
-	b.agents = agentRegistry
-	b.models = models
-	b.tools = tools
-	b.displays = displays
-	b.hookBus = hookBus
+	b.dependencies = dependencies
 	b.runtimeMu.Unlock()
 	b.ResetRunner()
 }
 
 func (b *Bridge) withRuntimeContext(ctx context.Context) context.Context {
 	b.runtimeMu.RLock()
-	runtime := b.runtime
-	interrupt := b.interrupt
-	agentRegistry := b.agents
-	models := b.models
-	tools := b.tools
-	displays := b.displays
-	hookBus := b.hookBus
+	dependencies := b.dependencies
 	b.runtimeMu.RUnlock()
-	ctx = runtimeport.WithRuntime(ctx, runtime)
-	ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
-	ctx = agents.WithRegistry(ctx, agentRegistry)
-	ctx = modelregistry.WithRegistry(ctx, models)
-	ctx = apptools.WithRegistry(ctx, tools)
-	ctx = toolmeta.WithRegistry(ctx, displays)
-	ctx = hooks.WithBus(ctx, hookBus)
+	ctx = dependencies.Context(ctx)
 	if b.scheduler != nil {
 		ctx = appschedule.WithService(ctx, b.scheduler())
 	}

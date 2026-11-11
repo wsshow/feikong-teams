@@ -48,10 +48,9 @@ func (d *ExecutionDependencies) RunServer(ctx context.Context, mode httpserver.M
 	}
 
 	runtime := handler.NewRuntime(handler.RuntimeOptions{
-		ExecutionGate: d.ExecutionGate,
-		Runtime:       d.Runtime, Interrupt: d.InterruptRuntime, HookBus: d.HookBus,
-		AgentRegistry: d.AgentRegistry, ToolRegistry: d.ToolRegistry, ToolDisplays: d.ToolDisplayRegistry,
-		ModelRegistry: d.ModelRegistry, Providers: d.ModelProviderRegistry,
+		ExecutionGate:  d.ExecutionGate,
+		Dependencies:   d.Dependencies,
+		Providers:      d.ModelProviderRegistry,
 		SkillProviders: bootstrapskills.NewDefaultProviderRegistry(), Control: control,
 	})
 

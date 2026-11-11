@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fkteams/internal/app/execution"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestRuntimeShutdownWaitsForOwnedTasks(t *testing.T) {
 	provider := &shutdownMCPProvider{}
 	registry := apptools.NewToolGroupRegistry(apptools.ToolResolveContext{})
 	registry.RegisterMCPProvider(provider)
-	runtime := NewRuntime(RuntimeOptions{ToolRegistry: registry})
+	runtime := NewRuntime(RuntimeOptions{Dependencies: execution.Dependencies{ToolRegistry: registry}})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	if !runtime.Go(func() {

@@ -30,7 +30,7 @@ func TestExecutionDependenciesContextBindsDefaults(t *testing.T) {
 	runtimeAdapter, ok := runtimeport.RuntimeFromContext(ctx)
 	assertSameDependency(t, "runtime", runtimeAdapter, ok, dependencies.Runtime)
 	interrupt, ok := runtimeport.InterruptRuntimeFromContext(ctx)
-	assertSameDependency(t, "interrupt runtime", interrupt, ok, dependencies.InterruptRuntime)
+	assertSameDependency(t, "interrupt runtime", interrupt, ok, dependencies.Interrupt)
 	models, ok := modelregistry.RegistryFromContext(ctx)
 	assertSameDependency(t, "model registry", models, ok, dependencies.ModelRegistry)
 	modelProviders, ok := modelproviders.RegistryFromContext(ctx)
@@ -38,7 +38,7 @@ func TestExecutionDependenciesContextBindsDefaults(t *testing.T) {
 	tools, ok := apptools.RegistryFromContext(ctx)
 	assertSameDependency(t, "tool registry", tools, ok, dependencies.ToolRegistry)
 	toolDisplays, ok := toolmeta.RegistryFromContext(ctx)
-	assertSameDependency(t, "tool display registry", toolDisplays, ok, dependencies.ToolDisplayRegistry)
+	assertSameDependency(t, "tool display registry", toolDisplays, ok, dependencies.ToolDisplays)
 	agentRegistry, ok := agents.RegistryFromContext(ctx)
 	assertSameDependency(t, "agent registry", agentRegistry, ok, dependencies.AgentRegistry)
 	if hookBus := hooks.FromContext(ctx); hookBus != dependencies.HookBus {

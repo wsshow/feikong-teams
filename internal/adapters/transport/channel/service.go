@@ -4,17 +4,12 @@ import (
 	"context"
 	"errors"
 	eventlog "fkteams/internal/adapters/storage/file/history"
-	agents "fkteams/internal/app/agent/catalog"
-	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
+	"fkteams/internal/app/execution"
 	appschedule "fkteams/internal/app/schedule"
-	apptools "fkteams/internal/app/tools"
-	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/hooks"
 	"fkteams/internal/runtime/log"
-	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
 )
 
@@ -107,15 +102,9 @@ func (s *Service) Name() string { return "channels" }
 
 // Start 启动所有通道
 func (s *Service) Start(ctx context.Context) error {
-	runtime, _ := runtimeport.RuntimeFromContext(ctx)
-	interrupt, _ := runtimeport.InterruptRuntimeFromContext(ctx)
-	agentRegistry, _ := agents.RegistryFromContext(ctx)
-	models, _ := modelregistry.RegistryFromContext(ctx)
-	tools, _ := apptools.RegistryFromContext(ctx)
-	displays, _ := toolmeta.RegistryFromContext(ctx)
-	hookBus := hooks.FromContext(ctx)
+	dependencies := execution.FromContext(ctx)
 	for _, bridge := range s.bridges {
-		bridge.SetRuntimeDependencies(runtime, interrupt, agentRegistry, models, tools, displays, hookBus)
+		bridge.SetRuntimeDependencies(dependencies)
 		bridge.Start(ctx)
 	}
 	log.Printf("[channels] starting all channels...")

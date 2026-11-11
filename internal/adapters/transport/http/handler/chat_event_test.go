@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fkteams/internal/app/execution"
 	domainevent "fkteams/internal/domain/event"
 	"fmt"
 	"os"
@@ -425,7 +426,7 @@ func TestFrontendEventContractFixture(t *testing.T) {
 		}
 		live = append(live, payload)
 	}
-	rt := &Runtime{RuntimeOptions: RuntimeOptions{ToolDisplays: toolmeta.NewRegistry()}}
+	rt := &Runtime{RuntimeOptions: RuntimeOptions{Dependencies: execution.Dependencies{ToolDisplays: toolmeta.NewRegistry()}}}
 	history := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{
 		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Content: "question"},
 		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Content: "answer", Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5}},
