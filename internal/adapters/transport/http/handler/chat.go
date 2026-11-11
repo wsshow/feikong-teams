@@ -175,7 +175,7 @@ func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, qu
 	stream.Publish(payload)
 }
 
-func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string, queues *appchat.QueueService) runtimeport.SteeringSource {
+func buildSteeringSource(stream *taskstream.Stream, sessionID string, currentRunID func() string, queues *appchat.QueueService) runtimeport.SteeringSource {
 	return func(context.Context) ([]domainmessage.Message, error) {
 		queued, err := queues.TakeSteering(stream, 1)
 		if err != nil {
@@ -187,14 +187,7 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 		messages := make([]domainmessage.Message, 0, len(queued))
 		for _, msg := range queued {
 			message := msg.Message()
-			runID := ""
-			if currentRunID != nil {
-				runID = currentRunID()
-			}
-			turnID := turnIDForRun(runID)
-			userEvent := events.UserMessage(runID, turnID, fmt.Sprintf("%s:user:%s", turnID, msg.ID), message)
-			recorder.RecordEvent(userEvent)
-			stream.Publish(standardEventPayload(sessionID, userEvent, nil))
+
 			messages = append(messages, message)
 		}
 		runID := ""
@@ -204,17 +197,6 @@ func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRe
 		publishQueuedExecutionStart(stream, sessionID, queued[0], runID)
 		return messages, nil
 	}
-}
-
-// isConnectionClosed 检查是否为连接断开导致的错误
-func isConnectionClosed(ctx context.Context, err error) bool {
-	if ctx.Err() != nil {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "closed network connection") ||
-		strings.Contains(msg, "broken pipe") ||
-		strings.Contains(msg, "connection reset")
 }
 
 func extractInterruptMessage(interrupts []runtimeport.Interrupt) string {

@@ -46,7 +46,7 @@ Runner 每次运行创建独立的 AgentKit 会话，将输入历史交给库，
 
 SSE 与 WebSocket 共用 `chat.Service.RunQueued`：每轮执行、消费下一条队列项、最终收尾只有一份流程。空队列会原子关闭入队；只有历史和 metadata 持久化成功后才发布 completed。同步 HTTP 请求也向同一任务注册表申请会话，禁止与流式任务同时改写同一份历史；同步请求不接受追加队列。
 
-`TurnRequest.History` 提供记录、定稿和 `Flush()` 契约，记录发生在展示回调之前。收尾返回错误，执行错误与持久化错误一起向上返回；取消也要完成收尾。每次调用使用独立 RunID，SessionID 只标识长期会话。
+`TurnRequest.History` 提供记录、定稿和 `Flush()` 契约。`chat.Service` 是每回合唯一的记录与定稿所有者：记录发生在展示回调之前，steering 也经过该管线；CLI/JSON/TUI 视图只接收事件。`SessionLifecycle` 只在历史提交后更新 metadata 和记忆，不再重复保存历史。执行取消与收尾失败保留独立的错误来源：只有纯取消映射为 cancelled，任何持久化或收尾失败均映射为 error。每次调用使用独立 RunID，SessionID 只标识长期会话。
 
 模型错误会同时通过事件与返回值传递，不能只发错误事件后返回成功。取消和审批失败也进入用例收尾路径。事件接收器返回错误时取消执行并保留原始错误。
 

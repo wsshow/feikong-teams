@@ -26,7 +26,7 @@ func (s *Service) RunQueued(ctx context.Context, req QueueRequest) (err error) {
 	}
 	defer func() {
 		if req.Finish != nil {
-			err = errors.Join(err, req.Finish(err))
+			err = errors.Join(err, finalizationFailure(req.Finish(err)))
 		}
 		req.Stream.SetStatus(string(CompletionStatus(err)))
 	}()

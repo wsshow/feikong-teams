@@ -146,7 +146,7 @@ func (e *QueryExecutor) SetScheduleService(service *appschedule.Service) {
 }
 
 // SetCallbackBuilder 设置事件回调构造器，用于 JSON 等非默认输出格式。
-func (e *QueryExecutor) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(events.Event) error) {
+func (e *QueryExecutor) SetCallbackBuilder(cb func() func(events.Event) error) {
 	e.view = callbackQueryView{callbackBuilder: cb}
 }
 
@@ -265,7 +265,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	defer cancelFunc()
 
 	e.view.Start(input)
-	innerCallback := e.view.EventCallback(recorder)
+	innerCallback := e.view.EventCallback()
 
 	var approvalReg *approval.Registry
 	if len(e.approveStores) > 0 {
@@ -312,9 +312,6 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		if !ok {
 			return nil, nil
 		}
-		runID := currentRunID
-		turnID := events.TurnID(runID, 1)
-		recorder.RecordEvent(events.UserMessage(runID, turnID, fmt.Sprintf("%s:steering", turnID), message))
 		if err := innerCallback(events.Event{
 			Type:    events.EventType(events.NotifyProcessingStart),
 			Content: strings.TrimSpace(message.DisplayText()),
@@ -332,6 +329,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			Runner:           e.runner,
 			Input:            currentInput,
 			Summary:          recorder,
+			History:          session.turnHistory(recorder),
 			InterruptHandler: runtimeport.InterruptHandler(handler),
 			ApprovalRegistry: approvalReg,
 			SteeringSource:   steeringSource,
@@ -343,17 +341,12 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			},
 			OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, runErr error) error {
 				if session.isTemporary() {
-					recorder.FinalizeCurrent()
 					return nil
-				}
-				status := appchat.CompletionStatus(runErr)
-				if runErr == nil {
-					status = domainsession.StatusActive
 				}
 				store := eventlog.NewChatSessionStore(session.historyDir)
 				return appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
-					SessionID: session.sessionID(), TitleSource: session.sessionTitle, Status: status,
-					History: recorder, FinalizeHistory: true, Error: runErr,
+					SessionID: session.sessionID(), TitleSource: session.sessionTitle, SuccessStatus: domainsession.StatusActive,
+					Error: runErr,
 				})
 			},
 			EventSink: func(event events.Event) error {
@@ -362,7 +355,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		})
 
 		if err != nil {
-			if queryCtx.Err() != nil {
+			if appchat.CompletionStatus(err) == domainsession.StatusCancelled {
 				e.view.Interrupted()
 				return err
 			}

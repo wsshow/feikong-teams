@@ -3,10 +3,13 @@ package runtime
 import (
 	"context"
 	"errors"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -15,6 +18,9 @@ type failingQueryRunner struct{ err error }
 func (r failingQueryRunner) Run(_ context.Context, _ message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
 	if err := opts.Sink(event.Event{Type: event.TypeAssistantText, MessageID: "answer", Content: "partial", Role: message.RoleAssistant, AgentName: "assistant"}); err != nil {
 		return nil, err
+	}
+	if r.err == nil {
+		return &runtimeport.RunResult{}, opts.Sink(event.Event{Type: event.TypeAssistantCompleted, MessageID: "answer", Content: "partial", Role: message.RoleAssistant, AgentName: "assistant"})
 	}
 	return nil, r.err
 }
@@ -36,5 +42,31 @@ func TestExecuteReturnsFailureAndKeepsTemporaryHistoryInMemory(t *testing.T) {
 	}
 	if _, err := os.Stat(session.historyDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("temporary history persisted: %v", err)
+	}
+}
+
+func TestPresentationCallbackDoesNotOwnHistory(t *testing.T) {
+	for _, temporary := range []bool{false, true} {
+		t.Run(fmt.Sprint(temporary), func(t *testing.T) {
+			t.Setenv("FEIKONG_APP_DIR", t.TempDir())
+			session := NewSession(ModeTeam, nil, nil)
+			session.SetTemporary(temporary)
+			session.activateSession(false)
+			executor := NewQueryExecutor(failingQueryRunner{}, NewQueryState())
+			executor.SetSession(session)
+			displayed := 0
+			executor.SetCallbackBuilder(func() func(event.Event) error { return func(event.Event) error { displayed++; return nil } })
+			if err := executor.Execute(context.Background(), "hello"); err != nil {
+				t.Fatal(err)
+			}
+			if displayed != 2 || session.recorder().GetMessageCount() != 1 {
+				t.Fatalf("displayed=%d messages=%d", displayed, session.recorder().GetMessageCount())
+			}
+			transcript := filepath.Join(session.historyDir, session.sessionID(), eventlog.TranscriptFileName)
+			_, err := os.Stat(transcript)
+			if temporary && !errors.Is(err, os.ErrNotExist) || !temporary && err != nil {
+				t.Fatalf("temporary=%v transcript=%v", temporary, err)
+			}
+		})
 	}
 }

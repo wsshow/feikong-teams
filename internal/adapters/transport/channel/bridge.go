@@ -487,9 +487,7 @@ func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []
 				SessionID:      sessionID,
 				TitleSource:    combinedInput,
 				DefaultTitle:   "通道会话",
-				Status:         appchat.CompletionStatus(err),
 				Error:          err,
-				History:        recorder,
 				Memory:         b.memoryManager(),
 				MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
 			})

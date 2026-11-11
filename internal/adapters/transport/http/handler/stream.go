@@ -17,6 +17,7 @@ import (
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
+	domainsession "fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
 
@@ -404,7 +405,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	if currentRunID == "" {
 		currentRunID = newTurnRunID(sessionID)
 	}
-	steeringSource := buildSteeringSource(stream, recorder, sessionID, func() string { return currentRunID }, rt.Queues)
+	steeringSource := buildSteeringSource(stream, sessionID, func() string { return currentRunID }, rt.Queues)
 
 	currentDisplayText := userDisplayText
 	request := func(input domainmessage.TurnInput) appchat.TurnRequest {
@@ -440,7 +441,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 		},
 	})
 	if runErr != nil {
-		if isConnectionClosed(ctx, runErr) {
+		if appchat.CompletionStatus(runErr) == domainsession.StatusCancelled {
 			stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
 		} else {
 			stream.Publish(errorEventPayload(sessionID, runErr.Error()))

@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/cli/eventview"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/runtime/events"
@@ -17,7 +16,7 @@ import (
 // QueryView 是查询执行器的输出端口。执行器只负责生命周期，终端如何展示由 View 决定。
 type QueryView interface {
 	Start(input string)
-	EventCallback(recorder *eventlog.HistoryRecorder) func(events.Event) error
+	EventCallback() func(events.Event) error
 	Flush()
 	Interrupted()
 	Error(error)
@@ -51,12 +50,11 @@ func (v *TerminalQueryView) Start(input string) {
 	v.stopSpinner = sync.OnceFunc(func() { spinner.Stop() })
 }
 
-func (v *TerminalQueryView) EventCallback(recorder *eventlog.HistoryRecorder) func(events.Event) error {
+func (v *TerminalQueryView) EventCallback() func(events.Event) error {
 	return func(event events.Event) error {
 		if v.stopSpinner != nil {
 			v.stopSpinner()
 		}
-		recorder.RecordEvent(event)
 		eventview.PrintEvent(event)
 		return nil
 	}
@@ -97,19 +95,18 @@ func (v *TerminalQueryView) AutoReject() {
 }
 
 type callbackQueryView struct {
-	callbackBuilder func(*eventlog.HistoryRecorder) func(events.Event) error
+	callbackBuilder func() func(events.Event) error
 }
 
 func (v callbackQueryView) Start(input string) {}
 
-func (v callbackQueryView) EventCallback(recorder *eventlog.HistoryRecorder) func(events.Event) error {
+func (v callbackQueryView) EventCallback() func(events.Event) error {
 	if v.callbackBuilder == nil {
 		return func(event events.Event) error {
-			recorder.RecordEvent(event)
 			return nil
 		}
 	}
-	return v.callbackBuilder(recorder)
+	return v.callbackBuilder()
 }
 
 func (v callbackQueryView) Flush() {}

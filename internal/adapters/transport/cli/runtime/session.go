@@ -5,6 +5,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/appstate"
+	appchat "fkteams/internal/app/chat"
 	appschedule "fkteams/internal/app/schedule"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
@@ -28,7 +29,7 @@ type Session struct {
 	queryState       *QueryState
 	currentAgent     string
 	createModeRunner ModeRunnerCreator
-	callbackBuilder  func(*eventlog.HistoryRecorder) func(events.Event) error
+	callbackBuilder  func() func(events.Event) error
 	memory           appstate.MemoryManager
 	scheduler        *appschedule.Service
 	historyDir       string
@@ -205,7 +206,7 @@ func (s *Session) SetCurrentAgent(name string) {
 }
 
 // SetCallbackBuilder 设置事件回调构造器（用于自定义输出格式）
-func (s *Session) SetCallbackBuilder(cb func(*eventlog.HistoryRecorder) func(events.Event) error) {
+func (s *Session) SetCallbackBuilder(cb func() func(events.Event) error) {
 	s.callbackBuilder = cb
 }
 
@@ -269,4 +270,15 @@ func (m *sessionModeSwitcher) SwitchMode() (string, error) {
 	m.session.currentAgent = ""
 	m.executor.SetRunner(newRunner)
 	return newMode.String(), nil
+}
+
+// temporaryHistory 保留临时会话的记录与定稿能力，不写入持久化存储。
+type temporaryHistory struct{ *eventlog.HistoryRecorder }
+
+func (temporaryHistory) Flush() error { return nil }
+func (s *Session) turnHistory(recorder *eventlog.HistoryRecorder) appchat.SessionHistory {
+	if s.isTemporary() {
+		return temporaryHistory{recorder}
+	}
+	return recorder
 }

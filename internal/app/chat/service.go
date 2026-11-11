@@ -9,6 +9,7 @@ import (
 
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/domain/message"
+	"fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
@@ -67,34 +68,52 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 			return approval.WithRegistry(ctx, req.ApprovalRegistry)
 		})
 	}
-	if req.SteeringSource != nil {
-		contextHooks = append(contextHooks, func(ctx context.Context) context.Context {
-			return runtimeport.WithSteeringSource(ctx, req.SteeringSource)
-		})
-	}
 	if req.AskHandler != nil {
 		contextHooks = append(contextHooks, func(ctx context.Context) context.Context {
 			return ask.WithRuntimeHandler(ctx, req.AskHandler)
 		})
 	}
 
-	if req.History != nil {
-		sink, finish := req.EventSink, req.OnFinish
-		req.EventSink = func(event events.Event) error {
+	if req.RunID == "" {
+		req.RunID = req.SessionID + ":" + session.NewID()
+	}
+	sink, finish := req.EventSink, req.OnFinish
+	req.EventSink = func(event events.Event) error {
+		if req.History != nil {
 			req.History.RecordEvent(event)
-			if sink != nil {
-				return sink(event)
-			}
-			return nil
 		}
-		req.OnFinish = func(ctx context.Context, result *runtimeport.RunResult, runErr error) error {
-			req.History.FinalizeCurrent()
-			persistErr := req.History.Flush()
-			if finish != nil {
-				return errors.Join(persistErr, finish(ctx, result, errors.Join(runErr, persistErr)))
-			}
+		if sink != nil {
+			return sink(event)
+		}
+		return nil
+	}
+	req.OnFinish = func(ctx context.Context, result *runtimeport.RunResult, runErr error) error {
+		persistErr := finalizationFailure(finishHistory(req.History, runErr))
+		if finish == nil {
 			return persistErr
 		}
+		// 元数据回调只接收完整结果，不再拥有历史记录或定稿职责。
+		finishErr := finish(ctx, result, errors.Join(runErr, persistErr))
+		return errors.Join(persistErr, finalizationFailure(finishErr))
+	}
+	if req.SteeringSource != nil {
+		source := req.SteeringSource
+		sequence := 0
+		wrapped := func(ctx context.Context) ([]message.Message, error) {
+			messages, err := source(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, msg := range messages {
+				sequence++
+				turnID := events.TurnID(req.RunID, 1)
+				if err := req.EventSink(events.UserMessage(req.RunID, turnID, fmt.Sprintf("%s:steering:%d", turnID, sequence), msg)); err != nil {
+					return nil, err
+				}
+			}
+			return messages, nil
+		}
+		contextHooks = append(contextHooks, func(ctx context.Context) context.Context { return runtimeport.WithSteeringSource(ctx, wrapped) })
 	}
 
 	return turn.NewExecutor().Run(ctx, turn.Request{

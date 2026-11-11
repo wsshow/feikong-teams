@@ -329,8 +329,8 @@ func (rt *Runtime) updateSessionExecutionMetadata(sessionID, userInput, mode, cu
 // finishChat 将运行结果映射为会话状态，并透传持久化失败。
 func (rt *Runtime) finishChat(ctx context.Context, recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager, runErr error) error {
 	return rt.chatLifecycle().Finish(context.WithoutCancel(ctx), appchat.FinishRequest{
-		SessionID: sessionID, TitleSource: userInput, Status: appchat.CompletionStatus(runErr),
-		History: recorder, FinalizeHistory: true, Error: runErr,
+		SessionID: sessionID, TitleSource: userInput,
+		Error:  runErr,
 		Memory: manager, MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
 	})
 }

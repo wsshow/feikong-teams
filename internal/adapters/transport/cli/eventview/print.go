@@ -2,7 +2,6 @@ package eventview
 
 import (
 	"encoding/json"
-	"fkteams/internal/adapters/storage/file/history"
 	fktui "fkteams/internal/adapters/transport/cli/tui"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	domainevent "fkteams/internal/domain/event"
@@ -53,19 +52,17 @@ func init() {
 	PrintEvent, FlushPrintEvent = newPrintEvent()
 }
 
-// CLIEventCallback 创建 CLI 模式的事件回调，同时记录和打印。
-func CLIEventCallback(recorder *eventlog.HistoryRecorder) func(Event) error {
+// CLIEventCallback 创建 CLI 模式的事件回调，只负责打印。
+func CLIEventCallback() func(Event) error {
 	return func(event Event) error {
-		recorder.RecordEvent(event)
 		PrintEvent(event)
 		return nil
 	}
 }
 
 // JSONEventCallback 创建 JSON 格式的事件回调，将事件序列化为 JSON 输出。
-func JSONEventCallback(recorder *eventlog.HistoryRecorder) func(Event) error {
+func JSONEventCallback() func(Event) error {
 	return func(event Event) error {
-		recorder.RecordEvent(event)
 		data, err := json.Marshal(event)
 		if err != nil {
 			return err

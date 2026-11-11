@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/runtime/events"
 	"fmt"
@@ -28,9 +27,8 @@ func (v *runtimeQueryView) Start(input string) {
 	v.send(runtimeQueryStartedMsg{input: input})
 }
 
-func (v *runtimeQueryView) EventCallback(recorder *eventlog.HistoryRecorder) func(events.Event) error {
+func (v *runtimeQueryView) EventCallback() func(events.Event) error {
 	return func(event events.Event) error {
-		recorder.RecordEvent(event)
 		v.sendEvent(event)
 		return nil
 	}
