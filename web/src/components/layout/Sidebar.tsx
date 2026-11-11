@@ -214,16 +214,15 @@ export function Sidebar() {
       ) : null}
       <aside
         className={cn(
-          "sketch-rule fixed inset-y-0 left-0 z-40 h-[100dvh] shrink-0 scroll-pt-10 overflow-y-auto overflow-x-hidden overscroll-contain border-r bg-sidebar/95 text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
+          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r bg-sidebar/95 text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
           sidebarOpen
             ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-[12px_0_32px_hsl(218_30%_20%/0.16)] md:w-[292px] md:shadow-none"
             : "w-[min(292px,calc(100vw-3rem))] -translate-x-full md:w-16 md:translate-x-0",
         )}
-        onScroll={closeSessionMenu}
       >
       <div
         className={cn(
-          "flex items-center",
+          "flex shrink-0 items-center",
           sidebarOpen ? "h-14 gap-2.5 px-3" : "h-20 flex-col justify-center gap-1.5 px-0",
         )}
       >
@@ -252,7 +251,7 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <div className="sticky top-0 z-10 bg-sidebar px-2 pb-0.5">
+      <div className="shrink-0 px-2 pb-0.5">
         <SidebarNavItem
           icon={Plus}
           label="新建会话"
@@ -260,6 +259,7 @@ export function Sidebar() {
           onClick={handleNewSession}
         />
       </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain" onScroll={closeSessionMenu}>
       <nav className="space-y-0.5 px-2 pb-3">
         {panels.map((panel) => (
           <SidebarNavItem
@@ -332,6 +332,7 @@ export function Sidebar() {
           </div>
         </>
       ) : null}
+      </div>
       </aside>
       {searchOpen ? (
         <SessionSearchDialog
