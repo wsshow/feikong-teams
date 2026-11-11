@@ -160,25 +160,3 @@ func CreateLoopAgentRunner(ctx context.Context) (runtimeport.Runner, error) {
 
 	return newRunner(ctx, loopAgent)
 }
-
-// PrintLoopAgentsInfo 打印多智能体讨论模式的智能体信息
-func PrintLoopAgentsInfo(ctx context.Context) error {
-	teamConfig := config.Get()
-
-	var subAgents []runtimeport.Agent
-	for _, member := range teamConfig.Roundtable.Members {
-		agent, err := discussant.NewAgent(ctx, member)
-		if err != nil {
-			return fmt.Errorf("创建讨论智能体 %s 失败: %w", member.Name, err)
-		}
-		subAgents = append(subAgents, agent)
-	}
-
-	fmt.Printf("本次讨论的成员有: ")
-	var names []string
-	for _, subAgent := range subAgents {
-		names = append(names, subAgent.Name())
-	}
-	fmt.Println(strings.Join(names, ", "))
-	return nil
-}
