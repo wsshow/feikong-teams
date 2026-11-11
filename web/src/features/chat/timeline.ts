@@ -562,7 +562,7 @@ export function approvalDecisionLabel(decision: 0 | 1 | 2) {
 
 function approvalPayload(event: ChatEvent) {
   const value = event.approval;
-  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return value || {};
 }
 
 function stringValue(value: unknown) {
@@ -794,8 +794,8 @@ function askOptions(value: unknown) {
 }
 
 function parseAskResponse(event: ChatEvent) {
-  const selected = askOptions(event.selected) || askOptions(event.ask_selected) || [];
-  const structuredFreeText = event.free_text ?? event.ask_free_text;
+  const selected = askOptions(event.selected) || [];
+  const structuredFreeText = event.free_text;
   const freeText = structuredFreeText !== undefined
     ? String(structuredFreeText)
     : selected.length

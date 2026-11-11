@@ -190,3 +190,7 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 ### 关闭时的资源存活期
 
 应用 context 取消会立即传递给 HTTP 任务、消息通道和调度器，阻止继续调度。服务按 LIFO 等待真实退出，之后才运行 Cleanup 并关闭共享 MCP 连接。`ShutdownTimeout` 只限制 `Application.Run` 调用方的等待时间；超时后收尾仍继续，嵌入方通过 `WaitShutdown(ctx)` 等待最终结果，排空期间不能重新运行同一应用。CLI 信号监听由当前直接查询持有，退出时注销 `signal.Notify` 并等待监听协程结束。
+
+### 前端协议边界
+
+`web/src/types/events.ts` 用同一份字段声明生成按 `type` 区分的类型与运行时校验。工具调用、队列项、附件及数值序号在进入 store 之前验证，历史兼容字段也只在此处归一化；投影代码不再解析旧字段。SSE、任务快照、会话历史和分享历史共用 decoder，队列接口共用队列校验。Go handler 的协议样本保存于 `web/src/types/testdata/chat-events.json`，Go 测试防止后端输出悄然变化，Bun 测试验证所有事件类型和历史投影都能被解析。

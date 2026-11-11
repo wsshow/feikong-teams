@@ -1,4 +1,4 @@
-import { decodeChatEvent, decodeChatEvents, type ChatEvent, type QueueItem } from "@/types/events";
+import { decodeChatEvent, decodeChatEvents, decodeQueueItems, type ChatEvent, type QueueItem } from "@/types/events";
 import { expireAuthentication } from "@/lib/auth-session";
 import { APIError, del, get, patch, post } from "./client";
 
@@ -41,42 +41,47 @@ export async function streamSnapshot(sessionID: string, options?: { offset?: num
   if (options?.offset !== undefined) params.set("offset", String(options.offset));
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
-  const snapshot = await get<StreamSnapshot>(
+  const snapshot = await get<Omit<StreamSnapshot, "events" | "queue"> & { events?: unknown; queue?: unknown }>(
     `/api/fkteams/stream/snapshot/${encodeURIComponent(sessionID)}${query ? `?${query}` : ""}`,
     { signal: options?.signal },
   );
-  return { ...snapshot, events: decodeChatEvents(snapshot.events) };
+  return { ...snapshot, events: decodeChatEvents(snapshot.events), queue: decodeQueueItems(snapshot.queue) };
 }
 
 export function streamQueue(sessionID: string) {
-  return get<{ queue: QueueItem[] }>(`/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}`);
+  return queueResponse(get<{ queue: unknown }>(`/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}`));
 }
 
 export function updateQueueItem(sessionID: string, queueID: string, content: string) {
-  return patch<{ queue: QueueItem[] }>(
+  return queueResponse(patch<{ queue: unknown }>(
     `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}`,
-    { content },
-  );
+    { message: content },
+  ));
 }
 
 export function deleteQueueItem(sessionID: string, queueID: string) {
-  return del<{ queue: QueueItem[] }>(
+  return queueResponse(del<{ queue: unknown }>(
     `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}`,
-  );
+  ));
 }
 
 export function changeQueueKind(sessionID: string, queueID: string, kind: string) {
-  return post<{ queue: QueueItem[] }>(
+  return queueResponse(post<{ queue: unknown }>(
     `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}/kind`,
     { kind },
-  );
+  ));
 }
 
 export function moveQueueItem(sessionID: string, queueID: string, direction: "up" | "down") {
-  return post<{ queue: QueueItem[] }>(
+  return queueResponse(post<{ queue: unknown }>(
     `/api/fkteams/stream/queue/${encodeURIComponent(sessionID)}/${encodeURIComponent(queueID)}/move`,
     { direction },
-  );
+  ));
+}
+
+async function queueResponse(response: Promise<{ queue: unknown }>) {
+  const result = await response;
+  return { ...result, queue: decodeQueueItems(result.queue) };
 }
 
 export function submitAskResponse(
@@ -118,33 +123,40 @@ export async function subscribeStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() || "";
-    const events: ChatEvent[] = [];
-    for (const chunk of chunks) {
-      const lines = chunk.split("\n");
-      const idLine = lines.find((part) => part.startsWith("id:"));
-      const dataLines = lines.filter((part) => part.startsWith("data:"));
-      if (dataLines.length === 0) continue;
-      const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
-      if (!raw) continue;
-      if (raw === "[DONE]") {
-        if (events.length > 0) onEvents(events);
-        return "done";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split(/\r?\n\r?\n/);
+      buffer = chunks.pop() || "";
+      const events: ChatEvent[] = [];
+      for (const chunk of chunks) {
+        const lines = chunk.split(/\r?\n/);
+        const idLine = lines.find((part) => part.startsWith("id:"));
+        const dataLines = lines.filter((part) => part.startsWith("data:"));
+        if (dataLines.length === 0) continue;
+        const raw = dataLines.map((line) => line.replace(/^data:\s*/, "")).join("\n");
+        if (!raw) continue;
+        if (raw === "[DONE]") {
+          if (events.length > 0) onEvents(events);
+          return "done";
+        }
+        let parsed: unknown;
+        try { parsed = JSON.parse(raw); } catch { continue; }
+        const event = decodeChatEvent(parsed);
+        if (!event) continue;
+        if (idLine && event.stream_event_id === undefined) {
+          const id = Number(idLine.replace(/^id:\s*/, ""));
+          if (Number.isSafeInteger(id) && id >= 0) event.stream_event_id = id;
+        }
+        events.push(event);
       }
-      const event = decodeChatEvent(JSON.parse(raw));
-      if (!event) continue;
-      if (idLine && event.stream_event_id === undefined) {
-        const id = Number(idLine.replace(/^id:\s*/, ""));
-        if (Number.isFinite(id)) event.stream_event_id = id;
-      }
-      events.push(event);
+      if (events.length > 0) onEvents(events);
     }
-    if (events.length > 0) onEvents(events);
+    return "eof";
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-  return "eof";
 }

@@ -1,0 +1,641 @@
+{
+  "live": [
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-1",
+      "run_id": "run",
+      "sequence": 1,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "agent_started"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-2",
+      "run_id": "run",
+      "sequence": 2,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "agent_completed"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-3",
+      "run_id": "run",
+      "sequence": 3,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "turn_started"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-4",
+      "run_id": "run",
+      "sequence": 4,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "turn_completed"
+    },
+    {
+      "agent_name": "assistant",
+      "content_parts": [
+        {
+          "type": "image_url",
+          "url": "/image.png"
+        }
+      ],
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-5",
+      "run_id": "run",
+      "sequence": 5,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "user_message"
+    },
+    {
+      "agent_name": "assistant",
+      "chunk_index": 6,
+      "content": "answer",
+      "created_at": "2026-01-01T00:00:00Z",
+      "delta_kind": "output",
+      "event_id": "event-6",
+      "message_id": "message",
+      "role": "assistant",
+      "run_id": "run",
+      "sequence": 6,
+      "session_id": "session",
+      "stream_id": "message:output",
+      "turn_id": "turn",
+      "type": "assistant_started"
+    },
+    {
+      "agent_name": "assistant",
+      "chunk_index": 7,
+      "content": "answer",
+      "created_at": "2026-01-01T00:00:00Z",
+      "delta_kind": "reasoning",
+      "event_id": "event-7",
+      "message_id": "message",
+      "role": "assistant",
+      "run_id": "run",
+      "sequence": 7,
+      "session_id": "session",
+      "stream_id": "message:reasoning",
+      "turn_id": "turn",
+      "type": "assistant_reasoning_delta"
+    },
+    {
+      "agent_name": "assistant",
+      "chunk_index": 8,
+      "content": "answer",
+      "created_at": "2026-01-01T00:00:00Z",
+      "delta_kind": "output",
+      "event_id": "event-8",
+      "message_id": "message",
+      "role": "assistant",
+      "run_id": "run",
+      "sequence": 8,
+      "session_id": "session",
+      "stream_id": "message:output",
+      "turn_id": "turn",
+      "type": "assistant_text_delta"
+    },
+    {
+      "agent_name": "assistant",
+      "chunk_index": 9,
+      "content": "answer",
+      "created_at": "2026-01-01T00:00:00Z",
+      "delta_kind": "output",
+      "event_id": "event-9",
+      "message_id": "message",
+      "role": "assistant",
+      "run_id": "run",
+      "sequence": 9,
+      "session_id": "session",
+      "stream_id": "message:output",
+      "turn_id": "turn",
+      "type": "assistant_completed"
+    },
+    {
+      "agent_name": "assistant",
+      "content": "result",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-10",
+      "run_id": "run",
+      "sequence": 10,
+      "session_id": "session",
+      "tool_call": {
+        "arguments": "{\"path\":\"note.txt\"}",
+        "display_name": "read_file",
+        "id": "call",
+        "kind": "tool",
+        "name": "read_file",
+        "ref": "tool_call:call"
+      },
+      "tool_call_id": "call",
+      "tool_call_ref": "tool_call:call",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"note.txt\"}",
+          "display_name": "read_file",
+          "id": "call",
+          "kind": "tool",
+          "name": "read_file",
+          "ref": "tool_call:call"
+        }
+      ],
+      "tool_display_name": "read_file",
+      "tool_kind": "tool",
+      "tool_name": "read_file",
+      "turn_id": "turn",
+      "type": "tool_call_started"
+    },
+    {
+      "agent_name": "assistant",
+      "content": "result",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-11",
+      "run_id": "run",
+      "sequence": 11,
+      "session_id": "session",
+      "tool_call": {
+        "arguments": "{\"path\":\"note.txt\"}",
+        "display_name": "read_file",
+        "id": "call",
+        "kind": "tool",
+        "name": "read_file",
+        "ref": "tool_call:call"
+      },
+      "tool_call_id": "call",
+      "tool_call_ref": "tool_call:call",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"note.txt\"}",
+          "display_name": "read_file",
+          "id": "call",
+          "kind": "tool",
+          "name": "read_file",
+          "ref": "tool_call:call"
+        }
+      ],
+      "tool_display_name": "read_file",
+      "tool_kind": "tool",
+      "tool_name": "read_file",
+      "turn_id": "turn",
+      "type": "tool_call_arguments_delta"
+    },
+    {
+      "agent_name": "assistant",
+      "content": "result",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-12",
+      "run_id": "run",
+      "sequence": 12,
+      "session_id": "session",
+      "tool_call": {
+        "arguments": "{\"path\":\"note.txt\"}",
+        "display_name": "read_file",
+        "id": "call",
+        "kind": "tool",
+        "name": "read_file",
+        "ref": "tool_call:call"
+      },
+      "tool_call_id": "call",
+      "tool_call_ref": "tool_call:call",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"note.txt\"}",
+          "display_name": "read_file",
+          "id": "call",
+          "kind": "tool",
+          "name": "read_file",
+          "ref": "tool_call:call"
+        }
+      ],
+      "tool_display_name": "read_file",
+      "tool_kind": "tool",
+      "tool_name": "read_file",
+      "turn_id": "turn",
+      "type": "tool_call_result_delta"
+    },
+    {
+      "agent_name": "assistant",
+      "content": "result",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-13",
+      "run_id": "run",
+      "sequence": 13,
+      "session_id": "session",
+      "tool_call": {
+        "arguments": "{\"path\":\"note.txt\"}",
+        "display_name": "read_file",
+        "id": "call",
+        "kind": "tool",
+        "name": "read_file",
+        "ref": "tool_call:call"
+      },
+      "tool_call_id": "call",
+      "tool_call_ref": "tool_call:call",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"note.txt\"}",
+          "display_name": "read_file",
+          "id": "call",
+          "kind": "tool",
+          "name": "read_file",
+          "ref": "tool_call:call"
+        }
+      ],
+      "tool_display_name": "read_file",
+      "tool_kind": "tool",
+      "tool_name": "read_file",
+      "turn_id": "turn",
+      "type": "tool_call_completed"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-14",
+      "run_id": "run",
+      "sequence": 14,
+      "session_id": "session",
+      "tool_call": {
+        "arguments": "{\"path\":\"note.txt\"}",
+        "display_name": "read_file",
+        "id": "call",
+        "kind": "tool",
+        "name": "read_file",
+        "ref": "tool_call:call"
+      },
+      "tool_call_id": "call",
+      "tool_call_ref": "tool_call:call",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"note.txt\"}",
+          "display_name": "read_file",
+          "id": "call",
+          "kind": "tool",
+          "name": "read_file",
+          "ref": "tool_call:call"
+        }
+      ],
+      "tool_display_name": "read_file",
+      "tool_kind": "tool",
+      "tool_name": "read_file",
+      "turn_id": "turn",
+      "type": "tool_call_failed"
+    },
+    {
+      "agent_name": "assistant",
+      "ask_id": "ask",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-15",
+      "free_text": "answer",
+      "multi_select": true,
+      "options": [
+        "A",
+        "B"
+      ],
+      "question": "choose",
+      "run_id": "run",
+      "selected": [
+        "A"
+      ],
+      "sequence": 15,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "ask_requested"
+    },
+    {
+      "agent_name": "assistant",
+      "ask_id": "ask",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-16",
+      "free_text": "answer",
+      "multi_select": true,
+      "options": [
+        "A",
+        "B"
+      ],
+      "question": "choose",
+      "run_id": "run",
+      "selected": [
+        "A"
+      ],
+      "sequence": 16,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "ask_answered"
+    },
+    {
+      "agent_name": "assistant",
+      "approval": {
+        "id": "approval",
+        "message": "continue?",
+        "decision": "approved"
+      },
+      "created_at": "2026-01-01T00:00:00Z",
+      "detail": "approval",
+      "event_id": "event-17",
+      "run_id": "run",
+      "sequence": 17,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "approval_requested"
+    },
+    {
+      "agent_name": "assistant",
+      "approval": {
+        "id": "approval",
+        "message": "continue?",
+        "decision": "approved"
+      },
+      "created_at": "2026-01-01T00:00:00Z",
+      "detail": "approval",
+      "event_id": "event-18",
+      "run_id": "run",
+      "sequence": 18,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "approval_answered"
+    },
+    {
+      "agent_name": "assistant",
+      "content": "notice",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-19",
+      "notice": {
+        "level": "info",
+        "message": "notice"
+      },
+      "run_id": "run",
+      "sequence": 19,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "system_notice"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-20",
+      "run_id": "run",
+      "sequence": 20,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "usage_reported",
+      "usage": {
+        "prompt_tokens": 2,
+        "completion_tokens": 3,
+        "total_tokens": 5
+      }
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "display_error": "任务执行时遇到了问题。你可以查看技术详情，或稍后重试。",
+      "error": "request failed",
+      "error_code": "unknown_error",
+      "error_title": "任务执行失败",
+      "event_id": "event-21",
+      "run_id": "run",
+      "sequence": 21,
+      "session_id": "session",
+      "technical_error": "request failed",
+      "turn_id": "turn",
+      "type": "error"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-22",
+      "run_id": "run",
+      "sequence": 22,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "processing_start"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-23",
+      "run_id": "run",
+      "sequence": 23,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "processing_end"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-24",
+      "queue": [
+        {
+          "queue_id": "queued",
+          "kind": "steering",
+          "text": "next",
+          "created_at": "2026-01-01T00:00:00Z",
+          "updated_at": "0001-01-01T00:00:00Z"
+        }
+      ],
+      "queued_count": 1,
+      "run_id": "run",
+      "sequence": 24,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "queue_updated"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-25",
+      "run_id": "run",
+      "sequence": 25,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "cancelled"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "display_error": "任务执行时遇到了问题。你可以查看技术详情，或稍后重试。",
+      "error": "request failed",
+      "error_code": "unknown_error",
+      "error_title": "任务执行失败",
+      "event_id": "event-26",
+      "run_id": "run",
+      "sequence": 26,
+      "session_id": "session",
+      "technical_error": "request failed",
+      "turn_id": "turn",
+      "type": "turn_failed"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-27",
+      "run_id": "run",
+      "sequence": 27,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "turn_cancelled"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-28",
+      "is_member_event": true,
+      "member_call_id": "member",
+      "member_name": "researcher",
+      "parent_tool_call_id": "parent",
+      "run_id": "run",
+      "sequence": 28,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "member_started"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-29",
+      "is_member_event": true,
+      "member_call_id": "member",
+      "member_name": "researcher",
+      "parent_tool_call_id": "parent",
+      "run_id": "run",
+      "sequence": 29,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "member_completed"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-30",
+      "run_id": "run",
+      "sequence": 30,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "connected"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "event-31",
+      "run_id": "run",
+      "sequence": 31,
+      "session_id": "session",
+      "turn_id": "turn",
+      "type": "pong"
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "display_error": "任务执行时遇到了问题。你可以查看技术详情，或稍后重试。",
+      "error": "request failed",
+      "error_code": "unknown_error",
+      "error_title": "任务执行失败",
+      "event_id": "event-32",
+      "run_id": "run",
+      "sequence": 32,
+      "session_id": "session",
+      "technical_error": "request failed",
+      "turn_id": "turn",
+      "type": "invalid_api_key"
+    }
+  ],
+  "history": [
+    {
+      "agent_name": "",
+      "content": "question",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "history-user",
+      "message_id": "history-user",
+      "role": "user",
+      "sequence": 1,
+      "session_id": "session",
+      "transcript_index": 0,
+      "turn_id": "session:history:turn:1",
+      "type": "user_message"
+    },
+    {
+      "agent_name": "assistant",
+      "content": "answer",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "history-answer",
+      "message_id": "history-answer",
+      "role": "assistant",
+      "sequence": 2,
+      "session_id": "session",
+      "total_tokens": 5,
+      "transcript_index": 1,
+      "turn_id": "session:history:turn:1",
+      "type": "assistant_completed",
+      "usage": {
+        "total_tokens": 5
+      }
+    },
+    {
+      "agent_name": "assistant",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "history-answer:usage",
+      "message_id": "history-answer",
+      "sequence": 3,
+      "session_id": "session",
+      "total_tokens": 5,
+      "transcript_index": 1,
+      "turn_id": "session:history:turn:1",
+      "type": "usage_reported",
+      "usage": {
+        "total_tokens": 5
+      }
+    },
+    {
+      "agent_name": "",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "history-tool",
+      "message_id": "history-tool",
+      "sequence": 4,
+      "session_id": "session",
+      "tool_call": {
+        "display_name": "read_file",
+        "id": "call",
+        "kind": "tool",
+        "name": "read_file",
+        "ref": "tool_call:call"
+      },
+      "tool_call_id": "call",
+      "tool_call_ref": "tool_call:call",
+      "tool_calls": [
+        {
+          "display_name": "read_file",
+          "id": "call",
+          "kind": "tool",
+          "name": "read_file",
+          "ref": "tool_call:call"
+        }
+      ],
+      "tool_display_name": "read_file",
+      "tool_kind": "tool",
+      "tool_name": "read_file",
+      "transcript_index": 2,
+      "turn_id": "session:history:turn:1",
+      "type": "tool_call_completed"
+    },
+    {
+      "agent_name": "",
+      "content": "cancelled",
+      "created_at": "2026-01-01T00:00:00Z",
+      "event_id": "history-cancel",
+      "message_id": "history-cancel",
+      "sequence": 5,
+      "session_id": "session",
+      "transcript_index": 3,
+      "turn_id": "session:history:turn:1",
+      "type": "cancelled"
+    }
+  ]
+}

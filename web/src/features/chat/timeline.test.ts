@@ -6,9 +6,9 @@ import type { ChatViewMessage } from "@/types/chat";
 describe("timeline projection", () => {
   test("replay deduplicates within a run without losing the same sequence from another run", () => {
     const events: ChatEvent[] = [
-      { type: "assistant_text_delta", run_id: "a", sequence: 1, content: "one" },
-      { type: "assistant_text_delta", run_id: "a", sequence: 1, content: "one" },
-      { type: "assistant_text_delta", run_id: "b", sequence: 1, content: "two" },
+      { type: "assistant_text_delta", message_id: "message", run_id: "a", sequence: 1, content: "one" },
+      { type: "assistant_text_delta", message_id: "message", run_id: "a", sequence: 1, content: "one" },
+      { type: "assistant_text_delta", message_id: "message", run_id: "b", sequence: 1, content: "two" },
     ];
     expect(eventsForDisplay(events).map((event) => event.content)).toEqual(["one", "two"]);
     expect(events).toHaveLength(3);

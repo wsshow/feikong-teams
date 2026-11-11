@@ -1,7 +1,13 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	domainevent "fkteams/internal/domain/event"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -357,5 +363,97 @@ func requireMapValue(t *testing.T, got map[string]any, key string, want any) {
 	t.Helper()
 	if got[key] != want {
 		t.Fatalf("unexpected %s: got %#v, want %#v; map=%#v", key, got[key], want, got)
+	}
+}
+
+// TestFrontendEventContractFixture 固定后端实际投影，供 Bun 测试验证相同的线协议。
+func TestFrontendEventContractFixture(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	types := []domainevent.Type{
+		domainevent.TypeAgentStarted, domainevent.TypeAgentCompleted, domainevent.TypeTurnStarted, domainevent.TypeTurnCompleted,
+		domainevent.TypeUserMessage, domainevent.TypeAssistantStarted, domainevent.TypeAssistantReasoning, domainevent.TypeAssistantText, domainevent.TypeAssistantCompleted,
+		domainevent.TypeToolCallStarted, domainevent.TypeToolCallArguments, domainevent.TypeToolCallResult, domainevent.TypeToolCallCompleted, domainevent.TypeToolCallFailed,
+		domainevent.TypeAskRequested, domainevent.TypeAskAnswered, domainevent.TypeApprovalRequested, domainevent.TypeApprovalAnswered,
+		domainevent.TypeSystemNotice, domainevent.TypeUsageReported, domainevent.TypeError, domainevent.TypeProcessingStart, domainevent.TypeProcessingEnd, domainevent.TypeQueueUpdated,
+		domainevent.TypeCancelled, domainevent.TypeTurnFailed, domainevent.TypeTurnCancelled, domainevent.TypeMemberStarted, domainevent.TypeMemberCompleted,
+		domainevent.Type(domainevent.NotifyConnected), domainevent.Type(domainevent.NotifyPong), domainevent.Type(domainevent.NotifyInvalidAPIKey),
+	}
+	var live []taskstream.Event
+	for i, typ := range types {
+		e := events.Event{Type: typ, EventID: fmt.Sprintf("event-%d", i+1), Sequence: int64(i + 1), CreatedAt: at, RunID: "run", TurnID: "turn", AgentName: "assistant"}
+		switch typ {
+		case domainevent.TypeUserMessage:
+			e.Message = &message.Message{Role: message.RoleUser, ContentParts: []message.ContentPart{{Type: message.ContentPartImageURL, URL: "/image.png"}}}
+		case domainevent.TypeAssistantStarted, domainevent.TypeAssistantCompleted, domainevent.TypeAssistantText, domainevent.TypeAssistantReasoning:
+			e.MessageID = "message"
+			e.Role = message.RoleAssistant
+			e.Content = "answer"
+			if typ == domainevent.TypeAssistantReasoning {
+				e.DeltaKind = events.DeltaReasoning
+			} else {
+				e.DeltaKind = events.DeltaOutput
+			}
+		case domainevent.TypeToolCallStarted, domainevent.TypeToolCallArguments, domainevent.TypeToolCallResult, domainevent.TypeToolCallCompleted, domainevent.TypeToolCallFailed:
+			e.ToolName = "read_file"
+			e.ToolCallID = "call"
+			e.ToolCallRef = "tool_call:call"
+			e.ToolCall = &message.ToolCall{ID: "call", Function: message.FunctionCall{Name: "read_file", Arguments: `{"path":"note.txt"}`}}
+			if typ != domainevent.TypeToolCallFailed {
+				e.Content = "result"
+			}
+		case domainevent.TypeAskRequested, domainevent.TypeAskAnswered:
+			e.Ask = &events.AskPayload{ID: "ask", Question: "choose", Options: []string{"A", "B"}, MultiSelect: true, Selected: []string{"A"}, FreeText: "answer"}
+		case domainevent.TypeApprovalRequested, domainevent.TypeApprovalAnswered:
+			e.Detail = "approval"
+			e.Approval = &events.ApprovalPayload{ID: "approval", Message: "continue?", Decision: "approved"}
+		case domainevent.TypeSystemNotice:
+			e.Content = "notice"
+			e.Notice = &events.NoticePayload{Level: "info", Message: "notice"}
+		case domainevent.TypeUsageReported:
+			e.Usage = &events.UsagePayload{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5}
+		case domainevent.TypeError, domainevent.TypeTurnFailed, domainevent.Type(domainevent.NotifyInvalidAPIKey):
+			e.Error = "request failed"
+		case domainevent.TypeMemberStarted, domainevent.TypeMemberCompleted:
+			e.MemberCallID = "member"
+			e.MemberName = "researcher"
+			e.ParentToolCallID = "parent"
+		}
+		payload := standardEventPayload("session", e, nil)
+		if typ == domainevent.TypeQueueUpdated {
+			payload["queue"] = []taskstream.QueuedMessage{{ID: "queued", Kind: taskstream.QueueSteering, Text: "next", CreatedAt: at}}
+			payload["queued_count"] = 1
+		}
+		live = append(live, payload)
+	}
+	rt := &Runtime{RuntimeOptions: RuntimeOptions{ToolDisplays: toolmeta.NewRegistry()}}
+	history := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{
+		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Content: "question"},
+		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Content: "answer", Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5}},
+		{ID: "history-tool", At: at, Type: eventlog.TranscriptToolCallEnd, CallID: "call", Name: "read_file", Content: "result"},
+		{ID: "history-cancel", At: at, Type: eventlog.TranscriptCancelled, Content: "cancelled"},
+	})
+	data, err := json.MarshalIndent(struct {
+		Live    []taskstream.Event `json:"live"`
+		History []map[string]any   `json:"history"`
+	}{live, history}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	path := filepath.Join("..", "..", "..", "..", "..", "web", "src", "types", "testdata", "chat-events.json")
+	if os.Getenv("FKTEAMS_UPDATE_PROTOCOL_FIXTURE") == "1" {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expected, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(expected, data) {
+		t.Fatal("event contract changed; review and regenerate with FKTEAMS_UPDATE_PROTOCOL_FIXTURE=1 go test ./internal/adapters/transport/http/handler -run TestFrontendEventContractFixture")
 	}
 }
