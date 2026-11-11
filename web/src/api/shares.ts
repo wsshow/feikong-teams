@@ -1,3 +1,4 @@
+import { decodeChatEvents } from "@/types/events";
 import type { SessionDetail } from "@/types/chat";
 import { del, get, post } from "./client";
 
@@ -39,10 +40,11 @@ export function getPublicShareInfo(shareID: string) {
   });
 }
 
-export function accessPublicShare(shareID: string, password = "") {
-  return post<SessionDetail>(
+export async function accessPublicShare(shareID: string, password = "") {
+  const session = await post<SessionDetail>(
     `/api/fkteams/public/session-shares/${encodeURIComponent(shareID)}/access`,
     { password },
     { authFailure: "ignore" },
   );
+  return { ...session, events: decodeChatEvents(session.events) };
 }

@@ -1,4 +1,4 @@
-import type { ChatEvent, QueueItem } from "@/types/events";
+import { decodeChatEvent, decodeChatEvents, type ChatEvent, type QueueItem } from "@/types/events";
 import { expireAuthentication } from "@/lib/auth-session";
 import { APIError, del, get, patch, post } from "./client";
 
@@ -36,15 +36,16 @@ export interface StreamSnapshot {
   finished_at?: string;
 }
 
-export function streamSnapshot(sessionID: string, options?: { offset?: number; limit?: number; signal?: AbortSignal }) {
+export async function streamSnapshot(sessionID: string, options?: { offset?: number; limit?: number; signal?: AbortSignal }) {
   const params = new URLSearchParams();
   if (options?.offset !== undefined) params.set("offset", String(options.offset));
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
-  return get<StreamSnapshot>(
+  const snapshot = await get<StreamSnapshot>(
     `/api/fkteams/stream/snapshot/${encodeURIComponent(sessionID)}${query ? `?${query}` : ""}`,
     { signal: options?.signal },
   );
+  return { ...snapshot, events: decodeChatEvents(snapshot.events) };
 }
 
 export function streamQueue(sessionID: string) {
@@ -135,7 +136,8 @@ export async function subscribeStream(
         if (events.length > 0) onEvents(events);
         return "done";
       }
-      const event = JSON.parse(raw) as ChatEvent;
+      const event = decodeChatEvent(JSON.parse(raw));
+      if (!event) continue;
       if (idLine && event.stream_event_id === undefined) {
         const id = Number(idLine.replace(/^id:\s*/, ""));
         if (Number.isFinite(id)) event.stream_event_id = id;

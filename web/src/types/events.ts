@@ -1,30 +1,39 @@
-export type ChatEventType =
-  | "agent_started"
-  | "agent_completed"
-  | "turn_started"
-  | "turn_completed"
-  | "user_message"
-  | "assistant_started"
-  | "assistant_reasoning_delta"
-  | "assistant_text_delta"
-  | "assistant_completed"
-  | "tool_call_started"
-  | "tool_call_arguments_delta"
-  | "tool_call_result_delta"
-  | "tool_call_completed"
-  | "tool_call_failed"
-  | "ask_requested"
-  | "ask_answered"
-  | "approval_requested"
-  | "approval_answered"
-  | "system_notice"
-  | "usage_reported"
-  | "error"
-  | "processing_start"
-  | "processing_end"
-  | "queue_updated"
-  | "cancelled"
-  | string;
+export const chatEventTypes = [
+  "agent_started",
+  "agent_completed",
+  "turn_started",
+  "turn_completed",
+  "user_message",
+  "assistant_started",
+  "assistant_reasoning_delta",
+  "assistant_text_delta",
+  "assistant_completed",
+  "tool_call_started",
+  "tool_call_arguments_delta",
+  "tool_call_result_delta",
+  "tool_call_completed",
+  "tool_call_failed",
+  "ask_requested",
+  "ask_answered",
+  "approval_requested",
+  "approval_answered",
+  "system_notice",
+  "usage_reported",
+  "error",
+  "processing_start",
+  "processing_end",
+  "queue_updated",
+  "cancelled",
+  "turn_failed",
+  "turn_cancelled",
+  "member_started",
+  "member_completed",
+  "connected",
+  "pong",
+  "invalid_api_key",
+] as const;
+
+export type ChatEventType = typeof chatEventTypes[number];
 
 export interface ToolCallDTO {
   id?: string;
@@ -114,4 +123,23 @@ export interface ChatEvent {
   parent_tool_call_id?: string;
   parent_tool_name?: string;
   [key: string]: unknown;
+}
+
+const knownChatEventTypes = new Set<string>(chatEventTypes);
+
+// 未识别的协议扩展停留在传输边界，不扩宽应用事件类型。
+export function decodeChatEvent(value: unknown): ChatEvent | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const event = value as Record<string, unknown>;
+  if (typeof event.type !== "string" || !knownChatEventTypes.has(event.type)) return undefined;
+  for (const key of ["content", "session_id", "event_id", "message_id", "run_id", "turn_id"] as const) {
+    if (event[key] !== undefined && typeof event[key] !== "string") return undefined;
+  }
+  return event as unknown as ChatEvent;
+}
+
+// 实时流、快照与历史回放共用事件入口。
+export function decodeChatEvents(values: unknown): ChatEvent[] {
+  if (!Array.isArray(values)) return [];
+  return values.map(decodeChatEvent).filter((event): event is ChatEvent => event !== undefined);
 }

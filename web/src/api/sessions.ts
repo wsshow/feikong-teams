@@ -1,3 +1,4 @@
+import { decodeChatEvents } from "@/types/events";
 import type { SessionDetail, SessionSummary } from "@/types/chat";
 import { del, get, post } from "./client";
 
@@ -9,8 +10,9 @@ export function createSession(title = "") {
   return post<{ session_id: string }>("/api/fkteams/sessions", { title });
 }
 
-export function getSession(sessionID: string, signal?: AbortSignal) {
-  return get<SessionDetail>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`, { signal });
+export async function getSession(sessionID: string, signal?: AbortSignal) {
+  const session = await get<SessionDetail>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`, { signal });
+  return { ...session, events: decodeChatEvents(session.events) };
 }
 
 export function deleteSession(sessionID: string) {
