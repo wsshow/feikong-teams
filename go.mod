@@ -1,6 +1,6 @@
 module fkteams
 
-go 1.25.14
+go 1.26.11
 
 require (
 	charm.land/bubbles/v2 v2.0.0
@@ -15,7 +15,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/cloudwego/eino v0.9.19
+	github.com/cloudwego/eino v0.9.23
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.68
 	github.com/cloudwego/eino-ext/components/model/claude v0.1.19
 	github.com/cloudwego/eino-ext/components/model/deepseek v0.1.6
@@ -47,7 +47,7 @@ require (
 	github.com/tencent-connect/botgo v0.2.1
 	github.com/urfave/cli/v3 v3.7.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
-	github.com/wsshow/agentkit v1.5.0
+	github.com/wsshow/agentkit v1.5.1
 	github.com/wsshow/docreader v1.1.1
 	github.com/wsshow/selfupdate v1.0.0
 	github.com/xuri/excelize/v2 v2.10.0

@@ -101,7 +101,7 @@ SDK 中间件使用显式绑定运行时的句柄，适配器校验 backend 与�
 
 ## AgentKit 适配器
 
-依赖固定为 `github.com/wsshow/agentkit v1.5.0`；其要求的 Go 版本是 `1.25.14`，底层 Eino 为 `v0.9.19`。
+依赖固定为 `github.com/wsshow/agentkit v1.5.1`；其要求的 Go 版本是 `1.26.11`，底层 Eino 为 `v0.9.23`。
 
 适配器按职责组织：
 

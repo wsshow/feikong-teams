@@ -10,7 +10,7 @@ COPY web ./
 RUN bun run build
 
 # ---- Go 构建阶段 ----
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.11-alpine AS builder
 
 WORKDIR /build
 
