@@ -111,17 +111,16 @@ func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskst
 }
 
 func (rt *Runtime) enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, error) {
-	queued, err := enqueueTaskMessage(stream, sessionID, kind, message, contents)
-	if err != nil {
-		return taskstream.QueuedMessage{}, err
-	}
-	rt.persistQueueSnapshot(sessionID, stream)
-	return queued, nil
+	return rt.Queues.Enqueue(stream, queuedChatMessage(kind, message, contents))
 }
 
 func writeTaskQueueError(c *gin.Context, err error) {
 	status := http.StatusConflict
 	switch {
+	case errors.Is(err, appchat.ErrQueuePersistence):
+		status = http.StatusInternalServerError
+	case errors.Is(err, taskstream.ErrQueuedMessageNotFound):
+		status = http.StatusNotFound
 	case errors.Is(err, taskstream.ErrQueueMessageTooLarge):
 		status = http.StatusRequestEntityTooLarge
 	case errors.Is(err, taskstream.ErrQueueFull):
@@ -132,6 +131,10 @@ func writeTaskQueueError(c *gin.Context, err error) {
 
 func taskQueueErrorMessage(err error) string {
 	switch {
+	case errors.Is(err, appchat.ErrQueuePersistence):
+		return "failed to persist queued messages"
+	case errors.Is(err, taskstream.ErrQueuedMessageNotFound):
+		return err.Error()
 	case errors.Is(err, taskstream.ErrQueueMessageTooLarge):
 		return "queued message is too large"
 	case errors.Is(err, taskstream.ErrQueueFull):
@@ -145,10 +148,14 @@ func publishQueueUpdated(stream *taskstream.Stream, sessionID string) {
 	if stream == nil {
 		return
 	}
+	publishQueueSnapshot(stream, sessionID, stream.QueueSnapshot())
+}
+
+func publishQueueSnapshot(stream *taskstream.Stream, sessionID string, items []taskstream.QueuedMessage) {
 	runID, turnID := stream.CurrentTurn()
 	payload := standardEventPayload(sessionID, events.QueueUpdated(runID, turnID), nil)
-	payload["queue"] = stream.QueueSnapshot()
-	payload["queued_count"] = stream.QueuedCount()
+	payload["queue"] = items
+	payload["queued_count"] = len(items)
 	stream.Publish(payload)
 }
 
@@ -168,15 +175,14 @@ func publishQueuedExecutionStart(stream *taskstream.Stream, sessionID string, qu
 	stream.Publish(payload)
 }
 
-func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string, persistQueue func()) runtimeport.SteeringSource {
+func buildSteeringSource(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, currentRunID func() string, queues *appchat.QueueService) runtimeport.SteeringSource {
 	return func(context.Context) ([]domainmessage.Message, error) {
-		queued := stream.TakeSteeringMessages(1)
+		queued, err := queues.TakeSteering(stream, 1)
+		if err != nil {
+			return nil, err
+		}
 		if len(queued) == 0 {
 			return nil, nil
-		}
-		publishQueueUpdated(stream, sessionID)
-		if persistQueue != nil {
-			persistQueue()
 		}
 		messages := make([]domainmessage.Message, 0, len(queued))
 		for _, msg := range queued {

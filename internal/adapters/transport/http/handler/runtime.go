@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	filequeue "fkteams/internal/adapters/storage/file/queue"
 	sharestore "fkteams/internal/adapters/storage/file/share"
+	"fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"path/filepath"
@@ -32,6 +34,7 @@ import (
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
 type Runtime struct {
 	RuntimeOptions
+	Queues *appchat.QueueService
 
 	sessionOperationsMu sync.Mutex
 	sessionOperations   map[string]*sessionOperationLock
@@ -47,6 +50,7 @@ type Runtime struct {
 
 // RuntimeOptions 用于测试或嵌入式场景显式替换 HTTP runtime 依赖。
 type RuntimeOptions struct {
+	QueueStore     storage.QueueStore
 	ExecutionGate  *config.ExecutionGate
 	Control        *lifecycle.Control
 	Streams        *taskstream.Manager
@@ -95,6 +99,12 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	if rt.HistoryDir == "" {
 		rt.HistoryDir = appdata.SessionsDir()
 	}
+	if rt.QueueStore == nil {
+		rt.QueueStore = filequeue.NewStore(rt.HistoryDir)
+	}
+	rt.Queues = appchat.NewQueueService(rt.Streams, rt.QueueStore, func(stream *taskstream.Stream, items []taskstream.QueuedMessage) {
+		publishQueueSnapshot(stream, stream.SessionID(), items)
+	})
 	if rt.RunnerCache == nil {
 		rt.RunnerCache = appagent.NewCache()
 	}

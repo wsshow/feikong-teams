@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/config"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
@@ -138,5 +139,32 @@ func TestConfigUpdateRejectsActiveExecutionWithoutPublishing(t *testing.T) {
 	response := postChat(router, "/config")
 	if response.Code != http.StatusConflict || config.Get() != before {
 		t.Fatalf("status=%d, config was published=%v", response.Code, config.Get() != before)
+	}
+}
+
+func TestQueueUpdateReturnsStorageFailureWithoutPublishing(t *testing.T) {
+	t.Setenv("FEIKONG_APP_DIR", t.TempDir())
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rt := NewRuntime(RuntimeOptions{HistoryDir: blocked})
+	defer rt.Close()
+	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: "session"})
+	item, err := stream.EnqueueMessageIfProcessing(taskstream.QueuedMessage{Text: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.PATCH("/:sessionID/:queueID", rt.StreamQueueUpdateHandler())
+	req := httptest.NewRequest(http.MethodPatch, "/session/"+item.ID, strings.NewReader(`{"message":"after"}`))
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+	if response.Code != http.StatusInternalServerError || stream.QueueSnapshot()[0].Text != "before" {
+		t.Fatalf("HTTP=%d queue=%v", response.Code, stream.QueueSnapshot())
+	}
+	if page := stream.EventsSince(0); len(page) != 0 {
+		t.Fatalf("failed edit published events: %v", page)
 	}
 }

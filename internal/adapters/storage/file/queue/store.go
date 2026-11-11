@@ -2,12 +2,14 @@
 package queue
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	domainmessage "fkteams/internal/domain/message"
 	domainsession "fkteams/internal/domain/session"
 	"fkteams/internal/runtime/atomicfile"
+	"fkteams/internal/runtime/log"
 	"fkteams/internal/runtime/pathguard"
 	"fmt"
 	"io"
@@ -53,17 +55,19 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 	}
 	defer root.Close()
 	if len(queue) == 0 {
+		// 先验证清理边界，提交之后的垃圾回收失败不能否定快照提交。
+		if err := pathguard.RejectRootSymlinkComponents(root, "attachments/queue"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 		if err := root.Remove(queueSnapshotFileName); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove queue snapshot: %w", err)
 		}
-		if err := pathguard.RejectRootSymlinkComponents(root, "attachments/queue"); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			return err
+		if err := root.RemoveAll("attachments/queue"); err != nil {
+			log.Printf("queue attachment cleanup failed: %v", err)
 		}
-		return root.RemoveAll("attachments/queue")
+		return nil
 	}
+
 	if len(queue) > maxPersistentQueueItems {
 		return fmt.Errorf("queue snapshot contains too many items")
 	}
@@ -96,7 +100,10 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 	if err := atomicfile.WriteFileInRoot(root, queueSnapshotFileName, data, 0644); err != nil {
 		return err
 	}
-	return cleanupQueueAttachmentDirs(root, items)
+	if err := cleanupQueueAttachmentDirs(root, items); err != nil {
+		log.Printf("queue attachment cleanup failed: %v", err)
+	}
+	return nil
 }
 
 func (s *Store) Load(sessionID string) ([]domainmessage.QueuedMessage, error) {
@@ -145,6 +152,9 @@ func (s *Store) Load(sessionID string) ([]domainmessage.QueuedMessage, error) {
 	items := make([]domainmessage.QueuedMessage, 0, len(snapshot.Items))
 	restoredBytes := 0
 	for _, item := range snapshot.Items {
+		if !domainsession.ValidID(item.ID) {
+			return nil, fmt.Errorf("invalid queue ID")
+		}
 		restored, err := restoreQueueAttachments(root, item)
 		if err != nil {
 			return nil, err
@@ -185,6 +195,8 @@ func externalizeQueueAttachments(root *os.Root, item domainmessage.QueuedMessage
 			return item, fmt.Errorf("queued image is too large")
 		}
 		relPath := queueAttachmentRelPath(item.ID, i, part)
+		// 内容寻址使未提交的附件写入不会覆盖上一版本引用的文件。
+		relPath = filepath.Join(filepath.Dir(relPath), fmt.Sprintf("%x-%s", sha256.Sum256(data), filepath.Base(relPath)))
 		if err := pathguard.EnsureRootDirectory(root, filepath.Dir(relPath), 0755); err != nil {
 			return item, fmt.Errorf("create queue attachment dir: %w", err)
 		}

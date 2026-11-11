@@ -324,13 +324,17 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	taskCtx = rt.withExecutionDependencies(taskCtx)
 
 	// 注册到统一 TaskStream（支持断线重连 + Push/Pull 消费）
-	stream, created := rt.Streams.RegisterIfIdle(taskstream.StreamConfig{
+	stream, created, queueErr := rt.Queues.RegisterIfIdle(taskstream.StreamConfig{
 		SessionID:  sessionID,
 		Cancel:     taskCancel,
 		CleanupTTL: 5 * time.Minute,
 		Mode:       mode,
 		AgentName:  wsMsg.AgentName,
 	})
+	if queueErr != nil {
+		_ = writeJSON(errorEventPayload(sessionID, queueErr.Error()))
+		return
+	}
 	if !created {
 		if _, queueErr := rt.enqueueTaskMessage(stream, sessionID, taskstream.QueueFollowUp, wsMsg.Message, wsMsg.Contents); queueErr != nil {
 			_ = writeJSON(errorEventPayload(sessionID, taskQueueErrorMessage(queueErr)))
@@ -338,7 +342,6 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 		return
 	}
 	unlockSession()
-	rt.restorePersistentQueue(sessionID, stream)
 	// 绑定当前 WS 连接为 Push 订阅者
 	_, subID := stream.Subscribe(taskstream.FuncSubscriber(func(event taskstream.Event) error {
 		return writeJSON(event)

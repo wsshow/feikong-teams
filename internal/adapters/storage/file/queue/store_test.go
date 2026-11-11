@@ -1,8 +1,10 @@
 package queue
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,7 +78,7 @@ func TestPersistentQueueExternalizesAndRestoresBase64Images(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(sessionDir, queueSnapshotFileName)); err != nil {
 		t.Fatalf("queue snapshot was not written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(sessionDir, "attachments", "queue", "queue-1", "00-paste.png")); err != nil {
+	if _, err := os.Stat(filepath.Join(sessionDir, "attachments", "queue", "queue-1", fmt.Sprintf("%x-00-paste.png", sha256.Sum256(imageData)))); err != nil {
 		t.Fatalf("queue attachment was not written: %v", err)
 	}
 
@@ -175,5 +177,21 @@ func TestPersistentQueueRejectsOversizedState(t *testing.T) {
 	}
 	if _, err := rt.Load(sessionID); err == nil {
 		t.Fatal("oversized queue attachment was accepted")
+	}
+}
+
+func TestFailedSnapshotDoesNotOverwriteCommittedAttachment(t *testing.T) {
+	store := NewStore(t.TempDir())
+	original := []domainmessage.QueuedMessage{{ID: "item", Parts: []domainmessage.ContentPart{{Type: domainmessage.ContentPartImageURL, Name: "image.png", Base64Data: base64.StdEncoding.EncodeToString([]byte("original"))}}}}
+	if err := store.Save("session", original); err != nil {
+		t.Fatal(err)
+	}
+	edited := []domainmessage.QueuedMessage{{ID: "item", Parts: []domainmessage.ContentPart{{Type: domainmessage.ContentPartImageURL, Name: "image.png", Base64Data: base64.StdEncoding.EncodeToString([]byte("replacement"))}}}, {ID: "../invalid"}}
+	if err := store.Save("session", edited); err == nil {
+		t.Fatal("accepted invalid queue ID")
+	}
+	restored, err := store.Load("session")
+	if err != nil || len(restored) != 1 || restored[0].Parts[0].Base64Data != original[0].Parts[0].Base64Data {
+		t.Fatalf("restored=%v, err=%v", restored, err)
 	}
 }

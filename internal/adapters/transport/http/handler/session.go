@@ -116,7 +116,10 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 
 		stream := rt.Streams.Get(sessionID)
 		activeTask := stream != nil && stream.Status() == "processing"
-		queue := rt.queueForSessionResponse(sessionID, stream)
+		queue, ok := rt.queueForSessionResponse(c, sessionID)
+		if !ok {
+			return
+		}
 
 		sessionDir := rt.sessionDirPath(sessionID)
 		meta, metaErr := rt.SessionService.Get(c.Request.Context(), sessionID)
