@@ -291,20 +291,51 @@ func cleanupQueueAttachmentDirs(root *os.Root, queue []domainmessage.QueuedMessa
 		}
 		return fmt.Errorf("read queue attachment dir: %w", err)
 	}
+	referenced := make(map[string]bool)
 	active := make(map[string]bool, len(queue))
 	for _, item := range queue {
-		if item.ID != "" {
-			active[filepath.Base(item.ID)] = true
+		active[item.ID] = true
+		for _, part := range item.Parts {
+			if isQueueAttachmentPath(part.URL) {
+				referenced[filepath.Clean(part.URL)] = true
+			}
 		}
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() || active[entry.Name()] {
+		if !entry.IsDir() {
 			continue
 		}
-		if err := root.RemoveAll(filepath.Join(queueDir, entry.Name())); err != nil {
-			return fmt.Errorf("remove stale queue attachment dir: %w", err)
+		directory := filepath.Join(queueDir, entry.Name())
+		if !active[entry.Name()] {
+			if err := root.RemoveAll(directory); err != nil {
+				return fmt.Errorf("remove stale queue attachment dir: %w", err)
+			}
+			continue
+		}
+		if err := pathguard.RejectRootSymlinkComponents(root, directory); err != nil {
+			return err
+		}
+		dir, err := root.Open(directory)
+		if err != nil {
+			return err
+		}
+		files, readErr := dir.ReadDir(-1)
+		closeErr := dir.Close()
+		if err := errors.Join(readErr, closeErr); err != nil {
+			return err
+		}
+		for _, file := range files {
+			path := filepath.Join(directory, file.Name())
+			if referenced[path] || file.IsDir() {
+				continue
+			}
+			// Remove 只移除当前目录项，不跟随符号链接。
+			if err := root.Remove(path); err != nil {
+				return fmt.Errorf("remove stale queue attachment: %w", err)
+			}
 		}
 	}
+
 	return nil
 }
 

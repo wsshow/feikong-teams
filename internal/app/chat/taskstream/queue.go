@@ -115,7 +115,7 @@ func queuedMessageSize(msg QueuedMessage) int {
 }
 
 func (s *Queue) TakeSteeringMessages(limit int) []QueuedMessage {
-	if len(s.steering) == 0 {
+	if !s.accepting || len(s.steering) == 0 {
 		return nil
 	}
 	if limit <= 0 || limit > len(s.steering) {

@@ -195,3 +195,34 @@ func TestFailedSnapshotDoesNotOverwriteCommittedAttachment(t *testing.T) {
 		t.Fatalf("restored=%v, err=%v", restored, err)
 	}
 }
+
+func TestCommittedImageEditCleansUnusedVersionsWithoutFollowingLinks(t *testing.T) {
+	store := NewStore(t.TempDir())
+	items := []domainmessage.QueuedMessage{{ID: "item", Parts: []domainmessage.ContentPart{{Type: domainmessage.ContentPartImageURL, Name: "image.png", Base64Data: base64.StdEncoding.EncodeToString([]byte("before"))}}}}
+	if err := store.Save("session", items); err != nil {
+		t.Fatal(err)
+	}
+	attachmentDir := filepath.Join(store.dir, "session", "attachments", "queue", "item")
+	outside := filepath.Join(t.TempDir(), "untouched")
+	if err := os.WriteFile(outside, []byte("sentinel"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(attachmentDir, "stale-link")); err != nil {
+		t.Fatal(err)
+	}
+	items[0].Parts[0].Base64Data = base64.StdEncoding.EncodeToString([]byte("after"))
+	if err := store.Save("session", items); err != nil {
+		t.Fatal(err)
+	}
+	files, err := os.ReadDir(attachmentDir)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("files=%v, err=%v", files, err)
+	}
+	restored, err := store.Load("session")
+	if err != nil || restored[0].Parts[0].Base64Data != items[0].Parts[0].Base64Data {
+		t.Fatalf("restored=%v, err=%v", restored, err)
+	}
+	if data, err := os.ReadFile(outside); err != nil || string(data) != "sentinel" {
+		t.Fatalf("outside changed: %s %v", data, err)
+	}
+}

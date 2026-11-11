@@ -188,3 +188,22 @@ func TestQueueUncommittedMutationIsNotVisible(t *testing.T) {
 		t.Fatal(items)
 	}
 }
+
+func TestCancelledQueueRetainsSteeringForNextRun(t *testing.T) {
+	manager := taskstream.NewManager()
+	store := &queueTestStore{}
+	service := NewQueueService(manager, store, nil)
+	stream, _, err := service.RegisterIfIdle(taskstream.StreamConfig{SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Done()
+	if _, err := service.Enqueue(stream, taskstream.QueuedMessage{Kind: taskstream.QueueSteering, Text: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	stream.CancelIfProcessing()
+	items, err := service.TakeSteering(stream, 1)
+	if err != nil || len(items) != 0 || stream.QueuedCount() != 1 || len(store.items) != 1 {
+		t.Fatalf("consumed=%v, err=%v, queued=%v", items, err, store.items)
+	}
+}
