@@ -9,6 +9,7 @@ import (
 	"fkteams/internal/adapters/scheduler/filecron"
 	appagent "fkteams/internal/app/agent"
 	agents "fkteams/internal/app/agent/catalog"
+	"fkteams/internal/app/config"
 	appschedule "fkteams/internal/app/schedule"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
@@ -18,16 +19,22 @@ import (
 
 // SchedulerService 定时任务调度服务
 type SchedulerService struct {
-	schedulerDir string
-	mu           sync.Mutex
-	scheduler    *filecron.Scheduler
-	service      *appschedule.Service
+	executionGate *config.ExecutionGate
+	schedulerDir  string
+	mu            sync.Mutex
+	scheduler     *filecron.Scheduler
+	service       *appschedule.Service
 }
 
 // NewSchedulerService 创建调度服务
-func NewSchedulerService(schedulerDir string) *SchedulerService {
+func NewSchedulerService(schedulerDir string, gates ...*config.ExecutionGate) *SchedulerService {
+	var gate *config.ExecutionGate
+	if len(gates) > 0 {
+		gate = gates[0]
+	}
 	return &SchedulerService{
-		schedulerDir: schedulerDir,
+		schedulerDir:  schedulerDir,
+		executionGate: gate,
 	}
 }
 
@@ -61,11 +68,15 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	models, _ := modelregistry.RegistryFromContext(ctx)
 	tools, _ := apptools.RegistryFromContext(ctx)
 	hookBus := hooks.FromContext(ctx)
-	executor, err := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, filepath.Join(s.schedulerDir, "tasks"))
+	store, err := filecron.NewResultStore(filepath.Join(s.schedulerDir, "tasks"))
+	if err != nil {
+		return err
+	}
+	executor, err := appschedule.NewBackgroundExecutor(appagent.CreateBackgroundTaskRunner, store)
 	if err != nil {
 		return fmt.Errorf("initialize scheduler executor: %w", err)
 	}
-	executor.WithContextHook(func(ctx context.Context) context.Context {
+	executor.WithExecutionGate(s.executionGate).WithContextHook(func(ctx context.Context) context.Context {
 		ctx = runtimeport.WithRuntime(ctx, runtime)
 		ctx = runtimeport.WithInterruptRuntime(ctx, interrupt)
 		ctx = agents.WithRegistry(ctx, agentRegistry)

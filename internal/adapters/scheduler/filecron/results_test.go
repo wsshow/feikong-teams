@@ -1,8 +1,9 @@
-package schedule
+package filecron
 
 import (
 	"context"
 	"errors"
+	appschedule "fkteams/internal/app/schedule"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 
 func TestBackgroundExecutorExecuteWritesResult(t *testing.T) {
 	resultsDir := t.TempDir()
-	executor, err := NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
+	executor, err := newTestBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
 		return fakeRunner{content: "执行完成"}, nil
 	}, resultsDir)
 	if err != nil {
@@ -51,7 +52,7 @@ func TestBackgroundExecutorExecuteWritesResult(t *testing.T) {
 }
 
 func TestBackgroundExecutorExecuteErrorPaths(t *testing.T) {
-	executor, err := NewBackgroundExecutor(nil, t.TempDir())
+	executor, err := newTestBackgroundExecutor(nil, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestBackgroundExecutorExecuteErrorPaths(t *testing.T) {
 	}
 
 	createErr := errors.New("create failed")
-	executor, err = NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
+	executor, err = newTestBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
 		return nil, createErr
 	}, t.TempDir())
 	if err != nil {
@@ -71,7 +72,7 @@ func TestBackgroundExecutorExecuteErrorPaths(t *testing.T) {
 	}
 
 	runErr := errors.New("run failed")
-	executor, err = NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
+	executor, err = newTestBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) {
 		return fakeRunner{err: runErr}, nil
 	}, t.TempDir())
 	if err != nil {
@@ -94,13 +95,13 @@ func TestNewBackgroundExecutorReportsInitializationFailure(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not a directory"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewBackgroundExecutor(nil, path); err == nil {
-		t.Fatal("NewBackgroundExecutor() should reject a file result path")
+	if _, err := newTestBackgroundExecutor(nil, path); err == nil {
+		t.Fatal("newTestBackgroundExecutor() should reject a file result path")
 	}
 }
 
 func TestBackgroundExecutorPrunesHistory(t *testing.T) {
-	executor, err := NewBackgroundExecutor(nil, t.TempDir())
+	executor, err := newTestBackgroundExecutor(nil, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +115,7 @@ func TestBackgroundExecutorPrunesHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := executor.writeResult("task-prune", "task", "result"); err != nil {
+	if err := executor.SaveResult("task-prune", "task", "result"); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(historyDir)
@@ -128,7 +129,7 @@ func TestBackgroundExecutorPrunesHistory(t *testing.T) {
 
 func TestBackgroundExecutorRejectsSymlinkResultDirectory(t *testing.T) {
 	resultsDir := t.TempDir()
-	executor, err := NewBackgroundExecutor(nil, resultsDir)
+	executor, err := newTestBackgroundExecutor(nil, resultsDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +137,7 @@ func TestBackgroundExecutorRejectsSymlinkResultDirectory(t *testing.T) {
 	if err := os.Symlink(outside, executor.taskDir("task-linked")); err != nil {
 		t.Skipf("symlinks are unavailable: %v", err)
 	}
-	if err := executor.writeResult("task-linked", "task", "secret"); err == nil {
+	if err := executor.SaveResult("task-linked", "task", "secret"); err == nil {
 		t.Fatal("writeResult() should reject a symlink task directory")
 	}
 	entries, err := os.ReadDir(outside)
@@ -163,4 +164,21 @@ func (r fakeRunner) Run(_ context.Context, input message.TurnInput, opts runtime
 		_ = opts.Sink(event.Event{Type: event.TypeAssistantCompleted, Content: r.content})
 	}
 	return &runtimeport.RunResult{LastEvent: event.Event{Type: event.TypeAssistantCompleted}}, nil
+}
+
+type resultExecutor struct {
+	*appschedule.BackgroundExecutor
+	*ResultStore
+}
+
+func newTestBackgroundExecutor(create appschedule.RunnerCreator, dir string) (*resultExecutor, error) {
+	store, err := NewResultStore(dir)
+	if err != nil {
+		return nil, err
+	}
+	executor, err := appschedule.NewBackgroundExecutor(create, store)
+	if err != nil {
+		return nil, err
+	}
+	return &resultExecutor{executor, store}, nil
 }

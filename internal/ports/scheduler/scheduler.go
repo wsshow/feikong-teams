@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"time"
 
 	domainschedule "fkteams/internal/domain/schedule"
 )
@@ -31,16 +30,7 @@ type TaskService interface {
 	ReadHistoryFile(ctx context.Context, taskID string, filename string) (string, error)
 }
 
-// SchedulerLifecycle 管理调度器后台执行生命周期。
-type SchedulerLifecycle interface {
-	SetExecutor(executor TaskExecutor)
-	Start()
-	Stop()
-	ComputeNextRun(expr string, after time.Time) (time.Time, error)
-}
-
-// Scheduler 是组合根使用的完整调度能力。
-type Scheduler interface {
-	TaskService
-	SchedulerLifecycle
+// ResultStore 保存后台任务的一次执行结果与历史快照。
+type ResultStore interface {
+	SaveResult(taskID, task, result string) error
 }
