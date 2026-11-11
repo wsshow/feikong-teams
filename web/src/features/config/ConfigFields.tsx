@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { rewriteText } from "@/api/ai";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
@@ -568,58 +569,9 @@ export function SelectField({
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const selected = value ?? options[0] ?? "";
   return (
     <Field label={label}>
-      <div
-        className="relative"
-        onBlur={() => {
-          window.setTimeout(() => setOpen(false), 120);
-        }}
-      >
-        <button
-          type="button"
-          className={cn(
-            "sketch-inset flex h-9 w-full items-center justify-between gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            open && "ring-2 ring-ring",
-            disabled && "cursor-not-allowed opacity-70",
-          )}
-          disabled={disabled}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-        >
-          <span className={cn("min-w-0 truncate", !selected && "text-muted-foreground")}>{selected ? optionLabels?.[selected] || selected : "未选择"}</span>
-          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
-        </button>
-        {open ? (
-          <div
-            className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
-            role="listbox"
-          >
-            {options.map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="option"
-                aria-selected={selected === option}
-                className={cn(
-                  "flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/70",
-                  selected === option && "bg-primary/10 text-primary",
-                )}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  onChange(option);
-                  setOpen(false);
-                }}
-              >
-                <span className={cn("min-w-0 truncate", !option && "text-muted-foreground")}>{option ? optionLabels?.[option] || option : "未选择"}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      <Select aria-label={label} value={value} options={options} optionLabels={optionLabels} onChange={onChange} disabled={disabled} />
     </Field>
   );
 }
