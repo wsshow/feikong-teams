@@ -8,63 +8,29 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-type agentMiddleware struct {
-	name  string
-	inner adk.ChatModelAgentMiddleware
-}
-
+// WrapAgentMiddleware 创建显式绑定到 AgentKit 的扩展句柄。
 func WrapAgentMiddleware(name string, inner adk.ChatModelAgentMiddleware) runtimeport.AgentMiddleware {
-	return &agentMiddleware{name: name, inner: inner}
+	return runtimeport.BindAgentMiddleware("agentkit", name, inner)
 }
 
-func (m *agentMiddleware) Name() string {
-	if m == nil {
-		return ""
-	}
-	return m.name
-}
-
-func (m *agentMiddleware) runnerMiddleware() adk.ChatModelAgentMiddleware {
-	if m == nil {
-		return nil
-	}
-	return m.inner
-}
-
-type toolMiddleware struct {
-	name  string
-	inner compose.ToolMiddleware
-}
-
+// WrapToolMiddleware 创建显式绑定到 AgentKit 的工具扩展句柄。
 func WrapToolMiddleware(name string, inner compose.ToolMiddleware) runtimeport.ToolMiddleware {
-	return &toolMiddleware{name: name, inner: inner}
-}
-
-func (m *toolMiddleware) Name() string {
-	if m == nil {
-		return ""
-	}
-	return m.name
-}
-
-func (m *toolMiddleware) runnerMiddleware() compose.ToolMiddleware {
-	if m == nil {
-		return compose.ToolMiddleware{}
-	}
-	return m.inner
+	return runtimeport.BindToolMiddleware("agentkit", name, inner)
 }
 
 func AdaptAgentMiddlewareForRunner(m runtimeport.AgentMiddleware) (adk.ChatModelAgentMiddleware, error) {
 	if m == nil {
 		return nil, fmt.Errorf("middleware is nil")
 	}
-	handler, ok := m.(interface {
-		runnerMiddleware() adk.ChatModelAgentMiddleware
-	})
-	if !ok || handler.runnerMiddleware() == nil {
-		return nil, fmt.Errorf("unsupported agent middleware: %T", m)
+	native, err := m.Native("agentkit")
+	if err != nil {
+		return nil, err
 	}
-	return handler.runnerMiddleware(), nil
+	handler, ok := native.(adk.ChatModelAgentMiddleware)
+	if !ok || handler == nil {
+		return nil, fmt.Errorf("invalid native agent middleware: %s", m.Name())
+	}
+	return handler, nil
 }
 
 func AdaptAgentMiddlewaresForRunner(middlewares []runtimeport.AgentMiddleware) ([]adk.ChatModelAgentMiddleware, error) {
@@ -86,9 +52,13 @@ func AdaptToolMiddlewareForRunner(m runtimeport.ToolMiddleware) (compose.ToolMid
 	if m == nil {
 		return compose.ToolMiddleware{}, fmt.Errorf("middleware is nil")
 	}
-	handler, ok := m.(interface{ runnerMiddleware() compose.ToolMiddleware })
-	if !ok {
-		return compose.ToolMiddleware{}, fmt.Errorf("unsupported tool middleware: %T", m)
+	native, err := m.Native("agentkit")
+	if err != nil {
+		return compose.ToolMiddleware{}, err
 	}
-	return handler.runnerMiddleware(), nil
+	handler, ok := native.(compose.ToolMiddleware)
+	if !ok {
+		return compose.ToolMiddleware{}, fmt.Errorf("invalid native tool middleware: %s", m.Name())
+	}
+	return handler, nil
 }
