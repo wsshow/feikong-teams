@@ -217,3 +217,20 @@ func TestAssistantTextUsesCompletedMessagesOnce(t *testing.T) {
 		t.Fatalf("text = %q", got)
 	}
 }
+
+func TestAssistantTextKeepsMessageIdentityAndCompletedContent(t *testing.T) {
+	got := AssistantText([]event.Event{
+		{Type: event.TypeAssistantText, RunID: "a:b", MessageID: "c", Content: "draft"},
+		{Type: event.TypeAssistantCompleted, RunID: "a", MessageID: "b:c", Content: "second"},
+		{Type: event.TypeAssistantCompleted, RunID: "a:b", MessageID: "c", Message: &message.Message{
+			Role: message.RoleAssistant, ContentParts: []message.ContentPart{{Type: message.ContentPartText, Text: "first"}},
+		}},
+		{Type: event.TypeAssistantText, MessageID: "empty", Content: "discarded"},
+		{Type: event.TypeAssistantCompleted, MessageID: "empty"},
+		{Type: event.TypeAssistantCompleted, MessageID: "tool", Role: message.RoleTool, Content: "tool"},
+		{Type: event.TypeAssistantText, MessageID: "nested", ParentToolCallID: "parent", Content: "nested"},
+	})
+	if got != "firstsecond" {
+		t.Fatalf("text = %q", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fkteams/internal/domain/event"
 	"fmt"
 	"strings"
+	"sync"
 
 	"fkteams/internal/app/tools/ask"
 	"fkteams/internal/domain/message"
@@ -131,39 +132,75 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 	})
 }
 
-// AssistantText 投影主智能体的可见回答；完整消息替换对应增量，避免重复拼接工具或用户内容。
-func AssistantText(events []event.Event) string {
-	type output struct {
-		text     string
-		complete bool
+// AssistantTextCollector 按消息身份收集主智能体的可见回答；零值即可使用。
+// 完整消息替换对应增量，成员输出、工具内容和完成后的迟到增量不会混入回答。
+type AssistantTextCollector struct {
+	mu       sync.Mutex
+	order    []assistantMessageKey
+	messages map[assistantMessageKey]assistantOutput
+}
+
+type assistantMessageKey struct {
+	runID     string
+	messageID string
+}
+
+type assistantOutput struct {
+	text     string
+	complete bool
+}
+
+// Record 接收事件，并返回本次接受的文本增量，供流式调用方发布。
+func (c *AssistantTextCollector) Record(e event.Event) string {
+	if e.MemberCallID != "" || e.ParentToolCallID != "" ||
+		(e.Role != "" && e.Role != message.RoleAssistant) ||
+		(e.Message != nil && e.Message.Role != "" && e.Message.Role != message.RoleAssistant) {
+		return ""
 	}
-	var order []string
-	messages := make(map[string]output)
-	for _, e := range events {
-		if e.MemberCallID != "" || e.ParentToolCallID != "" {
-			continue
-		}
-		if e.Type != event.TypeAssistantText && e.Type != event.TypeAssistantCompleted {
-			continue
-		}
-		key := e.RunID + ":" + e.MessageID
-		current, exists := messages[key]
-		if !exists {
-			order = append(order, key)
-		}
-		if e.Type == event.TypeAssistantCompleted {
-			if e.Content != "" {
-				current.text = e.Content
-			}
-			current.complete = true
-		} else if !current.complete {
-			current.text += e.Content
-		}
-		messages[key] = current
+	if e.Type != event.TypeAssistantText && e.Type != event.TypeAssistantCompleted {
+		return ""
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.messages == nil {
+		c.messages = make(map[assistantMessageKey]assistantOutput)
+	}
+	key := assistantMessageKey{runID: e.RunID, messageID: e.MessageID}
+	current, exists := c.messages[key]
+	if !exists {
+		c.order = append(c.order, key)
+	}
+	delta := ""
+	if e.Type == event.TypeAssistantCompleted {
+		current.text = e.Content
+		if current.text == "" && e.Message != nil {
+			current.text = e.Message.DisplayText()
+		}
+		current.complete = true
+	} else if !current.complete {
+		delta = e.Content
+		current.text += delta
+	}
+	c.messages[key] = current
+	return delta
+}
+
+// Text 按消息首次出现的顺序返回当前回答。
+func (c *AssistantTextCollector) Text() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var text strings.Builder
-	for _, key := range order {
-		text.WriteString(messages[key].text)
+	for _, key := range c.order {
+		text.WriteString(c.messages[key].text)
 	}
 	return text.String()
+}
+
+// AssistantText 使用与流式任务相同的规则投影主智能体回答。
+func AssistantText(events []event.Event) string {
+	var collector AssistantTextCollector
+	for _, e := range events {
+		collector.Record(e)
+	}
+	return collector.Text()
 }

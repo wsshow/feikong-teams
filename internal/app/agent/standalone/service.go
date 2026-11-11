@@ -7,12 +7,14 @@ import (
 	"strings"
 
 	agentscommon "fkteams/internal/app/agent/catalog/common"
+	"fkteams/internal/app/chat"
 	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	storageport "fkteams/internal/ports/storage"
 )
 
+// TextDeltaSink 接收主智能体的文本增量。
 type TextDeltaSink func(delta string) error
 
 // Dependencies 是独立智能体运行需要的最小 runtime 能力。
@@ -51,6 +53,7 @@ type Service struct {
 	deps Dependencies
 }
 
+// NewService 创建独立智能体服务。
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
@@ -109,26 +112,18 @@ func (s *Service) run(ctx context.Context, req Request, streaming bool, onDelta 
 		return nil, fmt.Errorf("create standalone runner: %w", err)
 	}
 
-	runID := firstNonEmpty(req.RunID, req.Name)
-	var text strings.Builder
-	completedText := ""
-
-	result, err := runner.Run(ctx, domainmessage.TurnInput{
-		Context: req.Context,
-		Message: requestMessage(req),
-	}, runtimeport.RunOptions{
-		RunID: runID,
-		Sink: func(event domainevent.Event) error {
-			switch event.Type {
-			case domainevent.TypeAssistantText:
-				text.WriteString(event.Content)
-				if onDelta != nil && event.Content != "" {
-					if err := onDelta(event.Content); err != nil {
-						return err
-					}
+	var text chat.AssistantTextCollector
+	result, err := chat.NewService().RunTurn(ctx, chat.TurnRequest{
+		SessionID:      req.Name,
+		RunID:          req.RunID,
+		Runner:         runner,
+		NonInteractive: true,
+		Input:          domainmessage.TurnInput{Context: req.Context, Message: requestMessage(req)},
+		EventSink: func(event domainevent.Event) error {
+			if delta := text.Record(event); delta != "" && onDelta != nil {
+				if err := onDelta(delta); err != nil {
+					return err
 				}
-			case domainevent.TypeAssistantCompleted:
-				completedText = event.Content
 			}
 			if req.EventSink != nil {
 				return req.EventSink(event)
@@ -140,11 +135,7 @@ func (s *Service) run(ctx context.Context, req Request, streaming bool, onDelta 
 		return nil, fmt.Errorf("run standalone agent: %w", err)
 	}
 
-	output := text.String()
-	if output == "" {
-		output = completedText
-	}
-	final := Result{Text: strings.TrimSpace(output)}
+	final := Result{Text: strings.TrimSpace(text.Text())}
 	if result != nil {
 		final.LastEvent = result.LastEvent
 	}
@@ -181,13 +172,4 @@ func requestMessage(req Request) domainmessage.Message {
 		return domainmessage.Message{}
 	}
 	return domainmessage.Message{Role: domainmessage.RoleUser, Content: req.Input}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
