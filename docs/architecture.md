@@ -80,6 +80,8 @@ agent, err := common.BuildAgent(ctx, def)
 
 内置智能体目录保留定义与独立提示词。新内置角色在 `builtinAgentSpecs()` 注册一次元信息和默认定义。自定义角色和内置角色的配置覆盖都由 `buildConfiguredDefinition` 生成相同的 Definition，再调用 `BuildAgent`。模型引用保留完整模型配置（包括额外请求头）；未知 Profile 在构建时返回错误。
 
+Definition 可重复使用：配置覆盖先复制变量表，模板只对原始占位符执行一次替换，不递归解释变量值中的大括号，也不依赖 map 遍历顺序。
+
 轻量任务使用 `app/agent/standalone.Service` 的 `RunText`、`StreamText` 或 `Run`，内部统一调用 `chat.Service.RunTurn`，继承回合 Hook、唯一运行标识和中断默认值。文本输出统一由 `chat.AssistantTextCollector` 投影，按消息身份以完整内容替换增量，并过滤成员输出；调用方不用自行拼装历史、工具或执行循环。
 
 工具组中的工具使用同一份声明列表，处理函数保留明确的请求与响应类型：

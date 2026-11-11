@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/config"
 	runtimeport "fkteams/internal/ports/runtime"
 )
@@ -200,3 +201,19 @@ type fakeAgent struct {
 func (a fakeAgent) Name() string { return a.name }
 
 func (a fakeAgent) Description() string { return a.name + " description" }
+
+func TestConfiguredDefinitionsDoNotShareSSHOverrides(t *testing.T) {
+	original := common.Definition{TemplateVars: map[string]any{"ssh_host": "default", "custom": "kept"}}
+	first, second := original, original
+	applySSHConfigToDefinition(&first, &config.AgentSSH{Host: "first.example", Username: "first"})
+	applySSHConfigToDefinition(&second, &config.AgentSSH{Host: "second.example", Username: "second"})
+	if original.TemplateVars["ssh_host"] != "default" || len(original.TemplateVars) != 2 {
+		t.Fatalf("original variables changed: %v", original.TemplateVars)
+	}
+	if first.TemplateVars["ssh_host"] != "first.example" || first.TemplateVars["ssh_username"] != "first" || second.TemplateVars["ssh_host"] != "second.example" {
+		t.Fatalf("configured declarations shared overrides: %v, %v", first.TemplateVars, second.TemplateVars)
+	}
+	if first.TemplateVars["custom"] != "kept" || second.TemplateVars["custom"] != "kept" {
+		t.Fatal("configuration lost custom template variables")
+	}
+}

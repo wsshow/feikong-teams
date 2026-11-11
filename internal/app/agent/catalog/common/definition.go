@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -197,10 +198,17 @@ func renderInstruction(instruction string, vars map[string]any) string {
 	if instruction == "" {
 		return ""
 	}
-	for key, value := range vars {
-		instruction = strings.ReplaceAll(instruction, "{"+key+"}", fmt.Sprint(value))
+	keys := make([]string, 0, len(vars))
+	for key := range vars {
+		keys = append(keys, key)
 	}
-	return instruction
+	slices.Sort(keys)
+	pairs := make([]string, 0, len(keys)*2)
+	for _, key := range keys {
+		pairs = append(pairs, "{"+key+"}", fmt.Sprint(vars[key]))
+	}
+	// 只展开原始模板中的占位符，变量值中的大括号保持字面含义。
+	return strings.NewReplacer(pairs...).Replace(instruction)
 }
 
 func cleanerFromContext(ctx context.Context) *resources.Cleaner {

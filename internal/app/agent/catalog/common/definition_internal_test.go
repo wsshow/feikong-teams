@@ -165,3 +165,24 @@ func TestBuildAgentRejectsAmbiguousToolsBeforeRuntimeConstruction(t *testing.T) 
 		t.Fatalf("err=%v config=%v", err, runtime.lastConfig)
 	}
 }
+
+func TestDefinitionTemplateExpansionIsLiteralAndRepeatable(t *testing.T) {
+	engine := &minimalEngine{}
+	ctx := runtimeport.WithRuntime(context.Background(), engine)
+	def := Definition{
+		Name: "template", Profile: ProfileBare, Model: testmodel.New(),
+		Instruction:  "{first} | {second} | {count} | {unknown}",
+		TemplateVars: map[string]any{"first": "{second}", "second": "value", "count": 2},
+	}
+	for i := 0; i < 30; i++ {
+		if _, err := BuildAgent(ctx, def); err != nil {
+			t.Fatal(err)
+		}
+		if got := engine.lastConfig.Instruction; got != "{second} | value | 2 | {unknown}" {
+			t.Fatalf("instruction = %q", got)
+		}
+	}
+	if def.Instruction != "{first} | {second} | {count} | {unknown}" || def.TemplateVars["first"] != "{second}" {
+		t.Fatalf("declaration was mutated: %+v", def)
+	}
+}

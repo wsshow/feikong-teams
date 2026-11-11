@@ -14,6 +14,7 @@ import (
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
+	"maps"
 	"sync"
 )
 
@@ -433,6 +434,8 @@ func applySSHConfigToDefinition(def *common.Definition, ssh *config.AgentSSH) {
 	if def == nil || ssh == nil {
 		return
 	}
+	// Definition 按值复用时，配置覆盖不能改写原声明持有的变量表。
+	def.TemplateVars = maps.Clone(def.TemplateVars)
 	if def.TemplateVars == nil {
 		def.TemplateVars = make(map[string]any)
 	}
