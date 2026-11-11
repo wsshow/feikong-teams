@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"io"
 	"os"
@@ -42,17 +43,22 @@ type TodoList struct {
 
 // TodoTools Todo工具实例，按会话隔离
 type TodoTools struct {
+	Documents   storageport.Documents
 	sessionsDir string
 	mu          sync.Mutex
 }
 
 // NewTodoTools 创建一个新的Todo工具实例
-func NewTodoTools(sessionsDir string) (*TodoTools, error) {
+func NewTodoTools(sessionsDir string, stores ...storageport.Documents) (*TodoTools, error) {
 	absPath, err := filepath.Abs(sessionsDir)
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
 	}
-	return &TodoTools{sessionsDir: absPath}, nil
+	tt := &TodoTools{sessionsDir: absPath}
+	if len(stores) > 0 {
+		tt.Documents = stores[0]
+	}
+	return tt, nil
 }
 
 // getFilePath 从 context 中提取会话 ID，返回该会话的 todos.json 路径
@@ -78,6 +84,19 @@ func (tt *TodoTools) getFilePath(ctx context.Context) (string, error) {
 
 // loadFrom 从指定路径加载待办列表
 func (tt *TodoTools) loadFrom(filePath string) (*TodoList, error) {
+	if tt.Documents != nil {
+		if err := tt.validateDocumentPath(filePath); err != nil {
+			return nil, err
+		}
+		data, err := tt.Documents.Read(filePath)
+		if errors.Is(err, os.ErrNotExist) {
+			return &TodoList{Todos: []Todo{}}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return decodeSnapshot(data)
+	}
 	relativePath, err := filepath.Rel(tt.sessionsDir, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("无法解析待办列表路径: %w", err)
@@ -111,15 +130,7 @@ func (tt *TodoTools) loadFrom(filePath string) (*TodoList, error) {
 		return nil, fmt.Errorf("无法关闭待办列表: %w", closeErr)
 	}
 
-	var list TodoList
-	if err := json.Unmarshal(data, &list); err != nil {
-		return nil, fmt.Errorf("无法解析待办列表: %w", err)
-	}
-	if len(list.Todos) > maxTodoItems {
-		return nil, fmt.Errorf("待办列表超过 %d 项", maxTodoItems)
-	}
-
-	return &list, nil
+	return decodeSnapshot(data)
 }
 
 // saveTo 保存待办列表到指定路径
@@ -133,6 +144,13 @@ func (tt *TodoTools) saveTo(filePath string, list *TodoList) error {
 	}
 	if int64(len(data)) > maxTodoStoreBytes {
 		return fmt.Errorf("待办列表超过资源限制")
+	}
+
+	if tt.Documents != nil {
+		if err := tt.validateDocumentPath(filePath); err != nil {
+			return err
+		}
+		return tt.Documents.Write(filePath, data)
 	}
 
 	relativePath, err := filepath.Rel(tt.sessionsDir, filePath)
@@ -736,3 +754,35 @@ func (tt *TodoTools) TodoClear(ctx context.Context, req *TodoClearRequest) (*Tod
 		ClearedCount: clearedCount,
 	}, nil
 }
+
+func (tt *TodoTools) validateDocumentPath(path string) error {
+	relative, err := filepath.Rel(tt.sessionsDir, path)
+	if err != nil || !filepath.IsLocal(relative) {
+		return fmt.Errorf("todo path escapes session directory")
+	}
+	root, err := os.OpenRoot(tt.sessionsDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := pathguard.RejectRootSymlinkComponents(root, relative); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+func decodeSnapshot(data []byte) (*TodoList, error) {
+	if int64(len(data)) > maxTodoStoreBytes {
+		return nil, fmt.Errorf("todo snapshot exceeds size limit")
+	}
+	var list TodoList
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, fmt.Errorf("decode todo snapshot: %w", err)
+	}
+	if len(list.Todos) > maxTodoItems {
+		return nil, fmt.Errorf("todo snapshot exceeds item limit")
+	}
+	return &list, nil
+}
+
+// ValidateSnapshot 校验迁移的待办快照，不修改源文件。
+func ValidateSnapshot(data []byte) error { _, err := decodeSnapshot(data); return err }

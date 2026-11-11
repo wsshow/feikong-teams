@@ -2,6 +2,7 @@ package share
 
 import (
 	"errors"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/atomicfile"
 	"fmt"
 	"io"
@@ -17,7 +18,14 @@ const (
 
 var errShareStoreFull = errors.New("share store entry limit reached")
 
-func readPersistedShareStore(filePath string) ([]byte, error) {
+func readPersistedShareStore(filePath string, stores ...storageport.Documents) ([]byte, error) {
+	if len(stores) > 0 && stores[0] != nil {
+		data, err := stores[0].Read(filePath)
+		if err != nil {
+			return nil, err
+		}
+		return data, validatePersistedShareStoreSize(data)
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -50,13 +58,14 @@ func ExpiresAtUnix(t time.Time) int64 {
 
 // entryStore 只复用并发、持久化和回滚机制；条目校验、复制与文件格式由具体存储提供。
 type entryStore[T any] struct {
-	mu       sync.RWMutex
-	filePath string
-	m        map[string]*T
-	loadErr  error
-	clone    func(*T) *T
-	validate func(string, *T) error
-	encode   func(map[string]*T) ([]byte, error)
+	Documents storageport.Documents
+	mu        sync.RWMutex
+	filePath  string
+	m         map[string]*T
+	loadErr   error
+	clone     func(*T) *T
+	validate  func(string, *T) error
+	encode    func(map[string]*T) ([]byte, error)
 }
 
 func newEntryStore[T any](path string, clone func(*T) *T, validate func(string, *T) error, encode func(map[string]*T) ([]byte, error)) *entryStore[T] {
@@ -86,6 +95,9 @@ func (s *entryStore[T]) saveLockedTo(path string) error {
 	}
 	if err := validatePersistedShareStoreSize(data); err != nil {
 		return err
+	}
+	if s.Documents != nil && path == s.filePath {
+		return s.Documents.Write(path, data)
 	}
 	return atomicfile.WriteFile(path, data, 0644)
 }

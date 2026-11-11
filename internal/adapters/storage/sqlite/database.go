@@ -93,10 +93,14 @@ func Open(ctx context.Context, path string) (*Database, error) {
  namespace TEXT NOT NULL, key TEXT NOT NULL, payload BLOB NOT NULL,
  PRIMARY KEY(namespace,key)
  );
+ CREATE TABLE IF NOT EXISTS document_fragments (
+ path TEXT NOT NULL, sequence INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(path,sequence)
+ );
  CREATE TABLE IF NOT EXISTS migrations (
  id TEXT PRIMARY KEY, completed_at TEXT NOT NULL, manifest TEXT NOT NULL CHECK(json_valid(manifest))
  );
  PRAGMA user_version=1;`); err != nil {
+		_ = tx.Rollback()
 		return fail(err)
 	}
 	if err = tx.Commit(); err != nil {

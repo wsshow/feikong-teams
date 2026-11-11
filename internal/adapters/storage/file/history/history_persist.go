@@ -1,6 +1,7 @@
 package eventlog
 
 import (
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,12 +46,12 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	defer h.mu.Unlock()
 
 	h.sessionDir = filepath.Dir(filePath)
-	events, err := loadTranscriptForResume(filePath)
+	events, err := loadTranscriptForResume(filePath, h.Documents)
 	if err != nil {
 		return err
 	}
 	h.persistErr = nil
-	messages, err := projectTranscriptEvents(h.sessionDir, events)
+	messages, err := projectTranscriptEvents(h.sessionDir, events, h.Documents)
 	if err != nil {
 		return err
 	}
@@ -63,8 +64,8 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 	return nil
 }
 
-func LoadTranscriptFromFile(filePath string) ([]TranscriptEvent, error) {
-	return loadTranscript(filePath)
+func LoadTranscriptFromFile(filePath string, stores ...storageport.Documents) ([]TranscriptEvent, error) {
+	return loadTranscript(filePath, stores...)
 }
 
 type SessionTranscriptRecord struct {
@@ -72,8 +73,8 @@ type SessionTranscriptRecord struct {
 	Member *SubagentMetadata
 }
 
-func LoadSessionTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord, error) {
-	mainEvents, err := loadTranscript(filepath.Join(sessionDir, TranscriptFileName))
+func LoadSessionTranscriptRecords(sessionDir string, stores ...storageport.Documents) ([]SessionTranscriptRecord, error) {
+	mainEvents, err := loadTranscript(filepath.Join(sessionDir, TranscriptFileName), stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +82,7 @@ func LoadSessionTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord,
 	for _, event := range mainEvents {
 		records = append(records, SessionTranscriptRecord{Event: event})
 	}
-	subagentRecords, err := loadSubagentTranscriptRecords(sessionDir)
+	subagentRecords, err := loadSubagentTranscriptRecords(sessionDir, stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func LoadSessionTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord,
 	return records, nil
 }
 
-func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]AgentMessage, error) {
+func projectTranscriptEvents(sessionDir string, events []TranscriptEvent, stores ...storageport.Documents) ([]AgentMessage, error) {
 	var messages []AgentMessage
 	var current *AgentMessage
 	toolEventIndex := make(map[string]int)
@@ -200,7 +201,7 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]Age
 		}
 	}
 	flush()
-	subagentMessages, err := projectSubagentTranscriptFiles(sessionDir)
+	subagentMessages, err := projectSubagentTranscriptFiles(sessionDir, stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -208,8 +209,8 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent) ([]Age
 	return messages, nil
 }
 
-func projectSubagentTranscriptFiles(sessionDir string) ([]AgentMessage, error) {
-	records, err := loadSubagentTranscriptRecords(sessionDir)
+func projectSubagentTranscriptFiles(sessionDir string, stores ...storageport.Documents) ([]AgentMessage, error) {
+	records, err := loadSubagentTranscriptRecords(sessionDir, stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -241,8 +242,8 @@ func projectSubagentTranscriptFiles(sessionDir string) ([]AgentMessage, error) {
 	return messages, nil
 }
 
-func loadSubagentTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord, error) {
-	matches, err := filepath.Glob(filepath.Join(sessionDir, subagentsDirName, "*", TranscriptFileName))
+func loadSubagentTranscriptRecords(sessionDir string, stores ...storageport.Documents) ([]SessionTranscriptRecord, error) {
+	matches, err := documentTranscripts(sessionDir, stores...)
 	if err != nil {
 		return nil, fmt.Errorf("find subagent transcripts: %w", err)
 	}
@@ -251,11 +252,11 @@ func loadSubagentTranscriptRecords(sessionDir string) ([]SessionTranscriptRecord
 	}
 	records := make([]SessionTranscriptRecord, 0)
 	for _, filePath := range matches {
-		metadata, err := loadSubagentMetadata(filepath.Join(filepath.Dir(filePath), "metadata.json"))
+		metadata, err := loadSubagentMetadata(filepath.Join(filepath.Dir(filePath), "metadata.json"), stores...)
 		if err != nil {
 			return nil, fmt.Errorf("load subagent transcript metadata: %w", err)
 		}
-		events, err := loadTranscript(filePath)
+		events, err := loadTranscript(filePath, stores...)
 		if err != nil {
 			return nil, fmt.Errorf("load subagent transcript: %w", err)
 		}

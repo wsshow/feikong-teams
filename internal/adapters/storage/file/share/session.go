@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fkteams/internal/app/appdata"
 	domainsession "fkteams/internal/domain/session"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"os"
@@ -40,11 +41,14 @@ type sessionShareFileEntry struct {
 type SessionShareStore struct{ *entryStore[SessionEntry] }
 
 // NewSessionShareStore 创建会话分享存储，并从持久化文件加载现有分享。
-func NewSessionShareStore(filePath string) *SessionShareStore {
+func NewSessionShareStore(filePath string, stores ...storageport.Documents) *SessionShareStore {
 	if filePath == "" {
 		filePath = sessionSharesFilePath()
 	}
 	store := &SessionShareStore{newEntryStore(filePath, cloneSessionEntry, validateSessionShareEntry, encodeSessionEntryMap)}
+	if len(stores) > 0 {
+		store.Documents = stores[0]
+	}
 	store.loadErr = store.Load()
 	return store
 }
@@ -58,7 +62,7 @@ func (s *SessionShareStore) Load() error {
 	if s == nil {
 		return nil
 	}
-	entries, err := readSessionShareEntries(s.filePath)
+	entries, err := readSessionShareEntries(s.filePath, s.Documents)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -103,8 +107,8 @@ func (s *SessionShareStore) Load() error {
 	return nil
 }
 
-func readSessionShareEntries(filePath string) (map[string]*sessionShareFileEntry, error) {
-	data, err := readPersistedShareStore(filePath)
+func readSessionShareEntries(filePath string, stores ...storageport.Documents) (map[string]*sessionShareFileEntry, error) {
+	data, err := readPersistedShareStore(filePath, stores...)
 	if err != nil {
 		return nil, err
 	}

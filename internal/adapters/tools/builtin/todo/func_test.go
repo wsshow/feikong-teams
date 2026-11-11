@@ -2,6 +2,7 @@ package todo
 
 import (
 	"context"
+	sqlitestore "fkteams/internal/adapters/storage/sqlite"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,5 +251,45 @@ func TestTodoBatchAndClearKeepSessionsIsolated(t *testing.T) {
 	}
 	if listB.TotalCount != 1 || listB.Todos[0].Title != "B1" {
 		t.Fatalf("session B list = %#v, want B1 preserved", listB)
+	}
+}
+
+func TestDatabaseTodoRejectsSymlinkAndCrossSessionPath(t *testing.T) {
+	root := t.TempDir()
+	db, err := sqlitestore.Open(context.Background(), filepath.Join(root, "data", "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	documents, err := sqlitestore.NewDocuments(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := NewTodoTools(filepath.Join(root, "sessions"), documents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := session.WithID(context.Background(), "one")
+	path, err := tools.getFilePath(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(`{"todos":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, path); err != nil {
+		t.Skip(err)
+	}
+	response, err := tools.TodoAdd(ctx, &TodoAddRequest{Title: "blocked"})
+	if err != nil || response.Success || response.ErrorMessage == "" {
+		t.Fatalf("symlink was accepted: %v %v", response, err)
+	}
+	if err := tools.saveTo(filepath.Join(root, "other.json"), &TodoList{}); err == nil {
+		t.Fatal("path outside sessions accepted")
+	}
+	data, _ := os.ReadFile(outside)
+	if string(data) != `{"todos":[]}` {
+		t.Fatal("outside target modified")
 	}
 }

@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	domainsession "fkteams/internal/domain/session"
-	"fkteams/internal/runtime/atomicfile"
+	storageport "fkteams/internal/ports/storage"
+
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -32,14 +33,14 @@ type sessionRecorderEntry struct {
 type SessionMetadata = domainsession.Metadata
 
 // SaveMetadata 保存会话元数据到指定目录
-func SaveMetadata(sessionDir string, meta *SessionMetadata) error {
+func SaveMetadata(sessionDir string, meta *SessionMetadata, stores ...storageport.Documents) error {
 	lock := metadataLock(sessionDir)
 	lock.Lock()
 	defer lock.Unlock()
-	return saveMetadataUnlocked(sessionDir, meta)
+	return saveMetadataUnlocked(sessionDir, meta, stores...)
 }
 
-func saveMetadataUnlocked(sessionDir string, meta *SessionMetadata) error {
+func saveMetadataUnlocked(sessionDir string, meta *SessionMetadata, stores ...storageport.Documents) error {
 	if err := os.MkdirAll(sessionDir, 0755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
@@ -50,19 +51,19 @@ func saveMetadataUnlocked(sessionDir string, meta *SessionMetadata) error {
 	if len(data) > maxSessionMetadataBytes {
 		return fmt.Errorf("session metadata is too large")
 	}
-	return atomicfile.WriteFile(filepath.Join(sessionDir, "metadata.json"), data, 0644)
+	return writeDocument(filepath.Join(sessionDir, "metadata.json"), data, stores...)
 }
 
 // LoadMetadata 从指定目录加载会话元数据
-func LoadMetadata(sessionDir string) (*SessionMetadata, error) {
+func LoadMetadata(sessionDir string, stores ...storageport.Documents) (*SessionMetadata, error) {
 	lock := metadataLock(sessionDir)
 	lock.RLock()
 	defer lock.RUnlock()
-	return loadMetadataUnlocked(sessionDir)
+	return loadMetadataUnlocked(sessionDir, stores...)
 }
 
-func loadMetadataUnlocked(sessionDir string) (*SessionMetadata, error) {
-	file, err := os.Open(filepath.Join(sessionDir, "metadata.json"))
+func loadMetadataUnlocked(sessionDir string, stores ...storageport.Documents) (*SessionMetadata, error) {
+	file, err := readDocument(filepath.Join(sessionDir, "metadata.json"), stores...)
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +83,12 @@ func loadMetadataUnlocked(sessionDir string) (*SessionMetadata, error) {
 }
 
 // UpdateMetadata 在同一进程的所有存储实例之间原子执行元数据读改写。
-func UpdateMetadata(sessionDir string, createIfMissing bool, update func(*SessionMetadata) error) (*SessionMetadata, error) {
+func UpdateMetadata(sessionDir string, createIfMissing bool, update func(*SessionMetadata) error, stores ...storageport.Documents) (*SessionMetadata, error) {
 	lock := metadataLock(sessionDir)
 	lock.Lock()
 	defer lock.Unlock()
 
-	meta, err := loadMetadataUnlocked(sessionDir)
+	meta, err := loadMetadataUnlocked(sessionDir, stores...)
 	if errors.Is(err, os.ErrNotExist) && createIfMissing {
 		meta = &SessionMetadata{}
 		err = nil
@@ -100,7 +101,7 @@ func UpdateMetadata(sessionDir string, createIfMissing bool, update func(*Sessio
 			return nil, err
 		}
 	}
-	if err := saveMetadataUnlocked(sessionDir, meta); err != nil {
+	if err := saveMetadataUnlocked(sessionDir, meta, stores...); err != nil {
 		return nil, err
 	}
 	copy := *meta
@@ -130,6 +131,7 @@ func metadataLock(sessionDir string) *sync.RWMutex {
 
 // SessionHistoryManager 按会话 ID 管理独立的 HistoryRecorder，支持并发安全
 type SessionHistoryManager struct {
+	Documents  storageport.Documents
 	mu         sync.Mutex
 	sessions   map[string]*sessionRecorderEntry
 	maxEntries int
@@ -154,6 +156,7 @@ func NewSessionHistoryManagerWithCapacity(maxEntries int) *SessionHistoryManager
 func (m *SessionHistoryManager) GetOrCreate(sessionID, historyDir string) *HistoryRecorder {
 	if !domainsession.ValidID(sessionID) {
 		recorder := NewHistoryRecorder()
+		recorder.Documents = m.Documents
 		recorder.persistErr = fmt.Errorf("invalid session ID")
 		return recorder
 	}
@@ -228,6 +231,7 @@ func (m *SessionHistoryManager) LoadForSession(sessionID, filePath string) (*His
 		return nil, fmt.Errorf("invalid session ID")
 	}
 	recorder := NewHistoryRecorder()
+	recorder.Documents = m.Documents
 	recorder.SetSessionDir(filepath.Dir(filePath))
 	if err := recorder.LoadFromFile(filePath); err != nil {
 		return nil, fmt.Errorf("load session %s: %w", sessionID, err)
@@ -272,6 +276,7 @@ func (m *SessionHistoryManager) getOrCreateLocked(sessionID, historyDir string) 
 	}
 	sessionDir := filepath.Join(historyDir, sessionID)
 	recorder := NewHistoryRecorder()
+	recorder.Documents = m.Documents
 	recorder.SetSessionDir(sessionDir)
 	filePath := filepath.Join(sessionDir, TranscriptFileName)
 	if err := recorder.LoadFromFile(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {

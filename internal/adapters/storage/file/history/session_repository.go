@@ -2,7 +2,11 @@ package eventlog
 
 import (
 	"context"
+	"fkteams/internal/runtime/log"
+	"strings"
+
 	"errors"
+	storageport "fkteams/internal/ports/storage"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,12 +17,13 @@ import (
 
 // SessionRepository 将文件会话目录适配为会话存储端口。
 type SessionRepository struct {
-	root string
-	mu   sync.RWMutex
+	Documents storageport.Documents
+	root      string
+	mu        sync.RWMutex
 }
 
-func NewSessionRepository(root string) *SessionRepository {
-	return &SessionRepository{root: root}
+func NewSessionRepository(root string, stores ...storageport.Documents) *SessionRepository {
+	return &SessionRepository{root: root, Documents: selectedDocuments(stores)}
 }
 
 func (r *SessionRepository) ListSessions(_ context.Context) ([]domainsession.Record, error) {
@@ -27,6 +32,9 @@ func (r *SessionRepository) ListSessions(_ context.Context) ([]domainsession.Rec
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if r.Documents != nil {
+		return r.listDatabaseSessions()
+	}
 	entries, err := os.ReadDir(r.root)
 	if errors.Is(err, os.ErrNotExist) {
 		return []domainsession.Record{}, nil
@@ -40,7 +48,7 @@ func (r *SessionRepository) ListSessions(_ context.Context) ([]domainsession.Rec
 			continue
 		}
 		sessionDir := filepath.Join(r.root, entry.Name())
-		metadata, loadErr := LoadMetadata(sessionDir)
+		metadata, loadErr := LoadMetadata(sessionDir, r.Documents)
 		if loadErr != nil {
 			metadata = &domainsession.Metadata{
 				ID:     entry.Name(),
@@ -68,14 +76,14 @@ func (r *SessionRepository) CreateSession(_ context.Context, metadata domainsess
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sessionDir := filepath.Join(r.root, metadata.ID)
-	existing, err := LoadMetadata(sessionDir)
+	existing, err := LoadMetadata(sessionDir, r.Documents)
 	if err == nil {
 		return *existing, false, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return domainsession.Metadata{}, false, apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
 	}
-	if err := SaveMetadata(sessionDir, &metadata); err != nil {
+	if err := SaveMetadata(sessionDir, &metadata, r.Documents); err != nil {
 		return domainsession.Metadata{}, false, apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
 	}
 	return metadata, true, nil
@@ -87,7 +95,7 @@ func (r *SessionRepository) LoadSession(_ context.Context, sessionID string) (do
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	metadata, err := LoadMetadata(filepath.Join(r.root, sessionID))
+	metadata, err := LoadMetadata(filepath.Join(r.root, sessionID), r.Documents)
 	if errors.Is(err, os.ErrNotExist) {
 		return domainsession.Metadata{}, apperror.New(apperror.CodeNotFound, "session not found")
 	}
@@ -103,7 +111,7 @@ func (r *SessionRepository) UpdateSession(_ context.Context, sessionID string, u
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	metadata, err := UpdateMetadata(filepath.Join(r.root, sessionID), false, update)
+	metadata, err := UpdateMetadata(filepath.Join(r.root, sessionID), false, update, r.Documents)
 	if errors.Is(err, os.ErrNotExist) {
 		return domainsession.Metadata{}, apperror.New(apperror.CodeNotFound, "session not found")
 	}
@@ -125,10 +133,49 @@ func (r *SessionRepository) DeleteSession(_ context.Context, sessionID string) e
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sessionDir := filepath.Join(r.root, sessionID)
+	if r.Documents != nil {
+		if _, err := LoadMetadata(sessionDir, r.Documents); errors.Is(err, os.ErrNotExist) {
+			return apperror.New(apperror.CodeNotFound, "session not found")
+		} else if err != nil {
+			return err
+		}
+		if err := r.Documents.RemoveTree(sessionDir); err != nil {
+			return err
+		}
+		// 数据库删除已经提交，附件清理失败不应让调用方重复提交删除。
+		if err := deleteSessionDirectory(sessionDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("session attachment cleanup failed: %v", err)
+		}
+		return nil
+	}
 	if err := deleteSessionDirectory(sessionDir); errors.Is(err, os.ErrNotExist) {
 		return apperror.New(apperror.CodeNotFound, "session not found")
 	} else if err != nil {
 		return apperror.Wrap(apperror.CodeUnavailable, "session storage unavailable", err)
 	}
 	return nil
+}
+
+func (r *SessionRepository) listDatabaseSessions() ([]domainsession.Record, error) {
+	paths, err := r.Documents.List(r.root)
+	if err != nil {
+		return nil, err
+	}
+	records := []domainsession.Record{}
+	for _, path := range paths {
+		rel, err := filepath.Rel(r.root, path)
+		if err != nil {
+			return nil, err
+		}
+		if filepath.Base(path) != "metadata.json" || strings.Count(filepath.ToSlash(rel), "/") != 1 {
+			continue
+		}
+		meta, err := LoadMetadata(filepath.Dir(path), r.Documents)
+		if err != nil {
+			return nil, err
+		}
+		modified := meta.UpdatedAt
+		records = append(records, domainsession.Record{Metadata: *meta, ModTime: modified})
+	}
+	return records, nil
 }

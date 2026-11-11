@@ -35,6 +35,7 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 		return recorder.GetMessages(), nil
 	}
 	recorder := NewHistoryRecorder()
+	recorder.Documents = r.manager.Documents
 	sessionDir := filepath.Join(r.sessionsDir, sessionID)
 	recorder.SetSessionDir(sessionDir)
 	transcriptFile := filepath.Join(sessionDir, TranscriptFileName)

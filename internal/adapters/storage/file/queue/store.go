@@ -8,6 +8,7 @@ import (
 	"errors"
 	domainmessage "fkteams/internal/domain/message"
 	domainsession "fkteams/internal/domain/session"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/log"
 	"fkteams/internal/runtime/pathguard"
@@ -22,10 +23,19 @@ import (
 )
 
 // Store 管理会话目录中的队列快照。
-type Store struct{ dir string }
+type Store struct {
+	dir       string
+	Documents storageport.Documents
+}
 
 // NewStore 创建队列存储，错误由读写操作返回。
-func NewStore(dir string) *Store { return &Store{dir: dir} }
+func NewStore(dir string, stores ...storageport.Documents) *Store {
+	s := &Store{dir: dir}
+	if len(stores) > 0 {
+		s.Documents = stores[0]
+	}
+	return s
+}
 
 const (
 	queueSnapshotFileName             = "queue.json"
@@ -48,6 +58,11 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 	}
 	root, err := s.openSession(sessionID, len(queue) > 0)
 	if errors.Is(err, os.ErrNotExist) && len(queue) == 0 {
+		if s.Documents != nil {
+			if removeErr := s.removeSnapshot(nil, sessionID); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return removeErr
+			}
+		}
 		return nil
 	}
 	if err != nil {
@@ -59,7 +74,7 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 		if err := pathguard.RejectRootSymlinkComponents(root, "attachments/queue"); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := root.Remove(queueSnapshotFileName); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := s.removeSnapshot(root, sessionID); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove queue snapshot: %w", err)
 		}
 		if err := root.RemoveAll("attachments/queue"); err != nil {
@@ -97,7 +112,7 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 	if len(data) > maxPersistentQueueSnapshotBytes {
 		return fmt.Errorf("queue snapshot is too large")
 	}
-	if err := atomicfile.WriteFileInRoot(root, queueSnapshotFileName, data, 0644); err != nil {
+	if err := s.writeSnapshot(root, sessionID, data); err != nil {
 		return err
 	}
 	if err := cleanupQueueAttachmentDirs(root, items); err != nil {
@@ -112,29 +127,26 @@ func (s *Store) Load(sessionID string) ([]domainmessage.QueuedMessage, error) {
 	}
 	root, err := s.openSession(sessionID, false)
 	if errors.Is(err, os.ErrNotExist) {
+		if s.Documents != nil {
+			if _, readErr := s.readSnapshot(nil, sessionID); !errors.Is(readErr, os.ErrNotExist) {
+				if readErr != nil {
+					return nil, readErr
+				}
+				return nil, fmt.Errorf("queue attachment directory is missing")
+			}
+		}
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
-	if err := pathguard.RejectRootSymlinkComponents(root, queueSnapshotFileName); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
+	data, err := s.readSnapshot(root, sessionID)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
-	}
-	file, err := root.Open(queueSnapshotFileName)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read queue snapshot: %w", err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxPersistentQueueSnapshotBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read queue snapshot: %w", err)
 	}
 	if len(data) > maxPersistentQueueSnapshotBytes {
 		return nil, fmt.Errorf("queue snapshot is too large")
@@ -391,4 +403,42 @@ func (s *Store) openSession(sessionID string, create bool) (*os.Root, error) {
 		return nil, err
 	}
 	return root.OpenRoot(sessionID)
+}
+
+func (s *Store) readSnapshot(root *os.Root, sessionID string) ([]byte, error) {
+	if s.Documents != nil {
+		return s.Documents.Read(filepath.Join(s.dir, sessionID, queueSnapshotFileName))
+	}
+	if err := pathguard.RejectRootSymlinkComponents(root, queueSnapshotFileName); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, os.ErrNotExist
+		}
+		return nil, err
+	}
+	file, err := root.Open(queueSnapshotFileName)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, os.ErrNotExist
+		}
+		return nil, fmt.Errorf("read queue snapshot: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxPersistentQueueSnapshotBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read queue snapshot: %w", err)
+	}
+	return data, nil
+}
+
+func (s *Store) writeSnapshot(root *os.Root, sessionID string, data []byte) error {
+	if s.Documents != nil {
+		return s.Documents.Write(filepath.Join(s.dir, sessionID, queueSnapshotFileName), data)
+	}
+	return atomicfile.WriteFileInRoot(root, queueSnapshotFileName, data, 0644)
+}
+func (s *Store) removeSnapshot(root *os.Root, sessionID string) error {
+	if s.Documents != nil {
+		return s.Documents.Remove(filepath.Join(s.dir, sessionID, queueSnapshotFileName))
+	}
+	return root.Remove(queueSnapshotFileName)
 }

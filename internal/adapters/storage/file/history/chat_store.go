@@ -3,6 +3,7 @@ package eventlog
 import (
 	"context"
 	"errors"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,11 +15,12 @@ import (
 )
 
 type ChatSessionStore struct {
+	Documents   storageport.Documents
 	sessionsDir string
 }
 
-func NewChatSessionStore(sessionsDir string) *ChatSessionStore {
-	return &ChatSessionStore{sessionsDir: sessionsDir}
+func NewChatSessionStore(sessionsDir string, stores ...storageport.Documents) *ChatSessionStore {
+	return &ChatSessionStore{sessionsDir: sessionsDir, Documents: selectedDocuments(stores)}
 }
 
 func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.MetadataUpdate) error {
@@ -50,7 +52,7 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 			meta.CurrentAgent = strings.TrimSpace(*update.CurrentAgent)
 		}
 		return nil
-	})
+	}, s.Documents)
 	if errors.Is(err, os.ErrNotExist) && !update.CreateIfMissing {
 		return nil
 	}

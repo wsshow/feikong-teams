@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"io"
 	"os"
@@ -28,6 +29,7 @@ var errResultSizeLimit = errors.New("scheduler result exceeds size limit")
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
+	Documents   storageport.Documents
 	filePath    string
 	resultsDir  string
 	mu          sync.RWMutex
@@ -56,7 +58,7 @@ const (
 )
 
 // NewScheduler 创建基于文件存储和 cron 计算的调度器。
-func NewScheduler(baseDir string) (*Scheduler, error) {
+func NewScheduler(baseDir string, stores ...storageport.Documents) (*Scheduler, error) {
 	absPath, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
@@ -73,23 +75,39 @@ func NewScheduler(baseDir string) (*Scheduler, error) {
 
 	filePath := filepath.Join(absPath, "scheduled_tasks.json")
 
-	info, statErr := os.Stat(filePath)
-	if os.IsNotExist(statErr) {
-		emptyList := domainschedule.TaskList{Tasks: []domainschedule.Task{}}
-		data, err := json.MarshalIndent(emptyList, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal task list: %w", err)
+	var documents storageport.Documents
+	if len(stores) > 0 {
+		documents = stores[0]
+	}
+	if documents != nil {
+		if _, err := documents.Read(filePath); os.IsNotExist(err) {
+			if err := documents.Write(filePath, []byte(`{"tasks":[]}`)); err != nil {
+				return nil, err
+			}
+		} else if err != nil {
+			return nil, err
 		}
-		if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
-			return nil, fmt.Errorf("failed to create task list file: %w", err)
+	} else {
+		info, statErr := os.Stat(filePath)
+		if os.IsNotExist(statErr) {
+			emptyList := domainschedule.TaskList{Tasks: []domainschedule.Task{}}
+			data, err := json.MarshalIndent(emptyList, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal task list: %w", err)
+			}
+			if err := atomicfile.WriteFile(filePath, data, 0644); err != nil {
+				return nil, fmt.Errorf("failed to create task list file: %w", err)
+			}
+		} else if statErr != nil {
+			return nil, fmt.Errorf("failed to inspect task list file: %w", statErr)
+		} else if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("task list path is not a regular file")
 		}
-	} else if statErr != nil {
-		return nil, fmt.Errorf("failed to inspect task list file: %w", statErr)
-	} else if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("task list path is not a regular file")
+
 	}
 
 	scheduler := &Scheduler{
+		Documents:   documents,
 		filePath:    filePath,
 		resultsDir:  resultsDir,
 		stopCh:      make(chan struct{}),
@@ -807,30 +825,9 @@ func (s *Scheduler) loadTaskByID(taskID string) (*domainschedule.Task, error) {
 }
 
 func (s *Scheduler) loadTasks() (*domainschedule.TaskList, error) {
-	file, err := os.Open(s.filePath)
+	data, err := s.readTasks()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read task list: %w", err)
-	}
-	info, statErr := file.Stat()
-	if statErr != nil {
-		file.Close()
-		return nil, fmt.Errorf("failed to inspect task list: %w", statErr)
-	}
-	if !info.Mode().IsRegular() {
-		file.Close()
-		return nil, fmt.Errorf("task list is not a regular file")
-	}
-	if info.Size() > maxTaskStoreBytes {
-		file.Close()
-		return nil, fmt.Errorf("task list exceeds size limit")
-	}
-	data, readErr := io.ReadAll(io.LimitReader(file, maxTaskStoreBytes+1))
-	closeErr := file.Close()
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read task list: %w", readErr)
-	}
-	if closeErr != nil {
-		return nil, fmt.Errorf("failed to close task list: %w", closeErr)
+		return nil, err
 	}
 	if int64(len(data)) > maxTaskStoreBytes {
 		return nil, fmt.Errorf("task list exceeds size limit")
@@ -868,6 +865,9 @@ func (s *Scheduler) saveTasks(list *domainschedule.TaskList) error {
 		return fmt.Errorf("task list exceeds size limit")
 	}
 
+	if s.Documents != nil {
+		return s.Documents.Write(s.filePath, data)
+	}
 	if err := atomicfile.WriteFile(s.filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write task list: %w", err)
 	}
@@ -1103,4 +1103,52 @@ func (r *schedulerContextReader) Read(buffer []byte) (int, error) {
 		return 0, err
 	}
 	return r.reader.Read(buffer)
+}
+
+func (s *Scheduler) readTasks() ([]byte, error) {
+	if s.Documents != nil {
+		return s.Documents.Read(s.filePath)
+	}
+	file, err := os.Open(s.filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read task list: %w", err)
+	}
+	info, statErr := file.Stat()
+	if statErr != nil {
+		file.Close()
+		return nil, fmt.Errorf("failed to inspect task list: %w", statErr)
+	}
+	if !info.Mode().IsRegular() {
+		file.Close()
+		return nil, fmt.Errorf("task list is not a regular file")
+	}
+	if info.Size() > maxTaskStoreBytes {
+		file.Close()
+		return nil, fmt.Errorf("task list exceeds size limit")
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxTaskStoreBytes+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read task list: %w", readErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("failed to close task list: %w", closeErr)
+	}
+	if int64(len(data)) > maxTaskStoreBytes {
+		return nil, fmt.Errorf("task list exceeds size limit")
+	}
+
+	return data, nil
+}
+
+// ValidateSnapshot 校验旧版任务快照，不创建调度器或修改备份。
+func ValidateSnapshot(data []byte) error {
+	if int64(len(data)) > maxTaskStoreBytes {
+		return fmt.Errorf("task list exceeds size limit")
+	}
+	var list domainschedule.TaskList
+	if err := json.Unmarshal(data, &list); err != nil {
+		return err
+	}
+	return (&Scheduler{}).validateTaskList(&list)
 }

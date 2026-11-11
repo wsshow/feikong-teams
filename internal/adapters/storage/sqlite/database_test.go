@@ -84,3 +84,32 @@ func TestRejectFutureSchema(t *testing.T) {
 		t.Fatal("future schema accepted")
 	}
 }
+
+func TestApplicationLockAndSymlink(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "application.lock")
+	unlock, err := LockDirectory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate, err := LockDirectory(path); err == nil {
+		duplicate()
+		t.Fatal("duplicate process lock acquired")
+	}
+	if err := unlock(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := LockDirectory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again()
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Skip(err)
+	}
+	if unlock, err := LockDirectory(link); err == nil {
+		unlock()
+		t.Fatal("symlink lock accepted")
+	}
+}

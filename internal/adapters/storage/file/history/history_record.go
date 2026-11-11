@@ -246,7 +246,7 @@ func (h *HistoryRecorder) ensureSubagentRun(event Event) *subagentRun {
 		Agent:        agentName,
 		ParentCallID: event.MemberCallID,
 		ToolName:     event.MemberToolName,
-	}); err != nil && h.persistErr == nil {
+	}, h.Documents); err != nil && h.persistErr == nil {
 		h.persistErr = err
 	}
 	for _, key := range memberCallKeys(event.MemberCallID) {

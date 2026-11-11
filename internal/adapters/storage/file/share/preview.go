@@ -3,6 +3,7 @@ package share
 import (
 	"encoding/json"
 	"fkteams/internal/app/appdata"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,11 +26,14 @@ type shareFileEntry struct {
 }
 
 // NewPreviewLinkStore 创建预览分享存储，并从持久化文件加载现有链接。
-func NewPreviewLinkStore(filePath string) *PreviewLinkStore {
+func NewPreviewLinkStore(filePath string, stores ...storageport.Documents) *PreviewLinkStore {
 	if filePath == "" {
 		filePath = shareLinksFilePath()
 	}
 	store := &PreviewLinkStore{newEntryStore(filePath, clonePreviewEntry, validatePreviewLinkEntry, encodePreviewEntryMap)}
+	if len(stores) > 0 {
+		store.Documents = stores[0]
+	}
 	store.loadErr = store.Load()
 	return store
 }
@@ -43,7 +47,7 @@ func (s *PreviewLinkStore) Load() error {
 	if s == nil {
 		return nil
 	}
-	entries, err := readShareEntries(s.filePath)
+	entries, err := readShareEntries(s.filePath, s.Documents)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -81,8 +85,8 @@ func (s *PreviewLinkStore) Load() error {
 	return nil
 }
 
-func readShareEntries(filePath string) (map[string]*shareFileEntry, error) {
-	data, err := readPersistedShareStore(filePath)
+func readShareEntries(filePath string, stores ...storageport.Documents) (map[string]*shareFileEntry, error) {
+	data, err := readPersistedShareStore(filePath, stores...)
 	if err != nil {
 		return nil, err
 	}

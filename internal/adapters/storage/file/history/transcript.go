@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"io"
 	"os"
@@ -65,7 +66,7 @@ func subagentMetadataPath(sessionDir, agentRunID string) string {
 	return filepath.Join(sessionDir, subagentsDirName, filepath.Base(agentRunID), "metadata.json")
 }
 
-func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata) error {
+func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata, stores ...storageport.Documents) error {
 	if sessionDir == "" || metadata.AgentRunID == "" {
 		return nil
 	}
@@ -73,14 +74,14 @@ func writeSubagentMetadata(sessionDir string, metadata SubagentMetadata) error {
 	if err != nil {
 		return fmt.Errorf("encode subagent metadata: %w", err)
 	}
-	if err := atomicfile.WriteFile(subagentMetadataPath(sessionDir, metadata.AgentRunID), data, 0644); err != nil {
+	if err := writeDocument(subagentMetadataPath(sessionDir, metadata.AgentRunID), data, stores...); err != nil {
 		return fmt.Errorf("write subagent metadata: %w", err)
 	}
 	return nil
 }
 
-func loadSubagentMetadata(filePath string) (SubagentMetadata, error) {
-	file, err := os.Open(filePath)
+func loadSubagentMetadata(filePath string, stores ...storageport.Documents) (SubagentMetadata, error) {
+	file, err := readDocument(filePath, stores...)
 	if err != nil {
 		return SubagentMetadata{}, fmt.Errorf("read subagent metadata: %w", err)
 	}
@@ -110,7 +111,7 @@ func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent 
 		event.At = time.Now()
 	}
 	if subagent == nil {
-		if err := appendJSONL(transcriptPath(h.sessionDir), event); err != nil {
+		if err := appendJSONL(transcriptPath(h.sessionDir), event, h.Documents); err != nil {
 			h.persistErr = err
 		}
 		return
@@ -118,12 +119,20 @@ func (h *HistoryRecorder) appendTranscriptEvent(event TranscriptEvent, subagent 
 	if event.Agent == "" {
 		event.Agent = subagent.AgentName
 	}
-	if err := appendJSONL(subagent.TranscriptPath, event); err != nil {
+	if err := appendJSONL(subagent.TranscriptPath, event, h.Documents); err != nil {
 		h.persistErr = err
 	}
 }
 
-func appendJSONL(filePath string, value any) error {
+func appendJSONL(filePath string, value any, stores ...storageport.Documents) error {
+	if store := selectedDocuments(stores); store != nil {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		// 前置换行兼容旧 transcript 的最后一条完整记录没有换行的情况。
+		return store.Append(filePath, append([]byte{'\n'}, append(data, '\n')...))
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
@@ -145,15 +154,18 @@ func appendJSONL(filePath string, value any) error {
 	return nil
 }
 
-func loadTranscript(filePath string) ([]TranscriptEvent, error) {
-	return loadTranscriptRecords(filePath, false)
+func loadTranscript(filePath string, stores ...storageport.Documents) ([]TranscriptEvent, error) {
+	return loadTranscriptRecords(filePath, false, stores...)
 }
 
-func loadTranscriptForResume(filePath string) ([]TranscriptEvent, error) {
-	return loadTranscriptRecords(filePath, true)
+func loadTranscriptForResume(filePath string, stores ...storageport.Documents) ([]TranscriptEvent, error) {
+	return loadTranscriptRecords(filePath, true, stores...)
 }
 
-func loadTranscriptRecords(filePath string, repairTail bool) ([]TranscriptEvent, error) {
+func loadTranscriptRecords(filePath string, repairTail bool, stores ...storageport.Documents) ([]TranscriptEvent, error) {
+	if store := selectedDocuments(stores); store != nil {
+		return readDatabaseTranscript(filePath, store)
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("read transcript: %w", err)

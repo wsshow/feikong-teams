@@ -3,6 +3,7 @@ package javascript
 import (
 	"encoding/json"
 	"errors"
+	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"io"
 	"os"
@@ -23,16 +24,21 @@ const (
 
 // FileStateStore 将每个脚本的状态原子持久化到独立 JSON 文件。
 type FileStateStore struct {
-	root string
-	mu   sync.RWMutex
+	Documents storageport.Documents
+	root      string
+	mu        sync.RWMutex
 }
 
 // NewFileStateStore 创建脚本状态存储。
-func NewFileStateStore(root string) (*FileStateStore, error) {
+func NewFileStateStore(root string, stores ...storageport.Documents) (*FileStateStore, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, fmt.Errorf("javascript state directory is empty")
 	}
-	return &FileStateStore{root: filepath.Clean(root)}, nil
+	s := &FileStateStore{root: filepath.Clean(root)}
+	if len(stores) > 0 {
+		s.Documents = stores[0]
+	}
+	return s, nil
 }
 
 func (s *FileStateStore) Get(namespace, key string) (any, bool, error) {
@@ -103,17 +109,12 @@ func (s *FileStateStore) read(namespace string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	file, err := os.Open(path)
+	data, err := s.readBytes(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return make(map[string]any), nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("open javascript state: %w", err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxStateFileBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read javascript state: %w", err)
+		return nil, err
 	}
 	if len(data) > maxStateFileBytes {
 		return nil, fmt.Errorf("javascript state exceeds %d bytes", maxStateFileBytes)
@@ -136,6 +137,9 @@ func (s *FileStateStore) write(namespace string, state map[string]any) error {
 	}
 	if len(data) > maxStateFileBytes {
 		return fmt.Errorf("javascript state exceeds %d bytes", maxStateFileBytes)
+	}
+	if s.Documents != nil {
+		return s.Documents.Write(path, data)
 	}
 	if err := atomicfile.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("write javascript state: %w", err)
@@ -176,4 +180,23 @@ func validNamespace(namespace string) bool {
 		return false
 	}
 	return true
+}
+
+func (s *FileStateStore) readBytes(path string) ([]byte, error) {
+	if s.Documents != nil {
+		return s.Documents.Read(path)
+	}
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, os.ErrNotExist
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open javascript state: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxStateFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read javascript state: %w", err)
+	}
+	return data, nil
 }

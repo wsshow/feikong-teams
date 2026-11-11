@@ -4,6 +4,7 @@ import (
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	domainhistory "fkteams/internal/domain/history"
 	"fkteams/internal/domain/message"
+	storageport "fkteams/internal/ports/storage"
 
 	"fkteams/internal/runtime/events"
 
@@ -121,6 +122,7 @@ type subagentRun struct {
 
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
+	Documents       storageport.Documents
 	mu              sync.RWMutex
 	sessionDir      string
 	messages        []AgentMessage
