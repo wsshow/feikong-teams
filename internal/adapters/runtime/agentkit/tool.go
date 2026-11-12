@@ -3,10 +3,11 @@ package agentkit
 import (
 	"context"
 	"encoding/json"
-	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"reflect"
 	"strings"
+
+	runtimeport "fkteams/internal/ports/runtime"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
@@ -190,6 +191,18 @@ func schemaForType(t reflect.Type) *jsonschema.Schema {
 		if !field.IsExported() {
 			continue
 		}
+		embedded := field.Type
+		for embedded.Kind() == reflect.Pointer {
+			embedded = embedded.Elem()
+		}
+		if field.Anonymous && field.Tag.Get("json") == "" && embedded.Kind() == reflect.Struct {
+			flattened := schemaForType(embedded)
+			for pair := flattened.Properties.Oldest(); pair != nil; pair = pair.Next() {
+				properties.Set(pair.Key, pair.Value)
+			}
+			required = append(required, flattened.Required...)
+			continue
+		}
 		name, omitempty := jsonFieldName(field)
 		if name == "" || name == "-" {
 			continue
@@ -217,13 +230,18 @@ func schemaForField(t reflect.Type) *jsonschema.Schema {
 	case reflect.Bool:
 		return &jsonschema.Schema{Type: string(schema.Boolean)}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return &jsonschema.Schema{Type: string(schema.Integer)}
+	case reflect.Float32, reflect.Float64:
 		return &jsonschema.Schema{Type: string(schema.Number)}
 	case reflect.Slice, reflect.Array:
 		return &jsonschema.Schema{Type: string(schema.Array), Items: schemaForField(t.Elem())}
 	case reflect.Struct:
 		return schemaForType(t)
+	case reflect.Map:
+		return &jsonschema.Schema{Type: string(schema.Object), AdditionalProperties: schemaForField(t.Elem())}
+	case reflect.Interface:
+		return &jsonschema.Schema{}
 	default:
 		return &jsonschema.Schema{Type: string(schema.String)}
 	}
