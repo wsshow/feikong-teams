@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryPanel } from "./MemoryPanel";
+import { installDialogStub } from "@/test/dialog";
 
 const entries = [
   { id: "preference", type: "preference", summary: "偏好简洁回答", detail: "", tags: [] },
@@ -20,6 +21,7 @@ beforeEach(() => {
   originalWindow = globalThis.window;
   originalDocument = globalThis.document;
   dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
+  installDialogStub(dom);
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -125,6 +127,7 @@ test("editing saves the custom type selection and disables it while the save is 
   await click(option("已确定方案"));
   expect(saved).toBeUndefined();
   const form = container.querySelector("form")!;
+  expect(form.closest("dialog[open]")).not.toBeNull();
   await act(async () => form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
   expect(saved?.type).toBe("decision");
   expect(typeSelect.disabled).toBe(true);
@@ -134,4 +137,20 @@ test("editing saves the custom type selection and disables it while the save is 
   expect(container.querySelector("form")).toBeNull();
   expect(container.textContent).toContain("记忆已保存");
   expect(container.querySelector("li:last-child")?.textContent).toContain("已确定方案");
+});
+
+test("failed memory saves keep the modal and draft until cancelled", async () => {
+  globalThis.fetch = (async (_path: unknown, init?: RequestInit) => init?.method === "PUT"
+    ? Response.json({ message: "存储失败" }, { status: 500 })
+    : Response.json({ code: 0, data: entries })) as typeof fetch;
+  await act(async () => root.render(<MemoryPanel />));
+  await click(container.querySelector<HTMLButtonElement>("li button")!);
+  const dialog = container.querySelector("dialog[open]")!;
+  await act(async () => dialog.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("存储失败");
+  expect(dialog.querySelector("input")?.value).toBe(entries[0].summary);
+  const cancel = [...dialog.querySelectorAll("button")].find((item) => item.textContent === "取消")!;
+  await click(cancel);
+  expect(container.querySelector("dialog[open]")).toBeNull();
+  expect(container.querySelectorAll("li")).toHaveLength(2);
 });

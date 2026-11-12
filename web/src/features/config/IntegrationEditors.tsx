@@ -1,4 +1,4 @@
-import { Cable, FileCode2, Play, Plus, Sparkles, Wrench, X } from "lucide-react";
+import { Cable, FileCode2, Play, Plus, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { generateJavaScriptDraft } from "@/api/ai";
 import { testJavaScriptTool } from "@/api/javascript";
@@ -6,17 +6,21 @@ import { useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Dialog } from "@/components/ui/dialog";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import { splitToolCatalog } from "@/features/config/toolCatalog";
 import type { JavaScriptHookConfig, JavaScriptToolConfig, MCPServerConfig, ToolInfo } from "@/types/config";
 import { uniqueJavaScriptID, type EditorProps, uniqueMCPServerID } from "./configModel";
-import { ExtensionConfigCard, ConfigCard, SectionTitle, SectionHeader, Field, TextField, NumberField, SelectField, ToggleField, StringListField, KeyValueMapField, EmptyState } from "./ConfigFields";
+import { ExtensionConfigCard, SectionTitle, SectionHeader, Field, TextField, NumberField, SelectField, ToggleField, StringListField, KeyValueMapField, EmptyState } from "./ConfigFields";
+
+import { ConfigEditCard, useConfigEditing } from "./ConfigEditor";
 
 export function ToolsTab({ draft, updateDraft }: EditorProps) {
   const tools = useAppSelector((state) => state.config.tools);
   const { builtin: builtinTools, custom: customTools, mcp: mcpTools } = splitToolCatalog(tools);
   const mcpServers = draft.tools?.mcp_servers || [];
+  const editing = useConfigEditing();
   return (
     <div className="space-y-4">
       <Panel>
@@ -47,7 +51,7 @@ export function ToolsTab({ draft, updateDraft }: EditorProps) {
             className="w-full sm:w-auto"
             variant="outline"
             onClick={() =>
-              updateDraft((next) => {
+              editing.begin(`mcp-${mcpServers.length}`, (next) => {
                 const servers = next.tools?.mcp_servers || [];
                 next.tools = {
                   ...(next.tools || {}),
@@ -152,11 +156,10 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
   const tools = draft.javascript?.tools || [];
   const hooks = draft.javascript?.hooks || [];
   const [dialog, setDialog] = useState<JavaScriptDialogState | null>(null);
-  const [expandedToolIndex, setExpandedToolIndex] = useState<number | null>(null);
-  const [expandedHookIndex, setExpandedHookIndex] = useState<number | null>(null);
+  const editing = useConfigEditing();
 
   function addTool() {
-    updateDraft((next) => {
+    editing.begin(`js-tool-${tools.length}`, (next) => {
       const items = next.javascript?.tools || [];
       next.javascript = {
         ...(next.javascript || {}),
@@ -175,11 +178,10 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
         ],
       };
     });
-    setExpandedToolIndex(tools.length);
   }
 
   function addHook() {
-    updateDraft((next) => {
+    editing.begin(`js-hook-${hooks.length}`, (next) => {
       const items = next.javascript?.hooks || [];
       next.javascript = {
         ...(next.javascript || {}),
@@ -198,13 +200,11 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
         ],
       };
     });
-    setExpandedHookIndex(hooks.length);
   }
 
-  function applyAIDraft(value: JavaScriptToolConfig | JavaScriptHookConfig) {
+  async function applyAIDraft(value: JavaScriptToolConfig | JavaScriptHookConfig) {
     if (!dialog) return;
-    const targetIndex = dialog.index ?? (dialog.kind === "tool" ? tools.length : hooks.length);
-    updateDraft((next) => {
+    await editing.apply((next) => {
       if (dialog.kind === "tool") {
         const items = [...(next.javascript?.tools || [])];
         if (dialog.index === undefined) items.push(value as JavaScriptToolConfig);
@@ -217,8 +217,6 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
       else items[dialog.index] = value as JavaScriptHookConfig;
       next.javascript = { ...(next.javascript || {}), hooks: items };
     });
-    if (dialog.kind === "tool") setExpandedToolIndex(targetIndex);
-    else setExpandedHookIndex(targetIndex);
     setDialog(null);
   }
 
@@ -245,13 +243,11 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
         </SectionHeader>
         <PanelBody className="grid gap-4 xl:grid-cols-2">
           {tools.map((tool, index) => {
-            const expanded = expandedToolIndex === index;
             return (
               <JavaScriptToolEditor
                 key={index}
                 tool={tool}
-                expanded={expanded}
-                onToggle={() => setExpandedToolIndex(expanded ? null : index)}
+                editorKey={`js-tool-${index}`}
                 onAI={() => setDialog({ kind: "tool", index })}
                 onChange={(value) =>
                   updateDraft((next) => {
@@ -261,10 +257,9 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
                   })
                 }
                 onRemove={() => {
-                  updateDraft((next) => {
+                  editing.remove(tool.name || tool.id || "自定义工具", (next) => {
                     next.javascript = { ...(next.javascript || {}), tools: (next.javascript?.tools || []).filter((_, itemIndex) => itemIndex !== index) };
                   });
-                  setExpandedToolIndex((current) => current === index ? null : current !== null && current > index ? current - 1 : current);
                 }}
               />
             );
@@ -288,13 +283,11 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
         </SectionHeader>
         <PanelBody className="grid gap-4 xl:grid-cols-2">
           {hooks.map((hook, index) => {
-            const expanded = expandedHookIndex === index;
             return (
               <JavaScriptHookEditor
                 key={index}
                 hook={hook}
-                expanded={expanded}
-                onToggle={() => setExpandedHookIndex(expanded ? null : index)}
+                editorKey={`js-hook-${index}`}
                 onAI={() => setDialog({ kind: "hook", index })}
                 onChange={(value) =>
                   updateDraft((next) => {
@@ -304,10 +297,9 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
                   })
                 }
                 onRemove={() => {
-                  updateDraft((next) => {
+                  editing.remove(hook.name || hook.id || "流程规则", (next) => {
                     next.javascript = { ...(next.javascript || {}), hooks: (next.javascript?.hooks || []).filter((_, itemIndex) => itemIndex !== index) };
                   });
-                  setExpandedHookIndex((current) => current === index ? null : current !== null && current > index ? current - 1 : current);
                 }}
               />
             );
@@ -331,15 +323,13 @@ export function JavaScriptTab({ draft, updateDraft }: EditorProps) {
 
 function JavaScriptToolEditor({
   tool,
-  expanded,
-  onToggle,
+  editorKey,
   onChange,
   onRemove,
   onAI,
 }: {
   tool: JavaScriptToolConfig;
-  expanded: boolean;
-  onToggle: () => void;
+  editorKey: string;
   onChange: (value: JavaScriptToolConfig) => void;
   onRemove: () => void;
   onAI: () => void;
@@ -385,7 +375,7 @@ function JavaScriptToolEditor({
       title={tool.name || tool.id || "未命名工具"}
       id={tool.id}
       description={tool.description}
-      expanded={expanded}
+      editorKey={editorKey}
       badges={[tool.enabled ? "已启用" : "已关闭", tool.read_only ?? true ? "只读" : "可修改"]}
       metrics={[
         { label: "状态", value: tool.enabled ? "启用" : "关闭" },
@@ -393,7 +383,6 @@ function JavaScriptToolEditor({
         { label: "参数", value: `${toolParameterCount(tool)} 项` },
         { label: "超时", value: `${tool.timeout_ms ?? 200} ms` },
       ]}
-      onToggle={onToggle}
       onAI={onAI}
       onRemove={onRemove}
     >
@@ -441,15 +430,13 @@ function JavaScriptToolEditor({
 
 function JavaScriptHookEditor({
   hook,
-  expanded,
-  onToggle,
+  editorKey,
   onChange,
   onRemove,
   onAI,
 }: {
   hook: JavaScriptHookConfig;
-  expanded: boolean;
-  onToggle: () => void;
+  editorKey: string;
   onChange: (value: JavaScriptHookConfig) => void;
   onRemove: () => void;
   onAI: () => void;
@@ -460,7 +447,7 @@ function JavaScriptHookEditor({
       title={hook.name || hook.id || "未命名流程规则"}
       id={hook.id}
       description={flowRuleSummary(hook.hook_points || [])}
-      expanded={expanded}
+      editorKey={editorKey}
       badges={[hook.enabled ? "已启用" : "已关闭", "流程规则"]}
       metrics={[
         { label: "状态", value: hook.enabled ? "启用" : "关闭" },
@@ -468,7 +455,6 @@ function JavaScriptHookEditor({
         { label: "优先级", value: `${hook.priority ?? 100}` },
         { label: "异常处理", value: errorPolicyLabel(hook.error_policy || "fail") },
       ]}
-      onToggle={onToggle}
       onAI={onAI}
       onRemove={onRemove}
     >
@@ -515,6 +501,8 @@ function JSONSchemaField({ value, onChange }: { value?: Record<string, unknown>;
   const [text, setText] = useState(serialized);
   const [error, setError] = useState("");
   const committed = useRef(serialized);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { inputRef.current?.setCustomValidity(error); }, [error]);
 
   useEffect(() => {
     if (serialized === committed.current) return;
@@ -539,7 +527,7 @@ function JSONSchemaField({ value, onChange }: { value?: Record<string, unknown>;
 
   return (
     <Field label="参数 JSON Schema">
-      <Textarea className="min-h-44 font-mono text-xs leading-5" value={text} spellCheck={false} onChange={(event) => update(event.target.value)} />
+      <Textarea ref={inputRef} aria-label="参数 JSON Schema" aria-invalid={Boolean(error)} className="min-h-44 font-mono text-xs leading-5" value={text} spellCheck={false} onChange={(event) => update(event.target.value)} />
       {error ? <div className="text-xs text-destructive">Schema 尚未生效：{error}</div> : null}
     </Field>
   );
@@ -555,11 +543,12 @@ function JavaScriptAIDialog({
   kind: "tool" | "hook";
   current?: JavaScriptToolConfig | JavaScriptHookConfig;
   existingIDs: string[];
-  onApply: (value: JavaScriptToolConfig | JavaScriptHookConfig) => void;
+  onApply: (value: JavaScriptToolConfig | JavaScriptHookConfig) => Promise<void>;
   onClose: () => void;
 }) {
   const [instruction, setInstruction] = useState("");
   const [result, setResult] = useState<JavaScriptToolConfig | JavaScriptHookConfig>();
+  const [applying, setApplying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -586,46 +575,28 @@ function JavaScriptAIDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6" role="dialog" aria-modal="true">
-      <div className="sketch-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
-        <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
-          <div>
-            <div className="flex items-center gap-2 font-semibold">
-              <Sparkles className="h-4 w-4 text-primary" />
-              AI {current ? "修改" : "创建"}{kind === "tool" ? "自定义工具" : "流程规则"}
-            </div>
-            <div className="mt-1 text-sm leading-6 text-muted-foreground">生成结果会先经过代码校验，确认应用后仍需保存配置才会生效。</div>
-          </div>
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="chat-scroll min-h-0 flex-1 space-y-4 overflow-auto p-4">
-          <Field label="扩展需求">
-            <Textarea
-              className="min-h-28 text-sm"
-              value={instruction}
-              placeholder={kind === "tool" ? "例如：读取指定工作区文件，提取 Markdown 表格并把累计处理次数持久化。" : "例如：调用 execute 工具前拒绝包含 sudo 的命令。"}
-              onChange={(event) => setInstruction(event.target.value)}
-            />
-          </Field>
-          {error ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
-          {result ? (
-            <Field label="已通过校验的草稿">
-              <Textarea className="min-h-72 font-mono text-xs leading-5" value={JSON.stringify(result, null, 2)} readOnly />
-            </Field>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-2 border-t border-border/70 p-4 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void generate()}>
-            <Sparkles className="h-4 w-4" />
-            {loading ? "生成中" : "生成草稿"}
-          </Button>
-          <Button disabled={!result} onClick={() => result && onApply(result)}>应用草稿</Button>
-        </div>
+    <Dialog open title={`AI ${current ? "修改" : "创建"}${kind === "tool" ? "自定义工具" : "流程规则"}`} closeDisabled={applying} onOpenChange={onClose}
+      footer={<div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" disabled={applying} onClick={onClose}>取消</Button>
+        <Button variant="outline" disabled={!instruction.trim() || loading || applying} onClick={() => void generate()}><Sparkles className="h-4 w-4" />{loading ? "生成中" : "生成草稿"}</Button>
+        <Button disabled={!result || applying || loading} onClick={async () => {
+          if (!result) return;
+          setApplying(true);
+          setError("");
+          try { await onApply(result); }
+          catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+          finally { setApplying(false); }
+        }}>{applying ? "正在保存…" : "确认并保存"}</Button>
+      </div>}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">生成结果会先经过代码校验，确认后立即保存。</p>
+        <Field label="扩展需求"><Textarea className="min-h-28 text-sm" value={instruction} disabled={applying}
+          placeholder={kind === "tool" ? "例如：读取指定工作区文件，提取 Markdown 表格并把累计处理次数持久化。" : "例如：调用 execute 工具前拒绝包含 sudo 的命令。"}
+          onChange={(event) => setInstruction(event.target.value)} /></Field>
+        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {result ? <Field label="已通过校验的草稿"><Textarea className="min-h-72 font-mono text-xs leading-5" value={JSON.stringify(result, null, 2)} readOnly /></Field> : null}
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -638,6 +609,7 @@ function MCPServerEditor({
   index: number;
   updateDraft: EditorProps["updateDraft"];
 }) {
+  const editing = useConfigEditing();
   function update(patch: Partial<MCPServerConfig>) {
     updateDraft((next) => {
       const servers = [...(next.tools?.mcp_servers || [])];
@@ -647,11 +619,14 @@ function MCPServerEditor({
   }
 
   return (
-    <ConfigCard
+    <ConfigEditCard
+      editorKey={`mcp-${index}`}
+      description={server.description || "配置 MCP 连接与运行参数。"}
+      badges={[server.enabled ? "已启用" : "未启用"]}
       title={server.name || server.id || "未命名 MCP"}
-      aside={server.transport || "transport"}
+      summary={[{ label: "传输", value: server.transport || "http" }, { label: "超时", value: server.timeout || "30s" }]}
       onRemove={() =>
-        updateDraft((next) => {
+        editing.remove(server.name || server.id || "MCP 服务", (next) => {
           next.tools = { ...(next.tools || {}), mcp_servers: (next.tools?.mcp_servers || []).filter((_, itemIndex) => itemIndex !== index) };
         })
       }
@@ -673,6 +648,6 @@ function MCPServerEditor({
       ) : (
         <TextField label="URL" value={server.url} onChange={(value) => update({ url: value })} />
       )}
-    </ConfigCard>
+    </ConfigEditCard>
   );
 }

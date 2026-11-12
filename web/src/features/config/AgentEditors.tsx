@@ -1,35 +1,31 @@
-import { Bot, Brain, Check, ChevronDown, Copy, Layers, ListPlus, Plus, RefreshCcw, Sparkles, Trash2, X } from "lucide-react";
+import { Bot, Brain, ChevronDown, Copy, ListPlus, Plus, RefreshCcw, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { generateAgentDrafts } from "@/api/ai";
 import { isAbortError } from "@/api/client";
 import { listProviderModels } from "@/api/providers";
-import { appActions } from "@/app/store";
-import { useAppDispatch, useAppSelector } from "@/app/hooks";
+import { useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ConfirmDialog } from "@/components/ui/action-dialog";
 import { LoadingSurface } from "@/components/ui/loading-surface";
-import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { Dialog } from "@/components/ui/dialog";
+import { Panel, PanelBody } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import type { AgentConfig, DeepConfig, ModelConfig, TeamMemberConfig } from "@/types/config";
 import { type EditorProps, type ToolSelectOption, buildToolOptions, updateModel, mergeDeepConfig, normalizeConfig, uniqueName, uniqueModelID, uniqueMemberID, uniqueAgentID } from "./configModel";
-import { AgentSummaryMetric, AITextField, AIRewriteButton, ToolSelectField, ConfigCard, SectionTitle, SectionHeader, Field, TextField, ModelAPIKeyField, NumberField, SelectField, ModelUseField, ModelSelect, ToggleField, EmptyState } from "./ConfigFields";
+import { AITextField, AIRewriteButton, ToolSelectField, SectionHeader, Field, TextField, ModelAPIKeyField, NumberField, SelectField, ModelUseField, ModelSelect, ToggleField, EmptyState } from "./ConfigFields";
+
+import { ConfigEditCard, useConfigEditing } from "./ConfigEditor";
 
 export function ModelsTab({ draft, updateDraft }: EditorProps) {
   const models = draft.models || [];
   const [modelLookup, setModelLookup] = useState<Record<number, ModelLookupState>>({});
-  const [expandedModelIndex, setExpandedModelIndex] = useState<number | null>(null);
+  const editing = useConfigEditing();
 
   function removeModel(index: number) {
-    updateDraft((next) => {
+    editing.remove(models[index].name || models[index].id || "模型", (next) => {
       next.models = (next.models || []).filter((_, itemIndex) => itemIndex !== index);
-    });
-    setExpandedModelIndex((current) => {
-      if (current === null) return null;
-      if (current === index) return null;
-      return current > index ? current - 1 : current;
     });
   }
 
@@ -76,7 +72,7 @@ export function ModelsTab({ draft, updateDraft }: EditorProps) {
           className="w-full sm:w-auto"
           variant="outline"
           onClick={() => {
-            updateDraft((next) => {
+            editing.begin(`model-${models.length}`, (next) => {
               next.models = [
                 ...(next.models || []),
                 {
@@ -90,7 +86,6 @@ export function ModelsTab({ draft, updateDraft }: EditorProps) {
                 },
               ];
             });
-            setExpandedModelIndex(models.length);
           }}
         >
           <Plus className="h-4 w-4" />
@@ -99,13 +94,11 @@ export function ModelsTab({ draft, updateDraft }: EditorProps) {
       </SectionHeader>
       <PanelBody className="grid gap-4 xl:grid-cols-2">
         {models.map((model, index) => {
-          const expanded = expandedModelIndex === index;
           return (
             <ModelConfigCard
-              key={`${model.original_id || model.id || "model"}-${index}`}
+              key={index}
               model={model}
-              expanded={expanded}
-              onToggle={() => setExpandedModelIndex(expanded ? null : index)}
+              editorKey={`model-${index}`}
               onRemove={() => removeModel(index)}
             >
               <div className="grid gap-3 md:grid-cols-2">
@@ -149,52 +142,19 @@ interface ModelLookupState {
   error?: string;
 }
 
-function ModelConfigCard({
-  model,
-  expanded,
-  onToggle,
-  onRemove,
-  children,
-}: {
+function ModelConfigCard({ model, editorKey, onRemove, children }: {
   model: ModelConfig;
-  expanded: boolean;
-  onToggle: () => void;
+  editorKey: string;
   onRemove: () => void;
   children: React.ReactNode;
 }) {
-  return (
-    <div className={cn("rounded-xl border border-border/75 bg-card/65 transition-colors", expanded && "xl:col-span-2")}>
-      <div className="flex min-h-32 flex-col gap-3 p-4">
-        <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={onToggle} aria-expanded={expanded}>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate font-medium">{model.name || model.id || "未命名模型"}</span>
-              <Badge>{model.provider || "provider"}</Badge>
-              {model.use_for?.includes("chat") ? <Badge>chat</Badge> : null}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">{model.id || "未设置 ID"}</div>
-            <div className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{model.model || "尚未指定供应商模型"}</div>
-          </div>
-          <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
-        </button>
-        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
-          <AgentSummaryMetric label="提供商" value={model.provider || "未设置"} />
-          <AgentSummaryMetric label="模型" value={model.model || "未设置"} />
-          <AgentSummaryMetric label="用途" value={modelUsesSummary(model.use_for || [])} />
-          <AgentSummaryMetric label="密钥" value={model.has_api_key || model.api_key ? "已配置" : "未配置"} />
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <Button size="sm" variant={expanded ? "secondary" : "outline"} onClick={onToggle}>
-            {expanded ? "收起" : "编辑"}
-          </Button>
-          <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      {expanded ? <div className="border-t border-border/70 p-4">{children}</div> : null}
-    </div>
-  );
+  return <ConfigEditCard editorKey={editorKey} title={model.name || model.id || "未命名模型"}
+    description={model.model || "尚未指定供应商模型"} badges={[model.provider || "未设置提供商"]}
+    summary={[
+      { label: "ID", value: model.id || "未设置" },
+      { label: "用途", value: modelUsesSummary(model.use_for || []) },
+      { label: "密钥", value: model.has_api_key || model.api_key ? "已配置" : "未配置" },
+    ]} onRemove={onRemove}>{children}</ConfigEditCard>;
 }
 
 function modelUsesSummary(uses: string[]) {
@@ -309,15 +269,13 @@ function ModelNameField({
   );
 }
 
-export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving }: EditorProps & { modelIDs: string[] }) {
-  const dispatch = useAppDispatch();
+export function AgentsTab({ draft, modelIDs, updateDraft, saving }: EditorProps & { modelIDs: string[] }) {
+  const editing = useConfigEditing();
   const agents = draft.agents || {};
   const agentItems = agents.items || [];
   const tools = useAppSelector((state) => state.config.tools);
   const toolOptions = useMemo(() => buildToolOptions(tools, draft.tools?.mcp_servers || []), [draft.tools?.mcp_servers, tools]);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [expandedAgentKey, setExpandedAgentKey] = useState<string | null>(null);
-  const [deleteAgentTarget, setDeleteAgentTarget] = useState<{ agent: AgentConfig; index: number; key: string } | null>(null);
 
   function buildAgentsDraft(items: AgentConfig[]) {
     const next = normalizeConfig(draft);
@@ -337,26 +295,7 @@ export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving 
 
   async function appendAgents(items: AgentConfig[]) {
     const nextDraft = buildAgentsDraft(items);
-    updateDraft((next) => {
-      next.agents = nextDraft.agents;
-    });
-    if (autoSaveDraft) {
-      await autoSaveDraft(nextDraft);
-      return;
-    }
-    dispatch(appActions.showToast(`${items.length} 个智能体草稿已添加`));
-  }
-
-  function confirmDeleteAgent() {
-    if (!deleteAgentTarget) return;
-    const target = deleteAgentTarget;
-    updateDraft((next) => {
-      next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== target.index) };
-    });
-    if (expandedAgentKey === target.key) {
-      setExpandedAgentKey(null);
-    }
-    setDeleteAgentTarget(null);
+    await editing.apply((next) => { next.agents = nextDraft.agents; });
   }
 
   function duplicateBuiltinAgent(agent: AgentConfig) {
@@ -369,12 +308,10 @@ export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving 
       team_member: undefined,
       enabled: true,
     };
-    updateDraft((next) => {
+    editing.begin(`agent-${agentItems.length}`, (next) => {
       const items = next.agents?.items || [];
       next.agents = { ...(next.agents || {}), items: [...items, copy] };
     });
-    setExpandedAgentKey(`${nextID}-${agentItems.length}`);
-    dispatch(appActions.showToast("已复制为自定义智能体"));
   }
 
   return (
@@ -389,7 +326,7 @@ export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving 
             className="w-full sm:w-auto"
             variant="outline"
             onClick={() =>
-              updateDraft((next) => {
+              editing.begin(`agent-${agentItems.length}`, (next) => {
                 const items = next.agents?.items || [];
                 next.agents = {
                   ...(next.agents || {}),
@@ -427,34 +364,21 @@ export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving 
           }}
         />
       ) : null}
-      <ConfirmDialog
-        open={Boolean(deleteAgentTarget)}
-        title="删除智能体"
-        description={
-          <>
-            智能体「<span className="font-medium text-foreground">{deleteAgentTarget?.agent.name || deleteAgentTarget?.agent.id || "未命名智能体"}</span>」将从当前配置草稿中移除，保存配置后生效。
-          </>
-        }
-        confirmLabel="确认删除"
-        destructive
-        onCancel={() => setDeleteAgentTarget(null)}
-        onConfirm={confirmDeleteAgent}
-      />
       <PanelBody className="grid items-start gap-4 xl:grid-cols-2">
         {agentItems.map((agent, index) => {
-          const agentKey = `${agent.id || agent.name || "agent"}-${index}`;
-          const expanded = expandedAgentKey === agentKey;
+          const agentKey = `agent-${index}`;
           return (
             <AgentConfigCard
               key={agentKey}
               agent={agent}
-              expanded={expanded}
-              onToggle={() => setExpandedAgentKey(expanded ? null : agentKey)}
+              editorKey={agentKey}
               onDuplicate={agent.builtin ? () => duplicateBuiltinAgent(agent) : undefined}
               onRemove={
                 agent.builtin
                   ? undefined
-                  : () => setDeleteAgentTarget({ agent, index, key: agentKey })
+                  : () => editing.remove(agent.name || agent.id || "智能体", (next) => {
+                      next.agents = { ...(next.agents || {}), items: (next.agents?.items || []).filter((_, itemIndex) => itemIndex !== index) };
+                    })
               }
             >
               <AgentCatalogEditor
@@ -482,70 +406,27 @@ export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving 
   );
 }
 
-function AgentConfigCard({
-  agent,
-  expanded,
-  onToggle,
-  onDuplicate,
-  onRemove,
-  children,
-}: {
+function AgentConfigCard({ agent, editorKey, onDuplicate, onRemove, children }: {
   agent: AgentConfig;
-  expanded: boolean;
-  onToggle: () => void;
+  editorKey: string;
   onDuplicate?: () => void;
   onRemove?: () => void;
   children: React.ReactNode;
 }) {
-  const toolCount = agent.tools?.length || 0;
-  return (
-    <div className={cn("rounded-xl border border-border/75 bg-card/65 transition-colors", expanded && "xl:col-span-2")}>
-      <div className="flex min-h-36 flex-col gap-3 p-4">
-        <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={onToggle} aria-expanded={expanded}>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate font-medium">{agent.name || agent.id || "未命名智能体"}</span>
-              <Badge>{agent.builtin ? "内置" : "自定义"}</Badge>
-              <Badge>{agent.enabled ? "已启用" : "已关闭"}</Badge>
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">{agent.id || "未设置 ID"}</div>
-            <div className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.description || "暂无描述"}</div>
-          </div>
-          <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
-        </button>
-        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
-          <AgentSummaryMetric label="类型" value={agent.builtin ? "内置" : agent.team_member ? "团队" : "自定义"} />
-          <AgentSummaryMetric label="模型" value={agent.model_id || "默认"} />
-          <AgentSummaryMetric label="工具" value={`${toolCount}`} />
-          <AgentSummaryMetric label="状态" value={agent.enabled ? "启用" : "关闭"} />
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <Button size="sm" variant={expanded ? "secondary" : "outline"} onClick={onToggle}>
-            {expanded ? "收起" : agent.builtin ? "查看" : "编辑"}
-          </Button>
-          <div className="flex items-center gap-1">
-            {onDuplicate ? (
-              <Button size="icon" variant="ghost" onClick={onDuplicate} aria-label="复制为自定义">
-                <Copy className="h-4 w-4" />
-              </Button>
-            ) : null}
-            {onRemove ? (
-              <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-      {expanded ? <div className="border-t border-border/70 p-4">{children}</div> : null}
-    </div>
-  );
+  return <ConfigEditCard editorKey={editorKey} title={agent.name || agent.id || "未命名智能体"}
+    description={agent.description || "暂无描述"} badges={[agent.builtin ? "内置" : "自定义", agent.enabled ? "已启用" : "已关闭"]}
+    summary={[
+      { label: "ID", value: agent.id || "未设置" },
+      { label: "模型", value: agent.model_id || "默认" },
+      { label: "工具", value: `${agent.tools?.length || 0} 项` },
+    ]} onRemove={onRemove}
+    actions={onDuplicate ? <Button size="icon" variant="ghost" onClick={onDuplicate} aria-label="复制为自定义"><Copy className="h-4 w-4" /></Button> : undefined}
+  >{children}</ConfigEditCard>;
 }
-
-
 
 export function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { modelIDs: string[] }) {
   const roundtable = draft.roundtable || {};
+  const editing = useConfigEditing();
   return (
     <Panel>
       <SectionHeader icon={ListPlus} title="圆桌讨论" description="配置 roundtable 模式成员和最大迭代次数。">
@@ -553,7 +434,7 @@ export function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { 
           className="w-full sm:w-auto"
           variant="outline"
           onClick={() =>
-            updateDraft((next) => {
+            editing.begin(`member-${roundtable.members?.length || 0}`, (next) => {
               const members = next.roundtable?.members || [];
               next.roundtable = {
                 ...(next.roundtable || {}),
@@ -567,7 +448,7 @@ export function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { 
         </Button>
       </SectionHeader>
       <PanelBody className="grid gap-4 xl:grid-cols-2">
-        <div className="xl:col-span-2">
+        <ConfigEditCard editorKey="roundtable-settings" title="讨论设置" description="设置圆桌讨论的执行轮数。" summary={[{ label: "最大迭代", value: `${roundtable.max_iterations || 0} 次` }]}>
           <NumberField
             label="最大迭代次数"
             value={roundtable.max_iterations}
@@ -578,7 +459,7 @@ export function RoundtableTab({ draft, modelIDs, updateDraft }: EditorProps & { 
               })
             }
           />
-        </div>
+        </ConfigEditCard>
         {(roundtable.members || []).map((member, index) => (
           <RoundtableMemberEditor key={index} member={member} index={index} modelIDs={modelIDs} updateDraft={updateDraft} />
         ))}
@@ -599,12 +480,10 @@ export function DeepTab({ draft, updateDraft }: EditorProps) {
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <Panel>
-        <PanelHeader>
-          <SectionTitle icon={Layers} title="深度智能体" description="配置深度模式的提示词、工具和基础执行能力。" />
-        </PanelHeader>
-        <PanelBody className="space-y-4">
+    <div className="grid items-start gap-4 md:grid-cols-2">
+      <ConfigEditCard editorKey="deep-agent" title="深度智能体" description="设置提示词、工具和最大迭代次数。"
+        summary={[{ label: "最大迭代", value: `${deep.max_iterations || 0} 次` }, { label: "工具", value: `${deep.extra_tools?.length || 0} 项` }, { label: "提示词", value: deep.instruction ? "自定义" : "内置" }]}>
+        <div className="space-y-4">
           <div className="max-w-sm">
             <NumberField
               label="最大迭代次数"
@@ -617,21 +496,16 @@ export function DeepTab({ draft, updateDraft }: EditorProps) {
             <Textarea className="min-h-72 text-sm" value={deep.instruction || ""} onChange={(event) => update({ instruction: event.target.value })} />
           </Field>
           <ToolSelectField tools={deep.extra_tools || []} options={toolOptions} onChange={(extraTools) => update({ extra_tools: extraTools })} />
-        </PanelBody>
-      </Panel>
-
-      <div className="space-y-4">
-        <Panel>
-          <PanelHeader>
-            <SectionTitle icon={Check} title="能力配置" description="选择深度模式可直接使用的核心能力。" />
-          </PanelHeader>
-          <PanelBody className="space-y-3">
+        </div>
+      </ConfigEditCard>
+      <ConfigEditCard editorKey="deep-capabilities" title="能力配置" description="选择深度模式可直接使用的核心能力。"
+        summary={[{ label: "计划清单", value: deep.planning?.enabled ? "开启" : "关闭" }, { label: "工作区", value: deep.workspace?.enabled ? "开启" : "关闭" }, { label: "Shell", value: deep.shell?.enabled ? "开启" : "关闭" }]}>
+          <div className="space-y-3">
             <ToggleField label="计划清单" checked={Boolean(deep.planning?.enabled)} onChange={(value) => update({ planning: { enabled: value } })} />
             <ToggleField label="工作区文件" checked={Boolean(deep.workspace?.enabled)} onChange={(value) => update({ workspace: { enabled: value } })} />
             <ToggleField label="Shell 命令" checked={Boolean(deep.shell?.enabled)} onChange={(value) => update({ shell: { enabled: value } })} />
-          </PanelBody>
-        </Panel>
-      </div>
+          </div>
+      </ConfigEditCard>
     </div>
   );
 }
@@ -647,6 +521,7 @@ function RoundtableMemberEditor({
   modelIDs: string[];
   updateDraft: EditorProps["updateDraft"];
 }) {
+  const editing = useConfigEditing();
   function update(patch: Partial<TeamMemberConfig>) {
     updateDraft((next) => {
       const members = [...(next.roundtable?.members || [])];
@@ -656,11 +531,13 @@ function RoundtableMemberEditor({
   }
 
   return (
-    <ConfigCard
+    <ConfigEditCard
+      editorKey={`member-${index}`}
+      description={member.description || "设置成员的模型、提示词和职责。"}
       title={member.name || `成员 ${index + 1}`}
-      aside={member.model_id || "model_id"}
+      summary={[{ label: "模型", value: member.model_id || "默认" }, { label: "ID", value: member.id || "未设置" }]}
       onRemove={() =>
-        updateDraft((next) => {
+        editing.remove(member.name || member.id || "圆桌成员", (next) => {
           next.roundtable = { ...(next.roundtable || {}), members: (next.roundtable?.members || []).filter((_, itemIndex) => itemIndex !== index) };
         })
       }
@@ -674,7 +551,7 @@ function RoundtableMemberEditor({
       <Field label="提示词（留空使用内置圆桌讨论提示词）">
         <Textarea className="min-h-28 text-sm" value={member.prompt || ""} onChange={(event) => update({ prompt: event.target.value })} />
       </Field>
-    </ConfigCard>
+    </ConfigEditCard>
   );
 }
 
@@ -834,37 +711,24 @@ function AgentDraftDialog({
 
   const selectedDrafts = drafts.filter((agent) => selected.has(agent.id || agent.name || ""));
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6" role="dialog" aria-modal="true">
-      <div className="sketch-surface relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
-        {loading ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/75 backdrop-blur-[1px]">
-            <div className="flex flex-col items-center gap-3">
-              <LoadingSurface label="正在生成智能体草稿" />
-              <Button variant="outline" onClick={cancelGenerate}>
-                取消生成
-              </Button>
-            </div>
-          </div>
-        ) : null}
-        <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 font-semibold">
-              <Sparkles className="h-4 w-4 text-primary" />
-              AI 创建智能体
-            </div>
-            <div className="mt-1 text-sm leading-6 text-muted-foreground">描述你需要的角色、数量、职责和工具偏好，生成后确认添加到当前配置草稿。</div>
-          </div>
-          <Button size="icon" variant="ghost" disabled={loading} onClick={onClose} aria-label="关闭">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className={cn("chat-scroll min-h-0 flex-1 p-4", loading ? "overflow-hidden" : "overflow-auto")}>
+    <Dialog open title="AI 创建智能体" closeDisabled={loading || applying} onOpenChange={onClose}
+      overlay={loading ? <div className="flex flex-col items-center gap-3"><LoadingSurface label="正在生成智能体草稿" /><Button variant="outline" onClick={cancelGenerate}>取消生成</Button></div> : undefined}
+      footer={<div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" disabled={loading || applying} onClick={onClose}>取消</Button>
+        <Button variant="outline" disabled={!instruction.trim() || loading || applying} onClick={() => void generate()}><Sparkles className="h-4 w-4" />{loading ? "生成中" : "生成草稿"}</Button>
+        <Button disabled={!selectedDrafts.length || loading || applying} onClick={async () => {
+          setError("");
+          try { await onApply(selectedDrafts); }
+          catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+        }}><Plus className="h-4 w-4" />{applying ? "保存中" : "确认并保存"}</Button>
+      </div>}>
+      <p className="mb-4 text-sm text-muted-foreground">描述角色、职责和工具偏好，选择生成的智能体后确认保存。</p>
+        <div className="space-y-4">
           <div className="grid gap-4">
             <Field label="创建要求">
               <Textarea
                 className="min-h-28 text-sm"
-                disabled={loading}
+                disabled={loading || applying}
                 value={instruction}
                 placeholder="例如：创建三个研发协作智能体，分别负责前端实现、后端接口和测试验收，提示词要明确边界和输出格式。"
                 onChange={(event) => setInstruction(event.target.value)}
@@ -879,7 +743,7 @@ function AgentDraftDialog({
                   const checked = selected.has(id);
                   return (
                     <label key={id} className="flex cursor-pointer gap-3 rounded-xl border border-border/75 bg-background/45 p-3">
-                      <input className="mt-1 h-4 w-4 shrink-0 accent-primary" type="checkbox" disabled={loading} checked={checked} onChange={() => toggle(id)} />
+                      <input className="mt-1 h-4 w-4 shrink-0 accent-primary" type="checkbox" disabled={loading || applying} checked={checked} onChange={() => toggle(id)} />
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="font-medium">{agent.name || id}</span>
@@ -898,20 +762,6 @@ function AgentDraftDialog({
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-border/70 p-4 sm:flex-row sm:justify-end">
-          <Button variant="outline" disabled={loading} onClick={onClose}>
-            取消
-          </Button>
-          <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void generate()}>
-            <Sparkles className="h-4 w-4" />
-            {loading ? "生成中" : "生成草稿"}
-          </Button>
-          <Button disabled={!selectedDrafts.length || loading || applying} onClick={() => void onApply(selectedDrafts)}>
-            <Plus className="h-4 w-4" />
-            {applying ? "保存中" : "添加选中"}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

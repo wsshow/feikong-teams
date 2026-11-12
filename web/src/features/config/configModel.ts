@@ -32,7 +32,6 @@ export function uniqueJavaScriptID(values: Array<string | undefined>, base: stri
 export interface EditorProps {
   draft: AppConfig;
   updateDraft: (mutator: (next: AppConfig) => void) => void;
-  autoSaveDraft?: (next: AppConfig) => Promise<void>;
   saving?: boolean;
 }
 

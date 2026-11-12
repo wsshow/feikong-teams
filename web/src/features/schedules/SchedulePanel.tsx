@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { cancelSchedule, createSchedule, deleteSchedule, getScheduleHistory, getScheduleResult, listSchedules, updateSchedule } from "@/api/schedules";
 import { appActions, schedulesActions } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
+import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,6 +54,7 @@ export function SchedulePanel() {
   const [busyID, setBusyID] = useState("");
   const [form, setForm] = useState<ScheduleFormState | undefined>();
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
   const [cancelTarget, setCancelTarget] = useState<ScheduleTask | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduleTask | null>(null);
   const selectedTask = tasks.find((task) => task.id === selectedID);
@@ -121,9 +123,10 @@ export function SchedulePanel() {
   }
 
   async function saveTask() {
-    if (!form) return;
+    if (!form || saving) return;
     const payload = formToPayload(form);
     setSaving(true);
+    setFormError("");
     try {
       if (form.id) {
         const result = await updateSchedule(form.id, payload);
@@ -137,7 +140,7 @@ export function SchedulePanel() {
       setForm(undefined);
       await load();
     } catch (error) {
-      dispatch(appActions.showToast(error instanceof Error ? error.message : String(error)));
+      setFormError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
@@ -170,6 +173,7 @@ export function SchedulePanel() {
   }
 
   function startCreate() {
+    setFormError("");
     setForm({
       task: "",
       mode: "once",
@@ -179,6 +183,7 @@ export function SchedulePanel() {
   }
 
   function startEdit(task: ScheduleTask) {
+    setFormError("");
     setForm({
       id: task.id,
       task: task.task || "",
@@ -224,7 +229,7 @@ export function SchedulePanel() {
           </PanelBody>
         </Panel>
 
-        {form ? <ScheduleEditor form={form} saving={saving} onChange={setForm} onCancel={() => setForm(undefined)} onSave={() => void saveTask()} /> : null}
+        {form ? <ScheduleEditor form={form} saving={saving} error={formError} onChange={setForm} onCancel={() => setForm(undefined)} onSave={() => void saveTask()} /> : null}
 
         <Panel>
           <PanelHeader className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -300,35 +305,28 @@ export function SchedulePanel() {
 function ScheduleEditor({
   form,
   saving,
+  error,
   onChange,
   onCancel,
   onSave,
 }: {
   form: ScheduleFormState;
   saving: boolean;
+  error: string;
   onChange: (form: ScheduleFormState) => void;
   onCancel: () => void;
   onSave: () => void;
 }) {
   const canSave = Boolean(form.task.trim() && (form.mode === "cron" ? form.cronExpr.trim() : form.executeAt));
   return (
-    <Panel>
-      <PanelHeader className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <div className="font-semibold">{form.id ? "编辑任务" : "新建任务"}</div>
-          <div className="mt-1 text-sm text-muted-foreground">一次性任务使用本地时间保存，循环任务使用 cron 表达式。</div>
-        </div>
-        <div className="flex gap-2">
-          <Button className="min-w-20 whitespace-nowrap" variant="outline" onClick={onCancel}>
-            取消
-          </Button>
-          <Button className="min-w-20 whitespace-nowrap" disabled={!canSave || saving} onClick={onSave}>
-            <Save className="h-4 w-4" />
-            保存
-          </Button>
-        </div>
-      </PanelHeader>
-      <PanelBody className="grid gap-4 border-t border-border/70 xl:grid-cols-[1fr_360px]">
+    <Dialog open title={form.id ? "编辑任务" : "新建任务"} closeDisabled={saving} onOpenChange={onCancel}
+      footer={<div className="flex justify-end gap-2">
+        <Button variant="outline" disabled={saving} onClick={onCancel}>取消</Button>
+        <Button disabled={!canSave || saving} onClick={onSave}><Save className="h-4 w-4" />{saving ? "正在保存…" : "确认并保存"}</Button>
+      </div>}>
+      <p className="mb-4 text-sm text-muted-foreground">一次性任务使用本地时间保存，循环任务使用 cron 表达式。</p>
+      {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
+      <fieldset disabled={saving} className="grid min-w-0 gap-4 md:grid-cols-2">
         <label className="block space-y-1.5">
           <span className="text-sm text-muted-foreground">任务内容</span>
           <Textarea
@@ -373,8 +371,8 @@ function ScheduleEditor({
             </label>
           )}
         </div>
-      </PanelBody>
-    </Panel>
+      </fieldset>
+    </Dialog>
   );
 }
 

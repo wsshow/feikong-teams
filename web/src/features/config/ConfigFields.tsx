@@ -1,4 +1,4 @@
-import { Bot, Check, ChevronDown, MessageSquare, Plus, Search, Sparkles, Trash2, Wrench, X } from "lucide-react";
+import { Bot, Check, Plus, Search, Sparkles, Trash2, Wrench, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { rewriteText } from "@/api/ai";
 import { Button } from "@/components/ui/button";
@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { Dialog } from "@/components/ui/dialog";
+import { PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import type { ModelConfig } from "@/types/config";
 import { type ToolSelectOption, uniqueToolNames, modelUseOptions } from "./configModel";
+import { ConfigEditCard } from "./ConfigEditor";
 
 export function AITextField({
   label,
@@ -96,48 +98,20 @@ function AIRewriteDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6" role="dialog" aria-modal="true">
-      <div className="sketch-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-card/95 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
-        <div className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
-          <div>
-            <div className="flex items-center gap-2 font-semibold">
-              <Sparkles className="h-4 w-4 text-primary" />
-              AI 修改
-            </div>
-            <div className="mt-1 text-sm leading-6 text-muted-foreground">输入修改要求，生成结果确认后再应用到字段。</div>
-          </div>
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="chat-scroll min-h-0 flex-1 space-y-4 overflow-auto p-4">
-          <Field label="修改要求">
-            <Textarea className="min-h-24 text-sm" value={instruction} placeholder="例如：更专业、更简洁，并增加输出边界。" onChange={(event) => setInstruction(event.target.value)} />
-          </Field>
-          <Field label="当前内容">
-            <Textarea className="min-h-28 text-sm" value={value} readOnly />
-          </Field>
-          {error ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
-          {result ? (
-            <Field label="生成结果">
-              <Textarea className="min-h-40 text-sm" value={result} onChange={(event) => setResult(event.target.value)} />
-            </Field>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-2 border-t border-border/70 p-4 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={onClose}>
-            取消
-          </Button>
-          <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void runRewrite()}>
-            <Sparkles className="h-4 w-4" />
-            {loading ? "生成中" : "生成修改"}
-          </Button>
-          <Button disabled={!result.trim() || loading} onClick={apply}>
-            应用
-          </Button>
-        </div>
+    <Dialog open title="AI 修改" onOpenChange={onClose}
+      footer={<div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>取消</Button>
+        <Button variant="outline" disabled={!instruction.trim() || loading} onClick={() => void runRewrite()}><Sparkles className="h-4 w-4" />{loading ? "生成中" : "生成修改"}</Button>
+        <Button disabled={!result.trim() || loading} onClick={apply}>应用到表单</Button>
+      </div>}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">输入修改要求，生成结果确认后再应用到字段。</p>
+        <Field label="修改要求"><Textarea className="min-h-24 text-sm" value={instruction} placeholder="例如：更专业、更简洁，并增加输出边界。" onChange={(event) => setInstruction(event.target.value)} /></Field>
+        <Field label="当前内容"><Textarea className="min-h-28 text-sm" value={value} readOnly /></Field>
+        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {result ? <Field label="生成结果"><Textarea className="min-h-40 text-sm" value={result} onChange={(event) => setResult(event.target.value)} /></Field> : null}
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -294,104 +268,21 @@ export function ToolSelectField({
   );
 }
 
-export function ChannelCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return (
-    <Panel>
-      <PanelHeader>
-        <SectionTitle icon={MessageSquare} title={title} description={description} />
-      </PanelHeader>
-      <PanelBody className="space-y-4">{children}</PanelBody>
-    </Panel>
-  );
-}
-
-export function ExtensionConfigCard({
-  title,
-  id,
-  description,
-  badges,
-  metrics,
-  expanded,
-  onToggle,
-  onAI,
-  onRemove,
-  children,
-}: {
+export function ExtensionConfigCard({ title, id, description, badges, metrics, editorKey, onAI, onRemove, children }: {
   title: string;
   id?: string;
   description?: string;
   badges: string[];
   metrics: Array<{ label: string; value: string }>;
-  expanded: boolean;
-  onToggle: () => void;
+  editorKey: string;
   onAI: () => void;
   onRemove: () => void;
   children: React.ReactNode;
 }) {
-  return (
-    <div className={cn("rounded-xl border border-border/75 bg-card/65 transition-colors", expanded && "xl:col-span-2")}>
-      <div className="flex min-h-36 flex-col gap-3 p-4">
-        <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={onToggle} aria-expanded={expanded}>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate font-medium">{title}</span>
-              {badges.map((badge) => <Badge key={badge}>{badge}</Badge>)}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">{id || "未设置 ID"}</div>
-            <div className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{description || "暂无描述"}</div>
-          </div>
-          <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
-        </button>
-        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
-          {metrics.map((metric) => <AgentSummaryMetric key={metric.label} label={metric.label} value={metric.value} />)}
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <Button size="sm" variant={expanded ? "secondary" : "outline"} onClick={onToggle}>
-            {expanded ? "收起" : "编辑"}
-          </Button>
-          <div className="flex items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={onAI}>
-              <Sparkles className="h-4 w-4" />
-              AI 修改
-            </Button>
-            <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-      {expanded ? <div className="space-y-3 border-t border-border/70 p-4">{children}</div> : null}
-    </div>
-  );
-}
-
-export function ConfigCard({
-  title,
-  aside,
-  children,
-  onRemove,
-}: {
-  title: string;
-  aside?: string;
-  children: React.ReactNode;
-  onRemove?: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-border/75 bg-card/65 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-medium">{title}</div>
-          {aside ? <div className="mt-0.5 text-xs text-muted-foreground">{aside}</div> : null}
-        </div>
-        {onRemove ? (
-          <Button size="icon" variant="ghost" onClick={onRemove} aria-label="删除">
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        ) : null}
-      </div>
-      <div className="space-y-3">{children}</div>
-    </div>
-  );
+  return <ConfigEditCard editorKey={editorKey} title={title} description={description} badges={badges}
+    summary={[{ label: "ID", value: id || "未设置" }, ...metrics.filter((metric) => metric.label !== "状态" && metric.label !== "宿主能力")]}
+    onRemove={onRemove} actions={<Button size="icon" variant="ghost" onClick={onAI} aria-label={`AI 修改${title}`}><Sparkles className="h-4 w-4" /></Button>}
+  >{children}</ConfigEditCard>;
 }
 
 export function SectionTitle({ icon: Icon, title, description }: { icon: typeof Bot; title: string; description: string }) {
@@ -456,66 +347,17 @@ export function TextField({
 }) {
   return (
     <Field label={label}>
-      <Input type={type} value={value || ""} placeholder={placeholder} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+      <Input aria-label={label} type={type} value={value || ""} placeholder={placeholder} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </Field>
   );
 }
 
 export function ModelAPIKeyField({ model, onChange }: { model: ModelConfig; onChange: (value: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const configured = Boolean(model.has_api_key);
-  const hasDraftValue = Boolean(model.api_key);
-  const showEditor = !configured || editing || hasDraftValue;
-
-  useEffect(() => {
-    if (configured && !hasDraftValue) {
-      setEditing(false);
-    }
-  }, [configured, hasDraftValue]);
-
-  if (!showEditor) {
-    return (
-      <Field
-        label="API Key"
-        action={
-          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-            修改
-          </Button>
-        }
-      >
-        <div className="sketch-inset flex h-9 w-full items-center rounded-md px-3 py-1 text-sm text-muted-foreground">已配置，留空不修改</div>
-      </Field>
-    );
-  }
-
-  return (
-    <Field
-      label={configured ? "API Key（输入新值后保存）" : "API Key"}
-      action={
-        configured ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              onChange("");
-              setEditing(false);
-            }}
-          >
-            取消
-          </Button>
-        ) : null
-      }
-    >
-      <Input
-        type="password"
-        value={model.api_key || ""}
-        placeholder={configured ? "输入新的 API Key" : undefined}
-        autoComplete="new-password"
-        spellCheck={false}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </Field>
-  );
+  return <Field label="API Key">
+    <Input aria-label="API Key" type="password" value={model.api_key || ""}
+      placeholder={model.has_api_key ? "已配置，留空不修改" : "输入 API Key"}
+      autoComplete="new-password" spellCheck={false} onChange={(event) => onChange(event.target.value)} />
+  </Field>;
 }
 
 export function NumberField({
@@ -549,7 +391,7 @@ export function NumberField({
 
   return (
     <Field label={label}>
-      <Input type="number" min={min} max={max} step={step} value={value ?? 0} onChange={(event) => onChange(parseValue(event.target.value))} />
+      <Input aria-label={label} type="number" min={min} max={max} step={step} value={value ?? 0} onChange={(event) => onChange(parseValue(event.target.value))} />
     </Field>
   );
 }
@@ -635,6 +477,8 @@ export function ToggleField({ label, checked, onChange, disabled }: { label: str
         "flex w-full items-center justify-between gap-3 rounded-lg border border-border/75 bg-card/60 px-3 py-2 text-left transition-colors hover:bg-accent/60",
         disabled && "cursor-not-allowed opacity-70 hover:bg-card/60",
       )}
+      role="switch"
+      aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
     >
@@ -786,15 +630,6 @@ export function MetricCard({ label, value }: { label: string; value: number }) {
     <div className="rounded-xl border border-border/75 bg-card/65 p-4">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="mt-2 text-3xl font-semibold">{value}</div>
-    </div>
-  );
-}
-
-export function AgentSummaryMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-border/60 bg-background/45 px-2 py-1.5">
-      <div>{label}</div>
-      <div className="mt-1 truncate text-foreground">{value}</div>
     </div>
   );
 }
