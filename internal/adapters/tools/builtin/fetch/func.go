@@ -2,7 +2,6 @@ package fetch
 
 import (
 	"context"
-	"fkteams/internal/runtime/env"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"fkteams/internal/runtime/env"
 
 	md "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/PuerkitoBio/goquery"
@@ -42,6 +43,14 @@ type FetchResponse struct {
 
 // Fetch 发送HTTP请求获取网络资源
 func Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
+	client := createHTTPClient(DefaultTimeout)
+	defer client.CloseIdleConnections()
+	return fetchWithClient(ctx, req, client)
+}
+
+func fetchWithClient(ctx context.Context, req *FetchRequest, shared *http.Client) (*FetchResponse, error) {
+	request := *req
+	req = &request
 	// 参数验证
 	if req.URL == "" {
 		return &FetchResponse{ErrorMessage: "URL is required"}, nil
@@ -53,7 +62,7 @@ func Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
 	}
 
 	// 设置默认值和限制
-	if req.Timeout == 0 {
+	if req.Timeout <= 0 {
 		req.Timeout = DefaultTimeout
 	} else if req.Timeout > MaxTimeout {
 		req.Timeout = MaxTimeout
@@ -69,7 +78,8 @@ func Fetch(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
 	}
 
 	// 创建HTTP客户端
-	client := createHTTPClient(req.Timeout)
+	client := *shared
+	client.Timeout = time.Duration(req.Timeout) * time.Second
 
 	// 创建请求
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", req.URL, nil)
@@ -146,9 +156,17 @@ func readResponseBody(reader io.Reader, limit int64) ([]byte, bool, error) {
 		return body, false, nil
 	}
 	body = body[:limit]
-	for len(body) > 0 && !utf8.Valid(body) {
-		body = body[:len(body)-1]
+	for offset := 0; offset < len(body); {
+		_, size := utf8.DecodeRune(body[offset:])
+		if size == 1 && body[offset] >= utf8.RuneSelf {
+			if !utf8.FullRune(body[offset:]) {
+				body = body[:offset]
+			}
+			break
+		}
+		offset += size
 	}
+
 	return body, true, nil
 }
 

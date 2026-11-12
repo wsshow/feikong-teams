@@ -1,6 +1,8 @@
 package fetch
 
 import (
+	"context"
+
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
@@ -37,7 +39,10 @@ const toolDescription = `从 URL 获取网络资源内容并返回指定格式�
 
 func GetTools() (tools []runtimeport.Tool, err error) {
 	// HTTP请求工具
-	fetchTool, err := runtimeport.InferTool("fetch", toolDescription, Fetch)
+	client := createHTTPClient(DefaultTimeout)
+	fetchTool, err := runtimeport.InferTool("fetch", toolDescription, func(ctx context.Context, req *FetchRequest) (*FetchResponse, error) {
+		return fetchWithClient(ctx, req, client)
+	})
 	if err != nil {
 		return nil, err
 	}
