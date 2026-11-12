@@ -9,7 +9,9 @@ import (
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/domain/message"
 	domainsession "fkteams/internal/domain/session"
+	runtimeevents "fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,6 +47,69 @@ func TestOpenAssistantHandlerRestoresRenamedSession(t *testing.T) {
 		if profile.Code != http.StatusOK || !strings.Contains(profile.Body.String(), "小空") {
 			t.Fatalf("profile: %s", profile.Body.String())
 		}
+	}
+}
+
+func TestClearAssistantContextHandlerRejectsActiveAndClearsPersistedState(t *testing.T) {
+	rt := newTestRuntime(t)
+	router := gin.New()
+	router.POST("/assistant/clear", rt.ClearAssistantContextHandler())
+	router.GET("/sessions/:sessionID", rt.GetSessionHandler())
+	meta, err := rt.SessionService.OpenAssistant(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.SessionService.RenameAssistant(t.Context(), "小空"); err != nil {
+		t.Fatal(err)
+	}
+	recorder, release := rt.acquireRecorder(meta.ID)
+	recorder.RecordEvent(runtimeevents.UserMessage("run", "turn", "message", message.Message{Role: message.RoleUser, Content: "old context"}))
+	if err := recorder.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if resp := performJSON(router, http.MethodPost, "/assistant/clear", `{}`); resp.Code != http.StatusConflict {
+		t.Fatalf("leased clear: %d", resp.Code)
+	}
+	release()
+	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: meta.ID})
+	if resp := performJSON(router, http.MethodPost, "/assistant/clear", `{}`); resp.Code != http.StatusConflict {
+		t.Fatalf("running clear: %d", resp.Code)
+	}
+	if got := recorder.GetMessages(); len(got) != 1 {
+		t.Fatalf("active history lost: %v", got)
+	}
+	stream.SetStatus("cancelled")
+	if _, err := rt.Queues.Edit(meta.ID, func(q *taskstream.Queue) error {
+		_, err := q.EnqueueMessage(taskstream.QueuedMessage{Text: "pending task"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if resp := performJSON(router, http.MethodPost, "/assistant/clear", `{}`); resp.Code != http.StatusOK {
+			t.Fatalf("clear: %d %s", resp.Code, resp.Body.String())
+		}
+	}
+	if rt.Sessions.Get(meta.ID) != nil || rt.Streams.Get(meta.ID) != nil {
+		t.Fatal("retained cached state")
+	}
+	got, err := rt.SessionService.OpenAssistant(t.Context())
+	if err != nil || got.Title != "小空" {
+		t.Fatalf("identity = %#v, %v", got, err)
+	}
+	resp := performRequest(router, http.MethodGet, "/sessions/"+meta.ID, nil)
+	var detail struct {
+		Events []any `json:"events"`
+		Queue  []any `json:"queue"`
+	}
+	decodeRawData(t, resp, &detail)
+	if resp.Code != http.StatusOK || len(detail.Events) != 0 || len(detail.Queue) != 0 {
+		t.Fatalf("old context restored: %s", resp.Body.String())
+	}
+	reloaded, done := rt.acquireRecorder(meta.ID)
+	defer done()
+	if len(reloaded.GetMessages()) != 0 {
+		t.Fatal("model context restored old messages")
 	}
 }
 

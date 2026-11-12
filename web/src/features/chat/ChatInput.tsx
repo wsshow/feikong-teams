@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Eraser, Pencil } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { chatActions } from "@/app/store";
+import { appActions, chatActions } from "@/app/store";
+import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { clearAssistant, renameAssistant } from "@/features/sessions/sessionThunks";
 import { stopStream } from "@/api/chat";
 import { listFiles, searchFiles, uploadFile } from "@/api/files";
 import { cn } from "@/lib/cn";
@@ -35,6 +40,11 @@ export function ChatInput({
   const [attachments, setAttachments] = useState<ChatAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [referenceLoading, setReferenceLoading] = useState(false);
+  const [commandDialog, setCommandDialog] = useState<"clear" | "rename">();
+  const [assistantNameDraft, setAssistantNameDraft] = useState("");
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandError, setCommandError] = useState("");
+  const commandBusyRef = useRef(false);
   const referenceRequestID = useRef(0);
   const fileSuggestionCache = useRef(new Map<string, FileEntry[]>());
   const attachmentsRef = useRef<ChatAttachmentDraft[]>([]);
@@ -70,6 +80,10 @@ export function ChatInput({
   async function submit() {
     if (submittingRef.current) return;
     const message = value.trim();
+    if (sessionID === assistantSessionID && (message === "/clear" || message === "/rename")) {
+      selectCommand(message.slice(1));
+      return;
+    }
     const readyAttachments = attachments.filter((attachment) => attachment.status === "ready");
     if (!message && readyAttachments.length === 0) return;
     if (attachments.some((attachment) => attachment.status === "uploading")) {
@@ -98,6 +112,43 @@ export function ChatInput({
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
+    }
+  }
+
+  function selectCommand(id: string) {
+    if (id !== "clear" && id !== "rename") return;
+    if (commandBusyRef.current || submittingRef.current) return;
+    if (id === "clear" && runningTask) return;
+    setValue("");
+    setAssistantNameDraft(assistantName);
+    setCommandError("");
+    setCommandDialog(id);
+  }
+
+  async function confirmCommand() {
+    if (!commandDialog || commandBusyRef.current) return;
+    const name = assistantNameDraft.trim();
+    if (commandDialog === "rename" && (!name || Array.from(name).length > 40 || /\p{Cc}/u.test(name))) {
+      setCommandError("助手名称需为 1–40 个字符，且不能包含控制字符");
+      return;
+    }
+    if (commandDialog === "clear" && runningTask) {
+      setCommandError("助手正在运行，请在任务结束后清空上下文");
+      return;
+    }
+    commandBusyRef.current = true;
+    setCommandBusy(true);
+    setCommandError("");
+    try {
+      if (commandDialog === "clear") await dispatch(clearAssistant()).unwrap();
+      else await dispatch(renameAssistant(name)).unwrap();
+      dispatch(appActions.showToast(commandDialog === "clear" ? "助手上下文已清空" : "助手名称已更新"));
+      setCommandDialog(undefined);
+    } catch (error) {
+      setCommandError(typeof error === "object" && error && "message" in error ? String(error.message) : "操作失败，请重试");
+    } finally {
+      commandBusyRef.current = false;
+      setCommandBusy(false);
     }
   }
 
@@ -214,69 +265,95 @@ export function ChatInput({
     });
   }
 
-  if (variant === "hero") {
-    return (
-      <ChatComposer
-        className={className}
-        value={value}
-        mode={mode}
-        processing={isProcessing}
-        submitting={submitting}
-        agents={agents}
-        selectedAgent={currentAgent}
-        lockedTargetName={sessionID === assistantSessionID ? assistantName : undefined}
-        fileSuggestions={fileSuggestions}
-        attachments={attachments}
-        referenceLoading={referenceLoading}
-        variant="hero"
-        onValueChange={setValue}
-        onModeChange={changeMode}
-        onReferenceQuery={queryReferences}
-        onReferenceOpenChange={onReferenceOpenChange}
-        onFilesAdded={(files) => void addAttachments(files)}
-        onRemoveAttachment={removeAttachment}
-        onAgentChange={changeAgent}
-        onSubmit={() => void submit()}
-        onStop={() => void stop()}
-      />
-    );
-  }
+  const composer = (
+    <ChatComposer
+      className={variant === "hero" ? className : "relative z-10 shadow-raised"}
+      value={value}
+      mode={mode}
+      processing={isProcessing}
+      submitting={submitting}
+      agents={agents}
+      selectedAgent={currentAgent}
+      lockedTargetName={sessionID === assistantSessionID ? assistantName : undefined}
+      commands={sessionID === assistantSessionID ? [
+        { id: "clear", label: "清空助手上下文", description: runningTask ? "任务结束后可清空上下文" : "清空聊天记录，开始新的对话", icon: Eraser, disabled: Boolean(runningTask) },
+        { id: "rename", label: "重命名助手", description: "为助手换一个称呼", icon: Pencil },
+      ] : undefined}
+      onCommandSelect={selectCommand}
+      fileSuggestions={fileSuggestions}
+      attachments={attachments}
+      referenceLoading={referenceLoading}
+      variant={variant}
+      onValueChange={setValue}
+      onModeChange={changeMode}
+      onReferenceQuery={queryReferences}
+      onReferenceOpenChange={onReferenceOpenChange}
+      onFilesAdded={(files) => void addAttachments(files)}
+      onRemoveAttachment={removeAttachment}
+      onAgentChange={changeAgent}
+      onSubmit={() => void submit()}
+      onStop={() => void stop()}
+    />
+  );
 
   return (
-    <div
-      ref={dockRef}
-      className={cn(
-        "fixed inset-x-0 bottom-[var(--app-keyboard-inset-bottom,0px)] z-30 bg-transparent px-3 pb-3 pt-2 md:static md:z-auto md:px-6 md:pb-5",
-        className,
+    <>
+      {variant === "hero" ? composer : (
+        <div
+          ref={dockRef}
+          className={cn(
+            "fixed inset-x-0 bottom-[var(--app-keyboard-inset-bottom,0px)] z-30 bg-transparent px-3 pb-3 pt-2 md:static md:z-auto md:px-6 md:pb-5",
+            className,
+          )}
+        >
+          <div className="mx-auto max-w-4xl">
+            <QueuePanel onEditMessage={setValue} />
+            {composer}
+          </div>
+        </div>
       )}
-    >
-      <div className="mx-auto max-w-4xl">
-        <QueuePanel onEditMessage={setValue} />
-        <ChatComposer
-          className="relative z-10 shadow-raised"
-          value={value}
-          mode={mode}
-          processing={isProcessing}
-          submitting={submitting}
-          agents={agents}
-          selectedAgent={currentAgent}
-          lockedTargetName={sessionID === assistantSessionID ? assistantName : undefined}
-          fileSuggestions={fileSuggestions}
-          attachments={attachments}
-          referenceLoading={referenceLoading}
-          variant="dock"
-          onValueChange={setValue}
-          onModeChange={changeMode}
-          onReferenceQuery={queryReferences}
-          onReferenceOpenChange={onReferenceOpenChange}
-          onFilesAdded={(files) => void addAttachments(files)}
-          onRemoveAttachment={removeAttachment}
-          onAgentChange={changeAgent}
-          onSubmit={() => void submit()}
-          onStop={() => void stop()}
-        />
-      </div>
-    </div>
+      <Dialog
+        open={Boolean(commandDialog)}
+        title={commandDialog === "clear" ? "清空助手上下文" : "重命名助手"}
+        className="max-w-md"
+        closeDisabled={commandBusy}
+        onOpenChange={(open) => { if (!open) setCommandDialog(undefined); }}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={commandBusy} onClick={() => setCommandDialog(undefined)} autoFocus={commandDialog === "clear"}>
+              取消
+            </Button>
+            <Button
+              variant={commandDialog === "clear" ? "destructive" : "default"}
+              disabled={commandBusy || (commandDialog === "rename" && !assistantNameDraft.trim())}
+              onClick={() => void confirmCommand()}
+            >
+              {commandBusy ? "处理中…" : commandDialog === "clear" ? "确认清空" : "保存"}
+            </Button>
+          </div>
+        }
+      >
+        {commandDialog === "clear" ? (
+          <p className="text-sm leading-6 text-muted-foreground">将清空当前助手的聊天记录和待处理队列，保留助手名称与长期记忆。此操作无法撤销。</p>
+        ) : (
+          <form onSubmit={(event) => { event.preventDefault(); void confirmCommand(); }}>
+            <label className="block space-y-2 text-sm font-medium">
+              <span>助手名称</span>
+              <Input
+                autoFocus
+                disabled={commandBusy}
+                value={assistantNameDraft}
+                placeholder="输入助手名称"
+                onChange={(event) => setAssistantNameDraft(event.target.value)}
+                aria-invalid={Boolean(commandError)}
+              />
+            </label>
+            <p className="mt-2 text-xs text-muted-foreground">1–40 个字符</p>
+          </form>
+        )}
+        {commandError ? <p role="alert" className="mt-3 text-sm text-destructive">{commandError}</p> : null}
+      </Dialog>
+    </>
   );
 }
 

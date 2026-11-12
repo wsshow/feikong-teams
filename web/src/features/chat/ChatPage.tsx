@@ -128,7 +128,7 @@ function AssistantHome() {
           <p className="text-sm leading-7 text-muted-foreground sm:text-base">整理工作区文件，查找过去的讨论，或直接交给我一项任务。</p>
         </div>
         <ChatInput variant="hero" />
-        <p className="text-center text-xs leading-6 text-muted-foreground">想换个称呼？直接告诉我「以后叫你小空」。</p>
+        <p className="text-center text-xs leading-6 text-muted-foreground">输入 / 清空上下文或重命名助手，也可以直接告诉我「以后叫你小空」。</p>
       </div>
     </div>
   );

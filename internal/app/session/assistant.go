@@ -29,6 +29,15 @@ func (s *Service) RenameAssistant(ctx context.Context, name string) (domainsessi
 	return s.Update(ctx, UpdateRequest{SessionID: domainsession.AssistantID, Title: &name})
 }
 
+// ClearAssistantContext 清空常驻助手历史及队列，保留名称和长期记忆。
+func (s *Service) ClearAssistantContext(ctx context.Context) error {
+	repository, err := s.requireRepository()
+	if err != nil {
+		return err
+	}
+	return repository.ClearSessionHistory(ctx, domainsession.AssistantID)
+}
+
 func validateAssistantName(name string) error {
 	if strings.TrimSpace(name) == "" || utf8.RuneCountInString(strings.TrimSpace(name)) > 40 {
 		return apperror.New(apperror.CodeInvalidArgument, "assistant name must contain 1 to 40 characters")

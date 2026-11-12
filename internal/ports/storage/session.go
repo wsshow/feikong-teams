@@ -13,4 +13,6 @@ type SessionRepository interface {
 	LoadSession(ctx context.Context, sessionID string) (domainsession.Metadata, error)
 	UpdateSession(ctx context.Context, sessionID string, update func(*domainsession.Metadata) error) (domainsession.Metadata, error)
 	DeleteSession(ctx context.Context, sessionID string) error
+	// ClearSessionHistory 清除会话历史及队列，保留元数据；活跃会话返回冲突。
+	ClearSessionHistory(ctx context.Context, sessionID string) error
 }

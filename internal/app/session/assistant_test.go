@@ -33,3 +33,26 @@ func TestAssistantOpenAndRename(t *testing.T) {
 		t.Fatal("changed assistant target")
 	}
 }
+
+type contextClearRepository struct {
+	*memoryRepository
+	cleared string
+}
+
+func (r *contextClearRepository) ClearSessionHistory(_ context.Context, id string) error {
+	r.cleared = id
+	return nil
+}
+
+func TestClearAssistantContextUsesFixedIdentity(t *testing.T) {
+	repo := &contextClearRepository{memoryRepository: &memoryRepository{items: map[string]domainsession.Metadata{}}}
+	if err := NewService(repo).ClearAssistantContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.cleared != domainsession.AssistantID {
+		t.Fatalf("cleared = %q", repo.cleared)
+	}
+	if err := NewService(nil).ClearAssistantContext(context.Background()); err == nil {
+		t.Fatal("accepted missing storage")
+	}
+}

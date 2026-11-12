@@ -168,6 +168,76 @@ func (r *SessionRepository) DeleteSession(_ context.Context, sessionID string) e
 	return nil
 }
 
+// ClearSessionHistory 在空闲边界清除会话内容，仅保留身份元数据。
+func (r *SessionRepository) ClearSessionHistory(_ context.Context, sessionID string) error {
+	if !domainsession.ValidID(sessionID) {
+		return apperror.New(apperror.CodeInvalidArgument, "invalid session ID")
+	}
+	finish, ok := beginSessionDelete(r.root, sessionID)
+	if !ok {
+		return apperror.New(apperror.CodeConflict, "session is active")
+	}
+	defer finish()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// 即使使用数据库，也先验证实体目录，避免清理附件时沿符号链接越界。
+	root, err := os.OpenRoot(r.root)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := pathguard.RejectRootSymlinkComponents(root, sessionID); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return apperror.New(apperror.CodeNotFound, "session not found")
+		}
+		return err
+	}
+	if info, err := root.Lstat(filepath.Join(sessionID, "metadata.json")); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return apperror.New(apperror.CodeInvalidArgument, "symbolic links are not allowed")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	sessionDir := filepath.Join(r.root, sessionID)
+	if _, err := LoadMetadata(sessionDir, r.Documents); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return apperror.New(apperror.CodeNotFound, "session not found")
+		}
+		return err
+	}
+	if r.Documents != nil {
+		if err := r.Documents.RemoveTree(sessionDir, filepath.Join(sessionDir, "metadata.json")); err != nil {
+			return err
+		}
+		// 数据库提交成功后，实体附件仅作垃圾回收，不影响清空结果。
+		if err := clearSessionDirectory(sessionDir); err != nil {
+			log.Printf("session attachment cleanup failed: %v", err)
+		}
+		return nil
+	}
+	return clearSessionDirectory(sessionDir)
+}
+
+func clearSessionDirectory(sessionDir string) error {
+	root, err := os.OpenRoot(sessionDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == "metadata.json" {
+			continue
+		}
+		if err := root.RemoveAll(entry.Name()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *SessionRepository) listDatabaseSessions() ([]domainsession.Record, error) {
 	paths, err := r.Documents.List(r.root)
 	if err != nil {

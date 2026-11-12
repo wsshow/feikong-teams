@@ -163,22 +163,45 @@ func (s *Documents) List(directory string) ([]string, error) {
 	return paths, rows.Err()
 }
 
-// RemoveTree 在同一事务中移除目录下的全部文档。
-func (s *Documents) RemoveTree(directory string) error {
+// RemoveTree 在同一事务中移除目录文档，保留指定文档及其追加记录。
+func (s *Documents) RemoveTree(directory string, preserve ...string) error {
 	prefix, err := s.key(filepath.Join(directory, "placeholder"))
 	if err != nil {
 		return err
 	}
 	prefix = strings.TrimSuffix(prefix, "placeholder")
+	args := []any{prefix, prefix}
+	var exclusions []string
+	for _, path := range preserve {
+		key, err := s.key(path)
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(key, prefix) {
+			return fmt.Errorf("preserved document path escapes directory")
+		}
+		exclusions = append(exclusions, "?")
+		args = append(args, key)
+	}
+	condition := ""
+	if len(exclusions) > 0 {
+		condition = " NOT IN (" + strings.Join(exclusions, ",") + ")"
+	}
 	tx, err := s.database.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec("DELETE FROM document_fragments WHERE substr(path,1,length(?))=?", prefix, prefix); err != nil {
+	fragmentQuery := "DELETE FROM document_fragments WHERE substr(path,1,length(?))=?"
+	recordQuery := "DELETE FROM records WHERE namespace='documents' AND substr(key,1,length(?))=?"
+	if condition != "" {
+		fragmentQuery += " AND path" + condition
+		recordQuery += " AND key" + condition
+	}
+	if _, err = tx.Exec(fragmentQuery, args...); err != nil {
 		return err
 	}
-	if _, err = tx.Exec("DELETE FROM records WHERE namespace='documents' AND substr(key,1,length(?))=?", prefix, prefix); err != nil {
+	if _, err = tx.Exec(recordQuery, args...); err != nil {
 		return err
 	}
 	return tx.Commit()

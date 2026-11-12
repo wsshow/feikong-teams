@@ -1,7 +1,7 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import { listSessions, getSession, openAssistant, getAssistant } from "@/api/sessions";
-import { assistantSessionID } from "@/lib/assistant";
-import { chatActions, sessionsActions } from "@/app/store";
+import { listSessions, getSession, openAssistant, getAssistant, clearAssistantContext, renameSession } from "@/api/sessions";
+import { assistantAgentID, assistantSessionID } from "@/lib/assistant";
+import { chatActions, sessionsActions, type RootState } from "@/app/store";
 
 let sessionsRequest: ReturnType<typeof listSessions> | undefined;
 const sessionDetailRequests = new Map<string, ReturnType<typeof getSession>>();
@@ -11,6 +11,21 @@ export const refreshAssistant = createAsyncThunk("sessions/assistant", async (_,
   const version = ++assistantRequestVersion;
   const assistant = await getAssistant();
   if (version === assistantRequestVersion) dispatch(sessionsActions.upsertSession(assistant));
+});
+
+export const renameAssistant = createAsyncThunk("sessions/renameAssistant", async (name: string, { dispatch }) => {
+  ++assistantRequestVersion;
+  const result = await renameSession(assistantSessionID, name);
+  ++assistantRequestVersion;
+  dispatch(sessionsActions.renameSessionLocal({ sessionID: assistantSessionID, title: result.title }));
+});
+
+export const clearAssistant = createAsyncThunk<void, void, { state: RootState }>("sessions/clearAssistant", async (_, { dispatch, getState }) => {
+  await clearAssistantContext();
+  if (getState().chat.activeSessionID === assistantSessionID) {
+    dispatch(chatActions.setSessionDetail({ session_id: assistantSessionID, mode: "team", current_agent: assistantAgentID, events: [], queue: [] }));
+  }
+  dispatch(sessionsActions.updateSessionRuntime({ sessionID: assistantSessionID, activeTask: false }));
 });
 
 export const loadSessions = createAsyncThunk(

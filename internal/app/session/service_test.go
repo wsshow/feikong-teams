@@ -58,6 +58,11 @@ func (r *memoryRepository) DeleteSession(_ context.Context, id string) error {
 	return nil
 }
 
+func (r *memoryRepository) ClearSessionHistory(ctx context.Context, id string) error {
+	_, err := r.LoadSession(ctx, id)
+	return err
+}
+
 func TestCreateAndPatchUseConsistentNormalization(t *testing.T) {
 	repository := &memoryRepository{items: make(map[string]domainsession.Metadata)}
 	service := NewService(repository)

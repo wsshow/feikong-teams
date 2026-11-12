@@ -1,5 +1,6 @@
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, FileText, Folder, Image as ImageIcon, Loader2, Plus, Send, Square, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/format";
@@ -15,6 +16,14 @@ const modeOptions = [
 
 const referenceResultLimit = 50;
 
+export interface ComposerCommand {
+  id: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  disabled?: boolean;
+}
+
 export interface ChatComposerProps {
   value: string;
   mode: string;
@@ -23,6 +32,8 @@ export interface ChatComposerProps {
   agents?: AgentInfo[];
   selectedAgent?: string;
   lockedTargetName?: string;
+  commands?: ComposerCommand[];
+  onCommandSelect?: (id: string) => void;
   fileSuggestions?: FileEntry[];
   attachments?: ChatAttachmentDraft[];
   referenceLoading?: boolean;
@@ -47,6 +58,8 @@ export function ChatComposer({
   agents = [],
   selectedAgent,
   lockedTargetName,
+  commands = [],
+  onCommandSelect,
   fileSuggestions = [],
   attachments = [],
   referenceLoading = false,
@@ -66,12 +79,14 @@ export function ChatComposer({
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [attachmentScroll, setAttachmentScroll] = useState({ left: false, right: false });
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const commandMenuID = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentScrollerRef = useRef<HTMLDivElement | null>(null);
   const isHero = variant === "hero";
   const maxTextareaHeight = isHero ? 440 : 280;
   const [rawTrigger, setTrigger] = useState<ReferenceTrigger | undefined>();
-  const trigger = lockedTargetName && rawTrigger?.kind === "agent" ? undefined : rawTrigger;
+  const trigger = (lockedTargetName && rawTrigger?.kind === "agent") || (rawTrigger?.kind === "command" && !commands.length) ? undefined : rawTrigger;
   const [activeReferenceIndex, setActiveReferenceIndex] = useState(0);
   const fileReferenceQuery = trigger?.kind === "file" ? trigger.query : undefined;
   const filteredAgents = useMemo(() => {
@@ -90,6 +105,11 @@ export function ChatComposer({
   );
   const referenceOptions = useMemo<ReferenceOption[]>(() => {
     if (!trigger) return [];
+    if (trigger.kind === "command") {
+      const query = trigger.query.toLowerCase();
+      return commands.filter((command) => `${command.id} ${command.label} ${command.description}`.toLowerCase().includes(query))
+        .map((command) => ({ kind: "command" as const, key: command.id, label: command.label, command }));
+    }
     if (trigger.kind === "file") {
       return fileSuggestions.slice(0, referenceResultLimit).map((file) => ({
         kind: "file" as const,
@@ -104,7 +124,7 @@ export function ChatComposer({
       label: agentDisplayName(agent),
       agent,
     }));
-  }, [fileSuggestions, filteredAgents, trigger]);
+  }, [commands, fileSuggestions, filteredAgents, trigger]);
   const attachmentBusy = attachments.some((attachment) => attachment.status === "uploading" || attachment.status === "error");
   const canSubmit = Boolean(value.trim() || attachments.some((attachment) => attachment.status === "ready"));
 
@@ -119,6 +139,15 @@ export function ChatComposer({
   useEffect(() => {
     setActiveReferenceIndex(0);
   }, [trigger?.kind, trigger?.query, referenceOptions.length]);
+
+  useEffect(() => {
+    if (trigger?.kind !== "command") return;
+    function dismissOutside(event: PointerEvent) {
+      if (!composerRef.current?.contains(event.target as Node)) setTrigger(undefined);
+    }
+    document.addEventListener("pointerdown", dismissOutside);
+    return () => document.removeEventListener("pointerdown", dismissOutside);
+  }, [trigger?.kind]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -176,6 +205,13 @@ export function ChatComposer({
   }
 
   function selectReferenceOption(option: ReferenceOption) {
+    if (option.kind === "command") {
+      if (option.command.disabled || submitting) return;
+      onValueChange("");
+      setTrigger(undefined);
+      onCommandSelect?.(option.command.id);
+      return;
+    }
     if (option.kind === "agent") {
       selectAgent(option.agent.name);
       return;
@@ -201,7 +237,7 @@ export function ChatComposer({
       setActiveReferenceIndex((index) => (index - 1 + referenceOptions.length) % referenceOptions.length);
       return true;
     }
-    if (event.key === "Enter" || event.key === "Tab") {
+    if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
       event.preventDefault();
       selectReferenceOption(referenceOptions[Math.min(activeReferenceIndex, referenceOptions.length - 1)]);
       return true;
@@ -279,6 +315,7 @@ export function ChatComposer({
 
   return (
     <div
+      ref={composerRef}
       className={cn(
         "sketch-surface relative w-full rounded-xl bg-card p-3 sm:rounded-2xl sm:p-4",
         isHero ? "p-4 sm:p-5" : "p-3",
@@ -299,7 +336,7 @@ export function ChatComposer({
       <div className="relative">
         {!value && attachments.length === 0 ? (
           <div className="pointer-events-none absolute left-1 top-0 text-base leading-7 text-muted-foreground">
-            {lockedTargetName ? `和${lockedTargetName}聊聊，或交给我一项任务…` : isHero ? "今天要推进什么？" : "输入任务，粘贴图片或文件，使用 # 引用文件，@ 指定智能体。"}
+            {lockedTargetName ? `和${lockedTargetName}聊聊，输入 / 使用命令…` : isHero ? "今天要推进什么？" : "输入任务，粘贴图片或文件，使用 # 引用文件，@ 指定智能体。"}
           </div>
         ) : null}
         <div
@@ -309,13 +346,23 @@ export function ChatComposer({
           role="textbox"
           aria-label={lockedTargetName ? `给${lockedTargetName}发送消息` : "输入任务"}
           aria-multiline="true"
+          aria-haspopup={commands.length ? "listbox" : undefined}
+          aria-expanded={commands.length ? trigger?.kind === "command" : undefined}
+          aria-controls={trigger?.kind === "command" ? commandMenuID : undefined}
+          aria-activedescendant={trigger?.kind === "command" && referenceOptions.length ? `${commandMenuID}-${Math.min(activeReferenceIndex, referenceOptions.length - 1)}` : undefined}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
           onInput={syncFromEditor}
           onPaste={handlePaste}
           onClick={updateTriggerFromEditor}
-          onKeyUp={updateTriggerFromEditor}
+          onBlur={(event) => {
+            if (!composerRef.current?.contains(event.relatedTarget as Node | null)) setTrigger(undefined);
+          }}
+          onKeyUp={(event) => {
+            if (!["Escape", "Enter", "Tab", "ArrowUp", "ArrowDown"].includes(event.key)) updateTriggerFromEditor();
+          }}
           onKeyDown={(event) => {
+            if (composing || event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (handleReferenceNavigation(event)) return;
             if (deleteToken(event)) return;
             if (event.key === "Enter" && !event.shiftKey && !composing) {
@@ -330,7 +377,38 @@ export function ChatComposer({
           style={{ maxHeight: maxTextareaHeight }}
         />
       </div>
-      {trigger ? (
+      {trigger?.kind === "command" ? (
+        <div id={commandMenuID} role="listbox" aria-label="助手命令" className="absolute inset-x-0 bottom-[calc(100%+0.5rem)] z-40 max-h-64 overflow-y-auto rounded-2xl border border-border bg-popover p-2 text-popover-foreground shadow-popover">
+          {referenceOptions.length ? referenceOptions.map((option, index) => {
+            if (option.kind !== "command") return null;
+            const { command } = option;
+            const Icon = command.icon;
+            const disabled = command.disabled || submitting;
+            return (
+              <button
+                key={option.key}
+                id={`${commandMenuID}-${index}`}
+                type="button"
+                role="option"
+                aria-selected={index === activeReferenceIndex}
+                aria-disabled={disabled}
+                tabIndex={-1}
+                className={cn("flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring", index === activeReferenceIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70", disabled && "opacity-50")}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseMove={() => setActiveReferenceIndex(index)}
+                onClick={() => selectReferenceOption(option)}
+              >
+                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+                  <span className="shrink-0 font-medium text-foreground">{command.label}</span>
+                  <span className="text-xs text-muted-foreground sm:truncate sm:text-sm">{command.description}</span>
+                </span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">/{command.id}</span>
+              </button>
+            );
+          }) : <div className="px-3 py-3 text-sm text-muted-foreground">没有匹配命令</div>}
+        </div>
+      ) : trigger ? (
         <ReferenceMenu
           trigger={trigger}
           agents={filteredAgents}
@@ -376,7 +454,17 @@ export function ChatComposer({
               <Square className="h-4 w-4" />
             </Button>
           ) : null}
-          <Button size="icon" onClick={onSubmit} disabled={submitting || !canSubmit || attachmentBusy} aria-label={submitting ? "发送中" : processing ? "加入队列" : "发送"}>
+          <Button
+            size="icon"
+            onMouseDown={(event) => { if (trigger?.kind === "command") event.preventDefault(); }}
+            onClick={() => {
+              const option = referenceOptions[Math.min(activeReferenceIndex, referenceOptions.length - 1)];
+              if (option?.kind === "command") selectReferenceOption(option);
+              else onSubmit();
+            }}
+            disabled={submitting || !canSubmit || attachmentBusy}
+            aria-label={submitting ? "发送中" : processing ? "加入队列" : "发送"}
+          >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
@@ -933,6 +1021,8 @@ function childIndex(node: Node) {
 }
 
 function resolveTriggerAt(value: string, cursor: number): ReferenceTrigger | undefined {
+  const command = /^\/([^\s/]*)$/.exec(value);
+  if (command && cursor === value.length) return { kind: "command", query: command[1], start: 0, end: cursor };
   const beforeCursor = value.slice(0, cursor);
   const match = /(^|\s)([#@])([^\s#@]*)$/.exec(beforeCursor);
   if (!match) return undefined;
@@ -946,13 +1036,19 @@ function resolveTriggerAt(value: string, cursor: number): ReferenceTrigger | und
 }
 
 interface ReferenceTrigger {
-  kind: "file" | "agent";
+  kind: "file" | "agent" | "command";
   query: string;
   start: number;
   end: number;
 }
 
 type ReferenceOption =
+  | {
+      kind: "command";
+      key: string;
+      label: string;
+      command: ComposerCommand;
+    }
   | {
       kind: "file";
       key: string;

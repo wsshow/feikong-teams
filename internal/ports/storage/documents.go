@@ -7,6 +7,7 @@ type Documents interface {
 	Write(path string, data []byte) error
 	Append(path string, data []byte) error
 	Remove(path string) error
-	RemoveTree(directory string) error
+	// RemoveTree 原子移除目录下的文档，保留显式指定的完整文档路径。
+	RemoveTree(directory string, preserve ...string) error
 	List(directory string) ([]string, error)
 }

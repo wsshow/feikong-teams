@@ -18,6 +18,10 @@ export function getAssistant() {
   return get<SessionSummary>("/api/fkteams/assistant");
 }
 
+export function clearAssistantContext() {
+  return post<{ session_id: string }>("/api/fkteams/assistant/clear", {});
+}
+
 export async function getSession(sessionID: string, signal?: AbortSignal) {
   const session = await get<Omit<SessionDetail, "events" | "queue"> & { events?: unknown; queue?: unknown }>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`, { signal });
   return { ...session, events: decodeChatEvents(session.events), queue: decodeQueueItems(session.queue) };

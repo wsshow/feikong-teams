@@ -55,6 +55,25 @@ func (rt *Runtime) GetAssistantHandler() gin.HandlerFunc {
 	}
 }
 
+// ClearAssistantContextHandler 在无活跃任务时清空常驻助手上下文。
+func (rt *Runtime) ClearAssistantContextHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		const sessionID = domainsession.AssistantID
+		unlock := rt.lockSessionOperation(sessionID)
+		defer unlock()
+		if rt.sessionHasProcessingStream(sessionID) || !rt.Sessions.Remove(sessionID) {
+			Fail(c, http.StatusConflict, "session is active")
+			return
+		}
+		if err := rt.SessionService.ClearAssistantContext(c.Request.Context()); err != nil {
+			FailError(c, err)
+			return
+		}
+		rt.Streams.CancelAndRemove(sessionID)
+		OK(c, gin.H{"session_id": sessionID})
+	}
+}
+
 // ListSessionsHandler 列出所有历史会话
 
 func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {
