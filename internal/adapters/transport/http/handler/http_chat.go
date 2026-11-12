@@ -148,7 +148,7 @@ func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtime
 			return nil
 		},
 		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
-			return rt.finishChat(ctx, recorder, sessionID, userDisplayText, manager, err)
+			return rt.finishChat(ctx, sessionID, userDisplayText, err)
 		},
 	})
 	stream.SetStatus(string(appchat.CompletionStatus(runErr)))

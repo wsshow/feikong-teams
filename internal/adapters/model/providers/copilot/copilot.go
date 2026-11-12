@@ -125,7 +125,7 @@ func (t *copilotTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	// 根据上下文和消息内容判断计费分类
 	if isAgentInitiator(req.Context()) {
-		// agent 行为（记忆提取、摘要压缩、子任务等）：复用当前会话计费
+		// agent 行为（摘要压缩、子任务等）：复用当前会话计费
 		req.Header.Set("X-Initiator", "agent")
 		req.Header.Set("Openai-Intent", "conversation-agent")
 		req.Header.Set("X-Interaction-Type", "conversation-subagent")

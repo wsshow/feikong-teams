@@ -1,662 +1,220 @@
+// Package memory 管理由用户和助手主动维护的长期记忆。
 package memory
 
 import (
-	"context"
-	memoryport "fkteams/internal/ports/memory"
-	"fkteams/internal/runtime/log"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 	"unicode/utf8"
+
+	memoryport "fkteams/internal/ports/memory"
 )
 
 const (
-	defaultMaxEntries   = 500
-	defaultMinScore     = 0.5
-	defaultEvictionDays = 30
-
-	// 提取触发条件
-	minNewUserMessages = 2   // 新增至少 2 条用户消息才触发提取
-	minNewContentLen   = 300 // 新增消息总字符数至少 300
-	extractCooldown    = 3 * time.Minute
-
-	maxConcurrentExtractions = 4
-	maxTrackedSessions       = 4_096
+	defaultMaxEntries = 500
+	defaultMaxChars   = 24000
+	contextMaxChars   = 4000
 )
 
-// Manager 记忆管理器
-type Manager struct {
-	enabled atomic.Bool
-	mu      sync.RWMutex
-	store   memoryport.Store
-	entries []MemoryEntry
-	bm25    *BM25
-	llm     LLMClient
-
-	maxEntries   int
-	minScore     float64
-	evictionDays int
-
-	taskMu           sync.Mutex
-	resetMu          sync.Mutex
-	wg               sync.WaitGroup
-	stopping         bool
-	paused           bool
-	stopOnce         sync.Once
-	stopDone         chan struct{}
-	stopErr          error
-	extractionSlots  chan struct{}
-	extracting       map[string]struct{}
-	extractedOffsets map[string]int
-	lastExtractTime  map[string]time.Time
-	sessionAccess    map[string]time.Time
-	dirty            bool
-}
-
-// Config 记忆管理器可选配置
+// Config 限制记忆容量；达到上限时要求显式整理，不自动淘汰。
 type Config struct {
-	MaxEntries   int
-	MinScore     float64
-	EvictionDays int
+	MaxEntries int
+	MaxChars   int
 }
 
-// NewManager 创建记忆管理器
-func NewManager(store memoryport.Store, llmClient LLMClient, cfg *Config) (*Manager, error) {
+// Usage 描述真实存储容量，便于助手主动整理。
+type Usage struct {
+	Entries       int `json:"entries"`
+	Characters    int `json:"characters"`
+	MaxEntries    int `json:"max_entries"`
+	MaxCharacters int `json:"max_characters"`
+}
+
+// Manager 持有应用实例内唯一的记忆快照；每次变更先持久化再发布。
+// 不启动定时器、后台提取或额外模型调用。
+type Manager struct {
+	enabled    atomic.Bool
+	mu         sync.RWMutex
+	store      memoryport.Store
+	entries    []MemoryEntry
+	bm25       *BM25
+	maxEntries int
+	maxChars   int
+}
+
+// NewManager 加载存储并建立只读检索索引，不依赖模型。
+func NewManager(store memoryport.Store, cfg *Config) (*Manager, error) {
 	if store == nil {
 		return nil, fmt.Errorf("memory store is required")
 	}
-	maxEntries := defaultMaxEntries
-	minScore := defaultMinScore
-	evictionDays := defaultEvictionDays
-	if cfg != nil {
-		if cfg.MaxEntries > 0 {
-			maxEntries = cfg.MaxEntries
-		}
-		if cfg.MinScore > 0 {
-			minScore = cfg.MinScore
-		}
-		if cfg.EvictionDays > 0 {
-			evictionDays = cfg.EvictionDays
-		}
-	}
-	m := &Manager{
-		store:            store,
-		bm25:             &BM25{},
-		llm:              llmClient,
-		maxEntries:       maxEntries,
-		minScore:         minScore,
-		evictionDays:     evictionDays,
-		extractedOffsets: make(map[string]int),
-		lastExtractTime:  make(map[string]time.Time),
-		sessionAccess:    make(map[string]time.Time),
-		extractionSlots:  make(chan struct{}, maxConcurrentExtractions),
-		extracting:       make(map[string]struct{}),
-		stopDone:         make(chan struct{}),
-	}
-	m.enabled.Store(true)
-	// 加载完整快照，避免迁移或调整容量后下一次保存丢失未加载的记忆。
 	entries, err := store.Load(math.MaxInt)
 	if err != nil {
 		return nil, fmt.Errorf("load memory: %w", err)
 	}
-	m.entries = entries
-	m.maxEntries = max(m.maxEntries, len(entries))
+	m := &Manager{store: store, entries: cloneEntries(entries), maxEntries: defaultMaxEntries, maxChars: defaultMaxChars}
+	if cfg != nil {
+		if cfg.MaxEntries > 0 {
+			m.maxEntries = cfg.MaxEntries
+		}
+		if cfg.MaxChars > 0 {
+			m.maxChars = cfg.MaxChars
+		}
+	}
+	m.enabled.Store(true)
 	m.rebuildIndex()
 	return m, nil
 }
 
-// ExtractAndStore 提取记忆并存储
-// 内部根据新增消息数量、内容长度和冷却时间智能判断是否触发 LLM 提取
-func (m *Manager) ExtractAndStore(ctx context.Context, messages []Message, sessionID string) {
-	if !m.enabled.Load() {
-		return
-	}
-	m.mu.RLock()
-	offset := m.extractedOffsets[sessionID]
-	lastTime := m.lastExtractTime[sessionID]
-	llm := m.llm
-	m.mu.RUnlock()
+// SetEnabled 控制模型记忆读写及上下文注入，管理界面仍可维护已有数据。
+func (m *Manager) SetEnabled(enabled bool) { m.enabled.Store(enabled) }
 
-	if offset >= len(messages) {
-		return
-	}
-	newMessages := messages[offset:]
+// Enabled 返回当前是否允许模型使用记忆。
+func (m *Manager) Enabled() bool { return m.enabled.Load() }
 
-	// 智能触发：检查是否值得调用 LLM 提取
-	if !m.shouldExtract(newMessages, lastTime) {
-		return
-	}
-
-	entries, err := Extract(ctx, newMessages, sessionID, llm)
-	if err != nil {
-		log.Warnf("[memory] warn: extract failed: %v", err)
-		return
-	}
-
-	m.mu.Lock()
-	m.setSessionProgressLocked(sessionID, len(messages), time.Now())
-	m.mu.Unlock()
-
-	if len(entries) == 0 {
-		return
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	added, updated := 0, 0
-	for _, entry := range entries {
-		action, idx := m.checkDuplicate(entry)
-		switch action {
-		case actionAdd:
-			m.entries = append(m.entries, entry)
-			added++
-		case actionUpdate:
-			// 保留旧条目的命中统计
-			entry.ID = m.entries[idx].ID
-			entry.HitCount = m.entries[idx].HitCount
-			entry.LastHitAt = m.entries[idx].LastHitAt
-			m.entries[idx] = entry
-			updated++
-		case actionSkip:
-			// 完全重复，跳过
-		}
-	}
-
-	if added > 0 || updated > 0 {
-		// 容量淘汰
-		m.evictIfNeeded()
-		m.rebuildIndex()
-		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: save failed: %v", err)
-		} else {
-			log.Infof("[memory] saved (added: %d, updated: %d, total: %d)",
-				added, updated, len(m.entries))
-		}
-	}
-}
-
-// ExtractAndStoreAsync 原子登记并异步执行一次记忆提取。
-func (m *Manager) ExtractAndStoreAsync(messages []Message, sessionID string) bool {
-	if !m.beginExtraction(sessionID) {
-		return false
-	}
-	copied := append([]Message(nil), messages...)
-	go func() {
-		defer m.finishExtraction(sessionID)
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		m.ExtractAndStore(ctx, copied, sessionID)
-	}()
-	return true
-}
-
-// Search 检索记忆，使用 BM25 bigram 分词进行语义匹配
-func (m *Manager) Search(query string, topK int) []MemoryEntry {
-	if !m.enabled.Load() {
-		return nil
-	}
-	m.mu.RLock()
-	results := m.bm25.Search(query, m.entries, topK)
-
-	var entries []MemoryEntry
-	for _, r := range results {
-		if r.Score >= m.minScore {
-			entries = append(entries, *r.Entry)
-		}
-	}
-	m.mu.RUnlock()
-
-	// 命中统计只操作受限的内存条目，同步更新可避免每次查询创建协程。
-	if len(entries) > 0 {
-		hitIDs := make([]string, len(entries))
-		for i := range entries {
-			hitIDs[i] = entries[i].ID
-		}
-		m.recordHitStats(hitIDs)
-	}
-
-	return entries
-}
-
-// Wait 等待所有异步提取任务完成（用于优雅退出）
-func (m *Manager) Wait(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	m.taskMu.Lock()
-	m.stopping = true
-	m.taskMu.Unlock()
-	m.stopOnce.Do(func() {
-		go func() {
-			m.wg.Wait()
-			m.mu.Lock()
-			defer m.mu.Unlock()
-			if m.dirty {
-				m.stopErr = m.save()
-			}
-			close(m.stopDone)
-		}()
-	})
-	select {
-	case <-m.stopDone:
-		return m.stopErr
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-// ResetLLM 替换底层 LLM 客户端（配置变更后调用，保留已有记忆数据）
-func (m *Manager) ResetLLM(llm LLMClient) {
-	m.resetMu.Lock()
-	defer m.resetMu.Unlock()
-	m.taskMu.Lock()
-	m.paused = true
-	m.taskMu.Unlock()
-	m.wg.Wait()
-	m.mu.Lock()
-	m.llm = llm
-	m.mu.Unlock()
-	m.taskMu.Lock()
-	if !m.stopping {
-		m.paused = false
-	}
-	m.taskMu.Unlock()
-}
-
-// FlushExtract 强制提取指定会话的剩余消息（退出前调用，跳过触发条件检查）
-func (m *Manager) FlushExtract(ctx context.Context, messages []Message, sessionID string) {
-	if !m.enabled.Load() {
-		return
-	}
-	m.mu.RLock()
-	offset := m.extractedOffsets[sessionID]
-	llm := m.llm
-	m.mu.RUnlock()
-
-	if offset >= len(messages) {
-		return
-	}
-	newMessages := messages[offset:]
-
-	// 跳过过短的内容（仍保留基本过滤）
-	totalLen := 0
-	for _, msg := range newMessages {
-		totalLen += len(msg.Content)
-	}
-	if totalLen < 100 {
-		return
-	}
-
-	entries, err := Extract(ctx, newMessages, sessionID, llm)
-	if err != nil {
-		log.Warnf("[memory] warn: flush extract failed: %v", err)
-		return
-	}
-
-	m.mu.Lock()
-	m.setSessionProgressLocked(sessionID, len(messages), time.Time{})
-
-	added := 0
-	for _, entry := range entries {
-		action, idx := m.checkDuplicate(entry)
-		switch action {
-		case actionAdd:
-			m.entries = append(m.entries, entry)
-			added++
-		case actionUpdate:
-			entry.ID = m.entries[idx].ID
-			entry.HitCount = m.entries[idx].HitCount
-			entry.LastHitAt = m.entries[idx].LastHitAt
-			m.entries[idx] = entry
-			added++
-		}
-	}
-
-	if added > 0 {
-		m.evictIfNeeded()
-		m.rebuildIndex()
-		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: flush save failed: %v", err)
-		}
-	}
-	m.mu.Unlock()
-}
-
-func (m *Manager) beginExtraction(sessionID string) bool {
-	m.taskMu.Lock()
-	defer m.taskMu.Unlock()
-	if m.stopping || m.paused || !m.enabled.Load() {
-		return false
-	}
-	if _, exists := m.extracting[sessionID]; exists {
-		return false
-	}
-	select {
-	case m.extractionSlots <- struct{}{}:
-	default:
-		return false
-	}
-	m.extracting[sessionID] = struct{}{}
-	m.wg.Add(1)
-	return true
-}
-
-func (m *Manager) finishExtraction(sessionID string) {
-	m.taskMu.Lock()
-	delete(m.extracting, sessionID)
-	<-m.extractionSlots
-	m.taskMu.Unlock()
-	m.wg.Done()
-}
-
-func (m *Manager) setSessionProgressLocked(sessionID string, offset int, extractedAt time.Time) {
-	if _, exists := m.sessionAccess[sessionID]; !exists && len(m.sessionAccess) >= maxTrackedSessions {
-		var oldestSession string
-		var oldestAccess time.Time
-		found := false
-		for candidate, accessedAt := range m.sessionAccess {
-			if !found || accessedAt.Before(oldestAccess) {
-				oldestSession = candidate
-				oldestAccess = accessedAt
-				found = true
-			}
-		}
-		delete(m.extractedOffsets, oldestSession)
-		delete(m.lastExtractTime, oldestSession)
-		delete(m.sessionAccess, oldestSession)
-	}
-	m.extractedOffsets[sessionID] = offset
-	if !extractedAt.IsZero() {
-		m.lastExtractTime[sessionID] = extractedAt
-	}
-	m.sessionAccess[sessionID] = time.Now()
-}
-
-// List 列出所有记忆条目
+// List 返回独立的记忆快照。
 func (m *Manager) List() []MemoryEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	result := make([]MemoryEntry, len(m.entries))
-	copy(result, m.entries)
+	return cloneEntries(m.entries)
+}
+
+// Count 返回已保存的记忆条数。
+func (m *Manager) Count() int { m.mu.RLock(); defer m.mu.RUnlock(); return len(m.entries) }
+
+// Usage 返回真实存储用量。
+func (m *Manager) Usage() Usage {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return Usage{len(m.entries), entryCharacters(m.entries), m.maxEntries, m.maxChars}
+}
+
+// Search 构造有界背景：全局偏好优先，其余按相关性检索。
+// 场景记忆需显式 Recall，不会自动扩散到其他项目。
+func (m *Manager) Search(query string, topK int) []MemoryEntry {
+	if !m.Enabled() {
+		return nil
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]MemoryEntry, 0)
+	seen := make(map[string]bool)
+	budget := contextMaxChars
+	add := func(e MemoryEntry) {
+		size := entryCharacters([]MemoryEntry{e})
+		if e.Scope != "" || seen[e.ID] || len(result) >= topK || size > budget {
+			return
+		}
+		result = append(result, cloneEntry(e))
+		seen[e.ID] = true
+		budget -= size
+	}
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		e := m.entries[i]
+		if e.Type == Preference || e.Type == Feedback {
+			add(e)
+		}
+	}
+	for _, match := range m.bm25.Search(query, m.entries, 0) {
+		add(*match.Entry)
+	}
 	return result
 }
 
-// Delete 删除指定摘要的记忆条目，返回删除数量
-func (m *Manager) Delete(summary string) int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	summary = strings.TrimSpace(summary)
-	original := len(m.entries)
-	filtered := m.entries[:0]
-	for _, e := range m.entries {
-		if e.Summary != summary {
-			filtered = append(filtered, e)
-		}
+// Recall 分页查询可管理的记忆；scope 非空时仅返回该范围与全局记录。
+func (m *Manager) Recall(query, scope string, offset, limit int) ([]MemoryEntry, int, bool) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
 	}
-	m.entries = filtered
-	deleted := original - len(m.entries)
-
-	if deleted > 0 {
-		m.rebuildIndex()
-		if err := m.save(); err != nil {
-			log.Warnf("[memory] warn: save after delete failed: %v", err)
-		}
+	if offset < 0 {
+		offset = 0
 	}
-	return deleted
-}
-
-// Clear 清空所有记忆
-func (m *Manager) Clear() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.entries = []MemoryEntry{}
-	m.extractedOffsets = make(map[string]int)
-	m.lastExtractTime = make(map[string]time.Time)
-	m.sessionAccess = make(map[string]time.Time)
-	m.rebuildIndex()
-	if err := m.save(); err != nil {
-		log.Warnf("[memory] warn: save after clear failed: %v", err)
-	}
-}
-
-// Count 返回当前记忆条目数
-func (m *Manager) Count() int {
+	query, scope = strings.TrimSpace(query), strings.TrimSpace(scope)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return len(m.entries)
-}
-
-// shouldExtract 智能判断是否需要触发 LLM 提取
-func (m *Manager) shouldExtract(newMessages []Message, lastTime time.Time) bool {
-	// 冷却期内不提取
-	if !lastTime.IsZero() && time.Since(lastTime) < extractCooldown {
-		return false
-	}
-
-	// 统计新增用户消息数和总内容长度
-	userMsgCount := 0
-	totalLen := 0
-	for _, msg := range newMessages {
-		totalLen += len(msg.Content)
-		if msg.Role == "user" {
-			userMsgCount++
+	candidates := make([]MemoryEntry, 0)
+	add := func(e MemoryEntry) {
+		if scope == "" || e.Scope == "" || e.Scope == scope {
+			candidates = append(candidates, e)
 		}
 	}
-
-	return userMsgCount >= minNewUserMessages && totalLen >= minNewContentLen
+	if query == "" {
+		for i := len(m.entries) - 1; i >= 0; i-- {
+			add(m.entries[i])
+		}
+	} else {
+		for _, match := range m.bm25.Search(query, m.entries, 0) {
+			add(*match.Entry)
+		}
+	}
+	offset = min(offset, len(candidates))
+	end := offset + min(limit, len(candidates)-offset)
+	return cloneEntries(candidates[offset:end]), end, end < len(candidates)
 }
 
-// updateHitStats 更新命中统计
-func (m *Manager) updateHitStats(ids []string) {
+// Delete 精确删除摘要匹配项，持久化失败时返回错误且保留原数据。
+func (m *Manager) Delete(summary string) (int, error) {
+	summary = strings.TrimSpace(summary)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	now := time.Now()
-	hitSet := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		hitSet[id] = true
-	}
-
-	for i := range m.entries {
-		if hitSet[m.entries[i].ID] {
-			m.entries[i].HitCount++
-			m.entries[i].LastHitAt = &now
-			m.dirty = true
+	next := make([]MemoryEntry, 0, len(m.entries))
+	for _, e := range m.entries {
+		if e.Summary != summary {
+			next = append(next, e)
 		}
 	}
+	count := len(m.entries) - len(next)
+	if count == 0 {
+		return 0, nil
+	}
+	if err := m.commit(next); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
-func (m *Manager) recordHitStats(ids []string) {
-	m.taskMu.Lock()
-	defer m.taskMu.Unlock()
-	if m.stopping {
-		return
-	}
-	m.updateHitStats(ids)
+// Clear 原子清空记忆；没有后台提取会重新填充历史信息。
+func (m *Manager) Clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.commit([]MemoryEntry{})
 }
 
-type duplicateAction int
-
-const (
-	actionAdd    duplicateAction = iota // 新条目，直接添加
-	actionUpdate                        // 同类型近似条目，更新内容
-	actionSkip                          // 完全重复，跳过
-)
-
-// checkDuplicate 判断新条目与已有条目的关系
-func (m *Manager) checkDuplicate(entry MemoryEntry) (duplicateAction, int) {
-	for i, existing := range m.entries {
-		if existing.Type != entry.Type {
-			continue
-		}
-
-		// Summary 完全相同 → 跳过
-		if existing.Summary == entry.Summary {
-			return actionSkip, i
-		}
-
-		// Summary 包含关系，但需要长度比例限制（避免 "喜欢" 包含 "不喜欢" 的误判）
-		shorter, longer := existing.Summary, entry.Summary
-		if utf8.RuneCountInString(shorter) > utf8.RuneCountInString(longer) {
-			shorter, longer = longer, shorter
-		}
-		shortLen := utf8.RuneCountInString(shorter)
-		longLen := utf8.RuneCountInString(longer)
-		if shortLen > 0 && longLen > 0 && strings.Contains(longer, shorter) {
-			ratio := float64(shortLen) / float64(longLen)
-			if ratio > 0.7 {
-				// 高相似度包含关系 → 用较新的条目更新
-				return actionUpdate, i
-			}
-		}
-
-		// 字符级 Jaccard 相似度检查（捕捉同义表达或轻微变体）
-		if jaccardRunes(existing.Summary, entry.Summary) > 0.6 {
-			return actionUpdate, i
-		}
-
-		// Tags 重叠比例超过 2/3
-		if len(entry.Tags) > 0 && len(existing.Tags) > 0 {
-			overlap := 0
-			existingTags := make(map[string]bool, len(existing.Tags))
-			for _, t := range existing.Tags {
-				existingTags[strings.ToLower(t)] = true
-			}
-			for _, t := range entry.Tags {
-				if existingTags[strings.ToLower(t)] {
-					overlap++
-				}
-			}
-			minLen := len(entry.Tags)
-			if len(existing.Tags) < minLen {
-				minLen = len(existing.Tags)
-			}
-			if float64(overlap)/float64(minLen) > 2.0/3.0 {
-				// 高标签重叠 → 用较新的条目更新
-				return actionUpdate, i
-			}
-		}
+func (m *Manager) commit(next []MemoryEntry) error {
+	if err := m.store.Save(next); err != nil {
+		return fmt.Errorf("save memory: %w", err)
 	}
-	return actionAdd, -1
-}
-
-// jaccardRunes 计算两个字符串的字符级 Jaccard 相似度
-func jaccardRunes(a, b string) float64 {
-	setA := make(map[rune]struct{})
-	for _, r := range a {
-		setA[r] = struct{}{}
-	}
-	setB := make(map[rune]struct{})
-	for _, r := range b {
-		setB[r] = struct{}{}
-	}
-	if len(setA) == 0 && len(setB) == 0 {
-		return 1.0
-	}
-	intersection := 0
-	for r := range setA {
-		if _, ok := setB[r]; ok {
-			intersection++
-		}
-	}
-	union := len(setA) + len(setB) - intersection
-	if union == 0 {
-		return 0
-	}
-	return float64(intersection) / float64(union)
-}
-
-// evictIfNeeded 容量淘汰：超过上限时移除低价值条目
-func (m *Manager) evictIfNeeded() {
-	if len(m.entries) <= m.maxEntries {
-		return
-	}
-
-	now := time.Now()
-	evictionThreshold := now.AddDate(0, 0, -m.evictionDays)
-
-	// 计算每个条目的价值分数
-	type scored struct {
-		index int
-		score float64
-	}
-	scores := make([]scored, len(m.entries))
-	for i, e := range m.entries {
-		// 价值 = hitCount * 时间衰减因子
-		daysSinceCreation := now.Sub(e.CreatedAt).Hours() / 24
-		if daysSinceCreation < 1 {
-			daysSinceCreation = 1
-		}
-		recencyBonus := 1.0
-		if e.LastHitAt != nil {
-			daysSinceHit := now.Sub(*e.LastHitAt).Hours() / 24
-			if daysSinceHit < 7 {
-				recencyBonus = 2.0
-			}
-		}
-		score := (float64(e.HitCount) + 1) * recencyBonus / daysSinceCreation
-		scores[i] = scored{index: i, score: score}
-	}
-
-	// 按价值排序（低价值在前）
-	sort.Slice(scores, func(i, j int) bool { return scores[i].score < scores[j].score })
-
-	// 优先淘汰：从未命中 + 超过 evictionDays 的条目
-	toRemove := make(map[int]bool)
-	for _, s := range scores {
-		if len(m.entries)-len(toRemove) <= m.maxEntries {
-			break
-		}
-		e := m.entries[s.index]
-		if e.HitCount == 0 && e.CreatedAt.Before(evictionThreshold) {
-			toRemove[s.index] = true
-		}
-	}
-
-	// 如果还需要淘汰更多，按价值分数从低到高移除
-	for _, s := range scores {
-		if len(m.entries)-len(toRemove) <= m.maxEntries {
-			break
-		}
-		if !toRemove[s.index] {
-			toRemove[s.index] = true
-		}
-	}
-
-	if len(toRemove) > 0 {
-		filtered := make([]MemoryEntry, 0, len(m.entries)-len(toRemove))
-		for i, e := range m.entries {
-			if !toRemove[i] {
-				filtered = append(filtered, e)
-			}
-		}
-		m.entries = filtered
-		log.Printf("[memory] evicted %d entries, %d remaining", len(toRemove), len(m.entries))
-	}
-}
-
-// rebuildIndex 重建 BM25 索引
-func (m *Manager) rebuildIndex() {
-	m.bm25 = &BM25{}
-	m.bm25.Build(m.entries)
-}
-
-// save 仅在写入成功后清除脏标记，失败时允许下一次同步重试。
-func (m *Manager) save() error {
-	m.dirty = true
-	if err := m.store.Save(m.entries); err != nil {
-		return err
-	}
-	m.dirty = false
+	m.entries = cloneEntries(next)
+	m.rebuildIndex()
 	return nil
 }
 
-// SetEnabled 控制自动检索和提取，保留独立的记忆管理能力。
-func (m *Manager) SetEnabled(enabled bool) { m.enabled.Store(enabled) }
+func (m *Manager) rebuildIndex() { m.bm25 = &BM25{}; m.bm25.Build(m.entries) }
+
+func cloneEntry(e MemoryEntry) MemoryEntry {
+	e.Tags = slices.Clone(e.Tags)
+	if e.LastHitAt != nil {
+		value := *e.LastHitAt
+		e.LastHitAt = &value
+	}
+	return e
+}
+func cloneEntries(entries []MemoryEntry) []MemoryEntry {
+	result := make([]MemoryEntry, len(entries))
+	for i, e := range entries {
+		result[i] = cloneEntry(e)
+	}
+	return result
+}
+func entryCharacters(entries []MemoryEntry) int {
+	size := 0
+	for _, e := range entries {
+		size += utf8.RuneCountInString(e.Scope + e.Summary + e.Detail + strings.Join(e.Tags, ""))
+	}
+	return size
+}

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -456,18 +455,13 @@ type handlerFakeMemory struct {
 	cleared     bool
 }
 
-func (m *handlerFakeMemory) Search(string, int) []memory.MemoryEntry                { return nil }
-func (m *handlerFakeMemory) ExtractAndStoreAsync([]memory.Message, string) bool     { return true }
-func (m *handlerFakeMemory) FlushExtract(context.Context, []memory.Message, string) {}
-func (m *handlerFakeMemory) List() []memory.MemoryEntry                             { return m.entries }
-func (m *handlerFakeMemory) Delete(summary string) int {
+func (m *handlerFakeMemory) Search(string, int) []memory.MemoryEntry { return nil }
+func (m *handlerFakeMemory) List() []memory.MemoryEntry              { return m.entries }
+func (m *handlerFakeMemory) Delete(summary string) (int, error) {
 	m.deleteCalls++
-	return m.deleted[summary]
+	return m.deleted[summary], nil
 }
-func (m *handlerFakeMemory) Count() int { return m.count }
-func (m *handlerFakeMemory) Clear()     { m.cleared = true }
-func (m *handlerFakeMemory) ResetLLM(memory.LLMClient) {
-}
-func (m *handlerFakeMemory) Wait(context.Context) error { return nil }
+func (m *handlerFakeMemory) Count() int   { return m.count }
+func (m *handlerFakeMemory) Clear() error { m.cleared = true; return nil }
 
 var _ appstate.MemoryManager = (*handlerFakeMemory)(nil)

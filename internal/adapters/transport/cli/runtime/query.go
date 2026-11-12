@@ -374,8 +374,6 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		e.view.Flush()
 	}
 
-	appchat.ExtractMemoryAsync(e.memory, eventlog.ConvertMemoryMessages(recorder), session.sessionID())
-
 	elapsed := time.Since(startTime).Round(time.Millisecond)
 	e.view.Done(elapsed)
 	return nil
@@ -466,17 +464,6 @@ func (s *Session) SaveChatHistoryToHTML() (string, error) {
 		return "", fmt.Errorf("转换聊天历史到 HTML 失败: %w", err)
 	}
 	return htmlFilePath, nil
-}
-
-// FlushMemoryWithManager 退出前强制提取当前会话的剩余记忆。
-func (s *Session) FlushMemoryWithManager(ctx context.Context, manager appstate.MemoryManager) {
-	if manager == nil {
-		return
-	}
-	recorder := s.recorder()
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	appchat.FlushMemory(ctx, manager, eventlog.ConvertMemoryMessages(recorder), s.sessionID())
 }
 
 // SaveHistory 保存当前 CLI 实例的可恢复会话历史。

@@ -14,6 +14,8 @@
     {
       "id": "memory-example",
       "type": "fact",
+      "version": 1,
+      "scope": "",
       "summary": "记忆摘要",
       "detail": "记忆内容",
       "tags": [],
@@ -24,7 +26,7 @@
 }
 ```
 
-> 默认应用即使关闭自动记忆提取，仍提供手动管理。嵌入模式未装配记忆服务时返回空数组 `[]`。
+> 默认应用即使关闭模型记忆读写，仍提供手动管理。嵌入模式未装配记忆服务时返回空数组 `[]`。
 
 ---
 
@@ -90,9 +92,9 @@
 
 ## PUT /api/fkteams/memory
 
-新增或编辑记忆。请求字段为 `id`（新增时省略）、`type`、`summary`、`detail` 和字符串数组 `tags`。类型支持 preference、fact、feedback、lesson、decision、insight、experience。
+新增或编辑记忆。请求字段为 `id`（新增时省略）、`version`（更新时必填）、`type`、`scope`、`summary`、`detail` 和字符串数组 `tags`。类型支持 preference、fact、feedback、lesson、decision、insight、experience。
 
-成功返回完整条目，编辑保留原 ID、创建时间、来源会话和命中统计。无效字段返回 400，不存在的 ID 返回 404，存储失败返回 500，服务不可用返回 503。只有持久化成功后才发布修改。
+成功返回完整条目，编辑保留原 ID、创建时间、来源会话和命中统计。无效字段返回 400，不存在的 ID 返回 404，版本冲突返回 409，存储失败返回 500，服务不可用返回 503。只有持久化成功后才发布修改。
 
 ## DELETE /api/fkteams/memory/:id
 

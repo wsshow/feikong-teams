@@ -53,6 +53,8 @@ func DeleteMemoryEntryHandler(state *appstate.State) gin.HandlerFunc {
 
 func memoryEditError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, appmemory.ErrConflict):
+		Fail(c, http.StatusConflict, "记忆已变更，请刷新后再修改")
 	case errors.Is(err, appmemory.ErrInvalidEntry):
 		Fail(c, http.StatusBadRequest, "记忆字段无效或已达到容量上限")
 	case errors.Is(err, appmemory.ErrEntryNotFound):

@@ -463,7 +463,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			return request(buildQueuedChatInput(recorder, queued, manager)), nil
 		},
 		Finish: func(runErr error) error {
-			return rt.finishChat(context.WithoutCancel(ctx), recorder, sessionID, currentDisplayText, manager, runErr)
+			return rt.finishChat(context.WithoutCancel(ctx), sessionID, currentDisplayText, runErr)
 		},
 	})
 	// 任务退出时只发布已经落盘的展示事实，避免客户端维护另一套收尾规则。

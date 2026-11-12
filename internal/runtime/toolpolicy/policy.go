@@ -75,6 +75,11 @@ var toolPolicies = map[string]ToolPolicy{
 	"schedule_cancel": destructivePolicy("", false),
 	"schedule_delete": destructivePolicy("", false),
 
+	// 长期记忆
+	"memory_recall": readOnlyPolicy("", false),
+	"memory_save":   destructivePolicy("", false),
+	"memory_forget": destructivePolicy("", false),
+
 	// TODO 工具
 	"todo_list":         readOnlyPolicy("", false),
 	"todo_add":          destructivePolicy("", false),

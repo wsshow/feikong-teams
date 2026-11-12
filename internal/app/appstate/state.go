@@ -3,7 +3,6 @@ package appstate
 import (
 	"context"
 	domainmemory "fkteams/internal/domain/memory"
-	memoryport "fkteams/internal/ports/memory"
 	"fkteams/internal/runtime/log"
 	"fkteams/internal/runtime/resources"
 	"sync"
@@ -15,8 +14,6 @@ type contextKey struct{}
 type MemoryManager interface {
 	MemorySearcher
 	MemoryCatalog
-	MemoryExtractor
-	MemoryLifecycle
 }
 
 // MemorySearcher 提供模型上下文注入需要的记忆检索能力。
@@ -27,21 +24,9 @@ type MemorySearcher interface {
 // MemoryCatalog 提供管理端需要的记忆维护能力。
 type MemoryCatalog interface {
 	List() []domainmemory.MemoryEntry
-	Delete(summary string) int
+	Delete(summary string) (int, error)
 	Count() int
-	Clear()
-}
-
-// MemoryExtractor 提供对话结束后的记忆提取能力。
-type MemoryExtractor interface {
-	ExtractAndStoreAsync(messages []domainmemory.Message, sessionID string) bool
-	FlushExtract(ctx context.Context, messages []domainmemory.Message, sessionID string)
-}
-
-// MemoryLifecycle 提供记忆服务生命周期能力。
-type MemoryLifecycle interface {
-	ResetLLM(llm memoryport.LLMClient)
-	Wait(ctx context.Context) error
+	Clear() error
 }
 
 // State 保存单个应用实例的运行时依赖。

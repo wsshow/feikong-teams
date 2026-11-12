@@ -13,6 +13,6 @@ func DefaultDefinition() common.Definition {
 		Description: "个人助手，结合用户背景处理问题、资料与任务，持续推进并交付结果。",
 		Instruction: assistantPrompt + "\n" + openUIPrompt,
 		Profile:     common.ProfileFull,
-		ToolNames:   []string{"file", "command", "search", "fetch", "ask", "conversations", "assistant_identity", "scheduler"},
+		ToolNames:   []string{"file", "command", "search", "fetch", "ask", "conversations", "assistant_identity", "scheduler", "memory"},
 	}
 }

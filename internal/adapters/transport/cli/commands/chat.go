@@ -147,16 +147,6 @@ func runChat(ctx context.Context, cmd *ucli.Command, opts Options, agentName str
 				session.PrintResumeHint()
 			}
 		}
-		if cfg.MemoryEnabled && query != "" && cmd.String("format") != "json" {
-			pterm.Info.Println("正在提取本次对话的记忆，请稍候...")
-			if session != nil {
-				session.FlushMemoryWithManager(ctx, state.Memory())
-			}
-		} else if cfg.MemoryEnabled {
-			if session != nil {
-				session.FlushMemoryWithManager(ctx, state.Memory())
-			}
-		}
 		return saveErr
 	})
 

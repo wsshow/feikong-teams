@@ -1,16 +1,12 @@
 package handler
 
 import (
-	"context"
 	javascripthooks "fkteams/internal/adapters/hooks/javascript"
-	memorymodel "fkteams/internal/adapters/model/memory"
 	javascripttool "fkteams/internal/adapters/tools/javascript"
 	"fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools"
-	memoryport "fkteams/internal/ports/memory"
-	modelregistry "fkteams/internal/runtime/model"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -158,12 +154,6 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 			oldCfg.Server.Auth.Secret != newCfg.Server.Auth.Secret ||
 			oldCfg.Server.Auth.Enabled != newCfg.Server.Auth.Enabled
 
-		// 先构建可能失败的依赖，再发布配置。
-		memoryClient, err := prepareMemoryLLM(c.Request.Context(), &newCfg, state, rt.ModelRegistry)
-		if err != nil {
-			Fail(c, http.StatusInternalServerError, err.Error())
-			return
-		}
 		// 保存并重载
 		if err := config.Save(&newCfg); err != nil {
 			Fail(c, http.StatusInternalServerError, "failed to save config: "+err.Error())
@@ -182,7 +172,6 @@ func (rt *Runtime) UpdateConfigHandlerWithState(state *appstate.State) gin.Handl
 			rt.ResetChannels()
 		}
 		if manager := memoryFromState(state); manager != nil {
-			manager.ResetLLM(memoryClient)
 			if configurable, ok := manager.(interface{ SetEnabled(bool) }); ok {
 				configurable.SetEnabled(newCfg.Memory.Enabled)
 			}
@@ -296,26 +285,6 @@ func restoreAgentSSHPasswords(items []config.AgentConfig, oldCfg *config.Config)
 			items[i].SSH.Password = oldItem.SSH.Password
 		}
 	}
-}
-
-// prepareMemoryLLM 在发布配置之前构建新的记忆模型，失败时保留当前依赖。
-func prepareMemoryLLM(ctx context.Context, cfg *config.Config, state *appstate.State, registry *modelregistry.Registry) (memoryport.LLMClient, error) {
-	if memoryFromState(state) == nil || !cfg.Memory.Enabled {
-		return nil, nil
-	}
-	modelCfg := cfg.ResolveDefaultModel(config.ModelUseChat)
-	if registry == nil || modelCfg == nil {
-		return nil, fmt.Errorf("memory model registry or default chat model is not configured")
-	}
-	chatModel, err := registry.NewChatModel(ctx, &modelregistry.Config{
-		Provider: modelregistry.Type(modelCfg.Provider), APIKey: modelCfg.APIKey,
-		BaseURL: modelCfg.BaseURL, Model: modelCfg.Model, ExtraHeaders: modelCfg.ParseExtraHeaders(),
-		SupportsVision: modelCfg.SupportsVision,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prepare memory model: %w", err)
-	}
-	return memorymodel.NewLLMClient(chatModel)
 }
 
 // GetToolNamesHandler 获取可用工具名列表

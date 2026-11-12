@@ -148,7 +148,7 @@ test("failed memory saves keep the modal and draft until cancelled", async () =>
   const dialog = container.querySelector("dialog[open]")!;
   await act(async () => dialog.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
   expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("存储失败");
-  expect(dialog.querySelector("input")?.value).toBe(entries[0].summary);
+  expect(dialog.querySelector<HTMLInputElement>('[aria-label="摘要"]')?.value).toBe(entries[0].summary);
   const cancel = [...dialog.querySelectorAll("button")].find((item) => item.textContent === "取消")!;
   await click(cancel);
   expect(container.querySelector("dialog[open]")).toBeNull();

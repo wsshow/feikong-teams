@@ -27,6 +27,7 @@ import (
 	"fkteams/internal/app/tools/ask"
 	assistanttools "fkteams/internal/app/tools/assistant"
 	"fkteams/internal/app/tools/conversations"
+	memorytools "fkteams/internal/app/tools/memory"
 	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
 )
@@ -65,6 +66,10 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 	registry.RegisterMCPProvider(mcpProvider)
 
 	registrations := []apptools.ToolGroupRegistration{
+		{
+			Info:    apptools.ToolGroupInfo{Name: "memory", DisplayName: "长期记忆", Description: "查询、保存、纠正和忘记用户明确指定的长期偏好与背景。", Category: "协作", Builtin: true, IncludedTools: []string{"memory_recall", "memory_save", "memory_forget"}},
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) { return memorytools.GetTools() },
+		},
 		{
 			Info: apptools.ToolGroupInfo{
 				Name: "assistant_identity", DisplayName: "助手身份", Description: "查询和修改常驻助手名称。",

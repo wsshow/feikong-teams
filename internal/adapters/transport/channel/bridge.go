@@ -457,12 +457,10 @@ func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []
 			rc.flush()
 			store := eventlog.NewChatSessionStore(b.historyDir, b.sessions.Documents)
 			lifecycleErr := appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
-				SessionID:      sessionID,
-				TitleSource:    combinedInput,
-				DefaultTitle:   "通道会话",
-				Error:          err,
-				Memory:         b.memoryManager(),
-				MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
+				SessionID:    sessionID,
+				TitleSource:  combinedInput,
+				DefaultTitle: "通道会话",
+				Error:        err,
 			})
 			if !rc.replied {
 				_ = b.manager.SendText(ctx, channelName, chatID, "...")

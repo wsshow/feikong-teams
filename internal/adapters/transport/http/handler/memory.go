@@ -46,7 +46,11 @@ func DeleteMemoryHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 
-		deleted := manager.Delete(req.Summary)
+		deleted, err := manager.Delete(req.Summary)
+		if err != nil {
+			memoryEditError(c, err)
+			return
+		}
 		if deleted > 0 {
 			OK(c, gin.H{"deleted": deleted})
 		} else {
@@ -69,7 +73,10 @@ func ClearMemoryHandlerWithState(state *appstate.State) gin.HandlerFunc {
 			return
 		}
 		count := manager.Count()
-		manager.Clear()
+		if err := manager.Clear(); err != nil {
+			memoryEditError(c, err)
+			return
+		}
 		OK(c, gin.H{"cleared": count})
 	}
 }

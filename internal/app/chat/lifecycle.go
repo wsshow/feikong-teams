@@ -3,11 +3,9 @@ package chat
 import (
 	"context"
 	"errors"
-	"fkteams/internal/app/appstate"
 	"fkteams/internal/domain/session"
 
 	"fkteams/internal/domain/event"
-	domainmemory "fkteams/internal/domain/memory"
 )
 
 // SessionHistory 描述聊天用例需要编排的历史记录能力。
@@ -41,21 +39,16 @@ type MetadataStore interface {
 	UpdateMetadata(ctx context.Context, update MetadataUpdate) error
 }
 
-// MemoryExtractor 是对话结束后长期记忆提取需要的最小能力。
-type MemoryExtractor = appstate.MemoryExtractor
-
-// FinishRequest 描述历史提交后的会话状态与记忆更新。
+// FinishRequest 描述历史提交后的会话状态更新。
 type FinishRequest struct {
-	SessionID      string
-	TitleSource    string
-	SuccessStatus  session.Status
-	DefaultTitle   string
-	Error          error
-	Memory         MemoryExtractor
-	MemoryMessages []domainmemory.Message
+	SessionID     string
+	TitleSource   string
+	SuccessStatus session.Status
+	DefaultTitle  string
+	Error         error
 }
 
-// SessionLifecycle 在回合历史提交后更新会话 metadata 并触发记忆提取。
+// SessionLifecycle 在回合历史提交后更新会话 metadata。
 type SessionLifecycle struct {
 	metadata MetadataStore
 }
@@ -169,9 +162,6 @@ func (l *SessionLifecycle) Finish(ctx context.Context, req FinishRequest) error 
 	}); err != nil {
 		return finalizationFailure(err)
 	}
-	if status == session.StatusCompleted {
-		ExtractMemoryAsync(req.Memory, req.MemoryMessages, req.SessionID)
-	}
 	return nil
 }
 
@@ -199,22 +189,4 @@ func (l *SessionLifecycle) updateMetadata(ctx context.Context, update MetadataUp
 		update.DefaultTitle = "未命名会话"
 	}
 	return l.metadata.UpdateMetadata(ctx, update)
-}
-
-func ExtractMemoryAsync(manager MemoryExtractor, messages []domainmemory.Message, sessionID string) {
-	if manager == nil || len(messages) == 0 {
-		return
-	}
-	copied := append([]domainmemory.Message(nil), messages...)
-	manager.ExtractAndStoreAsync(copied, sessionID)
-}
-
-func FlushMemory(ctx context.Context, manager MemoryExtractor, messages []domainmemory.Message, sessionID string) {
-	if manager == nil || len(messages) == 0 {
-		return
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	manager.FlushExtract(ctx, messages, sessionID)
 }

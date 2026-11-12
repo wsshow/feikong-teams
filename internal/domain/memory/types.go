@@ -48,6 +48,9 @@ func TypeOrder() []TypeMeta {
 // MemoryEntry 单条长期记忆。
 type MemoryEntry struct {
 	ID        string     `json:"id"`
+	Scope     string     `json:"scope,omitempty"`
+	Version   uint64     `json:"version"`
+	UpdatedAt time.Time  `json:"updated_at"`
 	Type      MemoryType `json:"type"`
 	Summary   string     `json:"summary"`
 	Detail    string     `json:"detail"`
@@ -56,10 +59,4 @@ type MemoryEntry struct {
 	CreatedAt time.Time  `json:"created_at"`
 	HitCount  int        `json:"hit_count"`
 	LastHitAt *time.Time `json:"last_hit_at,omitempty"`
-}
-
-// Message 是记忆提取用的精简对话消息。
-type Message struct {
-	Role    string
-	Content string
 }

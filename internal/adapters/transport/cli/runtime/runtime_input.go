@@ -377,7 +377,11 @@ func (m runtimeModel) deleteRuntimeMemory(summary string) runtimeModel {
 		m.appendBlock(runtimeBlockError, "删除长期记忆失败", "长期记忆未启用，请在 config.toml 中设置 [memory] enabled = true")
 		return m
 	}
-	deleted := manager.Delete(summary)
+	deleted, err := manager.Delete(summary)
+	if err != nil {
+		m.appendBlock(runtimeBlockError, "删除长期记忆失败", err.Error())
+		return m
+	}
 	if deleted == 0 {
 		m.appendBlock(runtimeBlockSystem, "长期记忆", "未找到匹配的记忆条目: "+summary)
 		return m
@@ -397,7 +401,10 @@ func (m runtimeModel) clearRuntimeMemory() runtimeModel {
 		m.appendBlock(runtimeBlockSystem, "长期记忆", "当前没有记忆条目")
 		return m
 	}
-	manager.Clear()
+	if err := manager.Clear(); err != nil {
+		m.appendBlock(runtimeBlockError, "清空长期记忆失败", err.Error())
+		return m
+	}
 	m.appendBlock(runtimeBlockSystem, "长期记忆", fmt.Sprintf("已清空 %d 条长期记忆", count))
 	return m
 }

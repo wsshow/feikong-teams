@@ -28,7 +28,7 @@ func (s *editorStore) Save(entries []domainmemory.MemoryEntry) error {
 
 func TestMemoryEditorReportsPersistenceFailure(t *testing.T) {
 	store := &editorStore{}
-	manager, err := appmemory.NewManager(store, nil, nil)
+	manager, err := appmemory.NewManager(store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

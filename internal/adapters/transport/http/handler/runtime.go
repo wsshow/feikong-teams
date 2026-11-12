@@ -17,7 +17,6 @@ import (
 	appagent "fkteams/internal/app/agent"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appdata"
-	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/config"
@@ -332,10 +331,9 @@ func (rt *Runtime) updateSessionExecutionMetadata(sessionID, userInput, mode, cu
 }
 
 // finishChat 将运行结果映射为会话状态，并透传持久化失败。
-func (rt *Runtime) finishChat(ctx context.Context, recorder *eventlog.HistoryRecorder, sessionID, userInput string, manager appstate.MemoryManager, runErr error) error {
+func (rt *Runtime) finishChat(ctx context.Context, sessionID, userInput string, runErr error) error {
 	return rt.chatLifecycle().Finish(context.WithoutCancel(ctx), appchat.FinishRequest{
 		SessionID: sessionID, TitleSource: userInput,
-		Error:  runErr,
-		Memory: manager, MemoryMessages: eventlog.ConvertMemoryMessages(recorder),
+		Error: runErr,
 	})
 }

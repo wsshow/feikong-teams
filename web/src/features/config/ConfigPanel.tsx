@@ -225,7 +225,7 @@ export function ServerTab({ draft, updateDraft }: EditorProps) {
 export function MemoryTab({ draft, updateDraft }: EditorProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
-    <ConfigEditCard editorKey="memory" title="长期记忆" description="控制长期记忆的检索、注入和提取。" badges={[draft.memory?.enabled ? "已启用" : "未启用"]}>
+    <ConfigEditCard editorKey="memory" title="长期记忆" description="允许助手主动读写长期记忆，并在相关对话中使用。" badges={[draft.memory?.enabled ? "已启用" : "未启用"]}>
         <ToggleField
           label="启用长期记忆"
           checked={Boolean(draft.memory?.enabled)}

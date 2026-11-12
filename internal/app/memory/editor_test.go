@@ -9,7 +9,7 @@ import (
 
 func TestEditorPersistsBeforePublishing(t *testing.T) {
 	store := &memoryStoreFake{}
-	manager := newTestManager(t, store, nil, nil)
+	manager := newTestManager(t, store, nil)
 	entry, err := manager.SaveEntry(EditRequest{Type: domainmemory.Fact, Summary: "原始内容", Detail: "详情"})
 	if err != nil {
 		t.Fatal(err)
@@ -17,7 +17,7 @@ func TestEditorPersistsBeforePublishing(t *testing.T) {
 	before := manager.List()
 	failure := errors.New("storage unavailable")
 	store.saveErr = failure
-	if _, err := manager.SaveEntry(EditRequest{ID: entry.ID, Type: domainmemory.Fact, Summary: "修改内容"}); !errors.Is(err, failure) {
+	if _, err := manager.SaveEntry(EditRequest{ID: entry.ID, Version: entry.Version, Type: domainmemory.Fact, Summary: "修改内容"}); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
 	if err := manager.DeleteEntry(entry.ID); !errors.Is(err, failure) {
@@ -27,7 +27,7 @@ func TestEditorPersistsBeforePublishing(t *testing.T) {
 		t.Fatal("failed write changed visible memory")
 	}
 	store.saveErr = nil
-	saved, err := manager.SaveEntry(EditRequest{ID: entry.ID, Type: domainmemory.Fact, Summary: "修改内容"})
+	saved, err := manager.SaveEntry(EditRequest{ID: entry.ID, Version: entry.Version, Type: domainmemory.Fact, Summary: "修改内容"})
 	if err != nil || saved.ID != entry.ID || saved.CreatedAt != entry.CreatedAt {
 		t.Fatalf("identity changed: %#v, %v", saved, err)
 	}
@@ -40,7 +40,7 @@ func TestEditorPersistsBeforePublishing(t *testing.T) {
 }
 
 func TestEditorRejectsInvalidAndUnknownEntries(t *testing.T) {
-	manager := newTestManager(t, &memoryStoreFake{}, nil, nil)
+	manager := newTestManager(t, &memoryStoreFake{}, nil)
 	for _, req := range []EditRequest{{Type: domainmemory.Fact}, {Type: "unknown", Summary: "summary"}} {
 		if _, err := manager.SaveEntry(req); !errors.Is(err, ErrInvalidEntry) {
 			t.Fatal(err)
@@ -56,7 +56,7 @@ func TestEditorRejectsInvalidAndUnknownEntries(t *testing.T) {
 
 func TestDisabledAutomaticMemoryStillAllowsManagement(t *testing.T) {
 	store := &memoryStoreFake{}
-	manager := newTestManager(t, store, nil, nil)
+	manager := newTestManager(t, store, nil)
 	manager.SetEnabled(false)
 	entry, err := manager.SaveEntry(EditRequest{Type: domainmemory.Fact, Summary: "manual memory"})
 	if err != nil {
@@ -74,12 +74,12 @@ func TestDisabledAutomaticMemoryStillAllowsManagement(t *testing.T) {
 }
 
 func TestManagerPreservesSnapshotBeyondConfiguredCapacity(t *testing.T) {
-	store := &memoryStoreFake{entries: []MemoryEntry{{ID: "one", Type: domainmemory.Fact, Summary: "one"}, {ID: "two", Type: domainmemory.Fact, Summary: "two"}}}
-	manager := newTestManager(t, store, nil, &Config{MaxEntries: 1})
+	store := &memoryStoreFake{entries: []MemoryEntry{{ID: "one", Version: 1, Type: domainmemory.Fact, Summary: "one"}, {ID: "two", Version: 1, Type: domainmemory.Fact, Summary: "two"}}}
+	manager := newTestManager(t, store, &Config{MaxEntries: 1})
 	if manager.Count() != 2 {
 		t.Fatal("stored memory was truncated")
 	}
-	if _, err := manager.SaveEntry(EditRequest{ID: "one", Type: domainmemory.Fact, Summary: "edited"}); err != nil {
+	if _, err := manager.SaveEntry(EditRequest{ID: "one", Version: 1, Type: domainmemory.Fact, Summary: "edited"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(store.entries) != 2 {
