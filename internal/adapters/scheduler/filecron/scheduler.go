@@ -418,7 +418,7 @@ func (s *Scheduler) Start() {
 	}()
 }
 
-// recoverStaleRunningTasks 将上次中断遗留的 running 状态任务恢复为 pending
+// recoverStaleRunningTasks 将中断任务标为失败，避免重复执行副作用。
 func (s *Scheduler) recoverStaleRunningTasks() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -432,9 +432,14 @@ func (s *Scheduler) recoverStaleRunningTasks() {
 	changed := false
 	for i := range tasks.Tasks {
 		if tasks.Tasks[i].Status == domainschedule.StatusRunning {
-			tasks.Tasks[i].Status = domainschedule.StatusPending
+			tasks.Tasks[i].Status = domainschedule.StatusFailed
+			tasks.Tasks[i].LastRunStatus = domainschedule.StatusFailed
+			tasks.Tasks[i].NotificationPending = true
+			tasks.Tasks[i].Interrupted = true
+			now := time.Now()
+			tasks.Tasks[i].LastRunAt = &now
 			changed = true
-			log.Printf("[scheduler] recover stale task: %s → pending", tasks.Tasks[i].ID)
+			log.Printf("[scheduler] interrupted task requires verification: %s", tasks.Tasks[i].ID)
 		}
 	}
 
@@ -668,14 +673,23 @@ func (s *Scheduler) executeTask(ctx context.Context, parentCtx context.Context, 
 		if tasks.Tasks[i].ID == taskID {
 			now := time.Now()
 			tasks.Tasks[i].LastRunAt = &now
+			tasks.Tasks[i].NotificationPending = true
+			tasks.Tasks[i].Interrupted = false
+			tasks.Tasks[i].LastRunStatus = domainschedule.StatusCompleted
+			if err != nil {
+				tasks.Tasks[i].LastRunStatus = domainschedule.StatusFailed
+			}
 
 			if tasks.Tasks[i].Status == domainschedule.StatusCancelled {
+				tasks.Tasks[i].LastRunStatus = domainschedule.StatusCancelled
 				log.Printf("[scheduler] task cancelled: %s", taskID)
 			} else if tasks.Tasks[i].Status != domainschedule.StatusRunning {
 				log.Printf("[scheduler] task status changed during execution: taskID=%s, status=%s", taskID, tasks.Tasks[i].Status)
 			} else if parentCtx.Err() != nil {
-				tasks.Tasks[i].Status = domainschedule.StatusPending
-				log.Printf("[scheduler] task interrupted by shutdown, returning to pending: %s", taskID)
+				tasks.Tasks[i].Status = domainschedule.StatusFailed
+				tasks.Tasks[i].LastRunStatus = domainschedule.StatusFailed
+				tasks.Tasks[i].Interrupted = true
+				log.Printf("[scheduler] interrupted task requires verification: %s", taskID)
 			} else if err != nil {
 				tasks.Tasks[i].Status = domainschedule.StatusFailed
 				log.Printf("[scheduler] task failed: %s, err=%v", taskID, err)
@@ -732,7 +746,7 @@ func (s *Scheduler) cleanupExpiredTasks() {
 			if refTime == nil {
 				refTime = &t.CreatedAt
 			}
-			if refTime.Before(cutoff) {
+			if !t.NotificationPending && refTime.Before(cutoff) {
 				removedIDs = append(removedIDs, t.ID)
 				continue
 			}
@@ -1151,4 +1165,31 @@ func ValidateSnapshot(data []byte) error {
 		return err
 	}
 	return (&Scheduler{}).validateTaskList(&list)
+}
+
+// AcknowledgeResult 只确认指定运行的通知，保存失败可重试，不重放实际任务。
+func (s *Scheduler) AcknowledgeResult(ctx context.Context, taskID string, runAt time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tasks, err := s.loadTasks()
+	if err != nil {
+		return err
+	}
+	for i, task := range tasks.Tasks {
+		if task.ID != taskID {
+			continue
+		}
+		if task.LastRunAt == nil || !task.LastRunAt.Equal(runAt) {
+			return apperror.New(apperror.CodeConflict, "a newer task result is available")
+		}
+		if !task.NotificationPending {
+			return nil
+		}
+		tasks.Tasks[i].NotificationPending = false
+		return s.saveTasks(tasks)
+	}
+	return apperror.New(apperror.CodeNotFound, "task not found")
 }

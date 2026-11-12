@@ -13,6 +13,7 @@ import (
 
 	domainschedule "fkteams/internal/domain/schedule"
 	schedulerport "fkteams/internal/ports/scheduler"
+	storageport "fkteams/internal/ports/storage"
 )
 
 func newTestScheduler(t *testing.T) *Scheduler {
@@ -345,12 +346,12 @@ func TestTimingRecoveryExecuteAndCleanup(t *testing.T) {
 		t.Fatalf("save running task: %v", err)
 	}
 	s.recoverStaleRunningTasks()
-	pending, err := s.ListTasks(context.Background(), domainschedule.StatusPending)
+	failed, err := s.ListTasks(context.Background(), domainschedule.StatusFailed)
 	if err != nil {
-		t.Fatalf("ListTasks pending: %v", err)
+		t.Fatal(err)
 	}
-	if len(pending) != 1 || pending[0].ID != "running" {
-		t.Fatalf("recovered tasks = %#v", pending)
+	if len(failed) != 1 || failed[0].ID != "running" || !failed[0].Interrupted || !failed[0].NotificationPending {
+		t.Fatalf("interrupted tasks must not replay: %+v", failed)
 	}
 
 	old := now.Add(-taskResultTTL - time.Hour)
@@ -484,4 +485,87 @@ func (e *blockingTaskExecutor) Execute(ctx context.Context, _ string, _ string) 
 
 func (e *blockingTaskExecutor) Release() {
 	e.releaseOnce.Do(func() { close(e.release) })
+}
+
+func TestResultNotificationSurvivesRestartAndRejectsStaleAcknowledgment(t *testing.T) {
+	s := newTestScheduler(t)
+	ctx := context.Background()
+	old := time.Now().Add(-taskResultTTL - time.Hour)
+	newer := old.Add(time.Minute)
+	list := &domainschedule.TaskList{Tasks: []domainschedule.Task{{ID: "result", Task: "report", Status: domainschedule.StatusCompleted, OneTime: true, CreatedAt: old, LastRunAt: &newer, LastRunStatus: domainschedule.StatusCompleted, NotificationPending: true}}}
+	if err := s.saveTasks(list); err != nil {
+		t.Fatal(err)
+	}
+	s.cleanupExpiredTasks()
+	restarted, err := NewScheduler(filepath.Dir(s.filePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := restarted.ListTasks(ctx, "")
+	if err != nil || len(tasks) != 1 || !tasks[0].NotificationPending {
+		t.Fatalf("lost pending result: %+v, %v", tasks, err)
+	}
+	if err := restarted.AcknowledgeResult(ctx, "result", old); err == nil {
+		t.Fatal("stale acknowledgment accepted")
+	}
+	tasks, _ = restarted.ListTasks(ctx, "")
+	if !tasks[0].NotificationPending {
+		t.Fatal("stale acknowledgment cleared latest result")
+	}
+	for range 2 {
+		if err := restarted.AcknowledgeResult(ctx, "result", newer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tasks, _ = restarted.ListTasks(ctx, "")
+	if tasks[0].NotificationPending || tasks[0].Status != domainschedule.StatusCompleted {
+		t.Fatalf("ack changed execution: %+v", tasks[0])
+	}
+	restarted.cleanupExpiredTasks()
+	tasks, _ = restarted.ListTasks(ctx, "")
+	if len(tasks) != 0 {
+		t.Fatal("acknowledged expired result not cleaned")
+	}
+}
+
+func TestShutdownDoesNotReplayPossiblyCompletedWork(t *testing.T) {
+	s := newTestScheduler(t)
+	now := time.Now()
+	if err := s.saveTasks(&domainschedule.TaskList{Tasks: []domainschedule.Task{{ID: "interrupted", Task: "external action", Status: domainschedule.StatusRunning, OneTime: true, CreatedAt: now}}}); err != nil {
+		t.Fatal(err)
+	}
+	parent, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.executeTask(context.Background(), parent, "interrupted", "external action", "", true, fakeTaskExecutor{})
+	tasks, err := s.ListTasks(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := tasks[0]
+	if task.Status != domainschedule.StatusFailed || !task.Interrupted || !task.NotificationPending || task.LastRunStatus != domainschedule.StatusFailed {
+		t.Fatalf("unsafe recovery state: %+v", task)
+	}
+}
+
+type failingNotificationDocuments struct{ storageport.Documents }
+
+func (failingNotificationDocuments) Read(path string) ([]byte, error) { return os.ReadFile(path) }
+func (failingNotificationDocuments) Write(string, []byte) error {
+	return errors.New("storage unavailable")
+}
+
+func TestAcknowledgmentPersistenceFailureKeepsPendingNotification(t *testing.T) {
+	s := newTestScheduler(t)
+	now := time.Now()
+	if err := s.saveTasks(&domainschedule.TaskList{Tasks: []domainschedule.Task{{ID: "result", Task: "report", Status: domainschedule.StatusCompleted, LastRunAt: &now, NotificationPending: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	s.Documents = failingNotificationDocuments{}
+	if err := s.AcknowledgeResult(context.Background(), "result", now); err == nil {
+		t.Fatal("failed persistence reported as success")
+	}
+	tasks, err := s.ListTasks(context.Background(), "")
+	if err != nil || !tasks[0].NotificationPending {
+		t.Fatalf("pending result lost: %+v %v", tasks, err)
+	}
 }

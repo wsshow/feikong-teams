@@ -31,3 +31,11 @@ export function getScheduleHistory(id: string) {
     `/api/fkteams/schedules/${encodeURIComponent(id)}/history`,
   );
 }
+
+export function listScheduleNotifications(signal?: AbortSignal) {
+  return get<{ tasks: ScheduleTask[] }>("/api/fkteams/schedules/notifications", { signal });
+}
+
+export function acknowledgeScheduleResult(id: string, runAt: string, signal?: AbortSignal) {
+  return post<{ acknowledged: boolean }>(`/api/fkteams/schedules/${encodeURIComponent(id)}/acknowledge`, { run_at: runAt }, { signal });
+}

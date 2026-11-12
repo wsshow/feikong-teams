@@ -1,4 +1,7 @@
 export interface ScheduleTask {
+  notification_pending?: boolean;
+  last_run_status?: string;
+  interrupted?: boolean;
   id: string;
   task: string;
   status: string;

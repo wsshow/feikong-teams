@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"time"
 
 	"fkteams/internal/domain/apperror"
 	domainschedule "fkteams/internal/domain/schedule"
@@ -145,4 +146,40 @@ func (s *Service) ReadHistoryFile(ctx context.Context, taskID string, filename s
 		return "", apperror.New(apperror.CodeInvalidArgument, "task ID and filename are required")
 	}
 	return scheduler.ReadHistoryFile(ctx, taskID, filename)
+}
+
+// AcknowledgeResult 确认某次结果通知已经送达；不执行任务，也不清除更新的结果。
+func (s *Service) AcknowledgeResult(ctx context.Context, taskID string, runAt time.Time) error {
+	scheduler, err := s.requireScheduler()
+	if err != nil {
+		return err
+	}
+	acknowledger, ok := scheduler.(interface {
+		AcknowledgeResult(context.Context, string, time.Time) error
+	})
+	if !ok {
+		return apperror.New(apperror.CodeUnavailable, "scheduler notifications are unavailable")
+	}
+	if taskID == "" || runAt.IsZero() {
+		return apperror.New(apperror.CodeInvalidArgument, "task ID and run time are required")
+	}
+	return acknowledger.AcknowledgeResult(ctx, taskID, runAt)
+}
+
+// PendingNotifications 返回尚未送达的最近结果，离线期间仍保存在任务存储中。
+func (s *Service) PendingNotifications(ctx context.Context) ([]domainschedule.Task, error) {
+	tasks, err := s.ListTasks(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domainschedule.Task, 0)
+	for _, task := range tasks {
+		if task.NotificationPending {
+			result = append(result, task)
+			if len(result) == 20 {
+				break
+			}
+		}
+	}
+	return result, nil
 }

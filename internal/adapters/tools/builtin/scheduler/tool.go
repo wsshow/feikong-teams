@@ -43,11 +43,13 @@ func (t *Tools) serviceOrError(ctx context.Context) (*appschedule.Service, error
 func (t *Tools) GetTools() ([]runtimeport.Tool, error) {
 
 	return runtimeport.NewTools([]runtimeport.ToolDefinition{
-		{Name: "schedule_add", Description: "创建定时任务，任务将由后台任务官（Tasker）独立执行，你不需要也无法参与执行。" +
+		{Name: "schedule_add", Description: "创建后台定时任务，保存成功后才确认已安排；描述须包含必要背景和完成标准。" +
 			"支持两种模式：1) cron 表达式（重复任务），如 '*/5 * * * *' 每5分钟、'0 9 * * *' 每天9点；2) execute_at 指定时间（一次性任务）。" +
-			"cron 表达式为标准5字段格式：分 时 日 月 周。创建成功后告知用户任务已交由后台调度器管理即可，不要承诺你会去执行。", Handler: t.ScheduleAdd},
+			"cron 为5字段，可加 CRON_TZ=Asia/Shanghai 等时区前缀；execute_at 必须含时区。结果保存后在 Web 中通知，其他通道未接入推送时不要承诺送达。用 schedule_result 查询结果，schedule_update 修改安排。", Handler: t.ScheduleAdd},
 		{Name: "schedule_list", Description: "列出所有定时任务，支持按状态过滤（pending/running/completed/failed/cancelled）。", Handler: t.ScheduleList},
-		{Name: "schedule_cancel", Description: "取消指定的定时任务，只能取消状态为 pending 的任务。", Handler: t.ScheduleCancel},
+		{Name: "schedule_cancel", Description: "取消待执行的定时任务或停止运行中的任务；恢复或改期使用 schedule_update。", Handler: t.ScheduleCancel},
+		{Name: "schedule_update", Description: "修改或恢复非运行中的定时任务，提交完整描述和新时间。先查询现有任务并核对时区；中断任务须核对已执行操作后再安排，避免重复副作用。", Handler: t.ScheduleUpdate},
+		{Name: "schedule_result", Description: "分页读取已保存的最新执行结果，不重新执行任务。offset/limit 按字符计数，has_more 时用 next_offset 继续。", Handler: t.ScheduleResult},
 		{Name: "schedule_delete", Description: "永久删除指定的定时任务（从任务列表中移除）。不能删除正在执行中（running）的任务。", Handler: t.ScheduleDelete},
 	})
 }
@@ -212,4 +214,64 @@ func FormatTaskDetailJSON(task domainschedule.Task) string {
 		return fmt.Sprintf("marshal failed: %v", err)
 	}
 	return string(data)
+}
+
+// ScheduleUpdateRequest 携带要修改的任务及完整安排。
+type ScheduleUpdateRequest struct {
+	TaskID string `json:"task_id" jsonschema:"description=已有任务ID,required"`
+	ScheduleAddRequest
+}
+
+// ScheduleUpdate 更新非运行任务，支持改期或恢复安排。
+func (t *Tools) ScheduleUpdate(ctx context.Context, req *ScheduleUpdateRequest) (*ScheduleAddResponse, error) {
+	service, err := t.serviceOrError(ctx)
+	if err != nil {
+		return &ScheduleAddResponse{ErrorMessage: err.Error()}, nil
+	}
+	if req == nil {
+		return &ScheduleAddResponse{ErrorMessage: "task fields are required"}, nil
+	}
+	task, err := service.UpdateTask(ctx, req.TaskID, schedulerport.AddTaskRequest{Task: req.Task, CronExpr: req.CronExpr, ExecuteAt: req.ExecuteAt})
+	if err != nil {
+		return &ScheduleAddResponse{ErrorMessage: err.Error()}, nil
+	}
+	return &ScheduleAddResponse{Success: true, Task: task, Message: "schedule updated"}, nil
+}
+
+// ScheduleResultRequest 控制结果读取分页。
+type ScheduleResultRequest struct {
+	TaskID string `json:"task_id" jsonschema:"description=已有任务ID,required"`
+	Offset int    `json:"offset,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+// ScheduleResultResponse 返回真实结果与续读位置。
+type ScheduleResultResponse struct {
+	Content      string `json:"content,omitempty"`
+	NextOffset   int    `json:"next_offset"`
+	HasMore      bool   `json:"has_more"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// ScheduleResult 有界读取报告，避免长内容一次性挤满上下文。
+func (t *Tools) ScheduleResult(ctx context.Context, req *ScheduleResultRequest) (*ScheduleResultResponse, error) {
+	service, err := t.serviceOrError(ctx)
+	if err != nil {
+		return &ScheduleResultResponse{ErrorMessage: err.Error()}, nil
+	}
+	if req == nil || req.Offset < 0 {
+		return &ScheduleResultResponse{ErrorMessage: "task ID and nonnegative offset are required"}, nil
+	}
+	content, err := service.ReadTaskResult(ctx, req.TaskID)
+	if err != nil {
+		return &ScheduleResultResponse{ErrorMessage: err.Error()}, nil
+	}
+	chars := []rune(content)
+	limit := req.Limit
+	if limit <= 0 || limit > 24000 {
+		limit = 12000
+	}
+	start := min(req.Offset, len(chars))
+	end := start + min(limit, len(chars)-start)
+	return &ScheduleResultResponse{Content: string(chars[start:end]), NextOffset: end, HasMore: end < len(chars)}, nil
 }

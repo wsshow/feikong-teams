@@ -1,3 +1,4 @@
+import { ScheduleNotifications } from "@/features/schedules/ScheduleNotifications";
 import { MigrationGate } from "@/features/migration/MigrationGate";
 import { lazy, Suspense, useEffect } from "react";
 import { Provider } from "react-redux";
@@ -129,6 +130,7 @@ function Workspace() {
   return (
     <>
       <TaskStreamController />
+      <ScheduleNotifications />
       <Suspense fallback={<PanelLoading />}>{panel}</Suspense>
     </>
   );

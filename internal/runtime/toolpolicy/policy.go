@@ -70,6 +70,8 @@ var toolPolicies = map[string]ToolPolicy{
 	"uv_check_syntax":    readOnlyPolicy("", false),
 
 	// 调度器
+	"schedule_update": destructivePolicy("", false),
+	"schedule_result": readOnlyPolicy("", false),
 	"schedule_list":   readOnlyPolicy("", false),
 	"schedule_add":    destructivePolicy("", false),
 	"schedule_cancel": destructivePolicy("", false),

@@ -176,6 +176,8 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		schedules := apiV1.Group("/schedules")
 		{
 			schedules.GET("", runtime.GetScheduleTasksHandler())
+			schedules.GET("/notifications", runtime.GetScheduleNotificationsHandler())
+			schedules.POST("/:id/acknowledge", standardJSONBody, runtime.AcknowledgeScheduleResultHandler())
 			schedules.POST("", standardJSONBody, runtime.CreateScheduleTaskHandler())
 			schedules.PUT("/:id", standardJSONBody, runtime.UpdateScheduleTaskHandler())
 			schedules.DELETE("/:id", controlBody, runtime.DeleteScheduleTaskHandler())

@@ -166,3 +166,11 @@
 | 400 | `task ID and filename are required` | 缺少任务 ID 或文件名 |
 | 503 | `scheduler not initialized` | 调度器未初始化 |
 | 404 | 错误详情 | 历史文件不存在、类型非法或无法读取 |
+
+## GET /api/fkteams/schedules/notifications
+
+返回 `{tasks: [...]}`，最多 20 条 `notification_pending=true` 的任务。`last_run_at` 标识待确认的运行，`last_run_status` 表示这次执行结果；周期任务的 `status` 可以已经回到 `pending`。`interrupted=true` 表示需要核对实际效果后再安排，不能直接自动重跑。调度服务未启用时返回空数组。
+
+## POST /api/fkteams/schedules/:id/acknowledge
+
+请求体为 `{"run_at":"2026-11-12T10:00:00Z"}`，必须使用通知中的原始 `last_run_at`。成功返回 `{acknowledged:true}`；重复确认同一次运行幂等。若已有更新结果则返回 409，不清除新通知；存储失败返回错误，保留待通知状态。确认不会执行任务或改变其运行状态。
