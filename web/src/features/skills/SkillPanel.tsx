@@ -574,7 +574,7 @@ function SkillGrid({
             role="button"
             tabIndex={0}
             className={cn(
-              "group flex min-h-44 cursor-pointer flex-col rounded-xl border bg-card/65 p-4 text-left transition-[background,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "group flex min-h-44 cursor-pointer flex-col rounded-xl border bg-card p-4 text-left shadow-surface transition-colors hover:shadow-raised focus-visible:shadow-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected ? "border-primary/25 bg-accent" : "border-border/75 hover:bg-accent/45",
             )}
             onClick={() => void onSelect(skill)}

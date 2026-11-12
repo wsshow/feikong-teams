@@ -134,7 +134,7 @@ function ShareThread({
   return (
     <>
       <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
-        <header className="mb-6 rounded-2xl border border-border/70 bg-card px-4 py-4 sm:px-5">
+        <header className="mb-6 rounded-2xl border border-border/70 bg-card px-4 py-4 shadow-surface sm:px-5">
           <div className="text-lg font-semibold text-foreground">{detail.title || title || "共享会话"}</div>
           <div className="mt-1 text-sm text-muted-foreground">
             公开只读视图

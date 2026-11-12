@@ -290,7 +290,7 @@ function ShareGrid({
         const deleting = busyKey === shareKey("session", id);
         const copied = copiedKey === shareKey("session", id);
         return (
-          <article key={id} className="rounded-md border border-border bg-card p-4">
+          <article key={id} className="rounded-md border border-border bg-card p-4 shadow-surface">
             <div className="flex min-w-0 items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
@@ -389,7 +389,7 @@ function FileShareGrid({
         const filePaths = share.file_paths || [];
         const title = share.file_path || filePaths[0] || id;
         return (
-          <article key={id} className="rounded-md border border-border bg-card p-4">
+          <article key={id} className="rounded-md border border-border bg-card p-4 shadow-surface">
             <div className="flex min-w-0 items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">

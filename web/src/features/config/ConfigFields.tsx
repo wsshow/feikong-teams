@@ -627,7 +627,7 @@ export function EmptyState({ title, description }: { title: string; description:
 
 export function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-border/75 bg-card/65 p-4">
+    <div className="rounded-xl border border-border/75 bg-card p-4 shadow-surface">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="mt-2 text-3xl font-semibold">{value}</div>
     </div>

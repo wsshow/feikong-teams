@@ -57,7 +57,11 @@ export default {
         },
       },
       boxShadow: {
+        control: "var(--shadow-control)",
+        primary: "var(--shadow-primary)",
+        "primary-hover": "var(--shadow-primary-hover)",
         surface: "var(--shadow-surface)",
+        raised: "var(--shadow-raised)",
         popover: "var(--shadow-popover)",
         dialog: "var(--shadow-dialog)",
       },

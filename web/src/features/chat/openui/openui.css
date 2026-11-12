@@ -6,12 +6,41 @@
   }
 
   /* 上游默认 card 仅声明 box-shadow，宿主补齐卡片表面，保留 clear/sunk 的语义。 */
-  .assistant-openui .openui-card-card {
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-card-card {
     padding: var(--openui-space-l);
     border-color: var(--openui-border-default);
     border-radius: 0.75rem;
     background-color: var(--openui-foreground);
-    box-shadow: none;
+    box-shadow: var(--shadow-surface);
+  }
+
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-card-sunk {
+    box-shadow: var(--shadow-inset);
+  }
+
+  /* 消息内按钮与 portal 弹窗使用相同的抬起、悬停和按下层级。 */
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-button-base-primary:not(:disabled) {
+    box-shadow: var(--shadow-primary);
+  }
+
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-button-base-primary:not(:disabled):hover {
+    box-shadow: var(--shadow-primary-hover);
+  }
+
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-button-base-secondary:not(:disabled) {
+    box-shadow: var(--shadow-control);
+  }
+
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-button-base-secondary:not(:disabled):hover {
+    box-shadow: var(--shadow-surface);
+  }
+
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) :is(.openui-button-base-primary, .openui-button-base-secondary):not(:disabled):active {
+    box-shadow: var(--shadow-control);
+  }
+
+  :is(.assistant-openui, [class*="openui-theme-portal-"]) .openui-modal-content {
+    box-shadow: var(--shadow-dialog);
   }
 
   /* 大表格在消息内部滚动，不挤宽整个聊天页面。 */

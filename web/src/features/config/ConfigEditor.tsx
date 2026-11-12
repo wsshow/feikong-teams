@@ -223,7 +223,7 @@ export function ConfigEditCard({
 }) {
   const editing = useConfigEditing();
   return (
-    <div className="relative min-w-0 rounded-lg border border-border/75 bg-card/65 transition-colors hover:bg-accent/40">
+    <div className="relative min-w-0 rounded-lg border border-border/75 bg-card shadow-surface transition-colors hover:bg-accent/40 hover:shadow-raised focus-within:shadow-raised">
       <button
         type="button"
         className="absolute inset-0 w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"

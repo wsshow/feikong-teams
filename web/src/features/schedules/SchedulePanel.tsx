@@ -408,7 +408,7 @@ function TaskGrid({
           <article
             key={task.id}
             className={cn(
-              "group flex min-h-48 cursor-pointer flex-col rounded-xl border bg-card/65 p-4 text-left transition-[background,border-color,box-shadow]",
+              "group flex min-h-48 cursor-pointer flex-col rounded-xl border bg-card p-4 text-left shadow-surface transition-colors hover:shadow-raised focus-visible:shadow-raised",
               selected ? "border-primary/25 bg-accent" : "border-border/75 hover:bg-accent/45",
             )}
             onClick={() => void onSelect(task)}

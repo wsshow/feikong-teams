@@ -50,7 +50,12 @@
     --radius: 0.5rem;
     --sidebar: var(--background);
     --sidebar-foreground: var(--foreground);
-    --shadow-surface: 0 1px 2px hsl(var(--foreground) / 0.04);
+    --shadow-inset: inset 0 1px 2px hsl(var(--foreground) / 0.05);
+    --shadow-control: 0 1px 2px hsl(var(--foreground) / 0.1), inset 0 1px 0 hsl(var(--card) / 0.7);
+    --shadow-primary: 0 2px 4px -1px hsl(var(--primary) / 0.24), inset 0 1px 0 hsl(var(--card) / 0.2);
+    --shadow-primary-hover: 0 4px 12px -2px hsl(var(--primary) / 0.28), inset 0 1px 0 hsl(var(--card) / 0.2);
+    --shadow-surface: 0 1px 3px -1px hsl(var(--foreground) / 0.08), 0 6px 16px -8px hsl(var(--foreground) / 0.12);
+    --shadow-raised: 0 2px 4px -2px hsl(var(--foreground) / 0.08), 0 12px 28px -12px hsl(var(--foreground) / 0.2);
     --shadow-popover: 0 8px 24px -4px hsl(var(--foreground) / 0.1), 0 2px 6px -2px hsl(var(--foreground) / 0.06);
     --shadow-dialog: 0 24px 64px -16px hsl(var(--foreground) / 0.18), 0 8px 24px -8px hsl(var(--foreground) / 0.08);
   }
@@ -119,11 +124,13 @@
   .sketch-surface {
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-surface);
   }
 
   .sketch-inset {
     background: hsl(var(--muted));
     border: 1px solid hsl(var(--input));
+    box-shadow: var(--shadow-inset);
   }
 
   .sketch-rule {
