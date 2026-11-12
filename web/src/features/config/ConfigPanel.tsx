@@ -167,7 +167,7 @@ export function ServerTab({ draft, updateDraft }: EditorProps) {
   const auth = server.auth || {};
   const openaiAPI = draft.openai_api || {};
   return (
-    <div className="grid items-start gap-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       <ConfigEditCard editorKey="server" title="服务配置" description="监听地址、日志、跨域来源与可信代理。"
         summary={[{ label: "监听", value: `${server.host || "0.0.0.0"}:${server.port || 23456}` }, { label: "日志", value: server.log_level || "info" }, { label: "跨域来源", value: `${server.allow_origins?.length || 0} 项` }]}>
         <div className="grid gap-4 md:grid-cols-2">

@@ -223,7 +223,7 @@ export function ConfigEditCard({
 }) {
   const editing = useConfigEditing();
   return (
-    <div className="relative min-w-0 rounded-lg border border-border/75 bg-card shadow-surface transition-colors hover:bg-accent/40 hover:shadow-raised focus-within:shadow-raised">
+    <div className="relative flex h-full min-w-0 flex-col rounded-lg border border-border/75 bg-card shadow-surface transition-colors hover:bg-accent/40 hover:shadow-raised focus-within:shadow-raised">
       <button
         type="button"
         className="absolute inset-0 w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
@@ -232,8 +232,8 @@ export function ConfigEditCard({
         aria-label={`编辑${title}`}
         onClick={() => editing.begin(editorKey)}
       />
-      <div className="pointer-events-none relative p-4">
-        <div className="flex items-center justify-between gap-3">
+      <div className="pointer-events-none relative flex flex-1 flex-col p-4">
+        <div className="flex min-h-9 items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="min-w-0 truncate font-semibold">{title}</span>
             {badges.map((badge) => (
@@ -251,9 +251,9 @@ export function ConfigEditCard({
             </fieldset>
           ) : null}
         </div>
-        {description ? <p className="mt-1 line-clamp-2 break-words text-sm text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-1 min-h-10 line-clamp-2 break-words text-sm leading-5 text-muted-foreground">{description}</p> : null}
         {summary.length ? (
-          <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <dl className="mt-auto flex flex-wrap gap-x-4 gap-y-1 pt-3 text-xs text-muted-foreground">
             {summary.map(({ label, value }) => (
               <div key={label} className="flex min-w-0 max-w-full gap-1">
                 <dt className="shrink-0">{label}</dt>

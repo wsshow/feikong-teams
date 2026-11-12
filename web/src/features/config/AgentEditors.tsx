@@ -378,7 +378,7 @@ export function AgentsTab({ draft, modelIDs, updateDraft, saving }: EditorProps 
           }}
         />
       ) : null}
-      <PanelBody className="grid items-start gap-4 xl:grid-cols-2">
+      <PanelBody className="grid gap-4 xl:grid-cols-2">
         {agentItems.map((agent, index) => {
           const agentKey = `agent-${index}`;
           return (
@@ -494,7 +494,7 @@ export function DeepTab({ draft, updateDraft }: EditorProps) {
   }
 
   return (
-    <div className="grid items-start gap-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       <ConfigEditCard editorKey="deep-agent" title="深度智能体" description="设置提示词、工具和最大迭代次数。"
         summary={[{ label: "最大迭代", value: `${deep.max_iterations || 0} 次` }, { label: "工具", value: `${deep.extra_tools?.length || 0} 项` }, { label: "提示词", value: deep.instruction ? "自定义" : "内置" }]}>
         <div className="space-y-4">

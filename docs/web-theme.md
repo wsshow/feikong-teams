@@ -24,6 +24,7 @@ Web UI 使用“清透蓝白”浅色主题，延续 OpenUI 的蓝色与中性�
 - 普通内容通过细边框和柔和阴影分层，取消纸张渐变和偏移硬阴影。`shadow-surface` 用于普通卡片，`shadow-raised` 用于输入区和可点击卡片的悬停、焦点状态，`shadow-popover` 用于菜单，`shadow-dialog` 用于模态浮层；对应阴影也在根变量中定义。
 - 按钮使用 `shadow-control` 表达轻微厚度，主按钮使用同色系 `shadow-primary`，悬停时增强、按下时收敛，禁用时移除阴影。幽灵按钮与普通导航保持平整，避免所有元素同时悬浮。
 - `sketch-surface`、`sketch-inset`、`sketch-rule` 保留现有调用方式，分别提供带轻阴影的白色内容表面、带内阴影的浅色输入表面和中性边线。OpenUI 的 `card` 同样轻微抬起，`sunk` 保持内凹语义。
+- 配置目录卡片在网格中同排等高，标题区预留操作按钮高度，描述区预留两行，摘要信息靠底对齐；窄屏允许内容自然增高，不通过固定高度裁掉信息。
 - Markdown 代码、表格、引用与滚动条复用主题变量。图表数据系列保留 OpenUI 的独立色板。
 - OpenUI 由 `web/src/features/chat/openui/theme.ts` 映射相同的表面、文字、交互状态、语义反馈和浮层阴影，弹窗通过同一主题上下文继承配色。
 
