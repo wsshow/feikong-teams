@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { shallowEqual } from "react-redux";
 import { ArrowDown, Bot, CalendarClock, FolderOpen, ListTree, Settings, Share2, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
@@ -13,6 +13,7 @@ import { MessageList } from "./MessageList";
 import { chatMessageElementID } from "./dom";
 import { ChatInput } from "./ChatInput";
 import { decodeUIAction } from "./openui/protocol";
+import { useActiveQuestion } from "./useActiveQuestion";
 
 export function ChatPage() {
   const dispatch = useAppDispatch();
@@ -30,6 +31,7 @@ export function ChatPage() {
   const [showSessionLoading, setShowSessionLoading] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const hasConversation = messageCount > 0 || eventCount > 0 || queueCount > 0 || isProcessing || Boolean(error);
   const isLoadingSession = Boolean(
     activeSessionID &&
@@ -108,8 +110,8 @@ export function ChatPage() {
 
   return (
     <div className="relative flex h-full flex-col">
-      <MessageList onJumpToBottomControlsChange={updateJumpControls} />
-      <QuestionNavigator hideMobile={referenceOpen} jumpControls={jumpControls} />
+      <MessageList scrollRef={scrollRef} onJumpToBottomControlsChange={updateJumpControls} />
+      <QuestionNavigator scrollRef={scrollRef} hideMobile={referenceOpen} jumpControls={jumpControls} />
       <ChatInput key={activeSessionID === assistantSessionID ? "assistant" : "chat"} onReferenceOpenChange={setReferenceOpen} />
     </div>
   );
@@ -141,38 +143,42 @@ function ChatSessionLoading() {
 }
 
 const QuestionNavigator = memo(function QuestionNavigator({
+  scrollRef,
   hideMobile,
   jumpControls,
 }: {
+  scrollRef: RefObject<HTMLDivElement | null>;
   hideMobile: boolean;
   jumpControls: { distanceFromBottom: number; jump: () => void };
 }) {
   const questions = useAppSelector(
-    (state) => state.chat.messages.filter((message) => message.role === "user" && Boolean(message.content.trim())),
+    (state) => state.chat.messages.filter((message) => message.role === "user" && !message.hidden && Boolean(message.content.trim())),
     shallowEqual,
   );
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const mobilePanelRef = useRef<HTMLDivElement | null>(null);
   const mobileRef = useRef<HTMLDivElement | null>(null);
-  const [activeQuestionID, setActiveQuestionID] = useState("");
+  const activeQuestionID = useActiveQuestion(scrollRef, questions);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileQuestionVisible, setMobileQuestionVisible] = useState(false);
   const [mobileBottomVisible, setMobileBottomVisible] = useState(false);
   const orderedQuestions = questions.map((question, index) => ({ question: { ...question, content: decodeUIAction(question.content)?.message ?? question.content }, index: index + 1 }));
-  const latestQuestionID = orderedQuestions[orderedQuestions.length - 1]?.question.id || "";
-  const visibleQuestions = orderedQuestions.slice(-8);
+  const activeQuestionIndex = questions.findIndex((question) => question.id === activeQuestionID);
+  const visibleStart = Math.max(0, Math.min(activeQuestionIndex - 3, orderedQuestions.length - 8));
+  const visibleQuestions = orderedQuestions.slice(visibleStart, visibleStart + 8);
   const showMobileQuestion = !hideMobile && questions.length > 0 && mobileQuestionVisible;
   const showMobileBottom = !hideMobile && mobileBottomVisible;
   const showMobileControls = showMobileQuestion || showMobileBottom;
 
   useEffect(() => {
-    if (!latestQuestionID) return;
-    setActiveQuestionID(latestQuestionID);
-    window.requestAnimationFrame(() => {
-      const panel = panelRef.current;
-      if (!panel) return;
-      panel.scrollTo({ top: panel.scrollHeight });
-    });
-  }, [latestQuestionID]);
+    for (const panel of [panelRef.current, mobilePanelRef.current]) {
+      const activeButton = panel?.querySelector<HTMLButtonElement>('[aria-current="location"]');
+      if (!panel || !activeButton) continue;
+      if (activeButton.offsetTop < panel.scrollTop || activeButton.offsetTop + activeButton.offsetHeight > panel.scrollTop + panel.clientHeight) {
+        panel.scrollTo({ top: activeButton.offsetTop - (panel.clientHeight - activeButton.offsetHeight) / 2 });
+      }
+    }
+  }, [activeQuestionID, mobileOpen]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -203,7 +209,6 @@ const QuestionNavigator = memo(function QuestionNavigator({
   }, [hideMobile, jumpControls.distanceFromBottom, questions.length]);
 
   function jumpTo(messageID: string) {
-    setActiveQuestionID(messageID);
     setMobileOpen(false);
     document.getElementById(chatMessageElementID(messageID))?.scrollIntoView({
       behavior: "smooth",
@@ -222,7 +227,7 @@ const QuestionNavigator = memo(function QuestionNavigator({
           style={{ bottom: "calc(var(--app-keyboard-inset-bottom,0px) + var(--chat-dock-height,10rem) + 0.35rem)" }}
         >
           {mobileOpen && showMobileQuestion ? (
-            <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-xl bg-card p-2 shadow-popover backdrop-blur duration-150">
+            <div ref={mobilePanelRef} className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-xl bg-card p-2 shadow-popover backdrop-blur duration-150">
               <div className="space-y-0.5">
                 {orderedQuestions.map(({ question, index }) => (
                   <QuestionButton
@@ -284,6 +289,7 @@ const QuestionNavigator = memo(function QuestionNavigator({
                   )}
                   onClick={() => jumpTo(question.id)}
                   aria-label={`跳转到问题 ${index}`}
+                  aria-current={activeQuestionID === question.id ? "location" : undefined}
                   title={question.content}
                 />
               ))}
@@ -319,6 +325,7 @@ function QuestionButton({ active, index, content, onClick }: { active: boolean; 
         active && "bg-muted text-primary",
       )}
       onClick={onClick}
+      aria-current={active ? "location" : undefined}
       title={content}
     >
       <span

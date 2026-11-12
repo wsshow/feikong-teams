@@ -1,4 +1,4 @@
-import { lazy, Suspense, memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, memo, type MouseEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send, ShieldAlert } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { assistantAgentID, assistantDisplayName, assistantSessionID } from "@/lib/assistant";
@@ -12,7 +12,7 @@ import { useTimedState } from "@/lib/useTimedState";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { ToolCallCard } from "./ToolCallCard";
-import { chatMessageElementID } from "./dom";
+import { chatBottomThreshold, chatMessageElementID } from "./dom";
 import { useDisclosureState } from "./disclosureState";
 import type { ContentPartDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
@@ -32,7 +32,10 @@ export interface JumpToBottomControls {
   jump: () => void;
 }
 
-export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomControlsChange?: (controls: JumpToBottomControls) => void }) {
+export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onJumpToBottomControlsChange?: (controls: JumpToBottomControls) => void;
+}) {
   const dispatch = useAppDispatch();
   const messages = useAppSelector((state) => state.chat.messages);
   const events = useAppSelector((state) => state.chat.events);
@@ -46,7 +49,6 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
   const technicalError = useAppSelector((state) => state.chat.technicalError);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const agents = useAppSelector((state) => state.app.agents);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
@@ -118,7 +120,7 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
     const scroll = scrollRef.current;
     if (!scroll) return;
     const distance = scrollDistanceToBottom(scroll);
-    const atBottom = distance < 48;
+    const atBottom = distance < chatBottomThreshold;
     stickToBottomRef.current = atBottom;
     setScrollDistanceFromBottom(Math.round(distance));
     setShowJumpToBottom(!atBottom);
