@@ -22,6 +22,7 @@ export interface ChatComposerProps {
   submitting?: boolean;
   agents?: AgentInfo[];
   selectedAgent?: string;
+  lockedTargetName?: string;
   fileSuggestions?: FileEntry[];
   attachments?: ChatAttachmentDraft[];
   referenceLoading?: boolean;
@@ -45,6 +46,7 @@ export function ChatComposer({
   submitting = false,
   agents = [],
   selectedAgent,
+  lockedTargetName,
   fileSuggestions = [],
   attachments = [],
   referenceLoading = false,
@@ -68,7 +70,8 @@ export function ChatComposer({
   const attachmentScrollerRef = useRef<HTMLDivElement | null>(null);
   const isHero = variant === "hero";
   const maxTextareaHeight = isHero ? 440 : 280;
-  const [trigger, setTrigger] = useState<ReferenceTrigger | undefined>();
+  const [rawTrigger, setTrigger] = useState<ReferenceTrigger | undefined>();
+  const trigger = lockedTargetName && rawTrigger?.kind === "agent" ? undefined : rawTrigger;
   const [activeReferenceIndex, setActiveReferenceIndex] = useState(0);
   const fileReferenceQuery = trigger?.kind === "file" ? trigger.query : undefined;
   const filteredAgents = useMemo(() => {
@@ -296,7 +299,7 @@ export function ChatComposer({
       <div className="relative">
         {!value && attachments.length === 0 ? (
           <div className="pointer-events-none absolute left-1 top-0 text-base leading-7 text-muted-foreground">
-            {isHero ? "今天要推进什么？" : "输入任务，粘贴图片或文件，使用 # 引用文件，@ 指定智能体。"}
+            {lockedTargetName ? `和${lockedTargetName}聊聊，或交给我一项任务…` : isHero ? "今天要推进什么？" : "输入任务，粘贴图片或文件，使用 # 引用文件，@ 指定智能体。"}
           </div>
         ) : null}
         <div
@@ -304,6 +307,7 @@ export function ChatComposer({
           contentEditable
           suppressContentEditableWarning
           role="textbox"
+          aria-label={lockedTargetName ? `给${lockedTargetName}发送消息` : "输入任务"}
           aria-multiline="true"
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
@@ -350,19 +354,23 @@ export function ChatComposer({
           <Button variant="ghost" size="icon" aria-label="添加附件" onClick={() => fileInputRef.current?.click()}>
             <Plus className="h-4 w-4" />
           </Button>
-          {selectedAgent ? (
+          {lockedTargetName ? (
+            <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+              <Bot className="h-4 w-4 shrink-0" /><span className="max-w-40 truncate">{lockedTargetName}</span>
+            </span>
+          ) : selectedAgent ? (
             <AgentTargetChip agent={selectedAgent} agentInfo={selectedAgentInfo} onClear={() => onAgentChange?.("")} />
           ) : null}
         </div>
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <ModePicker
+          {!lockedTargetName ? <ModePicker
             mode={mode}
             selectedAgent={selectedAgent}
             selectedAgentInfo={selectedAgentInfo}
             open={modeMenuOpen}
             onOpenChange={setModeMenuOpen}
             onModeChange={onModeChange}
-          />
+          /> : null}
           {processing ? (
             <Button variant="destructive" size="icon" onClick={onStop} aria-label="取消">
               <Square className="h-4 w-4" />

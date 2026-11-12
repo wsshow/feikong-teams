@@ -49,7 +49,7 @@ func (r *SessionRepository) ListSessions(_ context.Context) ([]domainsession.Rec
 			continue
 		}
 		sessionDir := filepath.Join(r.root, entry.Name())
-		if _, err := pathguard.ResolveWorkspace(r.root, filepath.Join(sessionDir, "metadata.json")); err != nil {
+		if _, err := pathguard.ResolveWorkspace(r.root, filepath.Join(entry.Name(), "metadata.json")); err != nil {
 			return nil, err
 		}
 		metadata, loadErr := LoadMetadata(sessionDir, r.Documents)
@@ -101,6 +101,9 @@ func (r *SessionRepository) LoadSession(_ context.Context, sessionID string) (do
 	defer r.mu.RUnlock()
 	if r.Documents == nil {
 		if _, err := pathguard.ResolveWorkspace(r.root, filepath.Join(sessionID, "metadata.json")); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return domainsession.Metadata{}, apperror.New(apperror.CodeNotFound, "session not found")
+			}
 			return domainsession.Metadata{}, err
 		}
 	}

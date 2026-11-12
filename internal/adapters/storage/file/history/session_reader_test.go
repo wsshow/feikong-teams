@@ -93,6 +93,27 @@ func TestSessionQueriesRejectMetadataSymlink(t *testing.T) {
 	}
 }
 
+func TestSessionReaderGuardsRelativeStorageRoot(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(cwd, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "s")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, TranscriptFileName), []byte(`{"type":"user_message","content":"outside"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSessionMessageReader(relative, nil).LoadSessionMessages(context.Background(), "s"); err == nil {
+		t.Fatal("relative storage root allowed escaping symlink")
+	}
+}
+
 func TestSessionMessageReaderLoadsPersistedHistory(t *testing.T) {
 	dir := t.TempDir()
 	sessionID := "persisted-session"

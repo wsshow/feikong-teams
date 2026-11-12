@@ -462,7 +462,7 @@ export function AgentsTab({ draft, modelIDs, updateDraft, autoSaveDraft, saving 
                 modelIDs={modelIDs}
                 toolOptions={toolOptions}
                 readOnly={Boolean(agent.builtin)}
-                enabledReadOnly={Boolean(agent.builtin && agent.id === "coordinator")}
+                enabledReadOnly={Boolean(agent.builtin && (agent.id === "coordinator" || agent.id === "workspace_assistant"))}
                 onChange={(value) =>
                   updateDraft((next) => {
                     const items = [...(next.agents?.items || [])];
@@ -701,7 +701,7 @@ function AgentCatalogEditor({
         <Badge>{agent.builtin ? "内置" : "自定义"}</Badge>
         {agent.team_member ? <Badge>团队成员</Badge> : null}
         <Badge>{agent.enabled ? "已启用" : "已关闭"}</Badge>
-        {agent.builtin && agent.id === "coordinator" ? <Badge>核心入口</Badge> : null}
+        {agent.builtin && (agent.id === "coordinator" || agent.id === "workspace_assistant") ? <Badge>核心入口</Badge> : null}
         {readOnly ? <Badge>只读</Badge> : null}
       </div>
       <ToggleField label="启用智能体" checked={Boolean(agent.enabled)} disabled={enabledReadOnly} onChange={(value) => onChange({ ...agent, enabled: value })} />

@@ -41,7 +41,7 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 		// 跨会话读取不能经历史文件或成员目录的符号链接访问存储根以外的数据。
 		paths := []string{transcriptFile, filepath.Join(sessionDir, subagentsDirName)}
 		for _, path := range paths {
-			if _, err := pathguard.ResolveWorkspace(r.sessionsDir, path); err != nil {
+			if err := r.validatePath(path); err != nil {
 				return nil, err
 			}
 		}
@@ -51,7 +51,7 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 		}
 		for _, path := range members {
 			for _, file := range []string{path, filepath.Join(filepath.Dir(path), "metadata.json")} {
-				if _, err := pathguard.ResolveWorkspace(r.sessionsDir, file); err != nil {
+				if err := r.validatePath(file); err != nil {
 					return nil, err
 				}
 			}
@@ -63,4 +63,13 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 		return nil, fmt.Errorf("read session history: %w", err)
 	}
 	return projectTranscriptEvents(sessionDir, transcript, r.manager.Documents)
+}
+
+func (r *SessionMessageReader) validatePath(path string) error {
+	relative, err := filepath.Rel(r.sessionsDir, path)
+	if err != nil {
+		return err
+	}
+	_, err = pathguard.ResolveWorkspace(r.sessionsDir, relative)
+	return err
 }

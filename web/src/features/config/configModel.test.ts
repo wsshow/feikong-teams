@@ -6,6 +6,7 @@ describe("configuration model", () => {
   test("saving serializes built-in overrides and preserves complete custom agent definitions", () => {
     const config: AppConfig = { agents: { items: [
       { id: "coordinator", builtin: true, enabled: true },
+      { id: "workspace_assistant", builtin: true, enabled: false },
       { id: "coder", builtin: true, enabled: false, prompt: "server-owned" },
       { id: "reviewer", name: "Reviewer", enabled: true, prompt: "review", tools: ["file"] },
     ] } };

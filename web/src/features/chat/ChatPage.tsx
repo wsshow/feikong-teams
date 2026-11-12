@@ -1,9 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { shallowEqual } from "react-redux";
-import { ArrowDown, CalendarClock, FolderOpen, ListTree, Settings, Share2, Sparkles } from "lucide-react";
+import { ArrowDown, Bot, CalendarClock, FolderOpen, ListTree, Settings, Share2, Sparkles } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { appActions, chatActions, sessionsActions, type AppPanel } from "@/app/store";
 import { LoadingSurface } from "@/components/ui/loading-surface";
+import { Button } from "@/components/ui/button";
+import { assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
 import { cn } from "@/lib/cn";
 import { pushAppPath } from "@/lib/navigation";
@@ -23,6 +25,7 @@ export function ChatPage() {
   const queueCount = useAppSelector((state) => state.chat.queue.length);
   const error = useAppSelector((state) => state.chat.error);
   const [failedSessionID, setFailedSessionID] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [showSessionLoading, setShowSessionLoading] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
@@ -62,7 +65,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionID, viewSessionID, dispatch]);
+  }, [activeSessionID, viewSessionID, dispatch, loadAttempt]);
 
   useEffect(() => {
     if (!isLoadingSession) {
@@ -81,7 +84,7 @@ export function ChatPage() {
     setJumpControls(controls);
   }, []);
 
-  if (isLoadingSession && showSessionLoading) {
+  if (isLoadingSession && (showSessionLoading || activeSessionID === assistantSessionID)) {
     return <ChatSessionLoading />;
   }
 
@@ -89,11 +92,41 @@ export function ChatPage() {
     return <ChatHome />;
   }
 
+  if (activeSessionID === assistantSessionID && failedSessionID === activeSessionID) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-muted-foreground">{error || "暂时无法打开助手"}</p>
+        <Button variant="outline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>重新打开</Button>
+      </div>
+    );
+  }
+
+  if (activeSessionID === assistantSessionID && !isLoadingSession && !hasConversation) {
+    return <AssistantHome />;
+  }
+
   return (
     <div className="relative flex h-full flex-col">
       <MessageList onJumpToBottomControlsChange={updateJumpControls} />
       <QuestionNavigator hideMobile={referenceOpen} jumpControls={jumpControls} />
-      <ChatInput onReferenceOpenChange={setReferenceOpen} />
+      <ChatInput key={activeSessionID === assistantSessionID ? "assistant" : "chat"} onReferenceOpenChange={setReferenceOpen} />
+    </div>
+  );
+}
+
+function AssistantHome() {
+  const name = useAppSelector((state) => assistantDisplayName(state.sessions.items));
+  return (
+    <div className="flex h-full items-center justify-center overflow-y-auto px-4 py-8 sm:px-6">
+      <div className="w-full max-w-3xl space-y-6">
+        <div className="space-y-3 text-center">
+          <Bot className="mx-auto h-8 w-8 text-primary" aria-hidden="true" />
+          <h1 className="break-words text-2xl font-semibold tracking-tight sm:text-3xl">今天和{name}一起做什么？</h1>
+          <p className="text-sm leading-7 text-muted-foreground sm:text-base">整理工作区文件，查找过去的讨论，或直接交给我一项任务。</p>
+        </div>
+        <ChatInput variant="hero" />
+        <p className="text-center text-xs leading-6 text-muted-foreground">想换个称呼？直接告诉我「以后叫你小空」。</p>
+      </div>
     </div>
   );
 }

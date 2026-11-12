@@ -189,6 +189,10 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 
 ## 前端职责
 
+常驻助手通过 `app/session.Service.OpenAssistant` 幂等创建固定会话，名称保存在会话 metadata 的标题中。`workspace_assistant` 以标准内置 Definition 运行，复用聊天、历史、队列和审批链路；身份工具仅允许助手会话改名。`app/session.QueryService` 经会话存储和消息读取端口执行跨会话查询，`conversations` 工具组只输出有界正文投影。历史只读查询不修复 transcript 尾部，文件存储读取校验符号链接边界。
+
+Web 的 `/assistant` 路由映射至固定会话；入口与“新建会话”位于侧栏滚动容器外。前端在改名工具完成及任务收尾后重新读取助手身份，显示服务端保存的名称。
+
 聊天的 `timeline.ts` 负责事件去重与展示投影，`MessageList.tsx` 负责组件渲染。配置的 `configModel.ts` 负责默认值、合并和保存格式；智能体编辑、集成编辑和共用字段按职责放在少量组件文件中。SSE、快照和历史回放共用 `decodeChatEvent(s)`，未知事件类型在 API 边界过滤，应用事件类型不再用 `| string` 扩宽。
 
 ## 扩展点

@@ -1,5 +1,19 @@
 # 会话管理
 
+## 常驻助手
+
+`POST /api/fkteams/assistant` 幂等打开助手，首次创建固定会话 `workspace-assistant`，默认名称“助手”，智能体为 `workspace_assistant`。请求体可为 `{}`。`GET /api/fkteams/assistant` 只读取当前身份，尚未创建时返回 404。
+
+两个接口均返回：
+
+```json
+{"code":0,"message":"success","data":{"session_id":"workspace-assistant","title":"助手","current_agent":"workspace_assistant","mode":"team"}}
+```
+
+助手使用现有会话历史与流式任务接口；发送时传入该 `session_id` 和 `agent_name: "workspace_assistant"`。改名复用会话重命名接口，名称限 1～40 个字符且不能包含控制字符。模型也可在助手会话内通过 `assistant_rename` 改名；该工具拒绝其他会话调用。
+
+助手会话包含在会话列表中，前端将其显示为固定入口。它的标题是助手名称，不会被聊天首句自动覆盖。应用目前使用同一实例的工作区和会话库，不提供多用户租户隔离。
+
 ## GET /api/fkteams/sessions
 
 列出所有聊天历史会话。
@@ -28,7 +42,7 @@
 
 | 字段         | 说明                                                         |
 | ------------ | ------------------------------------------------------------ |
-| `session_id` | 会话 ID（UUID）                                              |
+| `session_id` | 会话 ID（普通新会话默认为 UUID，常驻助手使用固定标识）       |
 | `title`      | 会话标题（首次提交时从用户输入截取，未提交时为"未命名会话"） |
 | `status`     | 会话状态：`idle`、`active`、`processing`、`completed`、`cancelled`、`error` |
 | `current_agent` | 当前会话固定智能体，可能为空或省略 |

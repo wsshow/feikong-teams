@@ -32,6 +32,14 @@ beforeEach(() => {
 });
 
 describe("chat state", () => {
+  test("leaving the persistent assistant restores ordinary chat targeting", () => {
+    dispatch(chatActions.setActiveSession("workspace-assistant"));
+    dispatch(chatActions.setCurrentAgent("workspace_assistant"));
+    dispatch(chatActions.setMode("deep"));
+    dispatch(chatActions.setActiveSession(""));
+    expect(getState().chat.currentAgent).toBe("");
+    expect(getState().chat.mode).toBe("team");
+  });
   test("does not persist active sessions in browser storage", () => {
     dispatch(chatActions.setActiveSession("session-a"));
     dispatch(chatActions.beginRunningSession({ sessionID: "session-b", startedAt: 1 }));

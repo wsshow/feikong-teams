@@ -77,6 +77,7 @@ func registerAPIRoutesWithRuntime(r *gin.Engine, _ bool, state *appstate.State, 
 		// 智能体 API
 		apiV1.GET("/agents", runtime.GetAgentsHandler())
 		apiV1.POST("/assistant", controlBody, runtime.OpenAssistantHandler())
+		apiV1.GET("/assistant", runtime.GetAssistantHandler())
 
 		// 来源图标代理
 		apiV1.GET("/favicon", runtime.FaviconHandler())

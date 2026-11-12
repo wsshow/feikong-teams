@@ -7,6 +7,8 @@ import { chatActions, sessionsActions, type AppDispatch } from "@/app/store";
 import type { ChatEvent } from "@/types/events";
 import { EventBatcher } from "./eventBatcher";
 import { clearStreamOffset, readStreamOffset, writeStreamOffset } from "./streamOffsets";
+import { assistantSessionID } from "@/lib/assistant";
+import { refreshAssistant } from "@/features/sessions/sessionThunks";
 
 const streamReconnectBaseDelayMs = 400;
 const streamReconnectMaxDelayMs = 5000;
@@ -159,6 +161,7 @@ async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatc
       let terminal = false;
       await subscribeStream(sessionID, Number(status.event_count || 0), (events) => {
         if (signal.aborted) return;
+        refreshRenamedAssistant(sessionID, events, dispatch);
         const event = [...events].reverse().find((item) => terminalEventStatus(item));
         if (!event) return;
         terminal = true;
@@ -243,6 +246,7 @@ function applyStreamSnapshot(
 
 function applyStreamEvents(sessionID: string, events: ChatEvent[], dispatch: AppDispatch) {
   if (events.length === 0) return false;
+  refreshRenamedAssistant(sessionID, events, dispatch);
   dispatch(chatActions.receiveEvents(events));
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -289,16 +293,24 @@ function finishFromStatus(sessionID: string, status: string, updatedAt: string |
     markSessionFinished(sessionID, status, updatedAt, dispatch);
     return;
   }
+  if (sessionID === assistantSessionID) void dispatch(refreshAssistant());
   clearStreamOffset(sessionID);
   dispatch(chatActions.finishRunningSession(sessionID));
   dispatch(sessionsActions.updateSessionRuntime({ sessionID, status, activeTask: false, updatedAt }));
 }
 
 function markSessionFinished(sessionID: string, status: string, updatedAt: string | undefined, dispatch: AppDispatch) {
+  if (sessionID === assistantSessionID) void dispatch(refreshAssistant());
   const timestamp = updatedAt || new Date().toISOString();
   clearStreamOffset(sessionID);
   dispatch(sessionsActions.updateSessionRuntime({ sessionID, status, activeTask: false, updatedAt: timestamp }));
   dispatch(chatActions.finishRunningSession(sessionID));
+}
+
+function refreshRenamedAssistant(sessionID: string, events: ChatEvent[], dispatch: AppDispatch) {
+  if (sessionID === assistantSessionID && events.some((event) => event.type === "tool_call_completed" && event.tool_name === "assistant_rename")) {
+    void dispatch(refreshAssistant());
+  }
 }
 
 function terminalEventStatus(event: ChatEvent) {

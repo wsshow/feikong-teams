@@ -18,7 +18,11 @@ func TestOpenAssistantHandlerRestoresRenamedSession(t *testing.T) {
 	rt := newTestRuntime(t)
 	router := gin.New()
 	router.POST("/assistant", rt.OpenAssistantHandler())
+	router.GET("/assistant", rt.GetAssistantHandler())
 	router.POST("/rename", rt.RenameSessionHandler())
+	if resp := performRequest(router, http.MethodGet, "/assistant", nil); resp.Code != http.StatusNotFound {
+		t.Fatalf("read should not create assistant: %d", resp.Code)
+	}
 	for _, name := range []string{"助手", "小空"} {
 		resp := performJSON(router, http.MethodPost, "/assistant", `{}`)
 		if resp.Code != http.StatusOK {
@@ -36,6 +40,10 @@ func TestOpenAssistantHandlerRestoresRenamedSession(t *testing.T) {
 		resp = performJSON(router, http.MethodPost, "/rename", `{"session_id":"`+data.SessionID+`","title":"小空"}`)
 		if resp.Code != http.StatusOK {
 			t.Fatalf("rename: %s", resp.Body.String())
+		}
+		profile := performRequest(router, http.MethodGet, "/assistant", nil)
+		if profile.Code != http.StatusOK || !strings.Contains(profile.Body.String(), "小空") {
+			t.Fatalf("profile: %s", profile.Body.String())
 		}
 	}
 }

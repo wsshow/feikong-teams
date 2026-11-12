@@ -1,4 +1,5 @@
 import {
+  Bot,
   CalendarClock,
   Database,
   FolderOpen,
@@ -27,6 +28,7 @@ import { shortID, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { chatPath, panelPath, pushAppPath } from "@/lib/navigation";
 import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
+import { assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { SessionShareDialog } from "./SessionShareDialog";
 
 const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
@@ -68,7 +70,8 @@ export function Sidebar() {
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const version = useAppSelector((state) => state.app.version);
 
-  const sortedSessions = [...sessions].sort((left, right) => sessionTime(right) - sessionTime(left));
+  const assistantName = assistantDisplayName(sessions);
+  const sortedSessions = sessions.filter((session) => session.session_id !== assistantSessionID).sort((left, right) => sessionTime(right) - sessionTime(left));
   const searchResults = sortedSessions.filter((session) => {
     const text = `${session.title || ""} ${session.session_id}`.toLowerCase();
     return text.includes(searchQuery.toLowerCase());
@@ -162,8 +165,8 @@ export function Sidebar() {
     if (!nextTitle) return;
     setRenamingSessionID(renameTarget.session_id);
     try {
-      await renameSession(renameTarget.session_id, nextTitle);
-      dispatch(sessionsActions.renameSessionLocal({ sessionID: renameTarget.session_id, title: nextTitle }));
+      const result = await renameSession(renameTarget.session_id, nextTitle);
+      dispatch(sessionsActions.renameSessionLocal({ sessionID: renameTarget.session_id, title: result.title }));
       setRenameTarget(null);
     } catch (error) {
       dispatch(appActions.showToast(error instanceof Error ? error.message : "重命名会话失败"));
@@ -251,12 +254,19 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <div className="shrink-0 px-2 pb-0.5">
+      <div className="shrink-0 space-y-0.5 px-2 pb-2" data-sidebar-fixed-actions>
         <SidebarNavItem
           icon={Plus}
           label="新建会话"
           open={sidebarOpen}
           onClick={handleNewSession}
+        />
+        <SidebarNavItem
+          icon={Bot}
+          label={assistantName}
+          open={sidebarOpen}
+          active={activePanel === "chat" && activeSessionID === assistantSessionID}
+          onClick={() => openSession(assistantSessionID)}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain" onScroll={closeSessionMenu}>
@@ -442,6 +452,7 @@ function SessionRenameDialog({
             autoFocus
             value={title}
             placeholder="会话名称"
+            aria-label="会话名称"
             onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape" && !saving) onCancel();
@@ -642,6 +653,8 @@ function SidebarNavItem({
         !open && "justify-center px-0",
       )}
       onClick={onClick}
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
       title={label}
     >
       <Icon className="h-4 w-4 shrink-0" />

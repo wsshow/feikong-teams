@@ -176,7 +176,7 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
   next.agents = {
     ...(next.agents || {}),
     items: (next.agents?.items || []).flatMap((agent) => {
-      if (agent.builtin && agent.id === "coordinator") return [];
+      if (agent.builtin && (agent.id === "coordinator" || agent.id === "workspace_assistant")) return [];
       if (agent.builtin) return [{ id: agent.id, enabled: agent.enabled }];
       return [agent];
     }),

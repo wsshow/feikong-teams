@@ -5,6 +5,8 @@ import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
 import { AuthExpiredDialog } from "@/features/auth/AuthExpiredDialog";
 import { shortID } from "@/lib/format";
+import { assistantSessionID } from "@/lib/assistant";
+import { cn } from "@/lib/cn";
 import { Sidebar } from "./Sidebar";
 import { SessionShareDialog } from "./SessionShareDialog";
 
@@ -18,7 +20,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const sessions = useAppSelector((state) => state.sessions.items);
   const title = resolveTitle(activePanel, activeSessionID, sessions);
   const activeSession = sessions.find((item) => item.session_id === activeSessionID);
-  const canShareSession = activePanel === "chat" && Boolean(activeSessionID);
+  const showHeader = activePanel !== "chat" || Boolean(activeSessionID && activeSessionID !== assistantSessionID);
+  const canShareSession = showHeader && activePanel === "chat" && Boolean(activeSessionID);
 
   useEffect(() => {
     if (!toast) return;
@@ -35,34 +38,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="contents" inert={authExpired ? true : undefined}>
         <Sidebar />
         <main className="relative flex min-w-0 flex-1 flex-col">
-          <header className="sketch-rule flex h-14 shrink-0 items-center justify-between border-b bg-background/82 px-3 backdrop-blur sm:px-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <Button
-                className="md:hidden"
-                size="icon"
-                variant="ghost"
-                aria-label="打开导航"
-                onClick={() => dispatch(appActions.setSidebarOpen(true))}
-              >
-                <Menu className="h-4 w-4" />
-              </Button>
-              <div className="min-w-0 truncate text-base font-semibold">
-                {title}
+          {showHeader ? (
+            <header className="sketch-rule flex h-14 shrink-0 items-center justify-between border-b bg-background/82 px-3 backdrop-blur sm:px-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  className="md:hidden"
+                  size="icon"
+                  variant="ghost"
+                  aria-label="打开导航"
+                  onClick={() => dispatch(appActions.setSidebarOpen(true))}
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
+                <div className="min-w-0 truncate text-base font-semibold">
+                  {title}
+                </div>
               </div>
-            </div>
-            {canShareSession ? (
-              <button
-                className="flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                aria-label="分享会话"
-                title="分享会话"
-                type="button"
-                onClick={() => setShareTarget({ session_id: activeSessionID, title: activeSession?.title })}
-              >
-                <Share2 className="h-4 w-4" />
-              </button>
-            ) : null}
-          </header>
-          <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+              {canShareSession ? (
+                <button
+                  className="flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label="分享会话"
+                  title="分享会话"
+                  type="button"
+                  onClick={() => setShareTarget({ session_id: activeSessionID, title: activeSession?.title })}
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+              ) : null}
+            </header>
+          ) : (
+            <Button
+              className="absolute left-3 top-3 z-20 bg-background/95 md:hidden"
+              size="icon"
+              variant="ghost"
+              aria-label="打开导航"
+              onClick={() => dispatch(appActions.setSidebarOpen(true))}
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          )}
+          <div className={cn("min-h-0 flex-1 overflow-hidden", !showHeader && "pt-12 md:pt-0")}>{children}</div>
         </main>
         <SessionShareDialog
           session={shareTarget}
@@ -96,5 +111,6 @@ function resolveTitle(
   }
   if (!activeSessionID) return "新会话";
   const session = sessions.find((item) => item.session_id === activeSessionID);
+  if (activeSessionID === assistantSessionID) return session?.title || "助手";
   return session?.title || shortID(activeSessionID) || "新会话";
 }

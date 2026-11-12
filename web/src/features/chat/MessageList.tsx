@@ -1,6 +1,7 @@
 import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send, ShieldAlert } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
+import { assistantAgentID, assistantDisplayName } from "@/lib/assistant";
 import { chatActions } from "@/app/store";
 import { submitApproval, submitAskResponse } from "@/api/stream";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
@@ -762,6 +763,7 @@ export function MemberActivityPart({
 }
 
 export function AgentNameLabel({ name, agent, loud = false }: { name: string; agent?: AgentInfo; loud?: boolean }) {
+  if (name === assistantAgentID) return <AssistantNameLabel loud={loud} />;
   const label = agentDisplayName(agent, name);
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-2", loud && "font-semibold tracking-normal")}>
@@ -769,6 +771,11 @@ export function AgentNameLabel({ name, agent, loud = false }: { name: string; ag
       {agent?.builtin ? <BuiltinAgentBadge /> : null}
     </span>
   );
+}
+
+function AssistantNameLabel({ loud }: { loud: boolean }) {
+  const name = useAppSelector((state) => assistantDisplayName(state.sessions.items));
+  return <span className={cn("truncate", loud && "font-semibold")}>{name}</span>;
 }
 
 export function BuiltinAgentBadge() {

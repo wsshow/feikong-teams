@@ -5,6 +5,7 @@ import { startStream, stopStream } from "@/api/chat";
 import { listFiles, searchFiles, uploadFile } from "@/api/files";
 import { cn } from "@/lib/cn";
 import { chatPath, pushAppPath } from "@/lib/navigation";
+import { assistantAgentID, assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { ChatComposer } from "./ChatComposer";
 import { QueuePanel } from "./QueuePanel";
 import { clearStreamOffset } from "./streamOffsets";
@@ -25,8 +26,9 @@ export function ChatInput({
   const dispatch = useAppDispatch();
   const sessionID = useAppSelector((state) => state.chat.activeSessionID);
   const runningTask = useAppSelector((state) => (sessionID ? state.chat.runningTasks[sessionID] : undefined));
-  const mode = useAppSelector((state) => state.chat.mode);
-  const currentAgent = useAppSelector((state) => state.chat.currentAgent);
+  const mode = useAppSelector((state) => sessionID === assistantSessionID ? "team" : state.chat.mode);
+  const currentAgent = useAppSelector((state) => sessionID === assistantSessionID ? assistantAgentID : state.chat.currentAgent);
+  const assistantName = useAppSelector((state) => assistantDisplayName(state.sessions.items));
   const isProcessing = runningTask?.phase === "processing";
   const agents = useAppSelector((state) => state.app.agents);
   const [value, setValue] = useState("");
@@ -290,6 +292,7 @@ export function ChatInput({
         submitting={submitting}
         agents={agents}
         selectedAgent={currentAgent}
+        lockedTargetName={sessionID === assistantSessionID ? assistantName : undefined}
         fileSuggestions={fileSuggestions}
         attachments={attachments}
         referenceLoading={referenceLoading}
@@ -325,6 +328,7 @@ export function ChatInput({
           submitting={submitting}
           agents={agents}
           selectedAgent={currentAgent}
+          lockedTargetName={sessionID === assistantSessionID ? assistantName : undefined}
           fileSuggestions={fileSuggestions}
           attachments={attachments}
           referenceLoading={referenceLoading}

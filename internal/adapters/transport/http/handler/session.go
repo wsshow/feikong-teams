@@ -43,6 +43,18 @@ func (rt *Runtime) OpenAssistantHandler() gin.HandlerFunc {
 	}
 }
 
+// GetAssistantHandler 读取助手当前名称，不创建或修改会话。
+func (rt *Runtime) GetAssistantHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		metadata, err := rt.SessionService.Get(c.Request.Context(), domainsession.AssistantID)
+		if err != nil {
+			FailError(c, err)
+			return
+		}
+		OK(c, gin.H{"session_id": metadata.ID, "title": metadata.Title, "current_agent": metadata.CurrentAgent, "mode": metadata.Mode})
+	}
+}
+
 // ListSessionsHandler 列出所有历史会话
 
 func (rt *Runtime) ListSessionsHandler() gin.HandlerFunc {

@@ -1,9 +1,17 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import { listSessions, getSession } from "@/api/sessions";
+import { listSessions, getSession, openAssistant, getAssistant } from "@/api/sessions";
+import { assistantSessionID } from "@/lib/assistant";
 import { chatActions, sessionsActions } from "@/app/store";
 
 let sessionsRequest: ReturnType<typeof listSessions> | undefined;
 const sessionDetailRequests = new Map<string, ReturnType<typeof getSession>>();
+let assistantRequestVersion = 0;
+
+export const refreshAssistant = createAsyncThunk("sessions/assistant", async (_, { dispatch }) => {
+  const version = ++assistantRequestVersion;
+  const assistant = await getAssistant();
+  if (version === assistantRequestVersion) dispatch(sessionsActions.upsertSession(assistant));
+});
 
 export const loadSessions = createAsyncThunk(
   "sessions/load",
@@ -28,11 +36,17 @@ export const loadSessions = createAsyncThunk(
   { condition: () => sessionsRequest === undefined },
 );
 
-export const loadSessionDetail = createAsyncThunk("sessions/detail", async (sessionID: string) => {
+export const loadSessionDetail = createAsyncThunk("sessions/detail", async (sessionID: string, { dispatch }) => {
   const pending = sessionDetailRequests.get(sessionID);
   if (pending) return pending;
 
-  const request = getSession(sessionID);
+  const request = (async () => {
+    if (sessionID === assistantSessionID) {
+      const assistant = await openAssistant();
+      dispatch(sessionsActions.upsertSession(assistant));
+    }
+    return getSession(sessionID);
+  })();
   sessionDetailRequests.set(sessionID, request);
   void request.then(
     () => clearSessionDetailRequest(sessionID, request),

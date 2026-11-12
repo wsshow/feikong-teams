@@ -7,6 +7,7 @@ import type { FileEntry } from "@/types/files";
 import type { ScheduleTask } from "@/types/schedules";
 import type { SkillInfo } from "@/types/skills";
 import { chatSessionIDFromPath, panelFromPath } from "@/lib/navigation";
+import { assistantSessionID } from "@/lib/assistant";
 import { appendBufferedChatEvent, rememberChatEvent } from "@/features/chat/eventBuffer";
 
 export type AppPanel = "chat" | "config" | "files" | "schedules" | "shares" | "skills" | "memory";
@@ -29,6 +30,10 @@ const chatSlice = createSlice({
   initialState: initialChatState,
   reducers: {
     setActiveSession(state, action: PayloadAction<string>) {
+      if (state.activeSessionID === assistantSessionID && action.payload !== assistantSessionID) {
+        state.currentAgent = "";
+        state.mode = "team";
+      }
       state.activeSessionID = action.payload;
     },
     setMode(state, action: PayloadAction<string>) {

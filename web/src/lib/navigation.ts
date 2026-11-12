@@ -1,4 +1,5 @@
 import type { AppPanel } from "@/app/store";
+import { assistantSessionID } from "./assistant";
 
 export function panelFromPath(path: string): AppPanel {
   if (path === "/memory") return "memory";
@@ -11,6 +12,7 @@ export function panelFromPath(path: string): AppPanel {
 }
 
 export function chatSessionIDFromPath(path: string) {
+  if (path === "/assistant") return assistantSessionID;
   const match = path.match(/^\/chat\/([^/?#]+)/);
   if (!match?.[1]) return "";
   try {
@@ -21,6 +23,7 @@ export function chatSessionIDFromPath(path: string) {
 }
 
 export function chatPath(sessionID?: string) {
+  if (sessionID === assistantSessionID) return "/assistant";
   return sessionID ? `/chat/${encodeURIComponent(sessionID)}` : "/chat";
 }
 
