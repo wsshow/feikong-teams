@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	taskstore "fkteams/internal/adapters/storage/task"
 	commandtool "fkteams/internal/adapters/tools/builtin/command"
 	doctool "fkteams/internal/adapters/tools/builtin/doc"
 	exceltool "fkteams/internal/adapters/tools/builtin/excel"
@@ -23,11 +24,13 @@ import (
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/config"
 	appsession "fkteams/internal/app/session"
+	apptask "fkteams/internal/app/task"
 	apptools "fkteams/internal/app/tools"
 	"fkteams/internal/app/tools/ask"
 	assistanttools "fkteams/internal/app/tools/assistant"
 	"fkteams/internal/app/tools/conversations"
 	memorytools "fkteams/internal/app/tools/memory"
+	tasktools "fkteams/internal/app/tools/tasks"
 	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
 )
@@ -65,7 +68,12 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 	}
 	registry.RegisterMCPProvider(mcpProvider)
 
+	taskService := apptask.NewService(taskstore.NewStore(documents, filepath.Join(appdata.Dir(), "assistant", "tasks.json")))
 	registrations := []apptools.ToolGroupRegistration{
+		{
+			Info:    apptools.ToolGroupInfo{Name: "tasks", DisplayName: "持续任务", Description: "保存用户目标、进展、下一步和交付结果，支持跨回合续办。", Category: "协作", Builtin: true, IncludedTools: []string{"task_list", "task_save"}},
+			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) { return tasktools.GetTools(taskService) },
+		},
 		{
 			Info:    apptools.ToolGroupInfo{Name: "memory", DisplayName: "长期记忆", Description: "查询、保存、纠正和忘记用户明确指定的长期偏好与背景。", Category: "协作", Builtin: true, IncludedTools: []string{"memory_recall", "memory_save", "memory_forget"}},
 			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) { return memorytools.GetTools() },

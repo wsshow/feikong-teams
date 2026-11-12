@@ -75,6 +75,10 @@ var toolPolicies = map[string]ToolPolicy{
 	"schedule_cancel": destructivePolicy("", false),
 	"schedule_delete": destructivePolicy("", false),
 
+	// 持久任务
+	"task_list": readOnlyPolicy("", false),
+	"task_save": destructivePolicy("", false),
+
 	// 长期记忆
 	"memory_recall": readOnlyPolicy("", false),
 	"memory_save":   destructivePolicy("", false),

@@ -140,6 +140,7 @@ SDK 中间件使用显式绑定运行时的句柄，适配器校验 backend 与�
 | 当前模型与工具执行、中断恢复 | 当前运行的 AgentKit 会话 |
 | 待处理 steering、follow-up 与顺序 | `app/chat/taskstream` |
 | 长期记忆 | memory service/store |
+| 跨回合用户任务 | task service/store |
 | 定时任务和执行记录 | schedule service/store |
 
 AgentKit 的会话持久化和内置消息队列不与现有产品状态并行启用。传给库的历史是本次运行输入；应用仍以 transcript 为持久化事实来源。
@@ -197,6 +198,8 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 分享存储复用同一个条目存储实现，统一并发、写入回滚与副本读取，具体条目负责自己的编码和校验。队列存储使用固定根目录读写附件。记忆加载失败必须返回错误，所有记忆修改先持久化再发布，保存失败保留原快照。记忆由助手工具主动维护，不再后台提取或创建独立模型；更新以稳定 ID 和版本检查并发冲突，容量满时要求显式整理。服务停止和 cleanup 错误也从应用入口返回，不能只记录日志后报告成功。
 
 ## 前端职责
+
+个人助手的跨回合目标由 `app/task.Service` 管理，经工具注册表注入同一实例，默认使用 SQLite 文档保存快照。任务状态独立于回合执行；创建按来源会话与 key 去重，更新按 ID/版本检查冲突，不在启动时重放操作。
 
 常驻助手通过 `app/session.Service.OpenAssistant` 幂等创建固定会话，名称保存在会话 metadata 的标题中。`workspace_assistant` 以标准内置 Definition 运行，复用聊天、历史、队列和审批链路；身份工具仅允许助手会话改名。`app/session.QueryService` 经会话存储和消息读取端口执行跨会话查询，`conversations` 工具组只输出有界正文投影。历史只读查询不修复 transcript 尾部，文件存储读取校验符号链接边界。
 
