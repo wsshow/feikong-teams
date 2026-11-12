@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fkteams/internal/app/agent/catalog"
+	domainsession "fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"sync"
@@ -122,16 +123,15 @@ func resolveFactory(ctx context.Context, mode, agentName string, fallbackToTeam 
 			return "", nil, fmt.Errorf("unknown mode or agent: %s", mode)
 		}
 		return agentCacheKey(mode), func() (runtimeport.Runner, error) {
-			agent, err := info.Creator(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("create agent %s: %w", mode, err)
-			}
-			return CreateAgentRunner(ctx, agent)
+			return createAgentRunnerByName(ctx, info.Name)
 		}, nil
 	}
 }
 
 func createAgentRunnerByName(ctx context.Context, agentName string) (runtimeport.Runner, error) {
+	if agentName == domainsession.AssistantAgent {
+		return CreateAssistantRunner(ctx)
+	}
 	agentInfo, err := agents.AgentByName(ctx, agentName)
 	if err != nil {
 		return nil, err
