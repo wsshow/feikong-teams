@@ -3,6 +3,7 @@ Version = 0.0.1
 BuildTime = $(shell date +'%Y-%m-%d %H:%M:%S')
 BUN ?= bun
 WEB_DIR = web
+AIR_VERSION ?= v1.67.4
 
 # 提取当前系统的 OS 和 ARCH
 CURRENT_OS = $(shell go env GOOS)
@@ -44,6 +45,23 @@ clean:
 	rm -rf ./release
 	rm -rf ./web/dist
 
+# 开发模式：启动时准备嵌入产物，随后由 Vite 和 Air 监听源码。
+dev: web-build dev-air
+	@BUN="$(BUN)" bash scripts/dev.sh
+
+dev-web: web-install
+	cd $(WEB_DIR) && $(BUN) run dev --host 127.0.0.1 --port 5173 --strictPort
+
+dev-backend: web-build dev-air
+	./release/dev/air -c .air.toml
+
+dev-air:
+	@mkdir -p release/dev
+	GOBIN="$(CURDIR)/release/dev" go install github.com/air-verse/air@$(AIR_VERSION)
+
+dev-test:
+	$(BUN) test scripts/dev.test.ts
+
 web-install:
 	cd $(WEB_DIR) && $(BUN) install --frozen-lockfile
 
@@ -70,6 +88,6 @@ vet: web-build
 diff-check:
 	git diff --check
 
-check: fmt-check web-typecheck web-build vet test diff-check
+check: fmt-check dev-test web-typecheck web-build vet test diff-check
 
-.PHONY: native all build clean web-install web-typecheck web-build fmt-check test vet diff-check check
+.PHONY: native all build clean dev dev-web dev-backend dev-air dev-test web-install web-typecheck web-build fmt-check test vet diff-check check

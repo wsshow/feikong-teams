@@ -1,0 +1,29 @@
+root = "."
+tmp_dir = "release/dev/backend"
+
+[build]
+cmd = "go build -o ./release/dev/backend/fkteams ./cmd/fkteams"
+entrypoint = ["./release/dev/backend/fkteams", "web", "--host", "127.0.0.1", "--port", "23456"]
+include_dir = ["cmd", "internal"]
+include_ext = ["go", "txt", "tmpl", "tpl"]
+include_file = ["go.mod", "go.sum", "web/embed.go"]
+exclude_dir = [".git", "release", "web/node_modules", "web/dist"]
+exclude_regex = ["_test\\.go$"]
+delay = 500
+stop_on_error = false
+send_interrupt = true
+# 允许应用完成最长 30 秒的正常关闭，再启动新进程。
+kill_delay = "35s"
+log = "build-errors.log"
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = false
+
+[screen]
+clear_on_rebuild = false
+
+[proxy]
+enabled = false
