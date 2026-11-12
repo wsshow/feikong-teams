@@ -483,8 +483,8 @@ export function ToggleField({ label, checked, onChange, disabled }: { label: str
       onClick={() => onChange(!checked)}
     >
       <span className="text-sm font-medium">{label}</span>
-      <span className={cn("relative h-6 w-11 rounded-full border transition-colors", checked ? "border-primary/70 bg-primary" : "border-border bg-muted")}>
-        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-card shadow transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} />
+      <span aria-hidden="true" className={cn("inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-px transition-colors", checked ? "border-primary/70 bg-primary" : "border-border bg-muted")}>
+        <span className={cn("block h-5 w-5 shrink-0 rounded-full bg-card shadow transition-transform motion-reduce:transition-none", checked ? "translate-x-5" : "translate-x-0")} />
       </span>
     </button>
   );
