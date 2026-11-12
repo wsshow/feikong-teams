@@ -22,8 +22,10 @@ import (
 	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/config"
+	appsession "fkteams/internal/app/session"
 	apptools "fkteams/internal/app/tools"
 	"fkteams/internal/app/tools/ask"
+	"fkteams/internal/app/tools/conversations"
 	runtimeport "fkteams/internal/ports/runtime"
 	toolport "fkteams/internal/ports/tools"
 )
@@ -62,6 +64,15 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 	registry.RegisterMCPProvider(mcpProvider)
 
 	registrations := []apptools.ToolGroupRegistration{
+		{
+			Info: apptools.ToolGroupInfo{
+				Name: "conversations", DisplayName: "会话检索", Description: "列出、搜索和分页读取当前用户的会话历史。",
+				Category: "协作", Builtin: true, IncludedTools: []string{"session_search", "session_read"},
+			},
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				return conversations.GetTools(appsession.NewQueryService(eventlog.NewSessionRepository(ctx.SessionsDir, documents), ctx.HistoryReader))
+			},
+		},
 		{
 			Info: apptools.ToolGroupInfo{
 				Name:          "file",

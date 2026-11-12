@@ -7,6 +7,7 @@ import (
 
 	domainhistory "fkteams/internal/domain/history"
 	domainsession "fkteams/internal/domain/session"
+	"fkteams/internal/runtime/pathguard"
 )
 
 // SessionMessageReader 将文件历史记录适配为存储读取端口。
@@ -34,13 +35,32 @@ func (r *SessionMessageReader) LoadSessionMessages(_ context.Context, sessionID 
 	if recorder := r.manager.Get(sessionID); recorder != nil {
 		return recorder.GetMessages(), nil
 	}
-	recorder := NewHistoryRecorder()
-	recorder.Documents = r.manager.Documents
 	sessionDir := filepath.Join(r.sessionsDir, sessionID)
-	recorder.SetSessionDir(sessionDir)
 	transcriptFile := filepath.Join(sessionDir, TranscriptFileName)
-	if err := recorder.LoadFromFile(transcriptFile); err != nil {
+	if r.manager.Documents == nil {
+		// 跨会话读取不能经历史文件或成员目录的符号链接访问存储根以外的数据。
+		paths := []string{transcriptFile, filepath.Join(sessionDir, subagentsDirName)}
+		for _, path := range paths {
+			if _, err := pathguard.ResolveWorkspace(r.sessionsDir, path); err != nil {
+				return nil, err
+			}
+		}
+		members, err := documentTranscripts(sessionDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range members {
+			for _, file := range []string{path, filepath.Join(filepath.Dir(path), "metadata.json")} {
+				if _, err := pathguard.ResolveWorkspace(r.sessionsDir, file); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	// 查询不使用恢复模式，避免读取未完成会话时修复或改写 transcript 尾部。
+	transcript, err := loadTranscript(transcriptFile, r.manager.Documents)
+	if err != nil {
 		return nil, fmt.Errorf("read session history: %w", err)
 	}
-	return recorder.GetMessages(), nil
+	return projectTranscriptEvents(sessionDir, transcript, r.manager.Documents)
 }

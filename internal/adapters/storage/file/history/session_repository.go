@@ -3,6 +3,7 @@ package eventlog
 import (
 	"context"
 	"fkteams/internal/runtime/log"
+	"fkteams/internal/runtime/pathguard"
 	"strings"
 
 	"errors"
@@ -48,6 +49,9 @@ func (r *SessionRepository) ListSessions(_ context.Context) ([]domainsession.Rec
 			continue
 		}
 		sessionDir := filepath.Join(r.root, entry.Name())
+		if _, err := pathguard.ResolveWorkspace(r.root, filepath.Join(sessionDir, "metadata.json")); err != nil {
+			return nil, err
+		}
 		metadata, loadErr := LoadMetadata(sessionDir, r.Documents)
 		if loadErr != nil {
 			metadata = &domainsession.Metadata{
@@ -95,6 +99,11 @@ func (r *SessionRepository) LoadSession(_ context.Context, sessionID string) (do
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if r.Documents == nil {
+		if _, err := pathguard.ResolveWorkspace(r.root, filepath.Join(sessionID, "metadata.json")); err != nil {
+			return domainsession.Metadata{}, err
+		}
+	}
 	metadata, err := LoadMetadata(filepath.Join(r.root, sessionID), r.Documents)
 	if errors.Is(err, os.ErrNotExist) {
 		return domainsession.Metadata{}, apperror.New(apperror.CodeNotFound, "session not found")
