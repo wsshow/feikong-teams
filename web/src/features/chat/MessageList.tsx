@@ -847,7 +847,7 @@ export function MessageActions({
     <div
       className={cn(
         "flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
-        compact && "mt-1 h-0 overflow-visible",
+        compact && "mt-2",
         copied && "opacity-100",
         align === "right" && "justify-end",
       )}
