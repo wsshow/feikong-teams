@@ -35,6 +35,7 @@ beforeAll(async () => {
 beforeEach(() => {
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, location: dom.window.location, history: dom.window.history, localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true });
   state.store.dispatch(state.chatActions.finishRunningSession("workspace-assistant"));
+  state.store.dispatch(state.chatActions.setActiveSession("workspace-assistant"));
   state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", view: { items: [] } }));
   container = document.createElement("div");
   document.body.appendChild(container);

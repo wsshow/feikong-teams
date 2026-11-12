@@ -31,11 +31,13 @@ const chatSlice = createSlice({
   initialState: initialChatState,
   reducers: {
     setActiveSession(state, action: PayloadAction<string>) {
+      if (state.activeSessionID === action.payload) return;
       if (state.activeSessionID === assistantSessionID && action.payload !== assistantSessionID) {
         state.currentAgent = "";
         state.mode = "team";
       }
       state.activeSessionID = action.payload;
+      resetConversationView(state);
     },
     setMode(state, action: PayloadAction<string>) {
       state.mode = action.payload;
@@ -91,36 +93,15 @@ const chatSlice = createSlice({
       delete state.runningTasks[action.payload];
     },
     clearMessages(state) {
-      state.viewSessionID = "";
-      state.presentation = { items: [] };
-      state.messages = [];
-      state.seenEventKeys = {};
-      state.seenEventKeyOrder = [];
-      state.seenStreamEventID = undefined;
-      state.queue = [];
-      state.error = undefined;
-      state.errorTitle = undefined;
-      state.errorSuggestions = undefined;
-      state.technicalError = undefined;
-      state.statusText = undefined;
+      resetConversationView(state);
     },
     setSessionDetail(state, action: PayloadAction<SessionDetail>) {
       const detail = action.payload;
-      state.activeSessionID = detail.session_id;
+      if (state.activeSessionID !== detail.session_id) return;
+      resetConversationView(state);
       state.viewSessionID = detail.session_id;
       state.mode = detail.mode || "team";
       state.currentAgent = detail.current_agent || "";
-      state.presentation = { items: [] };
-      state.messages = [];
-      state.seenEventKeys = {};
-      state.seenEventKeyOrder = [];
-      state.seenStreamEventID = undefined;
-      state.queue = [];
-      state.error = undefined;
-      state.errorTitle = undefined;
-      state.errorSuggestions = undefined;
-      state.technicalError = undefined;
-      state.statusText = undefined;
       state.presentation = detail.view;
       syncPresentationMessages(state);
       state.queue = detail.queue || [];
@@ -147,6 +128,7 @@ const chatSlice = createSlice({
     },
     appendUserMessage(state, action: PayloadAction<{ id: string; content: string; sessionID?: string; contentParts?: ContentPartDTO[]; createdAt?: string }>) {
       const sessionID = action.payload.sessionID || state.activeSessionID;
+      if (state.viewSessionID !== sessionID) resetConversationView(state);
       state.viewSessionID = sessionID;
       state.messages.push({
         id: action.payload.id,
@@ -180,15 +162,34 @@ const chatSlice = createSlice({
       state.errorSuggestions = undefined;
       state.technicalError = undefined;
     },
+    sessionLoadFailed(state, action: PayloadAction<{ sessionID: string; message: string }>) {
+      if (state.activeSessionID !== action.payload.sessionID || state.viewSessionID === action.payload.sessionID) return;
+      state.error = action.payload.message;
+    },
   },
 });
 
+// 会话切换在一次状态更新内撤下旧视图，后台任务继续由 runningTasks 独立管理。
+function resetConversationView(state: ChatState) {
+  state.viewSessionID = "";
+  state.presentation = { items: [] };
+  state.messages = [];
+  state.seenEventKeys = {};
+  state.seenEventKeyOrder = [];
+  state.seenStreamEventID = undefined;
+  state.queue = [];
+  state.error = undefined;
+  state.errorTitle = undefined;
+  state.errorSuggestions = undefined;
+  state.technicalError = undefined;
+  state.statusText = undefined;
+}
 function applyChatEvent(
   state: ChatState,
   payload: ChatEvent,
 ) {
   const event = { ...payload };
-  if (event.session_id && state.activeSessionID && event.session_id !== state.activeSessionID) {
+  if (!state.activeSessionID || state.viewSessionID !== state.activeSessionID || (event.session_id && event.session_id !== state.activeSessionID)) {
     applyTaskLifecycleEvent(state, event);
     return;
   }

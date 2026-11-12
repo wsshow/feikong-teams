@@ -64,6 +64,7 @@ describe("chat state", () => {
   });
 
   test("restores the execution target when opening a session", () => {
+    dispatch(chatActions.setActiveSession("configured-session"));
     dispatch(chatActions.setSessionDetail({
       session_id: "configured-session",
       view: { items: [] },
@@ -109,5 +110,55 @@ describe("session list state", () => {
     }));
 
     expect(getState().sessions.items.find((item) => item.session_id === "patched")?.title).toBe("after");
+  });
+});
+
+describe("conversation ownership", () => {
+  function view(content: string): import("@/types/presentation").PresentationSnapshot {
+    return { items: [{ id: "message", index: 0, order: 1, kind: "message", node: {
+      message: { id: "message", role: "user", content, createdAt: "2026-11-12T00:00:00Z" },
+      parts: [], showAgentLabel: false, showCopyAction: false, order: 1,
+    } }] };
+  }
+
+  test("selection clears the complete view atomically while preserving background execution", () => {
+    dispatch(chatActions.setActiveSession("background"));
+    dispatch(chatActions.setSessionDetail({ session_id: "background", view: view("原会话"), queue: [{ queue_id: "q", kind: "follow_up" }] }));
+    dispatch(chatActions.activateRunningSession({ sessionID: "background" }));
+    dispatch(chatActions.setError("原会话错误"));
+    dispatch(chatActions.receiveEvent({ type: "system_notice", session_id: "background", content: "原会话状态" }));
+    dispatch(chatActions.setActiveSession("selected"));
+    const state = getState().chat;
+    expect(state.activeSessionID).toBe("selected");
+    expect(state.viewSessionID).toBe("");
+    expect(state.presentation.items).toEqual([]);
+    expect(state.messages).toEqual([]);
+    expect(state.queue).toEqual([]);
+    expect(state.error).toBeUndefined();
+    expect(state.statusText).toBeUndefined();
+    expect(state.runningTasks.background?.phase).toBe("processing");
+    dispatch(chatActions.finishRunningSession("background"));
+  });
+
+  test("late details, errors and stream payloads cannot change another session's view", () => {
+    dispatch(chatActions.setActiveSession("selected"));
+    dispatch(chatActions.setSessionDetail({ session_id: "selected", view: view("当前内容") }));
+    dispatch(chatActions.setSessionDetail({ session_id: "previous", view: view("过期内容") }));
+    dispatch(chatActions.sessionLoadFailed({ sessionID: "previous", message: "过期错误" }));
+    dispatch(chatActions.setPresentationSnapshot({ sessionID: "previous", view: view("过期快照"), nextOffset: 100 }));
+    dispatch(chatActions.receiveEvent({ type: "error", session_id: "previous", error: "过期流错误", view_update: { reset: view("过期流内容") } }));
+    expect(getState().chat.activeSessionID).toBe("selected");
+    expect(getState().chat.viewSessionID).toBe("selected");
+    expect(getState().chat.presentation).toEqual(view("当前内容"));
+    expect(getState().chat.error).toBeUndefined();
+  });
+
+  test("late background frames cannot populate the new conversation page", () => {
+    dispatch(chatActions.setActiveSession("previous"));
+    dispatch(chatActions.setSessionDetail({ session_id: "previous", view: view("原会话") }));
+    dispatch(chatActions.setActiveSession(""));
+    dispatch(chatActions.receiveEvent({ type: "assistant_completed", session_id: "previous", message_id: "late", view_update: { reset: view("过期内容") } }));
+    expect(getState().chat.presentation.items).toEqual([]);
+    expect(getState().chat.messages).toEqual([]);
   });
 });

@@ -29,16 +29,11 @@ export function ChatPage() {
   const error = useAppSelector((state) => state.chat.error);
   const [failedSessionID, setFailedSessionID] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [showSessionLoading, setShowSessionLoading] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const hasConversation = messageCount > 0 || itemCount > 0 || queueCount > 0 || isProcessing || Boolean(error);
-  const isLoadingSession = Boolean(
-    activeSessionID &&
-      activeSessionID !== viewSessionID &&
-      failedSessionID !== activeSessionID,
-  );
+  const isLoadingSession = Boolean(activeSessionID && activeSessionID !== viewSessionID);
 
   useEffect(() => {
     if (!activeSessionID) {
@@ -64,48 +59,42 @@ export function ChatPage() {
       .catch((loadError) => {
         if (cancelled) return;
         setFailedSessionID(loadingSessionID);
-        dispatch(chatActions.setError(errorMessage(loadError, "暂时无法打开这个会话，请稍后重试。")));
+        dispatch(chatActions.sessionLoadFailed({
+          sessionID: loadingSessionID,
+          message: errorMessage(loadError, "暂时无法打开这个会话，请稍后重试。"),
+        }));
       });
     return () => {
       cancelled = true;
     };
   }, [activeSessionID, viewSessionID, dispatch, loadAttempt]);
 
-  useEffect(() => {
-    if (!isLoadingSession) {
-      setShowSessionLoading(false);
-      return;
-    }
-    if (!hasConversation) {
-      setShowSessionLoading(true);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowSessionLoading(true), 180);
-    return () => window.clearTimeout(timer);
-  }, [isLoadingSession, hasConversation]);
-
   const updateJumpControls = useCallback((controls: { distanceFromBottom: number; jump: () => void }) => {
     setJumpControls(controls);
   }, []);
 
-  if (isLoadingSession && (showSessionLoading || activeSessionID === assistantSessionID)) {
-    return <ChatSessionLoading />;
+  function startNewConversation() {
+    dispatch(chatActions.setActiveSession(""));
+    pushAppPath("/chat");
   }
 
-  if (!activeSessionID && !hasConversation) {
-    return <ChatHome />;
-  }
-
-  if (activeSessionID === assistantSessionID && failedSessionID === activeSessionID) {
+  if (isLoadingSession && failedSessionID === activeSessionID && error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-muted-foreground">{error || "暂时无法打开助手"}</p>
-        <Button variant="outline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>重新打开</Button>
+      <div role="alert" className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="max-w-xl text-muted-foreground">{error}</p>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>重新打开</Button>
+          <Button onClick={startNewConversation}>新建会话</Button>
+        </div>
       </div>
     );
   }
 
-  if (activeSessionID === assistantSessionID && !isLoadingSession && !hasConversation) {
+  if (isLoadingSession) return <ChatSessionLoading />;
+
+  if (!activeSessionID && !hasConversation) return <ChatHome />;
+
+  if (activeSessionID === assistantSessionID && !hasConversation) {
     return <AssistantHome />;
   }
 

@@ -59,6 +59,7 @@ beforeEach(async () => {
   });
   state = await import("@/app/store");
   Controller = (await import("./TaskStreamController")).TaskStreamController;
+  state.store.dispatch(state.chatActions.setActiveSession(sessionID));
   state.store.dispatch(
     state.chatActions.setSessionDetail({
       session_id: sessionID,
