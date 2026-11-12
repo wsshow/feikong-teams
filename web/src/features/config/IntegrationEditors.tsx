@@ -1,4 +1,4 @@
-import { Cable, FileCode2, Play, Plus, Sparkles, Wrench } from "lucide-react";
+import { Cable, ChevronDown, FileCode2, Play, Plus, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { generateJavaScriptDraft } from "@/api/ai";
 import { testJavaScriptTool } from "@/api/javascript";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
-import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { Panel, PanelBody } from "@/components/ui/panel";
 import { cn } from "@/lib/cn";
 import { splitToolCatalog } from "@/features/config/toolCatalog";
 import type { JavaScriptHookConfig, JavaScriptToolConfig, MCPServerConfig, ToolInfo } from "@/types/config";
@@ -23,27 +23,9 @@ export function ToolsTab({ draft, updateDraft }: EditorProps) {
   const editing = useConfigEditing();
   return (
     <div className="space-y-4">
-      <Panel>
-        <PanelHeader>
-          <SectionTitle icon={Wrench} title="内置工具" description={`${builtinTools.length} 个内置工具组，可用于智能体工具配置。`} />
-        </PanelHeader>
-        <PanelBody className="grid gap-3 xl:grid-cols-2">
-          {builtinTools.map((tool) => (
-            <ToolInfoCard key={tool.name} tool={tool} />
-          ))}
-        </PanelBody>
-      </Panel>
+      <ToolCatalogPanel icon={Wrench} title="内置工具" description={`${builtinTools.length} 个内置工具组，可用于智能体工具配置。`} tools={builtinTools} />
       {customTools.length ? (
-        <Panel>
-          <PanelHeader>
-            <SectionTitle icon={FileCode2} title="自定义工具" description={`${customTools.length} 个用户创建的工具组，可在“扩展”页中编辑。`} />
-          </PanelHeader>
-          <PanelBody className="grid gap-3 xl:grid-cols-2">
-            {customTools.map((tool) => (
-              <ToolInfoCard key={tool.name} tool={tool} />
-            ))}
-          </PanelBody>
-        </Panel>
+        <ToolCatalogPanel icon={FileCode2} title="自定义工具" description={`${customTools.length} 个用户创建的工具组，可在“扩展”页中编辑。`} tools={customTools} />
       ) : null}
       <Panel>
         <SectionHeader icon={Cable} title="MCP 服务" description="连接 HTTP 或 stdio MCP 服务，启用后可在智能体工具中选择其能力。">
@@ -77,18 +59,26 @@ export function ToolsTab({ draft, updateDraft }: EditorProps) {
         </PanelBody>
       </Panel>
       {mcpTools.length ? (
-        <Panel>
-          <PanelHeader>
-            <SectionTitle icon={Cable} title="已连接的 MCP 工具" description={`${mcpTools.length} 个来自已启用 MCP 服务的工具组。`} />
-          </PanelHeader>
-          <PanelBody className="grid gap-3 xl:grid-cols-2">
-            {mcpTools.map((tool) => (
-              <ToolInfoCard key={tool.name} tool={tool} />
-            ))}
-          </PanelBody>
-        </Panel>
+        <ToolCatalogPanel icon={Cable} title="已连接的 MCP 工具" description={`${mcpTools.length} 个来自已启用 MCP 服务的工具组。`} tools={mcpTools} />
       ) : null}
     </div>
+  );
+}
+
+function ToolCatalogPanel({ icon, title, description, tools }: { icon: typeof Wrench; title: string; description: string; tools: ToolInfo[] }) {
+  return (
+    <details className="group/tool-catalog sketch-surface overflow-hidden rounded-md text-card-foreground">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-4 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <SectionTitle icon={icon} title={title} description={description} />
+        <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open/tool-catalog:rotate-180 motion-reduce:transition-none" />
+      </summary>
+      <div role="region" aria-label={`${title}列表`} tabIndex={0} className="chat-scroll max-h-[min(28rem,50dvh)] overflow-y-auto overscroll-contain border-t border-border/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        <div className="grid gap-3 p-4 xl:grid-cols-2">
+          {tools.map((tool) => <ToolInfoCard key={tool.name} tool={tool} />)}
+          {!tools.length ? <p className="py-4 text-center text-sm text-muted-foreground xl:col-span-2">暂无工具</p> : null}
+        </div>
+      </div>
+    </details>
   );
 }
 
