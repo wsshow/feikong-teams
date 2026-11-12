@@ -408,7 +408,7 @@ export const MessageRow = memo(function MessageRow({
           <AgentNameLabel name={message.agent} agent={resolveAgentInfo(message.agent, agents)} />
         </div>
       ) : null}
-      <div className="space-y-3">
+      <div className="message-parts">
         {(() => {
           const partKeys = new Map<string, number>();
           return parts.map((part) => {
@@ -627,7 +627,7 @@ export function ActivityList({
   const visibleTools = tools.slice(-12);
   if (!visibleTools.length) return null;
   return (
-    <div className="space-y-2">
+    <div>
       {visibleTools.map((part) => {
         if (part.type !== "tool") return null;
         const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
@@ -718,7 +718,7 @@ export function MemberActivityDetails({
 }) {
   const agent = resolveAgentInfo(member.name, agents);
   return (
-    <div className="space-y-3">
+    <div className="message-parts">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <GitBranch className="h-3.5 w-3.5" />
         <AgentNameLabel name={member.name} agent={agent} />

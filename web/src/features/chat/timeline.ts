@@ -417,7 +417,12 @@ export function timelineItemSpacingClass(items: TimelineItem[], index: number) {
   const previous = items[index - 1];
   const current = items[index];
   if (!previous || !current) return "mt-6";
-  if (current.kind === "tool") return previous.kind === "message" ? "mt-2" : "mt-2";
+  const previousEndsWithTool = previous.kind === "tool"
+    || (previous.kind === "message" && previous.node.parts[previous.node.parts.length - 1]?.type === "tool");
+  const currentStartsWithTool = current.kind === "tool"
+    || (current.kind === "message" && !current.node.showAgentLabel && current.node.parts[0]?.type === "tool");
+  if (previousEndsWithTool && currentStartsWithTool) return "mt-0";
+  if (current.kind === "tool") return "mt-2";
   if (current.kind === "ask") return previous.kind === "tool" ? "mt-2" : "mt-3";
   if (current.kind === "approval") return previous.kind === "tool" ? "mt-2" : "mt-3";
   if (current.kind === "error") return previous.kind === "message" ? "mt-4" : "mt-3";
@@ -959,7 +964,7 @@ function parseToolJSON(value: unknown) {
 function collectToolActivities(events: ChatEvent[], options: { includeMemberEvents?: boolean } = {}): ToolActivity[] {
   const result = new Map<string, ToolActivity>();
   const order: string[] = [];
-  const streamTerminalStatus = terminalToolStatus(events);
+  const unfinished = new Set<string>();
   const upsert = (key: string, patch: Partial<ToolActivity>) => {
     if (!result.has(key)) {
       result.set(key, {
@@ -978,10 +983,20 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
       if (field === "order" && Number.isFinite(current.order)) continue;
       (current as unknown as Record<string, unknown>)[field] = value;
     }
+    if (current.status === "pending" || current.status === "running") unfinished.add(key);
+    else unfinished.delete(key);
   };
 
   events.forEach((event, index) => {
     if (!options.includeMemberEvents && isMemberActivityEvent(event)) return;
+    const terminalStatus = event.type === "error" ? "error"
+      : event.type === "cancelled" ? "cancelled"
+      : event.type === "processing_end" ? "completed" : undefined;
+    if (terminalStatus) {
+      // 只收尾此事件之前的调用，避免历史回合的结束状态覆盖当前运行。
+      for (const key of unfinished) result.get(key)!.status = terminalStatus;
+      unfinished.clear();
+    }
     const orderValue = eventOrder(event, index);
     for (const tool of event.tool_calls || []) {
       if (tool.name === "ask_questions") continue;
@@ -990,7 +1005,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         ...tool,
         ref: tool.ref || event.tool_call_ref,
         id: tool.id || event.tool_call_id,
-        status: isAssistantCompleted(event) ? "completed" : "pending",
+        status: tool.status || result.get(key)?.status || (tool.result ? "completed" : "pending"),
         member_name: event.member_name || tool.member_name,
         result: tool.result || eventToolResultContent(event) || undefined,
         message_id: event.message_id,
@@ -1003,7 +1018,7 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         ...event.tool_call,
         ref: event.tool_call.ref || event.tool_call_ref,
         id: event.tool_call.id || event.tool_call_id,
-        status: isAssistantCompleted(event) ? "completed" : "pending",
+        status: event.tool_call.status || result.get(key)?.status || (event.tool_call.result ? "completed" : "pending"),
         member_name: event.member_name || event.tool_call.member_name,
         result: event.tool_call.result || eventToolResultContent(event) || undefined,
         message_id: event.message_id,
@@ -1021,7 +1036,10 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
         kind: event.tool_kind || current?.kind,
         target: event.tool_target || current?.target,
         member_name: event.member_name || current?.member_name,
-        status: isToolCompleted(event) ? "completed" : event.type === "tool_call_failed" || event.type === "error" ? "error" : current?.status || "running",
+        status: isToolCompleted(event) ? "completed"
+          : event.type === "tool_call_failed" || event.type === "error" ? "error"
+          : event.type === "tool_call_started" || event.type === "tool_call_result_delta" ? "running"
+          : current?.status || "pending",
         message_id: event.message_id || current?.message_id,
         order: orderValue,
       });
@@ -1040,20 +1058,8 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
     }
   });
   return order
-    .map((key) => {
-      const tool = result.get(key)!;
-      if (streamTerminalStatus && (tool.status === "pending" || tool.status === "running")) {
-        return { ...tool, status: streamTerminalStatus };
-      }
-      return tool;
-    })
+    .map((key) => result.get(key)!)
     .filter((tool) => tool.name && tool.name !== "tool");
-}
-
-function terminalToolStatus(events: ChatEvent[]) {
-  if (events.some((event) => event.type === "error")) return "error";
-  if (events.some((event) => event.type === "processing_end" || event.type === "cancelled")) return "completed";
-  return "";
 }
 
 type OrderedChatEvent = { event: ChatEvent; order: number };

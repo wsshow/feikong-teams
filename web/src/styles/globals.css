@@ -731,6 +731,14 @@
     min-width: 0;
   }
 
+  .message-parts {
+    @apply space-y-3;
+  }
+
+  .message-parts > [data-tool-call] + [data-tool-call] {
+    margin-top: 0;
+  }
+
   .message-prose {
     width: 100%;
     max-width: none;
