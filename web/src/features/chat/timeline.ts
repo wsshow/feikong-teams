@@ -11,22 +11,33 @@ export function timelineItemSpacingClass(items: TimelineItem[], index: number) {
   if (index <= 0) return "";
   const previous = items[index - 1];
   const current = items[index];
-  if (!previous || !current) return "mt-6";
-  const previousEndsWithTool =
+  if (!previous || !current) return "chat-item-turn";
+  if (current.kind === "message" && current.node.message.role === "user")
+    return "chat-item-turn";
+  const assistantContinuation =
     previous.kind === "message" &&
-    previous.node.parts[previous.node.parts.length - 1]?.type === "tool";
-  const currentStartsWithTool =
     current.kind === "message" &&
-    !current.node.showAgentLabel &&
-    current.node.parts[0]?.type === "tool";
-  if (previousEndsWithTool && currentStartsWithTool) return "mt-0";
-  if (current.kind === "error")
-    return previous.kind === "message" ? "mt-4" : "mt-3";
-  if (previous.kind === "ask" && current.kind === "message") return "mt-5";
-  if (previous.kind === "approval" && current.kind === "message") return "mt-5";
-  if (previous.kind === "error" && current.kind === "message") return "mt-6";
-  if (current.kind === "member" || previous.kind === "member") return "mt-3";
-  return "mt-6";
+    previous.node.message.role === "assistant" &&
+    current.node.message.role === "assistant" &&
+    !current.node.showAgentLabel;
+  if (assistantContinuation) {
+    const previousPart = previous.node.parts.at(-1);
+    const currentPart = current.node.parts[0];
+    return previousPart?.type === "tool" && currentPart?.type === "tool"
+      ? "mt-0"
+      : "chat-item-continuation";
+  }
+  if (
+    current.kind === "error" ||
+    previous.kind === "error" ||
+    previous.kind === "ask" ||
+    previous.kind === "approval" ||
+    current.kind === "member" ||
+    previous.kind === "member"
+  ) {
+    return "chat-item-continuation";
+  }
+  return "chat-item-turn";
 }
 
 export function toolActivityKey(tool: ToolCallDTO) {

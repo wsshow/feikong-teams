@@ -48,6 +48,8 @@
     --syntax-property: 192.923 82.278% 30.98%;
     --syntax-meta: 272.093 71.667% 47.059%;
     --radius: 0.5rem;
+    --chat-part-gap: 0.75rem;
+    --chat-turn-gap: 1.5rem;
     --sidebar: var(--background);
     --sidebar-foreground: var(--foreground);
     --shadow-inset: inset 0 1px 2px hsl(var(--foreground) / 0.05);
@@ -731,8 +733,13 @@
     min-width: 0;
   }
 
-  .message-parts {
-    @apply space-y-3;
+  .message-parts > :not([hidden]) ~ :not([hidden]),
+  .chat-item-continuation {
+    margin-top: var(--chat-part-gap);
+  }
+
+  .chat-item-turn {
+    margin-top: var(--chat-turn-gap);
   }
 
   .message-parts > [data-tool-call] + [data-tool-call] {
@@ -743,6 +750,14 @@
     width: 100%;
     max-width: none;
     overflow-wrap: break-word;
+  }
+
+  .message-prose > :first-child {
+    margin-top: 0;
+  }
+
+  .message-prose > :last-child {
+    margin-bottom: 0;
   }
 
   .message-prose pre {

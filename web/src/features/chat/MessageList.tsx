@@ -307,7 +307,7 @@ export function ConversationItems({
         const { message, parts, showAgentLabel } = item.node;
 
         return (
-          <div key={message.id} className={cn(spacing, "space-y-3")}>
+          <div key={message.id} className={spacing}>
             <MessageRow
               message={message}
               parts={parts}
@@ -749,7 +749,7 @@ export function ReasoningBlock({
   return (
     <div className="-ml-2 text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-warning transition-colors hover:bg-warning-muted"
+        className="flex min-h-11 items-center gap-3 rounded-lg px-2 py-2 text-left text-warning transition-colors hover:bg-warning-muted sm:min-h-10"
         onClick={handleToggle}
         type="button"
       >
@@ -847,7 +847,7 @@ export function MemberActivityBlock({
   return (
     <div className="-ml-2 text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-muted-foreground transition-colors hover:bg-muted/70"
+        className="flex min-h-11 items-center gap-3 rounded-lg px-2 py-2 text-left text-muted-foreground transition-colors hover:bg-muted/70 sm:min-h-10"
         onClick={handleToggle}
         type="button"
       >
