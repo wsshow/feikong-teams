@@ -11,6 +11,7 @@ let container: HTMLDivElement;
 let originalGlobals: Record<string, unknown>;
 let originalFetch: typeof fetch;
 let writes: number;
+let detailReads: number;
 let finishSave: (response: Response) => void;
 const task = { id: "weekly", task: "整理进展", cron_expr: "0 9 * * 1", status: "active" };
 
@@ -21,7 +22,9 @@ beforeEach(async () => {
   installDialogStub(dom);
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, location: dom.window.location, history: dom.window.history, localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true });
   writes = 0;
-  globalThis.fetch = (async (_path: unknown, init?: RequestInit) => {
+  detailReads = 0;
+  globalThis.fetch = (async (path: unknown, init?: RequestInit) => {
+    if (/\/(result|history)$/.test(String(path))) detailReads++;
     if (init?.method === "PUT" || init?.method === "POST") {
       writes++;
       return new Promise<Response>((resolve) => { finishSave = resolve; });
@@ -74,4 +77,19 @@ test("cancelling a new schedule leaves the list unchanged", async () => {
   expect(writes).toBe(0);
   expect(container.querySelector("textarea")).toBeNull();
   expect(container.textContent).toContain(task.task);
+});
+
+test("keyboard actions inside a task card do not also open task details", async () => {
+  const edit = button("编辑");
+  await act(async () => {
+    edit.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    edit.click();
+  });
+  expect(container.querySelector("dialog[open]")).not.toBeNull();
+  expect(detailReads).toBe(0);
+  await click("取消", container.querySelector("dialog[open]")!);
+  const event = new dom.window.KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  await act(async () => container.querySelector('article[role="button"]')!.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(detailReads).toBe(2);
 });

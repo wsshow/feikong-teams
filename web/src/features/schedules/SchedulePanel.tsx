@@ -415,7 +415,9 @@ function TaskGrid({
             role="button"
             tabIndex={0}
             onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") void onSelect(task);
+              if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              void onSelect(task);
             }}
           >
             <div className="flex items-start justify-between gap-3">

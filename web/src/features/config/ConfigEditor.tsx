@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
@@ -223,21 +223,33 @@ export function ConfigEditCard({
 }) {
   const editing = useConfigEditing();
   return (
-    <div className="flex min-w-0 items-center rounded-lg border border-border/75 bg-card/65">
+    <div className="relative min-w-0 rounded-lg border border-border/75 bg-card/65 transition-colors hover:bg-accent/40">
       <button
         type="button"
-        className="min-w-0 flex-1 rounded-lg p-4 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
         disabled={editing.busy}
         aria-haspopup="dialog"
         aria-label={`编辑${title}`}
         onClick={() => editing.begin(editorKey)}
-      >
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-semibold">{title}</span>
-          {badges.map((badge) => (
-            <Badge key={badge}>{badge}</Badge>
-          ))}
-          <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
+      />
+      <div className="pointer-events-none relative p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="min-w-0 truncate font-semibold">{title}</span>
+            {badges.map((badge) => (
+              <Badge key={badge}>{badge}</Badge>
+            ))}
+          </div>
+          {actions || onRemove ? (
+            <fieldset disabled={editing.busy} className="pointer-events-auto relative z-10 flex min-w-0 shrink-0 items-center gap-1">
+              {actions}
+              {onRemove ? (
+                <Button size="icon" variant="ghost" onClick={onRemove} aria-label={`删除${title}`}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </fieldset>
+          ) : null}
         </div>
         {description ? <p className="mt-1 line-clamp-2 break-words text-sm text-muted-foreground">{description}</p> : null}
         {summary.length ? (
@@ -252,17 +264,7 @@ export function ConfigEditCard({
             ))}
           </dl>
         ) : null}
-      </button>
-      {actions || onRemove ? (
-        <div className="flex shrink-0 flex-col gap-1 py-2 pr-2">
-          {actions}
-          {onRemove ? (
-            <Button size="icon" variant="ghost" onClick={onRemove} aria-label={`删除${title}`}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      </div>
       <ConfigEditDialog editorKey={editorKey} title={`编辑${title}`}>
         {children}
       </ConfigEditDialog>

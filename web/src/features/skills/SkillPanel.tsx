@@ -579,7 +579,7 @@ function SkillGrid({
             )}
             onClick={() => void onSelect(skill)}
             onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return;
+              if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
               event.preventDefault();
               void onSelect(skill);
             }}
