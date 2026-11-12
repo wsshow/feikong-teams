@@ -18,10 +18,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activePanel = useAppSelector((state) => state.app.activePanel);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const sessions = useAppSelector((state) => state.sessions.items);
-  const title = resolveTitle(activePanel, activeSessionID, sessions);
   const activeSession = sessions.find((item) => item.session_id === activeSessionID);
-  const showHeader = activePanel !== "chat" || Boolean(activeSessionID && activeSessionID !== assistantSessionID);
-  const canShareSession = showHeader && activePanel === "chat" && Boolean(activeSessionID);
+  const title = activeSession?.title || shortID(activeSessionID);
+  const showHeader = activePanel === "chat" && Boolean(activeSessionID && activeSessionID !== assistantSessionID);
+  const canShareSession = showHeader;
 
   useEffect(() => {
     if (!toast) return;
@@ -92,25 +92,4 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AuthExpiredDialog open={authExpired} />
     </div>
   );
-}
-
-function resolveTitle(
-  activePanel: "chat" | "config" | "files" | "schedules" | "shares" | "skills" | "memory",
-  activeSessionID: string,
-  sessions: Array<{ session_id: string; title?: string }>,
-) {
-  if (activePanel !== "chat") {
-    return {
-      memory: "记忆",
-      files: "文件",
-      schedules: "任务",
-      shares: "分享",
-      skills: "技能",
-      config: "配置",
-    }[activePanel];
-  }
-  if (!activeSessionID) return "新会话";
-  const session = sessions.find((item) => item.session_id === activeSessionID);
-  if (activeSessionID === assistantSessionID) return session?.title || "助手";
-  return session?.title || shortID(activeSessionID) || "新会话";
 }

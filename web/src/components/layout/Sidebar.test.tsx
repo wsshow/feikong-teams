@@ -26,10 +26,12 @@ beforeEach(async () => {
   Sidebar = (await import("./Sidebar")).Sidebar;
   state.store.dispatch(state.appActions.setSidebarOpen(true));
   state.store.dispatch(state.chatActions.setActiveSession(""));
+  const requestStartedAt = Date.now();
+  state.store.dispatch(state.sessionsActions.beginSessionsRequest(requestStartedAt));
   state.store.dispatch(state.sessionsActions.setSessions({ items: [
     { session_id: "workspace-assistant", title: "助手" },
     { session_id: "ordinary", title: "普通会话" },
-  ], requestStartedAt: Date.now() }));
+  ], requestStartedAt }));
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -69,7 +71,7 @@ test("refreshing persisted assistant identity updates the fixed entry without ch
   expect(state.store.getState().chat.activeSessionID).toBe("ordinary");
 });
 
-test("new chat and assistant omit the header while mobile navigation remains available", async () => {
+test("only ordinary chats retain the header while mobile navigation remains available on every panel", async () => {
   const { AppShell } = await import("./AppShell");
   state.store.dispatch(state.appActions.setActivePanel("chat"));
   await act(async () => root.render(<Provider store={state.store}><AppShell><div>content</div></AppShell></Provider>));
@@ -79,5 +81,15 @@ test("new chat and assistant omit the header while mobile navigation remains ava
   expect(container.querySelector("main > header")).toBeNull();
   expect(container.querySelector('button[aria-label="分享会话"]')).toBeNull();
   await act(async () => { state.store.dispatch(state.chatActions.setActiveSession("ordinary")); });
-  expect(container.querySelector("main > header")).not.toBeNull();
+  expect(container.querySelector("main > header")?.textContent).toContain("普通会话");
+  expect(container.querySelector('main button[aria-label="分享会话"]')).not.toBeNull();
+  for (const panel of ["memory", "files", "schedules", "shares", "skills", "config"] as const) {
+    await act(async () => { state.store.dispatch(state.appActions.setActivePanel(panel)); });
+    expect(container.querySelector("main > header")).toBeNull();
+    expect(container.querySelector('main button[aria-label="打开导航"]')).not.toBeNull();
+    expect(container.querySelector('main button[aria-label="分享会话"]')).toBeNull();
+  }
+  await act(async () => { state.store.dispatch(state.appActions.setSidebarOpen(false)); });
+  await act(async () => { container.querySelector<HTMLButtonElement>('main button[aria-label="打开导航"]')!.click(); });
+  expect(state.store.getState().app.sidebarOpen).toBe(true);
 });
