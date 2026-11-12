@@ -341,7 +341,7 @@ function ScheduleEditor({
             <button
               className={cn(
                 "h-10 rounded-lg border text-sm transition-colors",
-                form.mode === "once" ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-card/70 hover:bg-accent/60",
+                form.mode === "once" ? "border-primary/25 bg-accent text-primary" : "border-border bg-card/70 hover:bg-accent/60",
               )}
               onClick={() => onChange({ ...form, mode: "once" })}
               type="button"
@@ -351,7 +351,7 @@ function ScheduleEditor({
             <button
               className={cn(
                 "h-10 rounded-lg border text-sm transition-colors",
-                form.mode === "cron" ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-card/70 hover:bg-accent/60",
+                form.mode === "cron" ? "border-primary/25 bg-accent text-primary" : "border-border bg-card/70 hover:bg-accent/60",
               )}
               onClick={() => onChange({ ...form, mode: "cron" })}
               type="button"
@@ -409,7 +409,7 @@ function TaskGrid({
             key={task.id}
             className={cn(
               "group flex min-h-48 cursor-pointer flex-col rounded-xl border bg-card/65 p-4 text-left transition-[background,border-color,box-shadow]",
-              selected ? "border-primary/60 bg-primary/5 shadow-[2px_3px_0_hsl(214_45%_30%/0.12)]" : "border-border/75 hover:bg-accent/45",
+              selected ? "border-primary/25 bg-accent" : "border-border/75 hover:bg-accent/45",
             )}
             onClick={() => void onSelect(task)}
             role="button"
@@ -608,7 +608,7 @@ function FilterButton({ active, label, count, onClick }: { active: boolean; labe
     <button
       className={cn(
         "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors",
-        active ? "border-primary/50 bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:border-border hover:bg-card",
+        active ? "border-primary/25 bg-accent text-primary" : "border-transparent text-muted-foreground hover:border-border hover:bg-card",
       )}
       onClick={onClick}
     >
@@ -684,7 +684,7 @@ function statusLabel(status?: string) {
 
 function statusColor(status?: string) {
   const normalized = normalizeStatus(status);
-  if (normalized === "completed") return "bg-emerald-500";
+  if (normalized === "completed") return "bg-success";
   if (normalized === "cancelled") return "bg-muted-foreground/45";
   if (normalized === "failed") return "bg-destructive";
   return "bg-primary";

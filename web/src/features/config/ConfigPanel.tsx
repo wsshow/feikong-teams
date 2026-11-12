@@ -131,7 +131,7 @@ export function ConfigPanel() {
                     className={cn(
                       "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors",
                       activeTab === tab.key
-                        ? "border-primary/50 bg-primary/10 text-primary"
+                        ? "border-primary/25 bg-accent text-primary"
                         : "border-transparent text-muted-foreground hover:border-border hover:bg-card",
                     )}
                     onClick={() => setActiveTab(tab.key)}

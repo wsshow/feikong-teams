@@ -217,9 +217,9 @@ export function Sidebar() {
       ) : null}
       <aside
         className={cn(
-          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r bg-sidebar/95 text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
+          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
           sidebarOpen
-            ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-[12px_0_32px_hsl(218_30%_20%/0.16)] md:w-[292px] md:shadow-none"
+            ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-dialog md:w-[292px] md:shadow-none"
             : "w-[min(292px,calc(100vw-3rem))] -translate-x-full md:w-16 md:translate-x-0",
         )}
       >
@@ -300,7 +300,7 @@ export function Sidebar() {
                       key={session.session_id}
                       className={cn(
                         "group relative mb-1 flex w-full items-start gap-1 rounded-xl py-2 pl-2.5 pr-1.5 text-base transition-colors hover:bg-card/70",
-                        activeSessionID === session.session_id && "bg-card/80 text-accent-foreground",
+                        activeSessionID === session.session_id && "bg-accent text-accent-foreground",
                       )}
                     >
                       <button
@@ -433,9 +433,9 @@ function SessionRenameDialog({
         if (event.target === event.currentTarget && !saving) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-dialog">
         <div className="flex items-start gap-3">
-          <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+          <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-accent text-primary">
             <Pencil className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
@@ -495,7 +495,7 @@ function SessionDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-dialog">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />
@@ -544,7 +544,7 @@ function SessionSearchDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="mx-auto flex max-h-[78vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_50px_hsl(218_30%_20%/0.18)] sm:max-h-[68vh]">
+      <div className="mx-auto flex max-h-[78vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-dialog sm:max-h-[68vh]">
         <div className="flex h-14 items-center gap-3 border-b border-border/70 px-4 sm:h-16 sm:px-5">
           <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
           <Input
@@ -608,7 +608,7 @@ function SessionMenu({
   return (
     <div
       ref={menuRef}
-      className="sketch-surface fixed z-50 w-44 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]"
+      className="sketch-surface fixed z-50 w-44 rounded-xl bg-card p-1.5 text-sm shadow-popover"
       style={{ top: position.top, left: position.left }}
     >
       <button className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-accent/65" onClick={onToggleFavorite}>
@@ -648,8 +648,8 @@ function SidebarNavItem({
   return (
     <button
       className={cn(
-        "flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-card/70",
-        active && "bg-card shadow-[2px_2px_0_hsl(218_32%_30%/0.08)]",
+        "flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+        active && "bg-accent text-accent-foreground",
         !open && "justify-center px-0",
       )}
       onClick={onClick}

@@ -117,8 +117,8 @@ export function Select({ value, options, optionLabels, onChange, disabled, class
         aria-activedescendant={expanded ? `${listID}-${activeIndex}` : undefined}
         disabled={disabled}
         className={cn(
-          "sketch-inset flex h-9 w-full items-center justify-between gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-          expanded && "ring-2 ring-ring",
+          "sketch-inset flex h-9 w-full items-center justify-between gap-2 rounded-md px-3 py-1 text-left text-sm transition-colors hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
+          expanded && "border-primary ring-2 ring-ring/20",
         )}
         onClick={() => expanded ? setOpen(false) : show()}
         onKeyDown={handleKeyDown}
@@ -133,7 +133,7 @@ export function Select({ value, options, optionLabels, onChange, disabled, class
           role="listbox"
           aria-label={props["aria-label"]}
           aria-labelledby={props["aria-labelledby"]}
-          className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
+          className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-popover"
         >
           {options.map((option, index) => (
             <button
@@ -146,7 +146,7 @@ export function Select({ value, options, optionLabels, onChange, disabled, class
               className={cn(
                 "flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors",
                 index === activeIndex && "bg-accent/70",
-                selected === option && "bg-primary/10 text-primary",
+                selected === option && "bg-accent text-primary",
               )}
               onPointerMove={() => setActiveIndex(index)}
               onMouseDown={(event) => event.preventDefault()}

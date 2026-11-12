@@ -255,14 +255,14 @@ function ModelNameField({
           <RefreshCcw className={cn("h-4 w-4", state?.loading && "animate-spin")} />
         </button>
         {open && providerModels.length ? (
-          <div className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]">
+          <div className="sketch-surface absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 max-h-56 space-y-1 overflow-y-auto rounded-xl bg-card p-2 text-sm shadow-popover">
             {visibleModels.length ? visibleModels.map((name) => (
               <button
                 key={name}
                 type="button"
                 className={cn(
                   "flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/70",
-                  model.model === name && "bg-primary/10 text-primary",
+                  model.model === name && "bg-accent text-primary",
                 )}
                 onMouseDown={(event) => {
                   event.preventDefault();

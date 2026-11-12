@@ -14,6 +14,8 @@ export default {
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
+          hover: "hsl(var(--primary-hover))",
+          pressed: "hsl(var(--primary-pressed))",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
@@ -22,7 +24,16 @@ export default {
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
+          hover: "hsl(var(--destructive-hover))",
           foreground: "hsl(var(--destructive-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          muted: "hsl(var(--warning-muted))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          muted: "hsl(var(--success-muted))",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",
@@ -44,6 +55,11 @@ export default {
           DEFAULT: "hsl(var(--sidebar))",
           foreground: "hsl(var(--sidebar-foreground))",
         },
+      },
+      boxShadow: {
+        surface: "var(--shadow-surface)",
+        popover: "var(--shadow-popover)",
+        dialog: "var(--shadow-dialog)",
       },
       borderRadius: {
         lg: "var(--radius)",

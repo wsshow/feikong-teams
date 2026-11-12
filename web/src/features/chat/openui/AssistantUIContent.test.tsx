@@ -226,6 +226,9 @@ test("portal dialogs receive the same custom theme as inline message components"
   const themeCSS = [...document.querySelectorAll("style[data-openui-theme]")].find((style) => style.textContent?.includes(`.${themeClass}`))?.textContent;
   expect(themeCSS).toContain(".assistant-openui,");
   expect(themeCSS).toContain("--openui-foreground: hsl(var(--card))");
+  expect(themeCSS).toContain("--openui-sunk: hsl(var(--muted))");
+  expect(themeCSS).toContain("--openui-interactive-accent-hover: hsl(var(--primary-hover))");
+  expect(themeCSS).toContain("--openui-shadow-xl: var(--shadow-dialog)");
   expect(themeCSS).toContain('"Kaiti SC"');
   await act(async () => document.querySelector<HTMLButtonElement>('.openui-modal-close')!.click());
   expect(document.querySelector(".openui-modal-root")).toBeNull();

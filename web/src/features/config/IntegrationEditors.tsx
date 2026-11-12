@@ -403,7 +403,7 @@ function JavaScriptToolEditor({
         }
       >
         <Textarea className="min-h-28 font-mono text-xs leading-5" value={testInput} spellCheck={false} onChange={(event) => setTestInput(event.target.value)} />
-        <div className="text-xs leading-5 text-amber-700">试运行会真实调用宿主能力并可能产生副作用；工具审批和工作区边界仍然生效。</div>
+        <div className="text-xs leading-5 text-warning">试运行会真实调用宿主能力并可能产生副作用；工具审批和工作区边界仍然生效。</div>
         {testError ? <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">{testError}</div> : null}
         {testRan ? <Textarea className="min-h-28 font-mono text-xs leading-5" value={testResult} placeholder="工具返回空结果" readOnly /> : null}
         {testNotices.length > 0 ? (
@@ -475,7 +475,7 @@ function HookPointField({ values, onChange }: { values: string[]; onChange: (val
           <button
             key={point}
             type="button"
-            className={cn("rounded-lg border px-2.5 py-1.5 text-xs", selected.has(point) ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-muted-foreground")}
+            className={cn("rounded-lg border px-2.5 py-1.5 text-xs", selected.has(point) ? "border-primary/25 bg-accent text-primary" : "border-border text-muted-foreground")}
             onClick={() => onChange(selected.has(point) ? values.filter((item) => item !== point) : [...values, point])}
           >
             {hookPointLabels[point] || point}

@@ -134,7 +134,7 @@ function ShareThread({
   return (
     <>
       <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
-        <header className="mb-6 rounded-2xl border border-border/70 bg-card/75 px-4 py-4 shadow-[0_10px_28px_hsl(218_30%_25%/0.08)] sm:px-5">
+        <header className="mb-6 rounded-2xl border border-border/70 bg-card px-4 py-4 sm:px-5">
           <div className="text-lg font-semibold text-foreground">{detail.title || title || "共享会话"}</div>
           <div className="mt-1 text-sm text-muted-foreground">
             公开只读视图
@@ -327,7 +327,7 @@ function ShareAgentLabel({ name }: { name: string }) {
 
 function ShareBuiltinAgentBadge() {
   return (
-    <span className="shrink-0 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
+    <span className="shrink-0 rounded border border-primary/25 bg-accent px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
       内置
     </span>
   );
@@ -392,16 +392,16 @@ function ShareReasoningBlock({ content, disclosureID }: { content: string; discl
   return (
     <div className="-ml-2 text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
+        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-warning transition-colors hover:bg-warning-muted"
         onClick={handleToggle}
         type="button"
       >
-        <span className="h-2 w-2 rounded-full bg-amber-400" />
+        <span className="h-2 w-2 rounded-full bg-warning" />
         <span className="font-semibold">已思考</span>
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
-        <div className="ml-7 border-l border-amber-200/70 pl-4 pt-2 text-sm leading-7 text-muted-foreground">
+        <div className="ml-7 border-l border-warning/20 pl-4 pt-2 text-sm leading-7 text-muted-foreground">
           <div className="whitespace-pre-wrap">{content}</div>
         </div>
       ) : null}
@@ -439,7 +439,7 @@ function ShareQuestionNavigator({ entries }: { entries: ShareEntry[] }) {
     <>
       <div className="fixed bottom-4 left-1/2 z-30 -translate-x-1/2 xl:hidden">
         {mobileOpen ? (
-          <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] overflow-y-auto rounded-xl bg-card/95 p-2 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur">
+          <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] overflow-y-auto rounded-xl bg-card p-2 shadow-popover backdrop-blur">
             <div className="space-y-0.5">
               {orderedQuestions.map(({ question, index }) => (
                 <ShareQuestionButton
@@ -455,7 +455,7 @@ function ShareQuestionNavigator({ entries }: { entries: ShareEntry[] }) {
         ) : null}
         <button
           className={cn(
-            "flex h-10 items-center gap-2 rounded-full border border-border bg-card/95 px-4 text-sm font-semibold text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground",
+            "flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-semibold text-muted-foreground shadow-popover backdrop-blur transition-colors hover:bg-accent hover:text-foreground",
             mobileOpen && "bg-accent text-foreground",
           )}
           type="button"
@@ -486,7 +486,7 @@ function ShareQuestionNavigator({ entries }: { entries: ShareEntry[] }) {
         </div>
         <div
           ref={panelRef}
-          className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-72 w-64 -translate-y-1/2 overflow-y-auto rounded-xl bg-card/95 p-2.5 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-72 w-64 -translate-y-1/2 overflow-y-auto rounded-xl bg-card p-2.5 opacity-0 shadow-popover backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         >
           <div className="space-y-0.5">
             {orderedQuestions.map(({ question, index }) => (
@@ -520,7 +520,7 @@ function ShareQuestionButton({ active, index, content, onClick }: { active: bool
         className={cn(
           "flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none",
           active
-            ? "border-primary/60 bg-primary/10 text-primary"
+            ? "border-primary/25 bg-accent text-primary"
             : "border-border/70 bg-muted/55 text-muted-foreground",
         )}
       >

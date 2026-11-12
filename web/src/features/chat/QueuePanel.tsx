@@ -36,7 +36,7 @@ export function QueuePanel({ onEditMessage }: { onEditMessage: (message: string)
   }
 
   return (
-    <div ref={panelRef} className="relative z-0 mx-auto -mb-5 max-h-36 w-[calc(100%-2rem)] overflow-visible rounded-t-[1.35rem] border border-b-0 border-border/55 bg-card/80 px-4 pb-7 pt-3 shadow-[0_8px_24px_hsl(218_30%_25%/0.06)] backdrop-blur sm:w-[calc(100%-4rem)] sm:px-5">
+    <div ref={panelRef} className="relative z-0 mx-auto -mb-5 max-h-36 w-[calc(100%-2rem)] overflow-visible rounded-t-[1.35rem] border border-b-0 border-border/55 bg-card/80 px-4 pb-7 pt-3 shadow-surface backdrop-blur sm:w-[calc(100%-4rem)] sm:px-5">
       <div className="space-y-1">
         {queue.map((item) => (
           <QueueRow
@@ -125,7 +125,7 @@ function QueueRow({
         </Button>
       </div>
       {menuOpen ? (
-        <div className="absolute bottom-[calc(100%+0.25rem)] right-2 z-50 w-32 overflow-hidden rounded-md border border-border bg-card py-1 text-sm shadow-[0_10px_24px_hsl(218_30%_25%/0.14)]">
+        <div className="absolute bottom-[calc(100%+0.25rem)] right-2 z-50 w-32 overflow-hidden rounded-md border border-border bg-card py-1 text-sm shadow-popover">
           <button className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted" type="button" onClick={() => void editMessage()}>
             <Pencil className="h-3.5 w-3.5" />
             编辑

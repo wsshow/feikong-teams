@@ -278,7 +278,7 @@ export function MessageList({ onJumpToBottomControlsChange }: { onJumpToBottomCo
       </div>
       {showJumpToBottom ? (
         <button
-          className="absolute bottom-2 left-1/2 z-20 hidden h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card/95 px-3 text-sm font-medium text-muted-foreground shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur transition-colors hover:bg-accent hover:text-foreground xl:flex"
+          className="absolute bottom-2 left-1/2 z-20 hidden h-9 -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card px-3 text-sm font-medium text-muted-foreground shadow-popover backdrop-blur transition-colors hover:bg-accent hover:text-foreground xl:flex"
           type="button"
           onClick={jumpToBottom}
         >
@@ -386,7 +386,7 @@ export const MessageRow = memo(function MessageRow({
         <div className="flex max-w-[92%] flex-col items-end gap-2 sm:max-w-[78%]">
           {attachments.length ? <UserAttachmentPills attachments={attachments} /> : null}
           {message.content.trim() ? (
-            <div className="rounded-2xl bg-muted px-4 py-3 text-base leading-7 text-foreground sm:px-5 sm:py-4 sm:text-lg sm:leading-8">
+            <div className="rounded-2xl bg-accent px-4 py-3 text-base leading-7 text-foreground sm:px-5 sm:py-4 sm:text-lg sm:leading-8">
               <div className="whitespace-pre-wrap">{decodeUIAction(message.content) ? actionSummary(decodeUIAction(message.content)!) : message.content}</div>
             </div>
           ) : null}
@@ -592,16 +592,16 @@ export function ReasoningBlock({ content, disclosureID }: { content: string; dis
   return (
     <div className="-ml-2 text-sm">
       <button
-        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-amber-600 transition-colors hover:bg-amber-50/70"
+        className="flex items-center gap-3 rounded-lg px-2 py-2 text-left text-warning transition-colors hover:bg-warning-muted"
         onClick={handleToggle}
         type="button"
       >
-        <span className="h-2 w-2 rounded-full bg-amber-400" />
+        <span className="h-2 w-2 rounded-full bg-warning" />
         <span className="font-semibold">已思考</span>
         <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
-        <div className="ml-7 border-l border-amber-200/70 pl-4 pt-2 text-sm leading-7 text-muted-foreground">
+        <div className="ml-7 border-l border-warning/20 pl-4 pt-2 text-sm leading-7 text-muted-foreground">
           <div className="whitespace-pre-wrap">{content}</div>
         </div>
       ) : null}
@@ -789,7 +789,7 @@ function AssistantNameLabel({ loud }: { loud: boolean }) {
 
 export function BuiltinAgentBadge() {
   return (
-    <span className="shrink-0 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
+    <span className="shrink-0 rounded border border-primary/25 bg-accent px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
       内置
     </span>
   );
@@ -915,7 +915,7 @@ export function AskPanel({
   }
 
   return (
-    <section className="sketch-surface rounded-xl bg-card/95 px-3 py-3 shadow-[0_10px_24px_hsl(218_30%_25%/0.1)] sm:px-4 sm:py-4">
+    <section className="sketch-surface rounded-xl bg-card px-3 py-3 shadow-surface sm:px-4 sm:py-4">
       <div className="mb-3 flex items-start gap-2 sm:gap-3">
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
@@ -933,7 +933,7 @@ export function AskPanel({
                 className={cn(
                   "flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
                   canAnswer && !ask.answered ? "cursor-pointer" : "cursor-not-allowed opacity-65",
-                  checked ? "border-primary/55 bg-primary/10 text-foreground" : "border-border bg-background/60 hover:bg-muted/65",
+                  checked ? "border-primary/25 bg-accent text-foreground" : "border-border bg-background/60 hover:bg-muted/65",
                 )}
               >
                 <input
@@ -979,7 +979,7 @@ export function AskPanel({
 export function AskRecord({ ask }: { ask: AskActivity }) {
   const answer = askResponseSummary(ask.selected, ask.freeText);
   return (
-    <section className="rounded-xl border border-primary/20 bg-card/70 px-3 py-3 shadow-[1px_2px_0_hsl(218_32%_30%/0.06)] sm:px-4 sm:py-4">
+    <section className="rounded-xl border border-primary/20 bg-card/70 px-3 py-3 sm:px-4 sm:py-4">
       <div className="flex items-start gap-2 sm:gap-3">
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
@@ -994,7 +994,7 @@ export function AskRecord({ ask }: { ask: AskActivity }) {
                     key={option}
                     className={cn(
                       "rounded-md border px-2.5 py-1 text-sm",
-                      selected ? "border-primary/45 bg-primary/10 text-primary" : "border-border bg-background/55 text-muted-foreground",
+                      selected ? "border-primary/25 bg-accent text-primary" : "border-border bg-background/55 text-muted-foreground",
                     )}
                   >
                     {option}
@@ -1073,11 +1073,11 @@ export function ApprovalPanel({
   }
 
   return (
-    <section className="sketch-surface rounded-xl border-amber-300/70 bg-amber-50/50 px-3 py-3 shadow-[0_10px_24px_hsl(38_45%_30%/0.1)] sm:px-4 sm:py-4">
+    <section className="sketch-surface rounded-xl border-warning/25 bg-warning-muted px-3 py-3 shadow-surface sm:px-4 sm:py-4">
       <div className="flex items-start gap-2 sm:gap-3">
-        <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+        <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-amber-700">需要权限审批</div>
+          <div className="text-xs font-semibold text-warning">需要权限审批</div>
           <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-foreground">{approval.message}</div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">{error || disabledReason}</div>
@@ -1101,11 +1101,11 @@ export function ApprovalPanel({
 
 export function ApprovalRecord({ approval }: { approval: ApprovalActivity }) {
   return (
-    <section className="rounded-xl border border-amber-300/45 bg-card/70 px-3 py-3 shadow-[1px_2px_0_hsl(38_45%_30%/0.06)] sm:px-4 sm:py-4">
+    <section className="rounded-xl border border-warning/20 bg-card/70 px-3 py-3 sm:px-4 sm:py-4">
       <div className="flex items-start gap-2 sm:gap-3">
-        <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-amber-600" />
+        <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-amber-700">权限审批</div>
+          <div className="text-xs font-semibold text-warning">权限审批</div>
           <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{approval.message}</div>
           <div className="mt-3 rounded-md border border-border bg-background/55 px-3 py-2 text-sm">
             <span className="text-muted-foreground">审批结果：</span>

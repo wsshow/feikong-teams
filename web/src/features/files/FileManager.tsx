@@ -198,7 +198,7 @@ export function FileManager() {
                 </Button>
                 <label>
                   <input className="hidden" type="file" onChange={(event) => void handleUpload(event.target.files?.[0])} />
-                  <span className="inline-flex h-9 min-w-20 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-primary/70 bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[2px_3px_0_hsl(214_45%_30%/0.16)] transition-colors hover:bg-primary/90 sm:px-4">
+                  <span className="inline-flex h-9 min-w-20 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover active:bg-primary-pressed sm:px-4">
                     <Upload className="h-4 w-4" />
                     {uploading ? "上传中" : "上传"}
                   </span>
@@ -319,7 +319,7 @@ function FileModeSwitch({ entry, mode, onChange }: { entry: FileEntry; mode: Fil
             type="button"
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors",
-              mode === item.value ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent/65 hover:text-foreground",
+              mode === item.value ? "bg-accent text-primary" : "text-muted-foreground hover:bg-accent/65 hover:text-foreground",
             )}
             onClick={() => onChange(item.value)}
           >
@@ -491,7 +491,7 @@ function FileActionSheet({
   return (
     <div className="fixed inset-0 z-50 sm:hidden" role="dialog" aria-modal="true">
       <button className="absolute inset-0 bg-foreground/15 backdrop-blur-[1px]" type="button" aria-label="关闭文件操作菜单" onClick={onClose} />
-      <div className="sketch-surface absolute inset-x-3 bottom-3 rounded-2xl bg-card p-2 text-sm shadow-[0_18px_48px_hsl(218_30%_20%/0.2)]">
+      <div className="sketch-surface absolute inset-x-3 bottom-3 rounded-2xl bg-card p-2 text-sm shadow-dialog">
         <div className="px-3 pb-2 pt-1">
           <div className="truncate text-base font-semibold text-foreground">{entry.name}</div>
           <div className="mt-0.5 truncate text-xs text-muted-foreground">{entry.path}</div>

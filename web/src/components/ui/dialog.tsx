@@ -57,7 +57,7 @@ export function Dialog({
       >
         <div
           className={cn(
-            "sketch-surface flex max-h-[92%] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border-b-0 bg-background shadow-xl sm:max-h-full sm:rounded-xl sm:border-b-[1.5px]",
+            "sketch-surface flex max-h-[92%] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border-b-0 bg-card shadow-dialog sm:max-h-full sm:rounded-xl sm:border-b",
             className,
           )}
         >

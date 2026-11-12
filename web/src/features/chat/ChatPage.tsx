@@ -222,7 +222,7 @@ const QuestionNavigator = memo(function QuestionNavigator({
           style={{ bottom: "calc(var(--app-keyboard-inset-bottom,0px) + var(--chat-dock-height,10rem) + 0.35rem)" }}
         >
           {mobileOpen && showMobileQuestion ? (
-            <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-xl bg-card/95 p-2 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur duration-150">
+            <div className="chat-scroll sketch-surface mb-2 max-h-[42vh] w-[min(calc(100vw-1.5rem),19.5rem)] animate-in fade-in slide-in-from-bottom-1 overflow-y-auto rounded-xl bg-card p-2 shadow-popover backdrop-blur duration-150">
               <div className="space-y-0.5">
                 {orderedQuestions.map(({ question, index }) => (
                   <QuestionButton
@@ -237,7 +237,7 @@ const QuestionNavigator = memo(function QuestionNavigator({
             </div>
           ) : null}
           <div className="flex justify-center">
-            <div className="inline-flex w-fit animate-in items-center gap-1 rounded-full border border-border bg-card/95 p-1 shadow-[0_8px_24px_hsl(218_30%_25%/0.14)] backdrop-blur duration-150 fade-in slide-in-from-bottom-1">
+            <div className="inline-flex w-fit animate-in items-center gap-1 rounded-full border border-border bg-card p-1 shadow-popover backdrop-blur duration-150 fade-in slide-in-from-bottom-1">
               {showMobileBottom ? (
                 <button
                   className="flex h-9 items-center gap-2 rounded-full px-3 text-sm font-semibold text-muted-foreground transition-[background,color,transform] hover:bg-accent hover:text-foreground active:translate-y-[1px]"
@@ -291,7 +291,7 @@ const QuestionNavigator = memo(function QuestionNavigator({
           </div>
           <div
             ref={panelRef}
-            className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-72 w-64 -translate-y-1/2 overflow-y-auto rounded-xl bg-card/95 p-2.5 opacity-0 shadow-[0_18px_48px_hsl(218_30%_20%/0.16)] backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+            className="chat-scroll sketch-surface pointer-events-none absolute right-0 top-1/2 max-h-72 w-64 -translate-y-1/2 overflow-y-auto rounded-xl bg-card p-2.5 opacity-0 shadow-popover backdrop-blur transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
           >
             <div className="space-y-0.5">
               {orderedQuestions.map(({ question, index }) => (
@@ -325,7 +325,7 @@ function QuestionButton({ active, index, content, onClick }: { active: boolean; 
         className={cn(
           "flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none",
           active
-            ? "border-primary/60 bg-primary/10 text-primary"
+            ? "border-primary/25 bg-accent text-primary"
             : "border-border/70 bg-muted/55 text-muted-foreground",
         )}
       >
@@ -374,7 +374,7 @@ function ChatHome() {
             return (
               <button
                 key={item.panel}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card/80 px-3 text-sm shadow-[1px_2px_0_hsl(218_32%_30%/0.08)] transition-colors hover:bg-accent/70"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card/80 px-3 text-sm transition-colors hover:bg-accent/70"
                 onClick={() => openPanel(item.panel, item.path)}
               >
                 <Icon className="h-4 w-4" />

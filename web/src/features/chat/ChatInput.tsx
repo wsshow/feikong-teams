@@ -253,7 +253,7 @@ export function ChatInput({
       <div className="mx-auto max-w-4xl">
         <QueuePanel onEditMessage={setValue} />
         <ChatComposer
-          className="relative z-10 shadow-[0_12px_32px_hsl(218_30%_25%/0.12)]"
+          className="relative z-10 shadow-surface"
           value={value}
           mode={mode}
           processing={isProcessing}

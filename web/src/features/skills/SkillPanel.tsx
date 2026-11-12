@@ -575,7 +575,7 @@ function SkillGrid({
             tabIndex={0}
             className={cn(
               "group flex min-h-44 cursor-pointer flex-col rounded-xl border bg-card/65 p-4 text-left transition-[background,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              selected ? "border-primary/60 bg-primary/5 shadow-[2px_3px_0_hsl(214_45%_30%/0.12)]" : "border-border/75 hover:bg-accent/45",
+              selected ? "border-primary/25 bg-accent" : "border-border/75 hover:bg-accent/45",
             )}
             onClick={() => void onSelect(skill)}
             onKeyDown={(event) => {
@@ -729,7 +729,7 @@ function SkillDetail({
                 <button
                   className={cn(
                     "rounded-full border px-3 py-1 text-sm",
-                    filePath ? "border-border bg-card/70 hover:bg-accent/60" : "border-primary/50 bg-primary/10 text-primary",
+                    filePath ? "border-border bg-card/70 hover:bg-accent/60" : "border-primary/25 bg-accent text-primary",
                   )}
                   onClick={() => onOpenDirectory("")}
                 >
@@ -756,7 +756,7 @@ function SkillDetail({
                       key={file.path}
                       className={cn(
                         "inline-flex h-9 items-center overflow-hidden rounded-lg border text-sm transition-colors hover:bg-accent/60",
-                        activeFile === file.path ? "border-primary/50 bg-primary/10 text-primary" : "border-border/75 bg-card/70",
+                        activeFile === file.path ? "border-primary/25 bg-accent text-primary" : "border-border/75 bg-card/70",
                       )}
                     >
                       <button className="inline-flex h-full min-w-0 items-center gap-2 px-3" onClick={() => (file.is_dir ? onOpenDirectory(file.path) : onOpenFile(file.path))}>
@@ -947,7 +947,7 @@ function ViewButton({ active, label, count, onClick }: { active: boolean; label:
     <button
       className={cn(
         "inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm transition-colors",
-        active ? "border-primary/50 bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:border-border hover:bg-card",
+        active ? "border-primary/25 bg-accent text-primary" : "border-transparent text-muted-foreground hover:border-border hover:bg-card",
       )}
       onClick={onClick}
     >

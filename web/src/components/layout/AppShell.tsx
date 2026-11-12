@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [canShareSession]);
 
   return (
-    <div className="flex h-[var(--app-viewport-height,100dvh)] overflow-hidden bg-background/95 text-foreground">
+    <div className="flex h-[var(--app-viewport-height,100dvh)] overflow-hidden bg-background text-foreground">
       <div className="contents" inert={authExpired ? true : undefined}>
         <Sidebar />
         <main className="relative flex min-w-0 flex-1 flex-col">

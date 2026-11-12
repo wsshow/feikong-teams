@@ -36,12 +36,12 @@ export function ConfirmDialog({
         if (!busy && event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-dialog">
         <div className="flex items-start gap-3">
           <div
             className={cn(
               "mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
-              destructive ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-primary/30 bg-primary/10 text-primary",
+              destructive ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-primary/30 bg-accent text-primary",
             )}
           >
             <AlertTriangle className="h-4 w-4" />
@@ -103,7 +103,7 @@ export function TextInputDialog({
         if (!busy && event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-dialog">
         <h2 id="text-input-dialog-title" className="text-lg font-semibold text-foreground">
           {title}
         </h2>

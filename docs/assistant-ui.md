@@ -25,6 +25,7 @@ Web 常驻助手（`/assistant`）支持在消息中生成交互界面，使用 
 ## 实现约定
 
 - 固定使用 `@openuidev/react-lang` / `@openuidev/lang-core` 1.1.0 与 `@openuidev/react-ui` 0.18.6 的 `openuiLibrary`，保留全部官方组件 schema。宿主补充交互禁用与默认字段值登记，主题映射到项目已有颜色和字体。没有新增模型服务或 Node 后端。
+- 表面、按钮状态、语义反馈与浮层阴影统一遵循 [Web 主题](web-theme.md)，保留楷体；图表数据系列沿用官方独立色板。
 - 每个 `openui-lang` Markdown 围栏包含一个独立的完整 `root = Stack(...)` 程序。渲染器按消息分段的稳定标识与块序号识别来源；普通代码块中的示例不会被执行。已移除首版自定义组件，不兼容旧 `Card(title, children)` 程序。
 - UI 文本继续通过现有消息 `Content` 流传输和持久化，不增加第二份流式内容或改写历史事实。提交消息使用 `【助手界面操作】` 前缀及版本化 JSON，包含来源、请求、字段值、可选动作上下文与局部状态；日期使用 `{$date: ISO字符串}` 存储并在回放时恢复为 Date。Web 将其展示为可读文本。
 - 输入框和界面操作共用 `sendChatMessage`，复用 `/api/fkteams/stream/start`、任务订阅、队列接纳及失败回滚。
@@ -34,6 +35,7 @@ Web 常驻助手（`/assistant`）支持在消息中生成交互界面，使用 
 - 官方完整样式只在全局 `globals.css` 中导入一次，使用 layered 版本。Tailwind 3 的输出分别放入原生 `app-base`、`app-components`、`app-utilities` 层，优先级为基础重置 < OpenUI < 项目组件 < 工具类；运行时主题变量保持官方的无层注入方式。不要再从消息组件或路由加载另一份完整样式。
 - 组件库与 `ThemeProvider` 统一从 `@openuidev/react-ui` 根入口导入。当前 0.18.6 的 `genui-lib` 子入口包含独立的主题上下文，混用会导致 portal 弹窗取不到主题；升级依赖时回归消息正文、弹窗和日期选择器的主题一致性。
 - Vite 将上游自动加载的 `@openuidev/devtools` 映射为本地空实现，开发环境也不加载 CDN 调试脚本或显示部署推广浮窗。升级 OpenUI 后需检查此映射仍覆盖上游的自动加载入口。
+- 生产分包显式隔离 React、状态库、通用样式工具、Markdown 与 OpenUI 的其余运行时依赖，避免组件库反向引用消息分包而发生循环初始化。修改依赖或分包配置后，使用构建产物验证助手交互界面，并检查普通页面不会提前加载整个 OpenUI。
 
 ## 修改组件与提示词
 

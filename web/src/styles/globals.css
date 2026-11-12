@@ -15,28 +15,44 @@
 
 @layer base {
   :root {
-    --background: 42 58% 97%;
-    --foreground: 219 34% 17%;
-    --card: 42 64% 99%;
-    --card-foreground: 219 34% 17%;
-    --popover: 42 64% 99%;
-    --popover-foreground: 219 34% 17%;
-    --primary: 214 72% 46%;
-    --primary-foreground: 42 70% 98%;
-    --secondary: 202 54% 92%;
-    --secondary-foreground: 218 36% 20%;
-    --muted: 42 42% 92%;
-    --muted-foreground: 216 18% 43%;
-    --accent: 189 45% 89%;
-    --accent-foreground: 218 36% 20%;
-    --destructive: 1 78% 58%;
-    --destructive-foreground: 42 70% 98%;
-    --border: 218 30% 76%;
-    --input: 218 30% 78%;
-    --ring: 204 65% 48%;
+    color-scheme: light;
+    /* 清透蓝白：页面与侧栏共用冷白底色，内容和浮层使用纯白。 */
+    --background: 216 100% 99.02%;
+    --foreground: 217.241 32.584% 17.451%;
+    --card: 0 0% 100%;
+    --card-foreground: var(--foreground);
+    --popover: var(--card);
+    --popover-foreground: var(--foreground);
+    /* 主操作沿用 OpenUI Blue 600，悬停和按下使用同色系的深色阶。 */
+    --primary: 221.212 83.193% 53.333%;
+    --primary-hover: 224.278 76.327% 48.039%;
+    --primary-pressed: 225.931 70.732% 40.196%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.078%;
+    --secondary-foreground: 215.294 25% 26.667%;
+    --muted: 210 40% 98.039%;
+    --muted-foreground: 215.385 16.318% 46.863%;
+    --disabled-foreground: 215 20.225% 65.098%;
+    --accent: 213.75 100% 96.863%;
+    --accent-foreground: var(--primary-hover);
+    --destructive: 0 72.222% 50.588%;
+    --destructive-hover: 0 73.709% 41.765%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 25.965 90.476% 37.059%;
+    --warning-muted: 48 100% 96.078%;
+    --success: 142.43 71.812% 29.216%;
+    --success-muted: 138.462 76.471% 96.667%;
+    --border: 214.286 31.818% 91.373%;
+    --input: 212.727 26.829% 83.922%;
+    --ring: var(--primary);
+    --syntax-property: 192.923 82.278% 30.98%;
+    --syntax-meta: 272.093 71.667% 47.059%;
     --radius: 0.5rem;
-    --sidebar: 43 52% 94%;
-    --sidebar-foreground: 219 34% 17%;
+    --sidebar: var(--background);
+    --sidebar-foreground: var(--foreground);
+    --shadow-surface: 0 1px 2px hsl(var(--foreground) / 0.04);
+    --shadow-popover: 0 8px 24px -4px hsl(var(--foreground) / 0.1), 0 2px 6px -2px hsl(var(--foreground) / 0.06);
+    --shadow-dialog: 0 24px 64px -16px hsl(var(--foreground) / 0.18), 0 8px 24px -8px hsl(var(--foreground) / 0.08);
   }
 
   * {
@@ -52,10 +68,6 @@
 
   body {
     @apply bg-background text-foreground;
-    background-image:
-      linear-gradient(hsl(218 30% 82% / 0.18) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(218 30% 82% / 0.14) 1px, transparent 1px);
-    background-size: 28px 28px;
     font-family:
       "Kaiti SC", "STKaiti", "KaiTi", "LXGW WenKai", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
       "Segoe UI", sans-serif;
@@ -68,7 +80,7 @@
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: hsl(218 30% 70% / 0.72) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -86,19 +98,14 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background:
-      linear-gradient(135deg, hsl(42 62% 97% / 0.95), hsl(199 54% 89% / 0.82)),
-      hsl(218 30% 72% / 0.78);
+    background: hsl(var(--muted-foreground) / 0.3);
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
-    box-shadow: inset 0 0 0 1px hsl(218 32% 44% / 0.26);
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background:
-      linear-gradient(135deg, hsl(42 62% 98% / 0.98), hsl(198 56% 84% / 0.92)),
-      hsl(218 30% 66% / 0.86);
+    background: hsl(var(--muted-foreground) / 0.5);
     background-clip: padding-box;
   }
 }
@@ -110,25 +117,21 @@
   }
 
   .sketch-surface {
-    background:
-      linear-gradient(135deg, hsl(42 70% 99% / 0.94), hsl(198 68% 96% / 0.44)),
-      hsl(var(--card));
-    border: 1.5px solid hsl(var(--border));
-    box-shadow: 3px 4px 0 hsl(218 32% 30% / 0.1);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
   }
 
   .sketch-inset {
-    background: hsl(42 68% 98% / 0.92);
-    border: 1.5px solid hsl(var(--input));
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.75);
+    background: hsl(var(--muted));
+    border: 1px solid hsl(var(--input));
   }
 
   .sketch-rule {
-    border-color: hsl(218 30% 76% / 0.72);
+    border-color: hsl(var(--border));
   }
 
   .composer-textarea {
-    scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
   .composer-textarea::-webkit-scrollbar {
@@ -141,7 +144,7 @@
   }
 
   .composer-textarea::-webkit-scrollbar-thumb {
-    background: hsl(218 22% 66% / 0.72);
+    background: hsl(var(--muted-foreground) / 0.3);
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
@@ -149,13 +152,13 @@
   }
 
   .composer-textarea::-webkit-scrollbar-thumb:hover {
-    background: hsl(218 22% 58% / 0.82);
+    background: hsl(var(--muted-foreground) / 0.5);
     border: 3px solid transparent;
     background-clip: padding-box;
   }
 
   .attachment-preview-scroll {
-    scrollbar-color: hsl(218 22% 66% / 0.7) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
   .attachment-preview-scroll::-webkit-scrollbar {
@@ -169,7 +172,7 @@
   }
 
   .attachment-preview-scroll::-webkit-scrollbar-thumb {
-    background: hsl(218 22% 66% / 0.7);
+    background: hsl(var(--muted-foreground) / 0.3);
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
@@ -177,7 +180,7 @@
   }
 
   .attachment-preview-scroll::-webkit-scrollbar-thumb:hover {
-    background: hsl(218 22% 58% / 0.82);
+    background: hsl(var(--muted-foreground) / 0.5);
     border: 3px solid transparent;
     background-clip: padding-box;
   }
@@ -191,7 +194,7 @@
   }
 
   .chat-scroll {
-    scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
   .chat-thread-scroll {
@@ -204,14 +207,14 @@
   }
 
   .chat-scroll::-webkit-scrollbar-thumb {
-    background: hsl(218 22% 66% / 0.72);
+    background: hsl(var(--muted-foreground) / 0.3);
     border: 3px solid transparent;
     background-clip: padding-box;
     box-shadow: none;
   }
 
   .chat-scroll::-webkit-scrollbar-thumb:hover {
-    background: hsl(218 22% 58% / 0.82);
+    background: hsl(var(--muted-foreground) / 0.5);
     border: 3px solid transparent;
     background-clip: padding-box;
   }
@@ -257,7 +260,7 @@
   }
 
   .prose em {
-    color: hsl(218 30% 26% / 0.92);
+    color: hsl(var(--secondary-foreground));
   }
 
   .prose .markdown-footnote-ref {
@@ -275,8 +278,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: hsl(218 18% 88% / 0.92);
-    color: hsl(var(--muted-foreground));
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
     font-size: 0.72em;
     font-weight: 700;
     text-decoration: none;
@@ -321,8 +324,8 @@
     justify-content: center;
     margin-right: 0.5rem;
     border-radius: 999px;
-    background: hsl(218 18% 88% / 0.82);
-    color: hsl(var(--muted-foreground));
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
     font-size: 0.86em;
     font-weight: 700;
     line-height: 1;
@@ -383,7 +386,7 @@
   }
 
   .prose h4 {
-    color: hsl(218 28% 28% / 0.88);
+    color: hsl(var(--secondary-foreground));
     font-size: 1.03em;
   }
 
@@ -471,14 +474,11 @@
   .prose blockquote {
     position: relative;
     margin: 0.95rem 0;
-    border: 1px solid hsl(204 42% 78% / 0.78);
-    border-left: 4px solid hsl(var(--primary) / 0.74);
+    border: 1px solid hsl(var(--primary) / 0.15);
+    border-left: 4px solid hsl(var(--primary));
     border-radius: 0.65rem;
-    background:
-      linear-gradient(135deg, hsl(204 68% 96% / 0.56), hsl(42 70% 99% / 0.86)),
-      hsl(var(--card));
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.72);
-    color: hsl(218 26% 32% / 0.92);
+    background: hsl(var(--accent));
+    color: hsl(var(--secondary-foreground));
     padding: 0.65rem 0.85rem 0.65rem 1rem;
   }
 
@@ -504,7 +504,7 @@
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: hsl(218 24% 16%);
+    color: hsl(var(--foreground));
     padding: 0.5rem 1.25rem 1.1rem;
     font-size: 0.95em;
     line-height: 1.72;
@@ -515,14 +515,9 @@
     position: relative;
     margin: 0.95rem 0;
     overflow: hidden;
-    border: 1px solid hsl(218 20% 82% / 0.86);
+    border: 1px solid hsl(var(--border));
     border-radius: 0.75rem;
-    background:
-      linear-gradient(180deg, hsl(0 0% 100% / 0.96), hsl(42 30% 99% / 0.96)),
-      hsl(var(--card));
-    box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / 0.82),
-      0 8px 22px hsl(218 24% 24% / 0.06);
+    background: hsl(var(--card));
   }
 
   .prose .markdown-code-header {
@@ -587,45 +582,45 @@
 
   .prose .hljs-comment,
   .prose .hljs-quote {
-    color: hsl(218 16% 48%);
+    color: hsl(var(--muted-foreground));
   }
 
   .prose .hljs-keyword,
   .prose .hljs-selector-tag,
   .prose .hljs-built_in,
   .prose .hljs-name {
-    color: hsl(216 88% 45%);
+    color: hsl(var(--primary-hover));
   }
 
   .prose .hljs-title,
   .prose .hljs-section,
   .prose .hljs-function .hljs-title {
-    color: hsl(24 92% 38%);
+    color: hsl(var(--warning));
   }
 
   .prose .hljs-string,
   .prose .hljs-template-variable,
   .prose .hljs-regexp {
-    color: hsl(122 72% 28%);
+    color: hsl(var(--success));
   }
 
   .prose .hljs-number,
   .prose .hljs-literal,
   .prose .hljs-symbol,
   .prose .hljs-bullet {
-    color: hsl(24 92% 38%);
+    color: hsl(var(--warning));
   }
 
   .prose .hljs-variable,
   .prose .hljs-attr,
   .prose .hljs-attribute,
   .prose .hljs-property {
-    color: hsl(184 78% 28%);
+    color: hsl(var(--syntax-property));
   }
 
   .prose .hljs-meta,
   .prose .hljs-doctag {
-    color: hsl(280 42% 42%);
+    color: hsl(var(--syntax-meta));
   }
 
   .prose .hljs-deletion {
@@ -633,14 +628,14 @@
   }
 
   .prose .hljs-addition {
-    color: hsl(142 46% 32%);
+    color: hsl(var(--success));
   }
 
   .prose code {
     border: 1px solid hsl(var(--border) / 0.72);
     border-radius: 0.35rem;
-    background: hsl(205 54% 93% / 0.7);
-    color: hsl(218 42% 22%);
+    background: hsl(var(--secondary));
+    color: hsl(var(--foreground));
     padding: 0.12rem 0.36rem;
     font-size: 0.88em;
     font-weight: 600;
@@ -662,11 +657,8 @@
     overflow-x: auto;
     border: 1px solid hsl(var(--border) / 0.86);
     border-radius: 0.7rem;
-    background: hsl(var(--card) / 0.78);
-    box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / 0.72),
-      0 8px 22px hsl(218 30% 25% / 0.08);
-    scrollbar-color: hsl(218 22% 66% / 0.72) transparent;
+    background: hsl(var(--card));
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
   .prose .markdown-table-wrap::-webkit-scrollbar {
@@ -679,7 +671,7 @@
   }
 
   .prose .markdown-table-wrap::-webkit-scrollbar-thumb {
-    background: hsl(218 22% 66% / 0.72);
+    background: hsl(var(--muted-foreground) / 0.3);
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
@@ -714,14 +706,13 @@
   }
 
   .prose thead th {
-    background:
-      linear-gradient(180deg, hsl(204 54% 92% / 0.92), hsl(204 42% 89% / 0.78));
-    color: hsl(218 34% 22%);
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
     font-weight: 700;
   }
 
   .prose tbody tr:nth-child(even) td {
-    background: hsl(42 56% 96% / 0.58);
+    background: hsl(var(--muted) / 0.65);
   }
 
   .prose tbody tr:hover td {

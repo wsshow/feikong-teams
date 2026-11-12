@@ -290,7 +290,7 @@ function ShareGrid({
         const deleting = busyKey === shareKey("session", id);
         const copied = copiedKey === shareKey("session", id);
         return (
-          <article key={id} className="rounded-md border border-border bg-card/70 p-4 shadow-[2px_3px_0_hsl(218_32%_30%/0.06)]">
+          <article key={id} className="rounded-md border border-border bg-card p-4">
             <div className="flex min-w-0 items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
@@ -389,7 +389,7 @@ function FileShareGrid({
         const filePaths = share.file_paths || [];
         const title = share.file_path || filePaths[0] || id;
         return (
-          <article key={id} className="rounded-md border border-border bg-card/70 p-4 shadow-[2px_3px_0_hsl(218_32%_30%/0.06)]">
+          <article key={id} className="rounded-md border border-border bg-card p-4">
             <div className="flex min-w-0 items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
@@ -472,7 +472,7 @@ function ShareDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl shadow-dialog sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />
@@ -522,7 +522,7 @@ function FileShareDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl shadow-dialog sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />
@@ -564,7 +564,7 @@ function FilterButton({
     <button
       className={cn(
         "flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors",
-        active ? "border-primary/60 bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:bg-accent/70",
+        active ? "border-primary/25 bg-accent text-primary" : "border-border bg-card/70 text-muted-foreground hover:bg-accent/70",
       )}
       type="button"
       onClick={onClick}
@@ -589,7 +589,7 @@ function MetricCard({ icon: Icon, label, value }: { icon: LucideIcon; label: str
 
 function StatusBadge({ active, label }: { active: boolean; label: string }) {
   return (
-    <Badge className={active ? "border-primary/35 bg-primary/10 text-primary" : undefined}>
+    <Badge className={active ? "border-primary/35 bg-accent text-primary" : undefined}>
       {label}
     </Badge>
   );

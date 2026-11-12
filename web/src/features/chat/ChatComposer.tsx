@@ -280,7 +280,7 @@ export function ChatComposer({
   return (
     <div
       className={cn(
-        "sketch-surface relative w-full rounded-xl bg-card/95 p-3 sm:rounded-2xl sm:p-4",
+        "sketch-surface relative w-full rounded-xl bg-card p-3 sm:rounded-2xl sm:p-4",
         isHero ? "p-4 sm:p-5" : "p-3",
         className,
       )}
@@ -408,7 +408,7 @@ function AttachmentPreviewList({
         <div className="pointer-events-none absolute inset-y-0 left-0 z-10 flex w-14 items-center bg-gradient-to-r from-card via-card/92 to-transparent">
           <button
             type="button"
-            className="pointer-events-auto ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-card/95 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            className="pointer-events-auto ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
             aria-label="向左滚动附件"
             onClick={onScrollLeft}
           >
@@ -467,7 +467,7 @@ function AttachmentPreviewList({
         <div className="pointer-events-none absolute inset-y-0 right-0 z-10 flex w-14 items-center justify-end bg-gradient-to-l from-card via-card/92 to-transparent">
           <button
             type="button"
-            className="pointer-events-auto mr-1 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-card/95 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            className="pointer-events-auto mr-1 flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
             aria-label="向右滚动附件"
             onClick={onScrollRight}
           >
@@ -546,7 +546,7 @@ function ReferenceMenu({
   return (
     <div
       ref={menuRef}
-      className="sketch-surface absolute bottom-[calc(100%+0.75rem)] left-0 z-40 max-h-64 w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-xl bg-card p-1.5 text-sm shadow-[0_14px_32px_hsl(218_30%_25%/0.16)]"
+      className="sketch-surface absolute bottom-[calc(100%+0.75rem)] left-0 z-40 max-h-64 w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-xl bg-card p-1.5 text-sm shadow-popover"
     >
       {isFile ? (
         <>
@@ -640,7 +640,7 @@ function normalizeAgentKey(value: string) {
 
 function BuiltinAgentBadge() {
   return (
-    <span className="shrink-0 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
+    <span className="shrink-0 rounded border border-primary/25 bg-accent px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
       内置
     </span>
   );
@@ -688,7 +688,7 @@ function ModePicker({
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
-        <div className="sketch-surface absolute bottom-10 right-0 z-40 flex w-36 flex-col gap-1.5 rounded-xl bg-card p-1.5 text-sm shadow-[0_12px_28px_hsl(218_30%_25%/0.16)]">
+        <div className="sketch-surface absolute bottom-10 right-0 z-40 flex w-36 flex-col gap-1.5 rounded-xl bg-card p-1.5 text-sm shadow-popover">
           {modeOptions.map((option) => (
             <button
               key={option.value}
@@ -848,7 +848,7 @@ function replaceTextRangeWithFileToken(root: HTMLElement, start: number, end: nu
   tokenNode.contentEditable = "false";
   tokenNode.textContent = token;
   tokenNode.className = cn(
-    "mx-0.5 inline-flex select-none items-center rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-sm leading-5 text-primary align-baseline",
+    "mx-0.5 inline-flex select-none items-center rounded-md border border-primary/25 bg-accent px-1.5 py-0.5 text-sm leading-5 text-primary align-baseline",
   );
   const spaceNode = document.createTextNode(" ");
   range.insertNode(spaceNode);

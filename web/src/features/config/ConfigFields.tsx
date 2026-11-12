@@ -437,7 +437,7 @@ export function ModelUseField({ uses, onChange }: { uses: string[]; onChange: (u
             type="button"
             className={cn(
               "inline-flex h-8 items-center rounded-md border px-3 text-sm transition-colors",
-              selected.has(option.value) ? "border-primary/60 bg-primary/10 text-primary" : "border-border/75 bg-card/70 text-muted-foreground hover:bg-accent/60",
+              selected.has(option.value) ? "border-primary/25 bg-accent text-primary" : "border-border/75 bg-card/70 text-muted-foreground hover:bg-accent/60",
             )}
             onClick={() => toggle(option.value)}
           >
@@ -483,7 +483,7 @@ export function ToggleField({ label, checked, onChange, disabled }: { label: str
       onClick={() => onChange(!checked)}
     >
       <span className="text-sm font-medium">{label}</span>
-      <span aria-hidden="true" className={cn("inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-px transition-colors", checked ? "border-primary/70 bg-primary" : "border-border bg-muted")}>
+      <span aria-hidden="true" className={cn("inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-px transition-colors", checked ? "border-primary bg-primary" : "border-input bg-secondary")}>
         <span className={cn("block h-5 w-5 shrink-0 rounded-full bg-card shadow transition-transform motion-reduce:transition-none", checked ? "translate-x-5" : "translate-x-0")} />
       </span>
     </button>
