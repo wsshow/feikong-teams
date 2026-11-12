@@ -83,36 +83,14 @@ function assistantMessageParts(
   fallbackReasoningBlocks?: string[],
   isProcessing = false,
 ) {
-  const parts: MessageRenderPart[] = [];
-  const renderedTools = new Set<string>();
-  for (const event of message.events || []) {
-    if (isReasoningDelta(event) && event.role !== "tool") {
-      appendMessagePart(parts, "reasoning", String(event.reasoning_content || event.content || ""), textPartKey(event, "reasoning"), isProcessing && isStreamEvent(event));
-      continue;
-    }
-    if (isTextDelta(event) && event.role !== "tool") {
-      appendMessagePart(parts, "text", String(event.content || ""), textPartKey(event, "text"), isProcessing && isStreamEvent(event));
-      continue;
-    }
-    const ask = askFromToolEvent(event, asks);
-    if (ask) {
-      parts.push({ type: "ask", ask });
-      continue;
-    }
-    const tool = toolFromEvent(event, tools);
-    if (tool) {
-      const key = toolActivityKey(tool);
-      if (!renderedTools.has(key)) {
-        parts.push({ type: "tool", tool });
-        renderedTools.add(key);
-      }
-    }
-  }
+  const parts = messageEventParts(message.events || [], tools, asks, isProcessing);
 
-  if (!parts.length) {
+  if (!parts.some((part) => part.type === "reasoning")) {
+    const reasoningParts: MessageRenderPart[] = [];
     for (const content of fallbackReasoningBlocks || []) {
-      appendMessagePart(parts, "reasoning", content);
+      appendMessagePart(reasoningParts, "reasoning", content);
     }
+    parts.unshift(...reasoningParts);
   }
 
   const hasTextPart = parts.some((part) => part.type === "text" && part.content.trim());
@@ -884,27 +862,28 @@ function askFromAskEvent(event: ChatEvent, asks: AskActivity[]) {
   return matched?.anchored ? undefined : matched;
 }
 
-function toolFromEvent(event: ChatEvent, tools: ToolActivity[]) {
-  if (!hasToolEvent(event)) return undefined;
+function toolsFromEvent(event: ChatEvent, tools: ToolActivity[]): ToolActivity[] {
+  if (!hasToolEvent(event)) return [];
   const directTools = [...(event.tool_calls || []), event.tool_call].filter(Boolean) as ToolCallDTO[];
-  for (const directTool of directTools) {
-    if (directTool.name === "ask_questions") continue;
+  if (directTools.length) return directTools.filter((tool) => tool.name !== "ask_questions").map((directTool) => {
     const directKey = toolKey(directTool, event);
-    const matched = tools.find((tool) => toolActivityKey(tool) === directKey || tool.ref === directTool.ref || tool.id === directTool.id);
+    const matched = tools.find((tool) => toolActivityKey(tool) === directKey);
     if (matched) return matched;
     const result = eventToolResultContent(event);
     return {
       ...directTool,
       ref: directTool.ref || event.tool_call_ref,
       id: directTool.id || event.tool_call_id,
-      status: isAssistantCompleted(event) || isToolCompleted(event) ? "completed" : "running",
+      status: isToolCompleted(event) ? "completed" : "pending",
       result: directTool.result || result || undefined,
       message_id: event.message_id,
     };
-  }
-  const key = event.tool_call_ref || event.tool_call_id || event.tool_name;
-  if (!key) return undefined;
-  return tools.find((tool) => tool.ref === key || tool.id === key || tool.name === key);
+  });
+  const key = canonicalToolRef(event.tool_call_ref || event.tool_call_id);
+  const tool = key
+    ? tools.find((tool) => toolActivityKey(tool) === key)
+    : tools.find((tool) => tool.name === event.tool_name);
+  return tool ? [tool] : [];
 }
 
 function hasToolEvent(event: ChatEvent) {
@@ -981,6 +960,8 @@ function collectToolActivities(events: ChatEvent[], options: { includeMemberEven
     for (const [field, value] of Object.entries(patch)) {
       if (value === undefined || value === "") continue;
       if (field === "order" && Number.isFinite(current.order)) continue;
+      // 工具执行事件有独立消息 ID，不能覆盖声明该调用的模型消息归属。
+      if (field === "message_id" && current.message_id) continue;
       (current as unknown as Record<string, unknown>)[field] = value;
     }
     if (current.status === "pending" || current.status === "running") unfinished.add(key);
@@ -1079,7 +1060,7 @@ function collectMemberActivities(events: ChatEvent[], isProcessing: boolean, ask
         .sort((left, right) => left.order - right.order)
         .map((item) => item.event);
       const tools = collectToolActivities(memberEvents, { includeMemberEvents: true });
-      const parts = memberMessageParts(memberEvents, tools, asks, isProcessing);
+      const parts = messageEventParts(memberEvents, tools, asks, isProcessing);
       return {
         id,
         name: memberEvents.find((event) => event.member_name)?.member_name || memberEvents[0]?.agent_name || "子智能体",
@@ -1140,7 +1121,7 @@ function memberActivityIDIfPresent(event: ChatEvent) {
   return memberActivityID(event);
 }
 
-function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], asks: AskActivity[], isProcessing = false) {
+function messageEventParts(events: ChatEvent[], tools: ToolActivity[], asks: AskActivity[], isProcessing = false) {
   const parts: MessageRenderPart[] = [];
   const renderedTools = new Set<string>();
   const renderedAsks = new Set<string>();
@@ -1171,23 +1152,8 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], asks: As
     }
     textOpen = false;
 
-    const ask = askFromToolEvent(event, asks) || askFromAskEvent(event, asks);
-    if (ask && !renderedAsks.has(ask.id)) {
-      parts.push({ type: "ask", ask });
-      renderedAsks.add(ask.id);
-      continue;
-    }
-
-    const tool = toolFromEvent(event, tools);
-    if (tool) {
-      const key = toolActivityKey(tool);
-      if (!renderedTools.has(key)) {
-        parts.push({ type: "tool", tool });
-        renderedTools.add(key);
-      }
-    }
-
-    if (isAssistantCompleted(event)) {
+    if (isAssistantCompleted(event) && event.role !== "tool") {
+      // 历史完成事件同时携带思考、正文和整组工具调用，按模型输出顺序恢复。
       const reasoningKey = textPartKey(event, "reasoning");
       const reasoning = seenReasoningDeltaKeys.has(reasoningKey) ? "" : String(event.reasoning_content || "");
       if (reasoning) {
@@ -1197,6 +1163,20 @@ function memberMessageParts(events: ChatEvent[], tools: ToolActivity[], asks: As
       const content = seenTextDeltaKeys.has(textKey) ? "" : String(event.content || "");
       if (content) {
         appendSequencedTextPart(parts, "text", content, false, textKey);
+      }
+    }
+
+    const ask = askFromToolEvent(event, asks) || askFromAskEvent(event, asks);
+    if (ask && !renderedAsks.has(ask.id)) {
+      parts.push({ type: "ask", ask });
+      renderedAsks.add(ask.id);
+    }
+
+    for (const tool of toolsFromEvent(event, tools)) {
+      const key = toolActivityKey(tool);
+      if (!renderedTools.has(key)) {
+        parts.push({ type: "tool", tool });
+        renderedTools.add(key);
       }
     }
   }
