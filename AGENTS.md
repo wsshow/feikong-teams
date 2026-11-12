@@ -158,4 +158,6 @@ cmd -> bootstrap -> adapters -> app/runtime -> ports -> domain
 
 `README.md` 只维护面向新用户的稳定概览。新增或移除主要入口、核心能力，或安装与快速开始方式发生变化时才更新 README；局部功能、兼容性修复、内部重构和实现细节无需修改。面向用户的详细行为变化按需更新相应 `docs/` 专题文档，架构边界变化更新 `docs/architecture.md`。
 
-提交信息遵循 Conventional Commits：`<type>(<scope>): <summary>`，scope 可省略；type/scope 用小写英文，摘要可用中文。常用类型为 `feat`、`fix`、`refactor`、`perf`、`docs`、`test`、`build`、`ci`、`style`、`chore`、`revert`。除非用户明确要求，不要自行创建提交、推送或 PR。
+提交信息遵循 Conventional Commits：`<type>(<scope>): <summary>`，scope 可省略；type/scope 用小写英文，摘要可用中文。常用类型为 `feat`、`fix`、`refactor`、`perf`、`docs`、`test`、`build`、`ci`、`style`、`chore`、`revert`。
+
+每完成一个完整、独立的功能或修复并完成相应验证后，主动按上述规范创建提交，无需用户再次要求。每次提交只包含该功能或修复的相关改动，不混入工作区已有的无关改动。用户明确要求暂不提交时，以用户要求为准。除非用户明确要求，不要推送或创建 PR。
