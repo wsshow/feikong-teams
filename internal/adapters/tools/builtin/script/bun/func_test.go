@@ -321,3 +321,27 @@ func TestBunGetEnvInfo(t *testing.T) {
 		t.Fatalf("initialized env info response = %#v", resp)
 	}
 }
+
+func TestBunRejectsScriptPathsOutsideWorkspace(t *testing.T) {
+	bt := newTestBunTools(t)
+	outside := filepath.Join(t.TempDir(), "outside.js")
+	if err := os.WriteFile(outside, []byte("console.log('outside')"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := bt.RunScript(context.Background(), &RunScriptRequest{ScriptPath: outside})
+	if err != nil || resp.ErrorMessage == "" {
+		t.Fatalf("outside script accepted: %#v %v", resp, err)
+	}
+}
+
+func TestBunGlobalListReadsGlobalPackages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fixture")
+	}
+	bt := newTestBunTools(t)
+	bt.bunPath = writeFakeCommand(t, t.TempDir(), "bun", "#!/bin/sh\nprintf '/global node_modules (2 installed)\\n├── @scope/one@1.2.3\\n└── two@2.0.0\\n'\n")
+	resp, err := bt.ListPackage(context.Background(), &ListPackageRequest{Global: true})
+	if err != nil || !resp.Success || len(resp.Packages) != 2 || resp.Packages[0].Name != "@scope/one" {
+		t.Fatalf("global packages: %#v %v", resp, err)
+	}
+}

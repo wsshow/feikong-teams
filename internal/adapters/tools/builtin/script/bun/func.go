@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"fkteams/internal/runtime/executil"
+	"fkteams/internal/runtime/pathguard"
 )
 
 const (
@@ -147,11 +148,8 @@ type InstallPackageResponse struct {
 
 // InstallPackage 安装 JavaScript 依赖包
 func (bt *BunTools) InstallPackage(ctx context.Context, req *InstallPackageRequest) (*InstallPackageResponse, error) {
-	if len(req.Packages) == 0 {
-		return &InstallPackageResponse{
-			Success:      false,
-			ErrorMessage: "packages 不能为空",
-		}, nil
+	if err := executil.ValidateOperands(req.Packages); err != nil {
+		return &InstallPackageResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	// 如果不是全局安装，检查 package.json 是否存在
@@ -209,11 +207,8 @@ type RemovePackageResponse struct {
 
 // RemovePackage 移除 JavaScript 依赖包
 func (bt *BunTools) RemovePackage(ctx context.Context, req *RemovePackageRequest) (*RemovePackageResponse, error) {
-	if len(req.Packages) == 0 {
-		return &RemovePackageResponse{
-			Success:      false,
-			ErrorMessage: "packages 不能为空",
-		}, nil
+	if err := executil.ValidateOperands(req.Packages); err != nil {
+		return &RemovePackageResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	// 如果不是全局删除，检查 package.json 是否存在
@@ -271,6 +266,30 @@ type ListPackageResponse struct {
 
 // ListPackage 列出已安装的 JavaScript 包
 func (bt *BunTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*ListPackageResponse, error) {
+	if req.Global {
+		output, err := bt.executeCommand(ctx, bt.bunPath, "pm", "ls", "-g")
+		if err != nil {
+			return &ListPackageResponse{ErrorMessage: err.Error()}, nil
+		}
+		var packages []PackageInfo
+		for _, line := range strings.Split(output, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "├") && !strings.HasPrefix(line, "└") {
+				continue
+			}
+			line = strings.TrimLeft(line, "├└─ \t")
+			split := strings.LastIndex(line, "@")
+			if split > 0 && split < len(line)-1 {
+				packages = append(packages, PackageInfo{Name: line[:split], Version: line[split+1:]})
+			}
+		}
+		sort.Slice(packages, func(i, j int) bool { return packages[i].Name < packages[j].Name })
+		if len(packages) == 0 && !strings.Contains(output, "(0 installed)") {
+			return &ListPackageResponse{ErrorMessage: "unable to parse global package listing"}, nil
+		}
+		return &ListPackageResponse{Success: true, Packages: packages, Message: output}, nil
+	}
+
 	// 如果不是全局列表，检查 package.json 是否存在
 	if !req.Global {
 		packageJSONPath := filepath.Join(bt.envDir, "package.json")
@@ -366,6 +385,9 @@ func (bt *BunTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanE
 	nodeModulesPath := filepath.Join(bt.envDir, "node_modules")
 	packageJSONPath := filepath.Join(bt.envDir, "package.json")
 	bunLockPath := filepath.Join(bt.envDir, "bun.lockb")
+	if err := os.Remove(filepath.Join(bt.envDir, "bun.lock")); err != nil && !os.IsNotExist(err) {
+		return &CleanEnvResponse{ErrorMessage: err.Error()}, nil
+	}
 
 	// 删除 node_modules
 	if _, err := os.Stat(nodeModulesPath); err == nil {
@@ -433,12 +455,11 @@ func (bt *BunTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunS
 	var scriptPath string
 
 	if req.ScriptPath != "" {
-		// 使用提供的脚本路径
-		if !filepath.IsAbs(req.ScriptPath) {
-			scriptPath = filepath.Join(bt.workDir, req.ScriptPath)
-		} else {
-			scriptPath = req.ScriptPath
+		resolved, err := pathguard.ResolveWorkspace(bt.workDir, req.ScriptPath)
+		if err != nil {
+			return &RunScriptResponse{ErrorMessage: err.Error()}, nil
 		}
+		scriptPath = resolved.AbsPath
 
 		// 检查文件是否存在
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {

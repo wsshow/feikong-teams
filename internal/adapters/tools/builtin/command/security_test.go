@@ -83,3 +83,12 @@ func TestSmartExecuteSafeCommand(t *testing.T) {
 		t.Fatalf("ExitCode = %v, want 0", resp.ExitCode)
 	}
 }
+
+func TestRiskEvaluationCannotDowngradeLaterDangerousMatch(t *testing.T) {
+	for _, cmd := range []string{"printf 'rm -rf' > /dev/null", "echo 'rm -rf' || dd of=/dev/null"} {
+		evaluation := evaluateSecurity(cmd)
+		if evaluation.Level != LevelDangerous {
+			t.Fatalf("risk downgraded for %q: %#v", cmd, evaluation)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"fkteams/internal/runtime/approval"
+	"fkteams/internal/runtime/executil"
 )
 
 // ApprovalMode 审批模式
@@ -33,6 +34,7 @@ func WithApprovalMode(mode ApprovalMode) Option {
 
 // CommandTools 命令行工具，带安全审批功能
 type CommandTools struct {
+	manager      *Manager
 	workDir      string
 	approvalMode ApprovalMode
 }
@@ -42,6 +44,9 @@ func NewCommandTools(workDir string, opts ...Option) *CommandTools {
 	t := &CommandTools{workDir: workDir}
 	for _, opt := range opts {
 		opt(t)
+	}
+	if t.manager == nil {
+		t.manager = NewManager()
 	}
 	return t
 }
@@ -87,13 +92,6 @@ type BackgroundTaskInfo struct {
 // intPtr 辅助函数，返回 int 指针
 func intPtr(v int) *int { return &v }
 
-// backgroundProcessResult 后台进程启动结果
-type backgroundProcessResult struct {
-	PID        int
-	StdoutFile string
-	StderrFile string
-}
-
 // executionContext 单次命令执行的上下文，封装所有执行期间的共享状态
 type executionContext struct {
 	req       *SmartExecuteRequest
@@ -106,7 +104,6 @@ type executionContext struct {
 	stderrLW  *limitedWriter
 	startTime time.Time
 	timeout   time.Duration
-	done      chan error // cmd.Wait() 结果
 	workDir   string
 }
 
@@ -117,17 +114,17 @@ const outputFileThreshold = 100 << 10
 
 // 存文件后返回的预览行数
 const outputPreviewLines = 100
+const outputPreviewBytes = 8 << 10
 
-func newExecutionContext(req *SmartExecuteRequest, eval SecurityEvaluation, timeout time.Duration, workDir string) *executionContext {
-	// 使用独立 context 控制超时，不依赖父 context（后台化时需要继续执行）
-	cmdCtx, cancel := context.WithTimeout(context.Background(), timeout)
+func newExecutionContext(parent context.Context, req *SmartExecuteRequest, eval SecurityEvaluation, timeout time.Duration, workDir string) *executionContext {
+	// 执行归属任务管理器，前台取消由调用方显式传递，转后台后继续受应用控制。
+	cmdCtx, cancel := context.WithTimeout(parent, timeout)
 	ec := &executionContext{
 		req:     req,
 		eval:    eval,
 		cmdCtx:  cmdCtx,
 		cancel:  cancel,
 		timeout: timeout,
-		done:    make(chan error, 1),
 		workDir: workDir,
 	}
 	ec.stdoutLW = &limitedWriter{w: &ec.stdout, limit: maxOutputSize}
@@ -150,31 +147,42 @@ func (ec *executionContext) buildResponse(err error) *SmartExecuteResponse {
 	}
 
 	// 大输出存文件：超过阈值时写入临时文件，返回路径和预览
-	if len(stdout) > outputFileThreshold {
-		if filePath, preview, writeErr := saveOutputToFile(stdout, ec.workDir); writeErr == nil {
+	artifact := stdout
+	stderrOverflow := len(resp.Stderr) > outputPreviewBytes
+	if stderrOverflow {
+		artifact += "\n[stderr]\n" + resp.Stderr
+		resp.Stderr = executil.String([]byte(resp.Stderr[:outputPreviewBytes]), true)
+	}
+	if len(artifact) > outputFileThreshold || stderrOverflow {
+		if filePath, preview, writeErr := saveOutputToFile(artifact, ec.workDir); writeErr == nil {
 			resp.OutputFilePath = filePath
 			resp.OutputPreview = preview
 			// 已落盘，不占用消息上下文
-			resp.Stdout = fmt.Sprintf("输出已写入 %s（共 %d 字节）\n\n%s",
-				filePath, len(stdout), preview)
+			resp.Stdout = fmt.Sprintf("输出已写入 %s（共 %d 字节）", filePath, len(artifact))
 		} else {
-			resp.Stdout = stdout
+			resp.Stdout = executil.String([]byte(stdout[:min(len(stdout), outputPreviewBytes)]), len(stdout) > outputPreviewBytes)
+			resp.WarningMessage = "failed to persist command output; preview only"
+			resp.OutputTruncated = true
 		}
 	} else {
 		resp.Stdout = stdout
 	}
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		if ec.cmdCtx.Err() != nil {
+			resp.ExitCode = intPtr(-1)
+			if errors.Is(ec.cmdCtx.Err(), context.DeadlineExceeded) {
+				resp.ErrorMessage = fmt.Sprintf("command timed out after %s", ec.timeout)
+			} else {
+				resp.ErrorMessage = "command cancelled"
+			}
+		} else if exitErr, ok := err.(*exec.ExitError); ok {
 			code := exitErr.ExitCode()
 			resp.ExitCode = intPtr(code)
 			// 非零退出码语义映射
 			if msg := interpretExitCode(ec.req.Command, code); msg != "" {
 				resp.ErrorMessage = msg
 			}
-		} else if ec.cmdCtx.Err() != nil {
-			resp.ExitCode = intPtr(-1)
-			resp.ErrorMessage = fmt.Sprintf("command timed out after %s", ec.timeout)
 		} else {
 			resp.ExitCode = intPtr(-1)
 			resp.ErrorMessage = fmt.Sprintf("execution failed: %v", err)
@@ -184,12 +192,15 @@ func (ec *executionContext) buildResponse(err error) *SmartExecuteResponse {
 	}
 
 	if ec.eval.Level == LevelModerate {
-		resp.WarningMessage = fmt.Sprintf("中等风险命令: %s - %s",
+		if resp.WarningMessage != "" {
+			resp.WarningMessage += "; "
+		}
+		resp.WarningMessage += fmt.Sprintf("中等风险命令: %s - %s",
 			ec.eval.Description, strings.Join(ec.eval.Risks, "; "))
 	}
 
 	if resp.OutputTruncated {
-		truncMsg := "输出内容已截断（超出1MB限制），建议将输出重定向到文件获取完整内容"
+		truncMsg := "输出内容已截断，建议将输出重定向到文件获取完整内容"
 		if resp.WarningMessage != "" {
 			resp.WarningMessage += "; " + truncMsg
 		} else {
@@ -202,9 +213,12 @@ func (ec *executionContext) buildResponse(err error) *SmartExecuteResponse {
 
 // SmartExecute 智能执行命令，危险命令根据审批模式处理
 func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteRequest) (*SmartExecuteResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return &SmartExecuteResponse{ErrorMessage: err.Error()}, nil
+	}
 	// 后台任务管理操作
 	if req.TaskAction != "" || req.TaskID != "" {
-		return t.handleTaskOperation(req)
+		return t.handleTaskOperation(ctx, req)
 	}
 
 	if req.Command == "" {
@@ -246,130 +260,49 @@ func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteReques
 		}
 	}
 
-	if req.Background {
-		return t.executeBackground(req, eval)
-	}
-
 	return t.executeCommand(ctx, req, eval)
 }
 
 func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequest, eval SecurityEvaluation) (*SmartExecuteResponse, error) {
 	timeout := 60 * time.Second
-	if req.Timeout > 0 && req.Timeout <= 600 {
+	if req.Timeout > 600 || req.Timeout < 0 {
+		return &SmartExecuteResponse{ErrorMessage: "timeout must be <= 600 seconds"}, nil
+	}
+	if req.Timeout > 0 {
 		timeout = time.Duration(req.Timeout) * time.Second
-	} else if req.Timeout > 600 {
-		return &SmartExecuteResponse{Command: req.Command, ErrorMessage: "timeout must be <= 600 seconds"}, nil
 	}
-
-	shell, shellArgs := buildShellCommand(req.Command)
-	ec := newExecutionContext(req, eval, timeout, t.workDir)
-
-	cmd := exec.CommandContext(ec.cmdCtx, shell, shellArgs...)
-	cmd.Dir = t.workDir
-	setupProcessGroup(cmd)
-	cmd.Stdout = ec.stdoutLW
-	cmd.Stderr = ec.stderrLW
-
-	ec.startTime = time.Now()
-	if err := cmd.Start(); err != nil {
-		ec.cancel()
-		return &SmartExecuteResponse{
-			Command:       req.Command,
-			SecurityLevel: securityLevelName(eval.Level),
-			ExitCode:      intPtr(-1),
-			ErrorMessage:  fmt.Sprintf("failed to start command: %v", err),
-		}, nil
-	}
-
-	go func() { ec.done <- cmd.Wait() }()
-
-	bgTimer := time.NewTimer(backgroundThreshold)
-	defer bgTimer.Stop()
-
-	select {
-	case err := <-ec.done:
-		ec.cancel()
-		return ec.buildResponse(err), nil
-	case <-bgTimer.C:
-		// 超过阻塞预算，先检查命令是否恰好完成
-		select {
-		case err := <-ec.done:
-			ec.cancel()
-			return ec.buildResponse(err), nil
-		default:
-		}
-		return t.backgroundExecution(ec)
-	case <-ctx.Done():
-		// 父 context 取消（如用户取消），先检查命令是否恰好完成
-		select {
-		case err := <-ec.done:
-			ec.cancel()
-			return ec.buildResponse(err), nil
-		default:
-		}
-		ec.cancel()
-		return &SmartExecuteResponse{
-			Command:       req.Command,
-			SecurityLevel: securityLevelName(eval.Level),
-			ExitCode:      intPtr(-1),
-			ErrorMessage:  "command cancelled",
-		}, nil
-	}
-}
-
-// backgroundExecution 将当前执行转入后台
-func (t *CommandTools) backgroundExecution(ec *executionContext) (*SmartExecuteResponse, error) {
-	taskID, _, ok := ec.registerAndWaitBackground()
-	if !ok {
-		ec.cancel()
-		return &SmartExecuteResponse{
-			Command:       ec.req.Command,
-			SecurityLevel: securityLevelName(ec.eval.Level),
-			ExitCode:      intPtr(-1),
-			ErrorMessage:  "too many background tasks are running",
-		}, nil
-	}
-
-	return &SmartExecuteResponse{
-		Success:       true,
-		Command:       ec.req.Command,
-		SecurityLevel: securityLevelName(ec.eval.Level),
-		IsBackground:  true,
-		TaskID:        taskID,
-		WarningMessage: fmt.Sprintf(
-			"命令执行超过%s未完成，已转入后台执行。请告知用户任务已在后台运行，稍后可以让你查看任务完成情况。查询时调用 execute 工具传入 {\"task_id\": \"%s\", \"task_action\": \"status\"} 即可，不需要传 command 和 reason。不要主动轮询",
-			backgroundThreshold, taskID,
-		),
-	}, nil
-}
-
-// executeBackground 立即以后台方式启动命令，stdout/stderr 写入临时文件。
-func (t *CommandTools) executeBackground(req *SmartExecuteRequest, eval SecurityEvaluation) (*SmartExecuteResponse, error) {
-	result, err := startBackgroundProcess(req.Command, t.workDir)
+	task, err := t.manager.start(ctx, t.workDir, req, eval, timeout)
 	if err != nil {
-		return &SmartExecuteResponse{
-			Command:       req.Command,
-			SecurityLevel: securityLevelName(eval.Level),
-			ErrorMessage:  fmt.Sprintf("failed to start background command: %v", err),
-		}, nil
+		return &SmartExecuteResponse{ErrorMessage: err.Error()}, nil
 	}
-
-	stdoutRel, _ := filepath.Rel(t.workDir, result.StdoutFile)
-	stderrRel, _ := filepath.Rel(t.workDir, result.StderrFile)
-
-	return &SmartExecuteResponse{
-		Success:        true,
-		Command:        req.Command,
-		SecurityLevel:  securityLevelName(eval.Level),
-		IsBackground:   true,
-		PID:            result.PID,
-		OutputFilePath: stdoutRel,
-		WarningMessage: fmt.Sprintf(
-			"命令已在后台启动，PID: %d。stdout: %s, stderr: %s。可通过 kill %d 终止，执行完毕后用 file_read 读取输出文件。",
-			result.PID, stdoutRel, stderrRel, result.PID,
-		),
-	}, nil
+	if req.Background {
+		return task.runningResponse(), nil
+	}
+	timer := time.NewTimer(backgroundThreshold)
+	defer timer.Stop()
+	select {
+	case <-task.finished:
+		return task.result(), nil
+	case <-timer.C:
+		return task.runningResponse(), nil
+	case <-ctx.Done():
+		task.cancel()
+		<-task.finished
+		return task.result(), nil
+	}
 }
+
+// WithManager 注入同一应用资源生命周期内共享的命令管理器。
+func WithManager(manager *Manager) Option {
+	return func(t *CommandTools) {
+		if manager != nil {
+			t.manager = manager
+		}
+	}
+}
+
+// Close 取消并等待所属命令退出，然后清理该管理器创建的输出文件。
+func (t *CommandTools) Close() error { return t.manager.Close() }
 
 func buildShellCommand(command string) (shell string, args []string) {
 	switch runtime.GOOS {
@@ -454,12 +387,25 @@ func saveOutputToFile(content, workDir string) (string, string, error) {
 		return "", "", err
 	}
 
+	if err := file.Sync(); err != nil {
+		os.Remove(file.Name())
+		return "", "", err
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(file.Name())
+		return "", "", err
+	}
+
 	// 生成预览：截取前 outputPreviewLines 行
 	preview := content
 	lines := strings.Split(content, "\n")
 	if len(lines) > outputPreviewLines {
 		preview = strings.Join(lines[:outputPreviewLines], "\n")
 		preview += fmt.Sprintf("\n\n... 已截断（共 %d 行，完整内容见文件）", len(lines))
+	}
+
+	if len(preview) > outputPreviewBytes {
+		preview = executil.String([]byte(preview[:outputPreviewBytes]), true)
 	}
 
 	// 返回相对路径，让 file_read 直接在工作目录内解析，避免外部路径审批

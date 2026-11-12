@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -23,6 +24,7 @@ func CombinedOutput(command *exec.Cmd, limit int64) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("command output is already configured")
 	}
 
+	ConfigureProcessGroup(command)
 	output := &limitedBuffer{remaining: limit}
 	command.Stdout = output
 	command.Stderr = output
@@ -36,10 +38,12 @@ func String(output []byte, truncated bool) string {
 	if !truncated {
 		return string(output)
 	}
-	for len(output) > 0 && !utf8.Valid(output) {
-		output = output[:len(output)-1]
+	// 只去除尾部未完成的字符；内部非法字节由一次线性转换处理。
+	for len(output) > 0 && !utf8.FullRune(output[lastRuneStart(output):]) {
+		output = output[:lastRuneStart(output)]
 	}
-	return string(output) + truncatedMarker
+
+	return strings.ToValidUTF8(string(output), "�") + truncatedMarker
 }
 
 type limitedBuffer struct {
@@ -69,4 +73,12 @@ func (buffer *limitedBuffer) result() ([]byte, bool) {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
 	return bytes.Clone(buffer.buffer.Bytes()), buffer.truncated
+}
+
+func lastRuneStart(data []byte) int {
+	i := len(data) - 1
+	for i > 0 && !utf8.RuneStart(data[i]) {
+		i--
+	}
+	return max(i, 0)
 }

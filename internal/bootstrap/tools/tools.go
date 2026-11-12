@@ -2,8 +2,10 @@ package tools
 
 import (
 	storageport "fkteams/internal/ports/storage"
+	"fkteams/internal/runtime/resources"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	taskstore "fkteams/internal/adapters/storage/task"
@@ -46,6 +48,7 @@ func appdataJavaScriptStateDir() string {
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
 func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Documents) (*apptools.ToolGroupRegistry, error) {
 	sessionsDir := appdata.SessionsDir()
+	commands := &commandManagers{byCleaner: make(map[*resources.Cleaner]*commandtool.Manager)}
 	var documents storageport.Documents
 	if len(stores) > 0 {
 		documents = stores[0]
@@ -152,7 +155,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Builtin:       true,
 				IncludedTools: []string{"execute"},
 			},
-			Factory: commandToolGroup(commandtool.ApprovalModeHITL),
+			Factory: commandToolGroup(commandtool.ApprovalModeHITL, commands),
 		},
 		{
 			Info: apptools.ToolGroupInfo{
@@ -164,7 +167,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				IncludedTools: []string{"execute"},
 				Hidden:        true,
 			},
-			Factory: commandToolGroup(commandtool.ApprovalModeReject),
+			Factory: commandToolGroup(commandtool.ApprovalModeReject, commands),
 		},
 		{
 			Info: apptools.ToolGroupInfo{
@@ -364,15 +367,23 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 	return registry, nil
 }
 
-func commandToolGroup(mode commandtool.ApprovalMode) apptools.ToolGroupFactory {
+type commandManagers struct {
+	mu        sync.Mutex
+	byCleaner map[*resources.Cleaner]*commandtool.Manager
+}
+
+func commandToolGroup(mode commandtool.ApprovalMode, pool *commandManagers) apptools.ToolGroupFactory {
 	return func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-		if ctx.Cleaner != nil {
-			ctx.Cleaner.Add(func() error {
-				commandtool.TerminateAll()
-				commandtool.CleanupTempFiles(ctx.WorkspaceDir)
-				return nil
-			})
+		pool.mu.Lock()
+		manager := pool.byCleaner[ctx.Cleaner]
+		if manager == nil || manager.Closed() {
+			manager = commandtool.NewManager()
+			pool.byCleaner[ctx.Cleaner] = manager
+			if ctx.Cleaner != nil {
+				ctx.Cleaner.Add(manager.Close)
+			}
 		}
-		return commandtool.NewCommandTools(ctx.WorkspaceDir, commandtool.WithApprovalMode(mode)).GetTools()
+		pool.mu.Unlock()
+		return commandtool.NewCommandTools(ctx.WorkspaceDir, commandtool.WithManager(manager), commandtool.WithApprovalMode(mode)).GetTools()
 	}
 }

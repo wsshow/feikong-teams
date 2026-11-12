@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"fkteams/internal/runtime/executil"
+	"fkteams/internal/runtime/pathguard"
 )
 
 const maxScriptOutputBytes int64 = 1 << 20
@@ -167,11 +168,8 @@ type InstallPackageResponse struct {
 
 // InstallPackage 安装 Python 依赖包
 func (ut *UVTools) InstallPackage(ctx context.Context, req *InstallPackageRequest) (*InstallPackageResponse, error) {
-	if len(req.Packages) == 0 {
-		return &InstallPackageResponse{
-			Success:      false,
-			ErrorMessage: "packages 不能为空",
-		}, nil
+	if err := executil.ValidateOperands(req.Packages); err != nil {
+		return &InstallPackageResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	// 检查虚拟环境是否存在
@@ -183,7 +181,7 @@ func (ut *UVTools) InstallPackage(ctx context.Context, req *InstallPackageReques
 	}
 
 	// 构建命令：uv pip install
-	args := []string{"pip", "install"}
+	args := []string{"pip", "install", "--python", ut.getPythonPath()}
 	if req.Upgrade {
 		args = append(args, "--upgrade")
 	}
@@ -220,11 +218,8 @@ type RemovePackageResponse struct {
 
 // RemovePackage 移除 Python 依赖包
 func (ut *UVTools) RemovePackage(ctx context.Context, req *RemovePackageRequest) (*RemovePackageResponse, error) {
-	if len(req.Packages) == 0 {
-		return &RemovePackageResponse{
-			Success:      false,
-			ErrorMessage: "packages 不能为空",
-		}, nil
+	if err := executil.ValidateOperands(req.Packages); err != nil {
+		return &RemovePackageResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	// 检查虚拟环境是否存在
@@ -236,7 +231,7 @@ func (ut *UVTools) RemovePackage(ctx context.Context, req *RemovePackageRequest)
 	}
 
 	// 构建命令：uv pip uninstall
-	args := []string{"pip", "uninstall", "-y"}
+	args := []string{"pip", "uninstall", "--python", ut.getPythonPath()}
 	args = append(args, req.Packages...)
 
 	// 执行卸载
@@ -285,7 +280,7 @@ func (ut *UVTools) ListPackage(ctx context.Context, req *ListPackageRequest) (*L
 	}
 
 	// 构建命令：uv pip list
-	args := []string{"pip", "list", "--format", "json"}
+	args := []string{"pip", "list", "--python", ut.getPythonPath(), "--format", "json"}
 
 	// 执行列表
 	output, err := ut.executeCommand(ctx, ut.uvPath, args...)
@@ -348,9 +343,12 @@ func (ut *UVTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanEn
 		// 列出所有包
 		listResp, err := ut.ListPackage(ctx, &ListPackageRequest{})
 		if err != nil {
+			return &CleanEnvResponse{ErrorMessage: err.Error()}, nil
+		}
+		if !listResp.Success {
 			return &CleanEnvResponse{
 				Success:      false,
-				ErrorMessage: fmt.Sprintf("获取包列表失败: %v", err),
+				ErrorMessage: "list packages failed: " + listResp.ErrorMessage,
 			}, nil
 		}
 
@@ -371,9 +369,12 @@ func (ut *UVTools) CleanEnv(ctx context.Context, req *CleanEnvRequest) (*CleanEn
 			Packages: packageNames,
 		})
 		if err != nil {
+			return &CleanEnvResponse{ErrorMessage: err.Error()}, nil
+		}
+		if !removeResp.Success {
 			return &CleanEnvResponse{
 				Success:      false,
-				ErrorMessage: fmt.Sprintf("清理包失败: %v", err),
+				ErrorMessage: "remove packages failed: " + removeResp.ErrorMessage,
 			}, nil
 		}
 
@@ -428,12 +429,11 @@ func (ut *UVTools) RunScript(ctx context.Context, req *RunScriptRequest) (*RunSc
 	var scriptPath string
 
 	if req.ScriptPath != "" {
-		// 使用提供的脚本路径
-		if !filepath.IsAbs(req.ScriptPath) {
-			scriptPath = filepath.Join(ut.workDir, req.ScriptPath)
-		} else {
-			scriptPath = req.ScriptPath
+		resolved, err := pathguard.ResolveWorkspace(ut.workDir, req.ScriptPath)
+		if err != nil {
+			return &RunScriptResponse{ErrorMessage: err.Error()}, nil
 		}
+		scriptPath = resolved.AbsPath
 
 		// 检查文件是否存在
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
@@ -743,10 +743,12 @@ except Exception as e:
 	var args []string
 	if req.Filepath != "" {
 		// 检查文件
-		scriptPath := req.Filepath
-		if !filepath.IsAbs(scriptPath) {
-			scriptPath = filepath.Join(ut.workDir, scriptPath)
+		resolved, err := pathguard.ResolveWorkspace(ut.workDir, req.Filepath)
+		if err != nil {
+			return &CheckSyntaxResponse{ErrorMessage: err.Error()}, nil
 		}
+		scriptPath := resolved.AbsPath
+
 		args = []string{"-c", checkScript, scriptPath, "file"}
 	} else {
 		// 检查代码

@@ -2,253 +2,228 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
+
+	"fkteams/internal/domain/session"
+	"fkteams/internal/runtime/executil"
+
+	"github.com/google/uuid"
 )
 
 const (
 	backgroundThreshold = 15 * time.Second
-	bgTaskTTL           = 1 * time.Hour // 后台任务结果保留时间
+	bgTaskTTL           = time.Hour
 	maxBackgroundTasks  = 64
 )
 
-// backgroundTask 后台任务
+// Manager 统一持有前台、显式后台和自动转后台命令，不共享进程级状态。
+type Manager struct {
+	mu        sync.Mutex
+	tasks     map[string]*backgroundTask
+	files     []string
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closed    bool
+	wg        sync.WaitGroup
+	closeOnce sync.Once
+	closeErr  error
+}
+
 type backgroundTask struct {
-	mu      sync.Mutex
-	done    bool
-	resp    *SmartExecuteResponse
-	command string
-	startAt time.Time
-	doneAt  time.Time
-	cancel  context.CancelFunc
+	mu       sync.Mutex
+	id       string
+	scope    string
+	done     bool
+	resp     *SmartExecuteResponse
+	command  string
+	startAt  time.Time
+	doneAt   time.Time
+	cancel   context.CancelFunc
+	finished chan struct{}
+	pid      int
 }
 
-var (
-	bgTasks   = make(map[string]*backgroundTask)
-	bgTasksMu sync.Mutex
-)
-
-// TerminateAll 终止所有运行中的后台任务并清理临时文件，在进程退出时调用
-func TerminateAll() {
-	bgTasksMu.Lock()
-	defer bgTasksMu.Unlock()
-	for id, task := range bgTasks {
-		task.mu.Lock()
-		if !task.done && task.cancel != nil {
-			task.cancel()
-		}
-		task.mu.Unlock()
-		delete(bgTasks, id)
-	}
+// NewManager 创建独立命令任务管理器，调用 Close 排空其所属任务。
+func NewManager() *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Manager{tasks: make(map[string]*backgroundTask), ctx: ctx, cancel: cancel}
 }
 
-// CleanupTempFiles 清理 workDir 下的命令临时输出文件
-func CleanupTempFiles(workDir string) {
-	patterns := []string{"cmd_output_*.txt", "bg_stdout_*.txt", "bg_stderr_*.txt"}
-	for _, pat := range patterns {
-		files, err := filepath.Glob(filepath.Join(workDir, pat))
-		if err != nil {
-			continue
+// Closed 报告管理器是否已进入关闭流程。
+func (m *Manager) Closed() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.closed }
+
+// Close 拒绝新命令、取消并等待所有子进程退出，再清理本实例拥有的文件。
+func (m *Manager) Close() error {
+	m.closeOnce.Do(func() {
+		m.mu.Lock()
+		m.closed = true
+		m.cancel()
+		m.mu.Unlock()
+		m.wg.Wait()
+		m.mu.Lock()
+		files := append([]string(nil), m.files...)
+		m.tasks = make(map[string]*backgroundTask)
+		m.mu.Unlock()
+		for _, path := range files {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				m.closeErr = errors.Join(m.closeErr, err)
+			}
 		}
-		for _, f := range files {
-			os.Remove(f)
-		}
-	}
+	})
+	return m.closeErr
 }
 
-// cleanStaleTasks 清理过期的后台任务，需在持有 bgTasksMu 时调用
-func cleanStaleTasks() {
+func scopeFor(ctx context.Context, workDir string) string {
+	id, _ := session.IDFromContext(ctx)
+	return filepath.Clean(workDir) + "\x00" + id
+}
+
+func (m *Manager) reserveLocked() bool {
 	now := time.Now()
-	for id, t := range bgTasks {
-		t.mu.Lock()
-		if t.done && now.Sub(t.doneAt) > bgTaskTTL {
-			t.mu.Unlock()
-			delete(bgTasks, id)
+	oldest := ""
+	var oldestTime time.Time
+	for id, task := range m.tasks {
+		task.mu.Lock()
+		done, at := task.done, task.doneAt
+		task.mu.Unlock()
+		if done && now.Sub(at) > bgTaskTTL {
+			delete(m.tasks, id)
 			continue
 		}
-		t.mu.Unlock()
+		if done && (oldest == "" || at.Before(oldestTime)) {
+			oldest, oldestTime = id, at
+		}
 	}
-}
-
-// reserveBackgroundTaskSlot 为新任务预留容量，优先淘汰最早完成的结果。
-func reserveBackgroundTaskSlot() bool {
-	cleanStaleTasks()
-	if len(bgTasks) < maxBackgroundTasks {
+	if len(m.tasks) < maxBackgroundTasks {
 		return true
 	}
-
-	var oldestID string
-	var oldestDoneAt time.Time
-	for id, task := range bgTasks {
-		task.mu.Lock()
-		done := task.done
-		doneAt := task.doneAt
-		task.mu.Unlock()
-		if done && (oldestID == "" || doneAt.Before(oldestDoneAt)) {
-			oldestID = id
-			oldestDoneAt = doneAt
-		}
+	if oldest != "" {
+		delete(m.tasks, oldest)
+		return true
 	}
-	if oldestID == "" {
-		return false
-	}
-	delete(bgTasks, oldestID)
-	return true
+	return false
 }
 
-// handleTaskOperation 后台任务管理路由
-func (t *CommandTools) handleTaskOperation(req *SmartExecuteRequest) (*SmartExecuteResponse, error) {
-	switch req.TaskAction {
-	case "list":
-		return t.listBackgroundTasks()
-	case "terminate":
-		if req.TaskID == "" {
-			return &SmartExecuteResponse{ErrorMessage: "task_id is required for terminate action"}, nil
-		}
-		return t.terminateBackgroundTask(req.TaskID)
-	default:
-		if req.TaskID != "" {
-			return t.queryBackgroundTask(req.TaskID)
-		}
-		return &SmartExecuteResponse{ErrorMessage: "invalid task operation"}, nil
+func (m *Manager) start(ctx context.Context, workDir string, req *SmartExecuteRequest, eval SecurityEvaluation, timeout time.Duration) (*backgroundTask, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-}
-
-// listBackgroundTasks 列出所有后台任务
-func (t *CommandTools) listBackgroundTasks() (*SmartExecuteResponse, error) {
-	bgTasksMu.Lock()
-	cleanStaleTasks()
-	tasks := make([]BackgroundTaskInfo, 0, len(bgTasks))
-	for id, task := range bgTasks {
-		task.mu.Lock()
-		info := BackgroundTaskInfo{
-			TaskID:      id,
-			Command:     task.command,
-			ElapsedTime: time.Since(task.startAt).Round(time.Millisecond).String(),
-		}
-		if task.done {
-			if task.resp != nil && task.resp.Success {
-				info.Status = "completed"
-			} else {
-				info.Status = "failed"
-			}
-		} else {
-			info.Status = "running"
-		}
-		task.mu.Unlock()
-		tasks = append(tasks, info)
+	// 拷贝请求，后台任务不保留调用方可变参数。
+	request := *req
+	ec := newExecutionContext(m.ctx, &request, eval, timeout, workDir)
+	shell, args := buildShellCommand(request.Command)
+	cmd := exec.CommandContext(ec.cmdCtx, shell, args...)
+	cmd.Dir = workDir
+	executil.ConfigureProcessGroup(cmd)
+	cmd.Stdout, cmd.Stderr = ec.stdoutLW, ec.stderrLW
+	ec.startTime = time.Now()
+	task := &backgroundTask{id: "bg_" + uuid.NewString(), scope: scopeFor(ctx, workDir), command: request.Command, startAt: ec.startTime, cancel: ec.cancel, finished: make(chan struct{})}
+	m.mu.Lock()
+	if m.closed || !m.reserveLocked() {
+		m.mu.Unlock()
+		ec.cancel()
+		return nil, fmt.Errorf("command manager is closed or too many background tasks are running")
 	}
-	bgTasksMu.Unlock()
-
-	resp := &SmartExecuteResponse{Success: true, Tasks: tasks}
-	if len(tasks) == 0 {
-		resp.WarningMessage = "当前没有后台任务"
+	if err := ctx.Err(); err != nil {
+		m.mu.Unlock()
+		ec.cancel()
+		return nil, err
 	}
-	return resp, nil
-}
-
-// terminateBackgroundTask 终止后台任务
-func (t *CommandTools) terminateBackgroundTask(taskID string) (*SmartExecuteResponse, error) {
-	bgTasksMu.Lock()
-	task, ok := bgTasks[taskID]
-	bgTasksMu.Unlock()
-
-	if !ok {
-		return &SmartExecuteResponse{ErrorMessage: fmt.Sprintf("task %q not found", taskID)}, nil
+	if err := cmd.Start(); err != nil {
+		m.mu.Unlock()
+		ec.cancel()
+		return nil, fmt.Errorf("start command: %w", err)
 	}
-
-	task.mu.Lock()
-	if task.done {
-		task.mu.Unlock()
-		return &SmartExecuteResponse{
-			Success:        true,
-			Command:        task.command,
-			WarningMessage: "任务已结束，无需终止",
-		}, nil
-	}
-	cancelFn := task.cancel
-	task.mu.Unlock()
-
-	// 取消 context 触发 cmd.Cancel 杀死进程组
-	if cancelFn != nil {
-		cancelFn()
-	}
-
-	return &SmartExecuteResponse{
-		Success:        true,
-		Command:        task.command,
-		TaskID:         taskID,
-		WarningMessage: "已发送终止信号，任务正在停止",
-	}, nil
-}
-
-// queryBackgroundTask 查询后台任务结果
-func (t *CommandTools) queryBackgroundTask(taskID string) (*SmartExecuteResponse, error) {
-	bgTasksMu.Lock()
-	task, ok := bgTasks[taskID]
-	bgTasksMu.Unlock()
-
-	if !ok {
-		return &SmartExecuteResponse{ErrorMessage: fmt.Sprintf("task %q not found", taskID)}, nil
-	}
-
-	task.mu.Lock()
-	if !task.done {
-		elapsed := time.Since(task.startAt).Round(time.Millisecond)
-		task.mu.Unlock()
-		return &SmartExecuteResponse{
-			Success:        true,
-			Command:        task.command,
-			IsBackground:   true,
-			TaskID:         taskID,
-			WarningMessage: fmt.Sprintf("任务仍在执行中（已运行 %s），请稍后再查询", elapsed),
-		}, nil
-	}
-	resp := task.resp
-	task.mu.Unlock()
-
-	// 任务完成，返回结果并清理
-	bgTasksMu.Lock()
-	delete(bgTasks, taskID)
-	bgTasksMu.Unlock()
-
-	return resp, nil
-}
-
-// registerAndWaitBackground 注册后台任务并启动等待协程
-func (ec *executionContext) registerAndWaitBackground() (string, *backgroundTask, bool) {
-	taskID := fmt.Sprintf("bg_%d", time.Now().UnixNano())
-
-	task := &backgroundTask{
-		command: ec.req.Command,
-		startAt: ec.startTime,
-		cancel:  ec.cancel,
-	}
-
-	bgTasksMu.Lock()
-	if !reserveBackgroundTaskSlot() {
-		bgTasksMu.Unlock()
-		return "", nil, false
-	}
-	bgTasks[taskID] = task
-	bgTasksMu.Unlock()
-
+	task.pid = cmd.Process.Pid
+	m.tasks[task.id] = task
+	m.wg.Add(1)
+	m.mu.Unlock()
 	go func() {
+		defer m.wg.Done()
 		defer ec.cancel()
-		err := <-ec.done
+		err := cmd.Wait()
 		resp := ec.buildResponse(err)
-		resp.IsBackground = true
-		resp.TaskID = taskID
-
+		resp.TaskID = task.id
+		resp.PID = task.pid
+		resp.IsBackground = request.Background
+		if resp.OutputFilePath != "" {
+			m.mu.Lock()
+			m.files = append(m.files, filepath.Join(workDir, resp.OutputFilePath))
+			m.mu.Unlock()
+		}
 		task.mu.Lock()
-		task.resp = resp
 		task.done = true
 		task.doneAt = time.Now()
+		task.resp = resp
 		task.mu.Unlock()
+		close(task.finished)
 	}()
+	return task, nil
+}
 
-	return taskID, task, true
+func (task *backgroundTask) result() *SmartExecuteResponse {
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	copy := *task.resp
+	return &copy
+}
+func (task *backgroundTask) runningResponse() *SmartExecuteResponse {
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	if task.done {
+		copy := *task.resp
+		return &copy
+	}
+	return &SmartExecuteResponse{Success: true, Command: task.command, IsBackground: true, TaskID: task.id, PID: task.pid, WarningMessage: "命令正在后台运行，使用 task_id 查询状态或终止任务"}
+}
+
+func (t *CommandTools) handleTaskOperation(ctx context.Context, req *SmartExecuteRequest) (*SmartExecuteResponse, error) {
+	scope := scopeFor(ctx, t.workDir)
+	m := t.manager
+	m.mu.Lock()
+	if req.TaskAction == "list" {
+		tasks := make([]BackgroundTaskInfo, 0)
+		for id, task := range m.tasks {
+			if task.scope != scope {
+				continue
+			}
+			task.mu.Lock()
+			status := "running"
+			elapsed := time.Since(task.startAt)
+			if task.done {
+				elapsed = task.doneAt.Sub(task.startAt)
+				status = "failed"
+				if task.resp != nil && task.resp.Success {
+					status = "completed"
+				}
+			}
+			tasks = append(tasks, BackgroundTaskInfo{TaskID: id, Command: task.command, Status: status, ElapsedTime: elapsed.Round(time.Millisecond).String()})
+			task.mu.Unlock()
+		}
+		m.mu.Unlock()
+		sort.Slice(tasks, func(i, j int) bool { return tasks[i].TaskID < tasks[j].TaskID })
+		return &SmartExecuteResponse{Success: true, Tasks: tasks}, nil
+	}
+	task := m.tasks[req.TaskID]
+	if task == nil || task.scope != scope {
+		m.mu.Unlock()
+		return &SmartExecuteResponse{ErrorMessage: "task not found in current session"}, nil
+	}
+	m.mu.Unlock()
+	switch req.TaskAction {
+	case "terminate":
+		task.cancel()
+		return &SmartExecuteResponse{Success: true, TaskID: task.id, WarningMessage: "已发送终止信号，使用 status 确认退出"}, nil
+	case "status", "":
+		return task.runningResponse(), nil
+	default:
+		return &SmartExecuteResponse{ErrorMessage: "invalid task operation"}, nil
+	}
 }

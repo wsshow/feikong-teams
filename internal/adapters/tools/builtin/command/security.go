@@ -137,17 +137,15 @@ func evaluateSingleCommand(cmdLower string) SecurityEvaluation {
 		}
 	}
 
+	var evaluation SecurityEvaluation
+	evaluation.Description = "常规命令"
 	for _, p := range riskyPatterns {
-		if strings.Contains(cmdLower, p.Pattern) {
-			return SecurityEvaluation{
-				Level:       p.Level,
-				Description: p.Description,
-				Risks:       []string{p.Risk},
-			}
+		if strings.Contains(cmdLower, p.Pattern) && p.Level > evaluation.Level {
+			evaluation = SecurityEvaluation{Level: p.Level, Description: p.Description, Risks: []string{p.Risk}}
 		}
 	}
+	return evaluation
 
-	return SecurityEvaluation{Level: LevelSafe, Description: "常规命令"}
 }
 
 // splitShellCommands 按 &&、;、| 拆分为独立子命令，关注引号

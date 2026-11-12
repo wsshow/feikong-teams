@@ -5,209 +5,126 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"fkteams/internal/domain/session"
 )
 
-func TestBackgroundTaskOperations(t *testing.T) {
-	resetBackgroundTasksForTest(t)
+func TestBackgroundLifecycleAndSessionIsolation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell fixture")
+	}
+	manager := NewManager()
+	defer manager.Close()
+	dir := t.TempDir()
+	tools := NewCommandTools(dir, WithManager(manager))
+	ctx := session.WithID(context.Background(), "one")
+	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "sleep 10", Background: true, Timeout: 1})
+	if err != nil || !resp.Success || resp.TaskID == "" || resp.PID == 0 {
+		t.Fatalf("start: %#v %v", resp, err)
+	}
+	other := session.WithID(context.Background(), "two")
+	hidden, err := tools.SmartExecute(other, &SmartExecuteRequest{TaskID: resp.TaskID, TaskAction: "status"})
+	if err != nil || hidden.ErrorMessage == "" {
+		t.Fatalf("cross-session task access: %#v %v", hidden, err)
+	}
+	listed, _ := tools.SmartExecute(other, &SmartExecuteRequest{TaskAction: "list"})
+	if len(listed.Tasks) != 0 {
+		t.Fatalf("cross-session task list: %#v", listed)
+	}
+	separate := NewCommandTools(t.TempDir(), WithManager(manager))
+	hidden, _ = separate.SmartExecute(ctx, &SmartExecuteRequest{TaskID: resp.TaskID})
+	if hidden.ErrorMessage == "" {
+		t.Fatal("cross-workspace task access")
+	}
+	manager.mu.Lock()
+	task := manager.tasks[resp.TaskID]
+	manager.mu.Unlock()
+	select {
+	case <-task.finished:
+	case <-time.After(4 * time.Second):
+		t.Fatal("background timeout did not stop process")
+	}
+	result, _ := tools.SmartExecute(ctx, &SmartExecuteRequest{TaskID: resp.TaskID})
+	if result.Success || !strings.Contains(result.ErrorMessage, "timed out") {
+		t.Fatalf("timeout: %#v", result)
+	}
+	// 结果读取可重复，避免重试时丢失任务结果。
+	repeated, _ := tools.SmartExecute(ctx, &SmartExecuteRequest{TaskID: resp.TaskID})
+	if repeated.ErrorMessage != result.ErrorMessage {
+		t.Fatal("result was consumed by first read")
+	}
+}
 
-	cancelled := false
-	bgTasksMu.Lock()
-	bgTasks["running"] = &backgroundTask{
-		command: "sleep 60",
-		startAt: time.Now().Add(-time.Second),
-		cancel: func() {
-			cancelled = true
-		},
+func TestManagerCloseWaitsAndOnlyRemovesOwnedFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell fixture")
 	}
-	bgTasks["done"] = &backgroundTask{
-		done:    true,
-		command: "echo done",
-		startAt: time.Now().Add(-2 * time.Second),
-		doneAt:  time.Now(),
-		resp: &SmartExecuteResponse{
-			Success: true,
-			Command: "echo done",
-			Stdout:  "done\n",
-		},
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "cmd_output_user.txt")
+	if err := os.WriteFile(keep, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
 	}
-	bgTasks["stale"] = &backgroundTask{
-		done:    true,
-		command: "old",
-		startAt: time.Now().Add(-2 * bgTaskTTL),
-		doneAt:  time.Now().Add(-2 * bgTaskTTL),
-		resp:    &SmartExecuteResponse{Success: true},
+	manager := NewManager()
+	tools := NewCommandTools(dir, WithManager(manager))
+	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "sleep 20", Background: true})
+	if err != nil || !resp.Success {
+		t.Fatalf("start: %#v %v", resp, err)
 	}
-	bgTasksMu.Unlock()
+	manager.mu.Lock()
+	task := manager.tasks[resp.TaskID]
+	manager.mu.Unlock()
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-task.finished:
+	default:
+		t.Fatal("Close returned before process exit")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("unowned file was removed: %v", err)
+	}
+	resp, _ = tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "echo closed"})
+	if resp.Success {
+		t.Fatal("closed manager accepted new command")
+	}
+}
 
+func TestBackgroundRejectsCancelledAndOverCapacityBeforeStarting(t *testing.T) {
 	tools := NewCommandTools(t.TempDir())
-	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskAction: "list"})
-	if err != nil {
-		t.Fatalf("list background tasks error: %v", err)
+	defer tools.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "echo cancelled", Background: true})
+	if err != nil || resp.Success {
+		t.Fatalf("cancelled start: %#v %v", resp, err)
 	}
-	if !resp.Success {
-		t.Fatalf("list background tasks success = false: %#v", resp)
+	tools.manager.mu.Lock()
+	for i := range maxBackgroundTasks {
+		tools.manager.tasks[fmt.Sprint(i)] = &backgroundTask{}
 	}
-	if len(resp.Tasks) != 2 {
-		t.Fatalf("expected stale task cleanup and two visible tasks, got %#v", resp.Tasks)
+	tools.manager.mu.Unlock()
+	marker := filepath.Join(tools.workDir, "started")
+	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "touch started", Background: true})
+	if err != nil || resp.Success {
+		t.Fatalf("capacity: %#v %v", resp, err)
 	}
-
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskID: "running"})
-	if err != nil {
-		t.Fatalf("query running task error: %v", err)
-	}
-	if !resp.IsBackground || !resp.Success || resp.TaskID != "running" {
-		t.Fatalf("unexpected running task response: %#v", resp)
-	}
-
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskAction: "terminate", TaskID: "running"})
-	if err != nil {
-		t.Fatalf("terminate task error: %v", err)
-	}
-	if !resp.Success || !cancelled {
-		t.Fatalf("expected terminate success and cancel call, resp=%#v cancelled=%v", resp, cancelled)
-	}
-
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskID: "done"})
-	if err != nil {
-		t.Fatalf("query done task error: %v", err)
-	}
-	if !resp.Success || resp.Stdout != "done\n" {
-		t.Fatalf("unexpected done task response: %#v", resp)
-	}
-	bgTasksMu.Lock()
-	_, exists := bgTasks["done"]
-	bgTasksMu.Unlock()
-	if exists {
-		t.Fatal("done task should be removed after query")
-	}
-
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskAction: "terminate"})
-	if err != nil {
-		t.Fatalf("missing task id terminate error: %v", err)
-	}
-	if resp.ErrorMessage != "task_id is required for terminate action" {
-		t.Fatalf("missing task id error = %q", resp.ErrorMessage)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("capacity rejection happened after process start")
 	}
 }
 
-func TestBackgroundTaskMissingAndCompletedTerminate(t *testing.T) {
-	resetBackgroundTasksForTest(t)
-
-	bgTasksMu.Lock()
-	bgTasks["done"] = &backgroundTask{
-		done:    true,
-		command: "echo done",
-		startAt: time.Now(),
-		doneAt:  time.Now(),
-		resp:    &SmartExecuteResponse{Success: true},
-	}
-	bgTasksMu.Unlock()
-
+func TestTaskOperationValidation(t *testing.T) {
 	tools := NewCommandTools(t.TempDir())
-	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskID: "missing"})
-	if err != nil {
-		t.Fatalf("query missing task error: %v", err)
-	}
-	if resp.ErrorMessage == "" {
-		t.Fatalf("expected missing task error, got %#v", resp)
-	}
-
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskAction: "terminate", TaskID: "done"})
-	if err != nil {
-		t.Fatalf("terminate done task error: %v", err)
-	}
-	if !resp.Success || resp.WarningMessage == "" {
-		t.Fatalf("expected completed terminate warning, got %#v", resp)
-	}
-
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{TaskAction: "unknown"})
-	if err != nil {
-		t.Fatalf("unknown task action error: %v", err)
-	}
-	if resp.ErrorMessage != "invalid task operation" {
-		t.Fatalf("unknown task action error = %q", resp.ErrorMessage)
-	}
-}
-
-func TestReserveBackgroundTaskSlotRejectsWhenAllTasksRunning(t *testing.T) {
-	resetBackgroundTasksForTest(t)
-
-	bgTasksMu.Lock()
-	for i := 0; i < maxBackgroundTasks; i++ {
-		bgTasks[fmt.Sprintf("running-%d", i)] = &backgroundTask{startAt: time.Now()}
-	}
-	if reserveBackgroundTaskSlot() {
-		bgTasksMu.Unlock()
-		t.Fatal("expected full running task registry to reject a new task")
-	}
-	got := len(bgTasks)
-	bgTasksMu.Unlock()
-	if got != maxBackgroundTasks {
-		t.Fatalf("background task count = %d, want %d", got, maxBackgroundTasks)
-	}
-}
-
-func TestReserveBackgroundTaskSlotEvictsOldestCompletedTask(t *testing.T) {
-	resetBackgroundTasksForTest(t)
-
-	now := time.Now()
-	bgTasksMu.Lock()
-	for i := 0; i < maxBackgroundTasks-2; i++ {
-		bgTasks[fmt.Sprintf("running-%d", i)] = &backgroundTask{startAt: now}
-	}
-	bgTasks["oldest"] = &backgroundTask{done: true, doneAt: now.Add(-time.Minute)}
-	bgTasks["newer"] = &backgroundTask{done: true, doneAt: now}
-	if !reserveBackgroundTaskSlot() {
-		bgTasksMu.Unlock()
-		t.Fatal("expected a completed task to be evicted")
-	}
-	_, oldestExists := bgTasks["oldest"]
-	_, newerExists := bgTasks["newer"]
-	bgTasksMu.Unlock()
-	if oldestExists || !newerExists {
-		t.Fatalf("unexpected eviction result: oldest=%v newer=%v", oldestExists, newerExists)
-	}
-}
-
-func TestCleanupTempFiles(t *testing.T) {
-	workDir := t.TempDir()
-	files := []string{
-		"cmd_output_one.txt",
-		"bg_stdout_one.txt",
-		"bg_stderr_one.txt",
-		"keep.txt",
-	}
-	for _, name := range files {
-		if err := os.WriteFile(filepath.Join(workDir, name), []byte(name), 0644); err != nil {
-			t.Fatalf("write %s: %v", name, err)
+	defer tools.Close()
+	for _, req := range []*SmartExecuteRequest{{TaskID: "missing"}, {TaskAction: "terminate"}, {TaskAction: "invalid"}} {
+		resp, err := tools.SmartExecute(context.Background(), req)
+		if err != nil || resp.ErrorMessage == "" {
+			t.Fatalf("operation: %#v %v", resp, err)
 		}
 	}
-
-	CleanupTempFiles(workDir)
-
-	for _, name := range files[:3] {
-		if _, err := os.Stat(filepath.Join(workDir, name)); !os.IsNotExist(err) {
-			t.Fatalf("expected %s to be removed, stat err=%v", name, err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(workDir, "keep.txt")); err != nil {
-		t.Fatalf("keep.txt should remain: %v", err)
-	}
-}
-
-func resetBackgroundTasksForTest(t *testing.T) {
-	t.Helper()
-
-	TerminateAll()
-	bgTasksMu.Lock()
-	bgTasks = make(map[string]*backgroundTask)
-	bgTasksMu.Unlock()
-	t.Cleanup(func() {
-		TerminateAll()
-		bgTasksMu.Lock()
-		bgTasks = make(map[string]*backgroundTask)
-		bgTasksMu.Unlock()
-	})
 }

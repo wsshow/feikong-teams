@@ -164,7 +164,7 @@ func TestUVPackageCommands(t *testing.T) {
 	}
 
 	log := readLog(t, logPath)
-	for _, want := range []string{"pip install --upgrade requests pytest", "pip uninstall -y pytest"} {
+	for _, want := range []string{"pip install --python " + ut.getPythonPath() + " --upgrade requests pytest", "pip uninstall --python " + ut.getPythonPath() + " pytest"} {
 		if !strings.Contains(log, want) {
 			t.Fatalf("command log missing %q: %q", want, log)
 		}
@@ -251,7 +251,7 @@ func TestUVCleanEnvKeepsVenvAndRemovesPackages(t *testing.T) {
 		t.Fatalf("venv should be kept: %v", err)
 	}
 	log := readLog(t, logPath)
-	for _, want := range []string{"pip list --format json", "pip uninstall -y requests pytest"} {
+	for _, want := range []string{"pip list --python " + ut.getPythonPath() + " --format json", "pip uninstall --python " + ut.getPythonPath() + " requests pytest"} {
 		if !strings.Contains(log, want) {
 			t.Fatalf("command log missing %q: %q", want, log)
 		}
@@ -303,5 +303,43 @@ func TestUVGetEnvInfoExistingVenv(t *testing.T) {
 		resp.UVVersion != "uv 0.1.0" ||
 		resp.PackageCount != 2 {
 		t.Fatalf("env info response = %#v", resp)
+	}
+}
+
+func TestCleanEnvPropagatesPackageBusinessFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix command fixture")
+	}
+	for _, failList := range []bool{true, false} {
+		ut := newTestUVTools(t)
+		createVenv(t, ut)
+		body := "#!/bin/sh\nif [ \"$2\" = \"list\" ]; then echo '[{\"name\":\"keep\",\"version\":\"1\"}]';exit 0;fi\necho uninstall-failed >&2;exit 2\n"
+		if failList {
+			body = "#!/bin/sh\necho list-failed >&2\nexit 2\n"
+		}
+		ut.uvPath = writeFakeCommand(t, t.TempDir(), "uv", body)
+		resp, err := ut.CleanEnv(context.Background(), &CleanEnvRequest{KeepVenv: true})
+		if err != nil || resp.Success || resp.ErrorMessage == "" {
+			t.Fatalf("failure hidden: %#v %v", resp, err)
+		}
+	}
+}
+
+func TestUVRejectsScriptPathsOutsideWorkspace(t *testing.T) {
+	ut := newTestUVTools(t)
+	createVenv(t, ut)
+	outside := filepath.Join(t.TempDir(), "outside.py")
+	if err := os.WriteFile(outside, []byte("print('outside')"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{outside, filepath.Join("..", "outside.py")} {
+		resp, err := ut.RunScript(context.Background(), &RunScriptRequest{ScriptPath: path})
+		if err != nil || resp.ErrorMessage == "" {
+			t.Fatalf("outside script accepted: %#v %v", resp, err)
+		}
+		syntax, err := ut.CheckSyntax(context.Background(), &CheckSyntaxRequest{Filepath: path})
+		if err != nil || syntax.ErrorMessage == "" {
+			t.Fatalf("outside syntax path accepted: %#v %v", syntax, err)
+		}
 	}
 }

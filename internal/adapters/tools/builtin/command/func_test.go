@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestSmartExecuteValidationAndExitCodeHints(t *testing.T) {
@@ -59,7 +60,7 @@ func TestSmartExecuteValidationAndExitCodeHints(t *testing.T) {
 func TestExecutionContextBuildResponse(t *testing.T) {
 	workDir := t.TempDir()
 	req := &SmartExecuteRequest{Command: "echo hello"}
-	ec := newExecutionContext(req, SecurityEvaluation{Level: LevelModerate, Description: "写入文件", Risks: []string{"覆盖文件"}}, time.Second, workDir)
+	ec := newExecutionContext(context.Background(), req, SecurityEvaluation{Level: LevelModerate, Description: "写入文件", Risks: []string{"覆盖文件"}}, time.Second, workDir)
 	ec.startTime = time.Now().Add(-10 * time.Millisecond)
 	if _, err := ec.stdout.WriteString(strings.Repeat("line\n", 30_000)); err != nil {
 		t.Fatalf("write stdout: %v", err)
@@ -82,7 +83,7 @@ func TestExecutionContextBuildResponse(t *testing.T) {
 		t.Fatalf("expected moderate warning, got %q", resp.WarningMessage)
 	}
 
-	timeoutCtx := newExecutionContext(req, SecurityEvaluation{Level: LevelSafe}, time.Nanosecond, workDir)
+	timeoutCtx := newExecutionContext(context.Background(), req, SecurityEvaluation{Level: LevelSafe}, time.Nanosecond, workDir)
 	timeoutCtx.startTime = time.Now()
 	<-timeoutCtx.cmdCtx.Done()
 	timeoutResp := timeoutCtx.buildResponse(context.DeadlineExceeded)
@@ -93,7 +94,7 @@ func TestExecutionContextBuildResponse(t *testing.T) {
 		t.Fatalf("timeout error message = %q", timeoutResp.ErrorMessage)
 	}
 
-	failedCtx := newExecutionContext(req, SecurityEvaluation{Level: LevelSafe}, time.Second, workDir)
+	failedCtx := newExecutionContext(context.Background(), req, SecurityEvaluation{Level: LevelSafe}, time.Second, workDir)
 	failedCtx.startTime = time.Now()
 	failedResp := failedCtx.buildResponse(errors.New("boom"))
 	if failedResp.ExitCode == nil || *failedResp.ExitCode != -1 {
@@ -159,5 +160,18 @@ func TestSaveOutputToFileAndShellHelpers(t *testing.T) {
 	shell, args := buildShellCommand("echo ok")
 	if shell == "" || len(args) == 0 {
 		t.Fatalf("buildShellCommand returned shell=%q args=%#v", shell, args)
+	}
+}
+
+func TestSingleLineOutputPreviewHasByteBudget(t *testing.T) {
+	path, preview, err := saveOutputToFile(strings.Repeat("中", 100000), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path == "" || len(preview) > outputPreviewBytes+100 {
+		t.Fatalf("unbounded preview: %d", len(preview))
+	}
+	if !utf8.ValidString(preview) {
+		t.Fatal("preview splits a UTF-8 character")
 	}
 }
