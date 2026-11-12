@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fkteams/internal/domain/apperror"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"net/http"
@@ -131,9 +132,9 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		if viewErr != nil {
 			taskCancel()
 			releaseRecorder()
-			publishStreamFailure(stream, sessionID, "failed to project conversation")
+			publishStreamFailure(stream, sessionID, apperror.PublicMessage(viewErr))
 			stream.Done()
-			Fail(c, http.StatusInternalServerError, "failed to project conversation")
+			FailError(c, viewErr)
 			return
 		}
 		stream.SetPresentation(projector)

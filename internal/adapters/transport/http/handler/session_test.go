@@ -9,6 +9,7 @@ import (
 	"fkteams/internal/domain/message"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -44,6 +45,39 @@ func TestGetSessionReturnsNotFoundWhenSessionMissing(t *testing.T) {
 	response := performRequest(router, http.MethodGet, "/sessions/missing", nil)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status=%d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestLegacySessionReturnsHelpfulFormatErrorWithoutChangingHistory(t *testing.T) {
+	rt := newTestRuntime(t)
+	dir := rt.sessionDirPath("legacy")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, eventlog.TranscriptFileName)
+	before := []byte(`{"type":"user_message","id":"private-record-id","content":"old message"}` + "\n")
+	if err := os.WriteFile(path, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.GET("/sessions/:sessionID", rt.GetSessionHandler())
+	router.GET("/stream/snapshot/:sessionID", rt.StreamSnapshotHandler())
+	for _, endpoint := range []string{"/sessions/legacy", "/stream/snapshot/legacy"} {
+		response := performRequest(router, http.MethodGet, endpoint, nil)
+		if response.Code != http.StatusConflict {
+			t.Fatalf("status=%d: %s", response.Code, response.Body.String())
+		}
+		var got Response
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.ErrorCode != "conflict" || !strings.Contains(got.Message, "记录格式较旧") || !strings.Contains(got.Message, "请新建会话") || strings.Contains(got.Message, "private-record-id") {
+			t.Fatalf("unhelpful response: %#v", got)
+		}
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("legacy history changed: %v", err)
 	}
 }
 func TestConversationLiveReplayAndRestartUseIdenticalFacts(t *testing.T) {

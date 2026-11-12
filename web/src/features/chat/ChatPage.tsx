@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { loadSessionDetail } from "@/features/sessions/sessionThunks";
 import { cn } from "@/lib/cn";
+import { errorMessage } from "@/lib/errors";
 import { pushAppPath } from "@/lib/navigation";
 import { MessageList } from "./MessageList";
 import { chatMessageElementID } from "./dom";
@@ -63,7 +64,7 @@ export function ChatPage() {
       .catch((loadError) => {
         if (cancelled) return;
         setFailedSessionID(loadingSessionID);
-        dispatch(chatActions.setError(loadError instanceof Error ? loadError.message : String(loadError)));
+        dispatch(chatActions.setError(errorMessage(loadError, "暂时无法打开这个会话，请稍后重试。")));
       });
     return () => {
       cancelled = true;

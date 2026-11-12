@@ -192,7 +192,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 
 		projector, projectionErr := rt.transcriptPresentation(sessionID, transcript)
 		if projectionErr != nil {
-			Fail(c, http.StatusInternalServerError, "failed to project conversation")
+			FailError(c, projectionErr)
 			return
 		}
 		view := projector.Snapshot()

@@ -361,7 +361,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 		}
 		projector, projectionErr := rt.transcriptPresentation(entry.SessionID, records)
 		if projectionErr != nil {
-			Fail(c, http.StatusGone, "shared session unavailable")
+			FailError(c, projectionErr)
 			return
 		}
 		if err := store.Touch(shareID, time.Now()); err != nil {

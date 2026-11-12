@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/errors";
 import { expireAuthentication } from "@/lib/auth-session";
 import type { APIResponse } from "@/types/api";
 
@@ -35,7 +36,7 @@ export async function request<T>(path: string, init: RequestOptions = {}): Promi
 
   const payload = (await response.json()) as APIResponse<T>;
   if (payload.code !== 0) {
-    throw new APIError(payload.message || "request failed", response.status);
+    throw new APIError(errorMessage(payload.message, "请求失败，请稍后重试"), response.status);
   }
   return payload.data;
 }
@@ -49,7 +50,7 @@ async function responseErrorMessage(response: Response) {
   }
   try {
     const payload = (await response.json()) as Partial<APIResponse<unknown>>;
-    return payload.message || fallback;
+    return errorMessage(payload.message, fallback);
   } catch {
     return fallback;
   }

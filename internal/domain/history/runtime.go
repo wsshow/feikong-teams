@@ -1,15 +1,19 @@
 package history
 
 import (
+	"errors"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
 	"fmt"
 )
 
+// ErrUnsupportedTranscriptFormat 表示历史缺少当前展示协议需要的运行事实。
+var ErrUnsupportedTranscriptFormat = errors.New("unsupported transcript format")
+
 // RuntimeEvent 从规范消息和原始事件信封恢复事实，不生成新的运行身份或序号。
 func (e TranscriptEvent) RuntimeEvent() (event.Event, error) {
 	if e.Envelope == nil {
-		return event.Event{}, fmt.Errorf("transcript record %s has no event envelope", e.ID)
+		return event.Event{}, fmt.Errorf("%w: record %s has no event envelope", ErrUnsupportedTranscriptFormat, e.ID)
 	}
 	result := *e.Envelope
 	if e.Usage != nil {

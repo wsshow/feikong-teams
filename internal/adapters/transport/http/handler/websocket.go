@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fkteams/internal/domain/apperror"
 	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/log"
 	"os"
@@ -289,7 +290,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	}
 	projector, viewErr := rt.transcriptPresentation(sessionID, records)
 	if viewErr != nil {
-		publishStreamFailure(stream, sessionID, "failed to project conversation")
+		publishStreamFailure(stream, sessionID, apperror.PublicMessage(viewErr))
 		return
 	}
 	stream.SetPresentation(projector)

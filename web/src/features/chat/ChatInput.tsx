@@ -9,6 +9,7 @@ import { clearAssistant, renameAssistant } from "@/features/sessions/sessionThun
 import { stopStream } from "@/api/chat";
 import { listFiles, searchFiles, uploadFile } from "@/api/files";
 import { cn } from "@/lib/cn";
+import { errorMessage } from "@/lib/errors";
 import { assistantAgentID, assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { ChatComposer } from "./ChatComposer";
 import { QueuePanel } from "./QueuePanel";
@@ -108,7 +109,7 @@ export function ChatInput({
       clearSubmittedAttachments(submittedAttachmentIDs);
     } catch (error) {
       setValue((current) => restoreSubmittedValue(submittedValue, current));
-      dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
+      dispatch(chatActions.setError(errorMessage(error)));
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -145,7 +146,7 @@ export function ChatInput({
       dispatch(appActions.showToast(commandDialog === "clear" ? "助手上下文已清空" : "助手名称已更新"));
       setCommandDialog(undefined);
     } catch (error) {
-      setCommandError(typeof error === "object" && error && "message" in error ? String(error.message) : "操作失败，请重试");
+      setCommandError(errorMessage(error, "操作失败，请重试"));
     } finally {
       commandBusyRef.current = false;
       setCommandBusy(false);
@@ -158,7 +159,7 @@ export function ChatInput({
     try {
       await stopStream(id);
     } catch (error) {
-      dispatch(chatActions.setError(error instanceof Error ? error.message : String(error)));
+      dispatch(chatActions.setError(errorMessage(error)));
     }
   }
 
@@ -232,7 +233,7 @@ export function ChatInput({
         if (!path) throw new Error("文件上传失败");
         updateAttachment(id, { status: "ready", path });
       } catch (error) {
-        updateAttachment(id, { status: "error", error: error instanceof Error ? error.message : String(error) });
+        updateAttachment(id, { status: "error", error: errorMessage(error) });
       }
     }
   }

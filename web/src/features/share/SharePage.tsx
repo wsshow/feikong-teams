@@ -265,6 +265,7 @@ function publicShareErrorMessage(error: unknown) {
     if (error.status === 404) return "这个分享已失效或已被取消";
     if (error.status === 410) return "这个分享已过期";
     if (error.status === 401) return "访问密码不正确";
+    if (error.status === 409) return error.message;
   }
   const message = error instanceof Error ? error.message : String(error);
   if (/not found/i.test(message)) return "这个分享已失效或已被取消";

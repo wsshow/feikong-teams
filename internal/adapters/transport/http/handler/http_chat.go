@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/domain/apperror"
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"net/http"
@@ -107,8 +108,8 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		projector, viewErr := rt.transcriptPresentation(sessionID, records)
 		if viewErr != nil {
 			unlock()
-			publishStreamFailure(stream, sessionID, "failed to project conversation")
-			Fail(c, http.StatusInternalServerError, "failed to project conversation")
+			publishStreamFailure(stream, sessionID, apperror.PublicMessage(viewErr))
+			FailError(c, viewErr)
 			return
 		}
 		stream.SetPresentation(projector)
