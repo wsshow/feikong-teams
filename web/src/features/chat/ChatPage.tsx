@@ -12,6 +12,7 @@ import { pushAppPath } from "@/lib/navigation";
 import { MessageList } from "./MessageList";
 import { chatMessageElementID } from "./dom";
 import { ChatInput } from "./ChatInput";
+import { decodeUIAction } from "./openui/protocol";
 
 export function ChatPage() {
   const dispatch = useAppDispatch();
@@ -156,7 +157,7 @@ const QuestionNavigator = memo(function QuestionNavigator({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileQuestionVisible, setMobileQuestionVisible] = useState(false);
   const [mobileBottomVisible, setMobileBottomVisible] = useState(false);
-  const orderedQuestions = questions.map((question, index) => ({ question, index: index + 1 }));
+  const orderedQuestions = questions.map((question, index) => ({ question: { ...question, content: decodeUIAction(question.content)?.message ?? question.content }, index: index + 1 }));
   const latestQuestionID = orderedQuestions[orderedQuestions.length - 1]?.question.id || "";
   const visibleQuestions = orderedQuestions.slice(-8);
   const showMobileQuestion = !hideMobile && questions.length > 0 && mobileQuestionVisible;

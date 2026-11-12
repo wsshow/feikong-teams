@@ -3,7 +3,8 @@ import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Provider } from "react-redux";
-import { assistantUIExamples } from "./library";
+
+import { assistantUIExamples as richExamples } from "./library";
 import { decodeUIAction, encodeUIAction } from "./protocol";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/assistant" });
@@ -14,10 +15,16 @@ let root: Root;
 let container: HTMLDivElement;
 let originalFetch: typeof fetch;
 let requests: { session_id: string; message: string; agent_name: string; mode: string }[];
+const assistantUIExamples = [
+  `root = Stack([TextContent("创建每周总结"), Form("weekly", Buttons([Button("提交给助手", @ToAssistant("创建每周总结任务"))]), [FormControl("任务名称", Input("name", "名称", "text", {required: true}, "每周工作总结")), FormControl("执行日期", RadioGroup("day", [RadioItem("周一", "", "周一"), RadioItem("周五", "", "周五")], "周五"))])])`,
+  'root = Stack([TextContent("会话检索结果"), Button("继续查看发布流程", @ToAssistant("请继续读取发布流程并总结待办"))])',
+];
 const sourceID = "answer:text:message";
 const content = `请确认后提交。\n\`\`\`openui-lang\n${assistantUIExamples[0]}\n\`\`\``;
 
 beforeAll(async () => {
+  for (const name of ["HTMLElement", "HTMLFormElement", "HTMLInputElement", "HTMLButtonElement", "Element", "Node", "Event", "CustomEvent", "MutationObserver", "getComputedStyle"] as const) Object.assign(globalThis, { [name]: dom.window[name] });
+  Object.assign(globalThis, { requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(callback, 0), cancelAnimationFrame: clearTimeout, ResizeObserver: class { observe() {} unobserve() {} disconnect() {} } });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, location: dom.window.location, history: dom.window.history, localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true });
   state = await import("@/app/store");
   const module = await import("./AssistantUIContent");
@@ -50,22 +57,21 @@ async function render(text = content, streaming = false, key = "same") {
   await act(async () => root.render(<Provider store={state.store}><Content key={key} content={text} sourceID={sourceID} streaming={streaming} /></Provider>));
 }
 
-function submitButton() { return container.querySelector<HTMLButtonElement>('button[type="submit"]')!; }
+function submitButton() { return [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "提交给助手")!; }
 async function submit() {
   await act(async () => {
-    container.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    submitButton().click();
   });
 }
 
 test("streams disabled controls, submits once through chat, and restores submitted values on replay", async () => {
   await render(content, true);
-  expect(submitButton().disabled).toBe(true);
+  expect(submitButton().matches(":disabled")).toBe(true);
   await submit();
   expect(requests).toHaveLength(0);
   await render();
-  expect(submitButton().disabled).toBe(false);
-  const select = container.querySelector("select")!;
-  await act(async () => { select.value = "周一"; select.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  expect(submitButton().matches(":disabled")).toBe(false);
+  await act(async () => { container.querySelector<HTMLButtonElement>('[role="radio"][value="周一"]')!.click(); });
   await submit();
   expect(requests).toHaveLength(1);
   expect(requests[0]).toMatchObject({ session_id: "workspace-assistant", agent_name: "workspace_assistant", mode: "team" });
@@ -73,13 +79,13 @@ test("streams disabled controls, submits once through chat, and restores submitt
   expect(action.formState?.weekly.day.value).toBe("周一");
   expect(action.formState?.weekly.name.value).toBe("每周工作总结");
   expect(action.source).toBe(`${sourceID}:0`);
-  expect(submitButton().disabled).toBe(true);
+  expect(submitButton().matches(":disabled")).toBe(true);
   await submit();
   expect(requests).toHaveLength(1);
   await act(async () => state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", events: [{ type: "user_message", content: requests[0].message }] })));
   await render(content, false, "reloaded");
-  expect(container.querySelector("select")?.value).toBe("周一");
-  expect(submitButton().disabled).toBe(true);
+  expect(container.querySelector('[role="radio"][value="周一"]')?.getAttribute("aria-checked")).toBe("true");
+  expect(submitButton().matches(":disabled")).toBe(true);
   expect(container.textContent).toContain("已提交给助手");
 });
 
@@ -90,7 +96,7 @@ test("failed sends roll back the optimistic message and keep the form editable f
   await submit();
   expect(calls).toBe(1);
   expect(state.store.getState().chat.messages).toHaveLength(0);
-  expect(submitButton().disabled).toBe(false);
+  expect(submitButton().matches(":disabled")).toBe(false);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("填写内容已保留");
   await submit();
   expect(calls).toBe(2);
@@ -108,21 +114,21 @@ test("running tasks accept UI input into the existing queue and deletion permits
   expect(requests).toHaveLength(1);
   expect(state.store.getState().chat.messages).toHaveLength(0);
   expect(state.store.getState().chat.queue).toHaveLength(1);
-  expect(submitButton().disabled).toBe(true);
+  expect(submitButton().matches(":disabled")).toBe(true);
   await act(async () => state.store.dispatch(state.chatActions.setQueue([])));
-  expect(submitButton().disabled).toBe(false);
+  expect(submitButton().matches(":disabled")).toBe(false);
 });
 
 test("unsafe or malformed programs cannot execute, and ordinary text is escaped", async () => {
-  for (const program of ['root = Query("delete", {})', 'root = Card("x", [Button("x", @ToAssistant("x"))])', "x".repeat(32001), "[".repeat(41)]) expect(programProblem(program)).toBe(true);
+  for (const program of ['root = Query("delete", {})', 'root = Stack([Button("x", @Run(mutation))])', "x".repeat(32001), "[".repeat(41)]) expect(programProblem(program)).toBe(true);
   expect(programProblem('root = Card("Email", [Text("a@b.com ${text}")])')).toBe(false);
   await render('```openui-lang\nroot = Unknown("bad")\n```');
   expect(container.textContent).toContain("交互内容暂时无法显示");
   expect(requests).toHaveLength(0);
-  await render('```openui-lang\nroot = Card("安全", [Text("<img src=x onerror=alert(1)>")])\n```');
+  await render('```openui-lang\nroot = Stack([TextContent("<img src=x onerror=alert(1)>")])\n```');
   expect(container.querySelector("img")).toBeNull();
   expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
-  await render('```openui-lang\nroot = Card("未闭合", [Text("内容")])');
+  await render('```openui-lang\nroot = Stack([TextContent("未闭合")])');
   expect(container.textContent).toContain("交互内容暂时无法显示");
 });
 
@@ -131,12 +137,12 @@ test("restored queue values are read-only and another session cannot submit this
   state.store.dispatch(state.chatActions.setQueue([{ queue_id: "q", kind: "follow_up", text: message }]));
   await render();
   expect(container.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe("已入队");
-  expect(submitButton().disabled).toBe(true);
+  expect(submitButton().matches(":disabled")).toBe(true);
   await act(async () => {
     state.store.dispatch(state.chatActions.setQueue([]));
     state.store.dispatch(state.chatActions.setActiveSession("another"));
   });
-  expect(submitButton().disabled).toBe(true);
+  expect(submitButton().matches(":disabled")).toBe(true);
   await submit();
   expect(requests).toHaveLength(0);
 });
@@ -162,6 +168,67 @@ test("result card buttons continue conversation without form fields", async () =
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   expect(requests).toHaveLength(1);
   expect(decodeUIAction(requests[0].message)?.message).toContain("发布流程");
+});
+
+test("official form sends multi-select and switch values, then restores them as read-only", async () => {
+  const rich = `\`\`\`openui-lang\n${richExamples[0]}\n\`\`\``;
+  await render(rich, true);
+  expect(container.querySelector("fieldset")?.disabled).toBe(true);
+  await render(rich);
+  expect(container.textContent).not.toContain("交互内容暂时无法显示");
+  const button = [...container.querySelectorAll("button")].find((item) => item.textContent === "提交给助手")!;
+  await act(async () => button.click());
+  expect(requests).toHaveLength(1);
+  const action = decodeUIAction(requests[0].message)!;
+  expect(action.version).toBe(2);
+  expect(action.formState?.weekly.scope.value).toEqual(["tasks"]);
+  expect(action.formState?.weekly.reminder.value).toEqual({ enabled: true });
+  await render(rich, false, "replay-rich");
+  expect(container.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe("每周工作总结");
+  expect([...container.querySelectorAll("fieldset")].every((field) => field.disabled)).toBe(true);
+});
+
+test("table action includes context and leaves content tabs usable after submission", async () => {
+  await render(`\`\`\`openui-lang\n${richExamples[1].replace("[title, tabs, next]", "[title, table, tabs, next]").replace('LineChart(labels, [Series("完成任务数", values)])', 'TextContent("趋势见浏览器测试")')}\n\`\`\``);
+  const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((item) => item.textContent === "明细")!;
+  await act(async () => { tab.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true, button: 0 })); });
+  expect(container.querySelector("table")?.querySelectorAll("tbody tr")).toHaveLength(3);
+  const button = [...container.querySelectorAll("button")].find((item) => item.textContent === "分析变化")!;
+  await act(async () => button.click());
+  expect(requests).toHaveLength(1);
+  expect(decodeUIAction(requests[0].message)?.context).toEqual({ labels: ["周一", "周二", "周三"], values: [3, 5, 4] });
+  expect(container.querySelector<HTMLButtonElement>('[role="tab"]')?.closest("fieldset[disabled]")).toBeNull();
+  await act(async () => button.click());
+  expect(requests).toHaveLength(1);
+});
+
+test("link actions reject executable URLs and safely open HTTP sources", async () => {
+  const opened: unknown[][] = [];
+  const originalOpen = window.open;
+  window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as typeof window.open;
+  try {
+    for (const url of ["javascript:alert(1)", "https://example.com/docs"]) {
+      await render(`\`\`\`openui-lang\nroot = Stack([Button("来源", @OpenUrl(${JSON.stringify(url)}))])\n\`\`\``);
+      await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    }
+    expect(opened).toEqual([["https://example.com/docs", "_blank", "noopener,noreferrer"]]);
+    expect(requests).toHaveLength(0);
+  } finally { window.open = originalOpen; }
+});
+
+test("reactive form bindings persist along with the submitted field values", async () => {
+  const program = `root = Stack([Form("schedule", Buttons([Button("提交", @ToAssistant("设置频率"))]), [FormControl("频率", RadioGroup("frequency", [RadioItem("每天", "", "daily"), RadioItem("每周", "", "weekly")], null, null, $frequency))])])
+$frequency = "daily"`;
+  const rich = `\`\`\`openui-lang\n${program}\n\`\`\``;
+  await render(rich);
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="radio"][value="weekly"]')!.click());
+  await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "提交")!.click());
+  expect(requests).toHaveLength(1);
+  const action = decodeUIAction(requests[0].message)!;
+  expect(action.state?.$frequency).toBe("weekly");
+  expect(action.formState?.schedule.frequency.value).toBe("weekly");
+  await render(rich, false, "replay-reactive");
+  expect(container.querySelector('[role="radio"][value="weekly"]')?.getAttribute("aria-checked")).toBe("true");
 });
 
 test("shared sender preserves ordinary chat targeting, attachments and new-session navigation", async () => {

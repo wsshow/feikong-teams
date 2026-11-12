@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(dirname, "src"),
+      "@openuidev/devtools": path.resolve(dirname, "src/lib/openui-devtools.ts"),
     },
   },
   server: {
@@ -28,6 +29,8 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
+        // 防止 clsx 等共享依赖被吸入 OpenUI，导致普通页面提前下载整个组件库。
+        onlyExplicitManualChunks: true,
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("/@openuidev/")) return "vendor-openui";
@@ -42,7 +45,8 @@ export default defineConfig({
             return "vendor-markdown";
           }
           if (id.includes("/lucide-react/")) return "vendor-icons";
-          return "vendor";
+          if (id.includes("/zod/")) return "vendor-schema";
+          return undefined;
         },
       },
     },

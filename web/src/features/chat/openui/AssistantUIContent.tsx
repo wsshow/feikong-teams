@@ -1,11 +1,18 @@
 import { Component, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Renderer, type ActionEvent, type OpenUIError, type ParseResult } from "@openuidev/react-lang";
+import { ThemeProvider } from "@openuidev/react-ui";
+import "@openuidev/react-ui/styles/index.css";
+import "./openui.css";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { assistantSessionID } from "@/lib/assistant";
 import { sendChatMessage } from "../sendMessage";
-import { assistantUILibrary, InteractionDisabled } from "./library";
-import { decodeUIAction, encodeUIAction, maxUIProgramLength, splitUIMessage } from "./protocol";
+import { assistantUILibrary } from "./library";
+import { InteractionDisabled } from "./interaction";
+import { assistantUITheme } from "./theme";
+import { programProblem, safeExternalURL } from "./program";
+import { decodeUIAction, encodeUIAction, restoreUIState, splitUIMessage } from "./protocol";
+export { programProblem } from "./program";
 
 export default function AssistantUIContent({ content, sourceID, streaming = false }: { content: string; sourceID: string; streaming?: boolean }) {
   const parts = useMemo(() => splitUIMessage(content), [content]);
@@ -33,8 +40,10 @@ function InteractiveBlock({ program, source, streaming, complete }: { program: s
   const [hasRoot, setHasRoot] = useState(false);
   const [parseComplete, setParseComplete] = useState(false);
   const sending = useRef(false);
-  const initialState = useRef(restored?.formState);
-  const onError = useCallback((errors: OpenUIError[]) => setRenderErrors(errors), []);
+  const initialState = useRef(restoreUIState(restored?.formState, restored?.state));
+  const latestState = useRef<Record<string, unknown>>(initialState.current ?? {});
+  const onStateUpdate = useCallback((state: Record<string, unknown>) => { latestState.current = state; }, []);
+  const onError = useCallback((errors: OpenUIError[]) => setRenderErrors((previous) => JSON.stringify(previous) === JSON.stringify(errors) ? previous : errors), []);
   const onParseResult = useCallback((result: ParseResult | null) => {
     setHasRoot(Boolean(result?.root));
     setParseComplete(Boolean(result?.root && !result.meta.incomplete && !result.meta.unresolved.length));
@@ -44,12 +53,19 @@ function InteractiveBlock({ program, source, streaming, complete }: { program: s
   const disabled = streaming || !complete || pending || Boolean(restored) || Boolean(starting) || activeSession !== assistantSessionID || invalid || !hasRoot;
 
   async function onAction(event: ActionEvent) {
-    if (disabled || sending.current || event.type !== "continue_conversation") return;
+    if (disabled || sending.current) return;
+    if (event.type === "open_url") {
+      const url = safeExternalURL(event.params?.url);
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      else setSendError("链接地址无效，仅支持 HTTP/HTTPS 链接");
+      return;
+    }
+    if (event.type !== "continue_conversation") return;
     sending.current = true;
     setPending(true);
     setSendError("");
     try {
-      const message = encodeUIAction({ version: 1, source, message: event.humanFriendlyMessage, formState: event.formState });
+      const message = encodeUIAction({ version: 2, source, message: event.humanFriendlyMessage, formState: { ...latestState.current, ...event.formState }, context: event.params?.context });
       await dispatch(sendChatMessage({ sessionID: assistantSessionID, message, mode: "team", agent: "" }));
     } catch (error) {
       setSendError(error instanceof Error ? error.message : String(error));
@@ -62,29 +78,17 @@ function InteractiveBlock({ program, source, streaming, complete }: { program: s
   if (blocked || (!streaming && !complete)) return <UIFallback />;
   return <div className="min-w-0" aria-busy={streaming || pending}>
     <InteractionDisabled.Provider value={disabled}>
-      <div hidden={invalid}>
-        <Renderer library={assistantUILibrary} response={program} isStreaming={streaming} initialState={initialState.current} onAction={(event) => void onAction(event)} onError={onError} onParseResult={onParseResult} />
-      </div>
+      <ThemeProvider cssSelector=".assistant-openui" lightTheme={assistantUITheme}>
+        <div className="assistant-openui" hidden={invalid}>
+          <Renderer library={assistantUILibrary} response={program} isStreaming={streaming} initialState={initialState.current} onStateUpdate={onStateUpdate} onAction={(event) => void onAction(event)} onError={onError} onParseResult={onParseResult} />
+        </div>
+      </ThemeProvider>
     </InteractionDisabled.Provider>
     {invalid || (!streaming && !hasRoot) ? <UIFallback /> : null}
     {streaming ? <p role="status" className="mt-2 text-xs text-muted-foreground">正在生成交互内容…</p> : null}
     {pending ? <p role="status" className="mt-2 text-xs text-muted-foreground">正在提交…</p> : restored ? <p role="status" className="mt-2 text-xs text-muted-foreground">已提交给助手</p> : null}
     {sendError ? <p role="alert" className="mt-2 text-sm text-destructive">{sendError}。填写内容已保留，可以重新提交。</p> : null}
   </div>;
-}
-
-// 首版只接受组件声明；不启用表达式函数、状态绑定或浏览器端工具。
-export function programProblem(program: string) {
-  if (program.length > maxUIProgramLength) return true;
-  const syntax = program.replace(/"(?:[^"\\]|\\.)*(?:"|$)/g, '""');
-  if (/[@${}:]|\b(?:Query|Mutation)\s*\(/.test(syntax)) return true;
-  let depth = 0;
-  for (const char of syntax) {
-    if (char === "(" || char === "[") depth++;
-    if (char === ")" || char === "]") depth--;
-    if (depth > 40) return true;
-  }
-  return false;
 }
 
 function UIFallback() {

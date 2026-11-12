@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { actionSummary, decodeUIAction, encodeUIAction, splitUIMessage } from "./protocol";
+import { actionSummary, decodeUIAction, encodeUIAction, restoreUIState, splitUIMessage } from "./protocol";
 import { createParser } from "@openuidev/react-lang";
 import { assistantUIExamples, assistantUILibrary, assistantUIPromptOptions } from "./library";
+import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
+import { programProblem, safeExternalURL } from "./program";
 
 describe("assistant UI content", () => {
   test("keeps Markdown, ordinary code, multiple UI blocks and partial streams separate", () => {
@@ -30,11 +32,41 @@ describe("assistant UI content", () => {
     const parser = createParser(assistantUILibrary.toJSONSchema(), assistantUILibrary.root);
     for (const example of assistantUIExamples) {
       const parsed = parser.parse(example);
-      expect(parsed.root?.typeName).toBe("Card");
+      expect(parsed.root?.typeName).toBe("Stack");
       expect(parsed.meta.errors).toEqual([]);
       expect(parsed.meta.incomplete).toBe(false);
     }
     const embedded = await Bun.file(new URL("../../../../../internal/app/agent/catalog/workspaceassistant/openui_prompt.txt", import.meta.url)).text();
     expect(embedded).toBe(`${assistantUILibrary.prompt(assistantUIPromptOptions)}\n`);
+    expect(Object.keys(assistantUILibrary.components).sort()).toEqual(Object.keys(openuiLibrary.components).sort());
+  });
+
+  test("preserves rich field values, dates and action context across persistence", () => {
+    const raw = encodeUIAction({ version: 2, source: "m:0", message: "提交", context: { id: 42 }, formState: { rich: {
+      multi: { value: ["tasks", "sessions"] }, enabled: { value: { notify: true } }, slider: { value: [42] },
+      date: { value: new Date("2026-11-12T00:00:00Z") },
+      range: { value: { from: new Date("2026-11-12T00:00:00Z"), to: new Date("2026-11-13T00:00:00Z") } },
+      table: { value: [{ id: "1", values: ["条目", 10, false] }] },
+    } } });
+    const action = decodeUIAction(raw)!;
+    expect(action.context).toEqual({ id: 42 });
+    expect(action.formState?.rich.enabled.value).toEqual({ notify: true });
+    expect(restoreUIState(action.formState)).toMatchObject({ rich: {
+      date: { value: new Date("2026-11-12T00:00:00Z") },
+      range: { value: { from: new Date("2026-11-12T00:00:00Z"), to: new Date("2026-11-13T00:00:00Z") } },
+    } });
+    expect(actionSummary(action)).toContain("multi：tasks、sessions");
+    expect(actionSummary(action)).not.toContain("[object Object]");
+    for (const value of [Infinity, { constructor: "bad" }, "x".repeat(4001), Array(501).fill(0)]) {
+      expect(() => encodeUIAction({ version: 2, source: "m", message: "提交", context: value })).toThrow();
+    }
+  });
+
+  test("allows official local interactions but blocks browser tool execution and unsafe links", () => {
+    for (const example of assistantUIExamples) expect(programProblem(example)).toBe(false);
+    for (const action of ['Query("delete", {})', 'Mutation("delete", {})', '@Run(task)', '@Unknown("x")']) expect(programProblem(`root = Stack([${action}])`)).toBe(true);
+    expect(programProblem('root = Stack([TextContent("Query @Run \\\" text")]) // @Run')).toBe(false);
+    expect(safeExternalURL("https://example.com/docs")).toBe("https://example.com/docs");
+    for (const url of ["javascript:alert(1)", "data:text/html,bad", "file:///tmp/x", "//example.com", "https://user:pass@example.com"]) expect(safeExternalURL(url)).toBeUndefined();
   });
 });

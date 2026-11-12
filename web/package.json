@@ -14,7 +14,9 @@
     "generate:assistant-ui": "bun run scripts/generate_assistant_ui_prompt.ts"
   },
   "dependencies": {
+    "@openuidev/lang-core": "1.1.0",
     "@openuidev/react-lang": "1.1.0",
+    "@openuidev/react-ui": "0.18.6",
     "@reduxjs/toolkit": "^2.5.1",
     "@vitejs/plugin-react": "^4.3.4",
     "animejs": "^3.2.2",
