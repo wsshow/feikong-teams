@@ -117,7 +117,9 @@ function assistantMessageParts(
 
   const hasTextPart = parts.some((part) => part.type === "text" && part.content.trim());
   if (!hasTextPart && message.content.trim()) {
-    parts.push({ type: "text", content: message.content, key: `${message.id}:text:fallback` });
+    // 历史只包含完成事件，必须与实时增量使用相同的分段标识来恢复交互状态。
+    const completed = message.events.find(isAssistantCompleted);
+    parts.push({ type: "text", content: message.content, key: completed ? textPartKey(completed, "text") : `text:${message.id}` });
   }
   return parts.filter((part) => part.type === "ask" || part.type === "tool" || part.content.trim());
 }

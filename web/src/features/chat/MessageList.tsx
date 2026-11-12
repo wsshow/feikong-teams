@@ -1,7 +1,7 @@
-import { memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, memo, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send, ShieldAlert } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { assistantAgentID, assistantDisplayName } from "@/lib/assistant";
+import { assistantAgentID, assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { chatActions } from "@/app/store";
 import { submitApproval, submitAskResponse } from "@/api/stream";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
@@ -18,6 +18,10 @@ import type { ContentPartDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 import type { AgentInfo } from "@/types/api";
 import { normalizeAgentKey, type AskActivity, type ApprovalActivity, type MessageRenderPart, type MemberActivity, buildTimelineModel, toolEventsKey, eventsForDisplay, timelineItemSpacingClass, approvalDecisionLabel, askResponseSummary, toolActivityKey, messagePartKey, nextRepeatedKey } from "./timeline";
+
+import { actionSummary, decodeUIAction } from "./openui/protocol";
+
+const AssistantUIContent = lazy(() => import("./openui/AssistantUIContent"));
 
 export type AskAnsweredHandler = (ask: AskActivity, selected: string[], freeText: string) => void;
 
@@ -383,7 +387,7 @@ export const MessageRow = memo(function MessageRow({
           {attachments.length ? <UserAttachmentPills attachments={attachments} /> : null}
           {message.content.trim() ? (
             <div className="rounded-2xl bg-muted px-4 py-3 text-base leading-7 text-foreground sm:px-5 sm:py-4 sm:text-lg sm:leading-8">
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              <div className="whitespace-pre-wrap">{decodeUIAction(message.content) ? actionSummary(decodeUIAction(message.content)!) : message.content}</div>
             </div>
           ) : null}
         </div>
@@ -567,6 +571,11 @@ export function MessagePart({
         />
       </div>
     );
+  }
+  if (sessionID === assistantSessionID && /(?:^|\n) {0,3}(?:`{3,}|~{3,})openui-lang(?:\s|$)/.test(part.content)) {
+    return <Suspense fallback={<p className="text-sm text-muted-foreground">正在加载交互内容…</p>}>
+      <AssistantUIContent content={part.content} sourceID={disclosureID} streaming={part.streaming} />
+    </Suspense>;
   }
   return <MarkdownContent className="text-base leading-8 sm:text-lg sm:leading-9" content={part.content} />;
 }

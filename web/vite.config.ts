@@ -30,6 +30,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/@openuidev/")) return "vendor-openui";
           if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) return "vendor-react";
           if (id.includes("/@reduxjs/") || id.includes("/react-redux/") || id.includes("/redux/")) return "vendor-state";
           if (

@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "bun run generate:assistant-ui && tsc -b && vite build",
     "test": "bun test src",
     "test:security": "bun test src/lib/markdown.test.ts",
     "test:integration:stream": "bun run scripts/stream_frontend_logic_check.ts",
     "typecheck": "tsc -b",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "generate:assistant-ui": "bun run scripts/generate_assistant_ui_prompt.ts"
   },
   "dependencies": {
+    "@openuidev/react-lang": "1.1.0",
     "@reduxjs/toolkit": "^2.5.1",
     "@vitejs/plugin-react": "^4.3.4",
     "animejs": "^3.2.2",
@@ -28,7 +30,8 @@
     "react-dom": "^19.0.0",
     "react-redux": "^9.2.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@types/bun": "^1.1.14",

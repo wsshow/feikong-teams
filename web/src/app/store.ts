@@ -55,10 +55,10 @@ const chatSlice = createSlice({
         connectionState: "disconnected",
       };
     },
-    activateRunningSession(state, action: PayloadAction<{ sessionID: string; initialOffset?: number; startedAt?: number }>) {
+    activateRunningSession(state, action: PayloadAction<{ sessionID: string; initialOffset?: number; startedAt?: number; activate?: boolean }>) {
       const { sessionID, initialOffset, startedAt } = action.payload;
       const current = state.runningTasks[sessionID];
-      state.activeSessionID = sessionID;
+      if (action.payload.activate !== false) state.activeSessionID = sessionID;
       state.runningTasks[sessionID] = {
         phase: "processing",
         initialOffset,

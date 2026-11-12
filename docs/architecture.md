@@ -52,6 +52,8 @@ SSE 与 WebSocket 共用 `chat.Service.RunQueued`：每轮执行、消费下一�
 
 历史记录按消息身份聚合尚未完成的文本和思考；完整消息同时校正内存投影并写入 transcript。取消、失败及回合定稿会保存剩余增量，成员消息保留独立 transcript，已经完成的消息不会在收尾时重复写入。
 
+新 assistant transcript 保留运行时的消息 ID，完成和取消收尾使用相同规则，保证实时显示与历史回放能关联同一条消息上的交互状态；没有消息 ID 的兼容入口仍生成记录 ID，既有历史不改写。
+
 新 transcript 的消息正文统一保存在 `message` 中，直接使用领域 `Message`，保留同一次模型输出的文本、思考、多模态分段、整组工具调用和供应商元数据。读取旧记录时在领域归一化边界转换旧的扁平正文；展示字段由规范消息派生，不在新记录中再写一份正文。工具执行事件仍独立记录，长结果继续使用 artifact 引用。
 
 历史内存投影保存规范消息副本，`ProjectContextMessages` 优先读取该副本，保持并行工具调用属于同一条 assistant 消息；`ToolCallRecord` 只承担工具展示和旧记录兼容。用户历史附件省略、成员输出隔离、摘要边界和取消提示仍由上下文投影策略决定。未执行完成的工具调用补齐空结果以保持消息配对。读取历史返回深拷贝，展示方和模型调用方都不能修改 recorder 内的消息事实。
@@ -192,6 +194,8 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 常驻助手通过 `app/session.Service.OpenAssistant` 幂等创建固定会话，名称保存在会话 metadata 的标题中。`workspace_assistant` 以标准内置 Definition 运行，复用聊天、历史、队列和审批链路；身份工具仅允许助手会话改名。`app/session.QueryService` 经会话存储和消息读取端口执行跨会话查询，`conversations` 工具组只输出有界正文投影。历史只读查询不修复 transcript 尾部，文件存储读取校验符号链接边界。
 
 Web 的 `/assistant` 路由映射至固定会话；入口与“新建会话”位于侧栏滚动容器外。前端在改名工具完成及任务收尾后重新读取助手身份，显示服务端保存的名称。
+
+常驻助手消息中的 `openui-lang` 围栏由按需加载的 OpenUI Renderer 渲染，组件定义同时生成 Go 嵌入的提示词。UI 源码沿用消息 `Content` 和 transcript，表单操作作为普通用户消息通过共用提交函数进入现有聊天或 follow-up 队列；不建立第二套运行时、历史或审批通道。已提交字段从用户消息恢复，未提交草稿仅存于当前界面。组件和操作边界见 [助手交互界面](assistant-ui.md)。
 
 聊天的 `timeline.ts` 负责事件去重与展示投影，`MessageList.tsx` 负责组件渲染。配置的 `configModel.ts` 负责默认值、合并和保存格式；智能体编辑、集成编辑和共用字段按职责放在少量组件文件中。SSE、快照和历史回放共用 `decodeChatEvent(s)`，未知事件类型在 API 边界过滤，应用事件类型不再用 `| string` 扩宽。
 

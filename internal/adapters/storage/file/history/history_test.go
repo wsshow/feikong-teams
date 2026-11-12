@@ -13,6 +13,28 @@ import (
 	"fkteams/internal/runtime/events"
 )
 
+func TestAssistantTranscriptPreservesMessageIdentity(t *testing.T) {
+	for _, typ := range []events.EventType{events.EventAssistantText, events.EventAssistantCompleted} {
+		t.Run(string(typ), func(t *testing.T) {
+			dir := t.TempDir()
+			recorder := NewHistoryRecorder()
+			recorder.SetSessionDir(dir)
+			recorder.RecordEvent(Event{Type: typ, AgentName: "assistant", RunID: "run", MessageID: "msg_stable", Content: "interface content"})
+			recorder.FinalizeCurrent()
+			if err := recorder.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			transcript, err := LoadTranscriptFromFile(filepath.Join(dir, TranscriptFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(transcript) != 1 || transcript[0].ID != "msg_stable" {
+				t.Fatalf("persisted assistant identity changed: %#v", transcript)
+			}
+		})
+	}
+}
+
 func TestTranscriptPreservesFileReferencesAndCacheUsage(t *testing.T) {
 	for _, content := range []string{"answer", ""} {
 		t.Run("content="+content, func(t *testing.T) {

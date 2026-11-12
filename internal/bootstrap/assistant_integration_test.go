@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/agent/catalog/common"
 	"fkteams/internal/app/agent/catalog/workspaceassistant"
+	appchat "fkteams/internal/app/chat"
 	appsession "fkteams/internal/app/session"
 	"fkteams/internal/bootstrap"
 	domainmessage "fkteams/internal/domain/message"
@@ -18,6 +20,72 @@ import (
 	"fkteams/internal/runtime/events"
 	"fkteams/internal/testmodel"
 )
+
+func TestAssistantUIRoundTripPreservesHistoryAndUsesExistingTools(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("FEIKONG_APP_DIR", root)
+	dependencies, err := bootstrap.NewExecutionDependencies()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := domainsession.WithID(dependencies.Context(context.Background()), domainsession.AssistantID)
+	sessionDir := filepath.Join(root, "sessions", domainsession.AssistantID)
+	sessions := appsession.NewService(eventlog.NewSessionRepository(filepath.Dir(sessionDir)))
+	if _, err := sessions.OpenAssistant(ctx); err != nil {
+		t.Fatal(err)
+	}
+	const ui = "请填写名字。\n```openui-lang\nroot = Card(\"更换称呼\", [Form(\"identity\", [Input(\"name\", \"新名字\", \"小空\", true)], \"提交\", \"请修改你的名字\")])\n```"
+	const action = "【助手界面操作】\n" + `{"version":1,"source":"answer:text:0","message":"请修改你的名字","formState":{"identity":{"name":{"value":"小空"}}}}`
+	model := testmodel.New()
+	model.EnqueueStream(testmodel.AssistantMessage(ui))
+	model.EnqueueStream(domainmessage.Message{Role: domainmessage.RoleAssistant, ToolCalls: []domainmessage.ToolCall{{ID: "rename", Type: "function", Function: domainmessage.FunctionCall{Name: "assistant_rename", Arguments: `{"name":"小空"}`}}}})
+	model.EnqueueStream(testmodel.AssistantMessage("以后叫我小空。"))
+	definition := workspaceassistant.DefaultDefinition()
+	definition.Model = model
+	agent, err := common.BuildAgent(ctx, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner, err := dependencies.Runtime.NewRunner(ctx, runtimeport.RunnerConfig{Agent: agent, EnableStreaming: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := eventlog.NewHistoryRecorder()
+	history.SetSessionDir(sessionDir)
+	service := appchat.NewService()
+	for i, input := range []string{"用表单让我填写你的新名字", action} {
+		_, err := service.RunTurn(ctx, appchat.TurnRequest{
+			SessionID: domainsession.AssistantID, RunID: fmt.Sprintf("ui-turn-%d", i), Runner: runner,
+			Input: domainmessage.TurnInput{Context: history.ProjectContextMessages(0), Message: testmodel.UserMessage(input)}, History: history,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 每轮从持久化事实恢复，避免只验证同一内存实例。
+		reloaded := eventlog.NewHistoryRecorder()
+		if err := reloaded.LoadFromFile(filepath.Join(sessionDir, eventlog.TranscriptFileName)); err != nil {
+			t.Fatal(err)
+		}
+		history = reloaded
+	}
+	meta, err := sessions.Get(ctx, domainsession.AssistantID)
+	if err != nil || meta.Title != "小空" {
+		t.Fatalf("UI follow-up did not execute the existing rename tool: %#v, %v", meta, err)
+	}
+	calls := model.StreamCalls()
+	if len(calls) != 3 {
+		t.Fatalf("model calls = %d, want 3", len(calls))
+	}
+	for _, expected := range []string{ui, action} {
+		found := false
+		for _, message := range calls[1].Input {
+			found = found || message.Content == expected
+		}
+		if !found {
+			t.Fatalf("second turn lost UI context %q", expected)
+		}
+	}
+}
 
 func TestAssistantRunsWorkspaceHistoryAndRenameTools(t *testing.T) {
 	root := t.TempDir()

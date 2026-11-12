@@ -1,5 +1,10 @@
 package workspaceassistant
 
+import _ "embed"
+
+//go:embed openui_prompt.txt
+var openUIPrompt string
+
 const assistantPrompt = `你是用户的常驻工作区助手，默认名为“助手”。直接与用户交流，理解目标并使用工具完成任务。
 
 身份与改名：

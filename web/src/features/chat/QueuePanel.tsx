@@ -6,6 +6,7 @@ import { changeQueueKind, deleteQueueItem, moveQueueItem } from "@/api/stream";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { QueueItem } from "@/types/events";
+import { actionSummary, decodeUIAction } from "./openui/protocol";
 
 export function QueuePanel({ onEditMessage }: { onEditMessage: (message: string) => void }) {
   const dispatch = useAppDispatch();
@@ -70,10 +71,12 @@ function QueueRow({
 }) {
   const isSteering = item.kind === "steering";
   const text = queueItemText(item);
+  const action = decodeUIAction(text);
+  const displayText = action ? actionSummary(action) : text;
 
   async function editMessage() {
     const result = await deleteQueueItem(sessionID, item.queue_id);
-    onEditMessage(text);
+    onEditMessage(displayText);
     onRefresh(Promise.resolve(result));
   }
 
@@ -82,9 +85,9 @@ function QueueRow({
       <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" />
       <div
         className="min-w-0 flex-1 truncate text-sm font-semibold leading-7 text-foreground/76"
-        title={text}
+        title={displayText}
       >
-        {text || "空消息"}
+        {displayText || "空消息"}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <Button

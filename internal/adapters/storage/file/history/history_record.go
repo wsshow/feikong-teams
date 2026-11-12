@@ -295,6 +295,9 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			return
 		}
 		base.Type = TranscriptAssistantMessage
+		// 保留实时消息身份，使历史回放能关联界面操作等消息级状态。
+		// 旧入口没有消息 ID 时，appendTranscriptEvent 仍生成独立 ID。
+		base.ID = event.MessageID
 		if msg.DisplayText() == "" {
 			base.Type = TranscriptAgentStep
 		}
