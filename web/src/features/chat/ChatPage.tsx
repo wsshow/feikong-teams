@@ -115,10 +115,9 @@ function AssistantHome() {
         <div className="space-y-3 text-center">
           <Bot className="mx-auto h-8 w-8 text-primary" aria-hidden="true" />
           <h1 className="break-words text-2xl font-semibold tracking-tight sm:text-3xl">今天和{name}一起做什么？</h1>
-          <p className="text-sm leading-7 text-muted-foreground sm:text-base">整理工作区文件，查找过去的讨论，或直接交给我一项任务。</p>
+          <p className="text-sm leading-7 text-muted-foreground sm:text-base">把问题、资料或想做的事交给我。</p>
         </div>
         <ChatInput variant="hero" />
-        <p className="text-center text-xs leading-6 text-muted-foreground">输入 / 清空上下文或重命名助手，也可以直接告诉我「以后叫你小空」。</p>
       </div>
     </div>
   );
