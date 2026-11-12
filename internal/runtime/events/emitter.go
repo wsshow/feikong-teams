@@ -69,6 +69,8 @@ func TurnEnd(runID, turnID string) Event {
 
 type MessageEvent struct {
 	MessageID        string
+	MessageOrder     int64
+	OutputParts      []message.OutputPart
 	Role             message.Role
 	AgentName        string
 	RunPath          string
@@ -130,6 +132,8 @@ func AssistantDelta(meta MessageEvent, delta string) Event {
 
 func AssistantCompleted(meta MessageEvent) Event {
 	return Event{
+		MessageOrder:     meta.MessageOrder,
+		OutputParts:      meta.OutputParts,
 		Type:             EventAssistantCompleted,
 		MessageID:        meta.MessageID,
 		Role:             meta.Role,
@@ -163,6 +167,7 @@ func ToolCallStarted(meta ToolEvent) Event {
 	content := firstNonEmpty(meta.Content, meta.ToolArgs)
 	return Event{
 		Type:          EventToolCallStarted,
+		ToolStatus:    domainevent.ToolRunning,
 		AgentName:     meta.AgentName,
 		RunPath:       meta.RunPath,
 		ToolCallID:    meta.ToolCallID,
@@ -178,6 +183,7 @@ func ToolCallStarted(meta ToolEvent) Event {
 func ToolCallResultDelta(meta ToolEvent) Event {
 	return Event{
 		Type:        EventToolCallResult,
+		ToolStatus:  domainevent.ToolRunning,
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
 		ToolCallID:  meta.ToolCallID,
@@ -191,11 +197,9 @@ func ToolCallResultDelta(meta ToolEvent) Event {
 func ToolCallCompleted(meta ToolEvent) Event {
 	content := firstNonEmpty(meta.Content, meta.ToolResult)
 	eventType := EventToolCallCompleted
-	if meta.ToolResult == "" && meta.Content == "" {
-		eventType = EventToolCallFailed
-	}
 	return Event{
 		Type:        eventType,
+		ToolStatus:  domainevent.ToolResultStatus(content),
 		AgentName:   meta.AgentName,
 		RunPath:     meta.RunPath,
 		ToolCallID:  meta.ToolCallID,

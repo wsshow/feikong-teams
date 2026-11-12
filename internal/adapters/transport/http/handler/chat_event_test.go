@@ -169,7 +169,7 @@ func TestTranscriptProjectionReadsCanonicalToolCallGroups(t *testing.T) {
 		{ID: "first", Function: message.FunctionCall{Name: "lookup", Arguments: `{"key":"a"}`}},
 		{ID: "second", Function: message.FunctionCall{Name: "lookup", Arguments: `{"key":"b"}`}},
 	}}
-	got := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{{ID: "source", Type: eventlog.TranscriptAssistantMessage, Message: source, Content: "stale display text"}})
+	got := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{{ID: "source", Type: eventlog.TranscriptAssistantMessage, Envelope: &events.Event{Type: events.EventAssistantCompleted, EventID: "source", MessageID: "source"}, Message: source, Content: "stale display text"}})
 	if len(got) != 1 || got[0]["content"] != "calling" {
 		t.Fatalf("canonical message projection = %#v", got)
 	}
@@ -456,10 +456,10 @@ func TestFrontendEventContractFixture(t *testing.T) {
 	}
 	rt := &Runtime{RuntimeOptions: RuntimeOptions{Dependencies: execution.Dependencies{ToolDisplays: toolmeta.NewRegistry()}}}
 	history := rt.transcriptToChatEvents("session", []eventlog.TranscriptEvent{
-		{ID: "history-user", At: at, Type: eventlog.TranscriptUserMessage, Message: &message.Message{Role: message.RoleUser, Content: "question", ContentParts: []message.ContentPart{{Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf", Extra: map[string]any{"provider": "part-metadata"}}}}},
-		{ID: "history-answer", At: at, Type: eventlog.TranscriptAssistantMessage, Message: &message.Message{Role: message.RoleAssistant, Content: "answer"}, Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5, CachedTokens: 1, CacheWriteTokens: 2}},
-		{ID: "history-tool", At: at, Type: eventlog.TranscriptToolCallEnd, CallID: "call", Name: "read_file", Content: "result", Extra: map[string]any{"provider": "metadata"}},
-		{ID: "history-cancel", At: at, Type: eventlog.TranscriptCancelled, Content: "cancelled"},
+		{ID: "history-user", Envelope: &events.Event{Type: events.EventUserMessage, EventID: "history-user", MessageID: "history-user", CreatedAt: at, ToolCallID: "call", ToolCallRef: "tool_call:call"}, At: at, Type: eventlog.TranscriptUserMessage, Message: &message.Message{Role: message.RoleUser, Content: "question", ContentParts: []message.ContentPart{{Type: message.ContentPartFileURL, FileID: "files/report", MIMEType: "application/pdf", Extra: map[string]any{"provider": "part-metadata"}}}}},
+		{ID: "history-answer", Envelope: &events.Event{Type: events.EventAssistantCompleted, EventID: "history-answer", MessageID: "history-answer", CreatedAt: at, ToolCallID: "call", ToolCallRef: "tool_call:call"}, At: at, Type: eventlog.TranscriptAssistantMessage, Message: &message.Message{Role: message.RoleAssistant, Content: "answer"}, Agent: "assistant", Usage: &eventlog.UsageRecord{TotalTokens: 5, CachedTokens: 1, CacheWriteTokens: 2}},
+		{ID: "history-tool", Envelope: &events.Event{Type: events.EventToolCallCompleted, EventID: "history-tool", MessageID: "history-tool", CreatedAt: at, ToolCallID: "call", ToolCallRef: "tool_call:call"}, At: at, Type: eventlog.TranscriptToolCallEnd, Message: &message.Message{Role: message.RoleTool, ToolCallID: "call", ToolName: "read_file", Content: "result"}, CallID: "call", Name: "read_file", Extra: map[string]any{"provider": "metadata"}},
+		{ID: "history-cancel", Envelope: &events.Event{Type: events.EventCancelled, EventID: "history-cancel", MessageID: "history-cancel", CreatedAt: at, ToolCallID: "call", ToolCallRef: "tool_call:call"}, At: at, Type: eventlog.TranscriptCancelled, Content: "cancelled"},
 	})
 	data, err := json.MarshalIndent(struct {
 		Live    []taskstream.Event `json:"live"`

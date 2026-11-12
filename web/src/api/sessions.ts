@@ -1,4 +1,5 @@
-import { decodeChatEvents, decodeQueueItems } from "@/types/events";
+import { decodePresentationSnapshot } from "@/types/presentation";
+import { decodeQueueItems } from "@/types/events";
 import type { SessionDetail, SessionSummary } from "@/types/chat";
 import { del, get, post } from "./client";
 
@@ -23,8 +24,8 @@ export function clearAssistantContext() {
 }
 
 export async function getSession(sessionID: string, signal?: AbortSignal) {
-  const session = await get<Omit<SessionDetail, "events" | "queue"> & { events?: unknown; queue?: unknown }>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`, { signal });
-  return { ...session, events: decodeChatEvents(session.events), queue: decodeQueueItems(session.queue) };
+  const session = await get<Omit<SessionDetail, "queue"> & { queue?: unknown }>(`/api/fkteams/sessions/${encodeURIComponent(sessionID)}`, { signal });
+  return { ...session, view: decodePresentationSnapshot(session.view), queue: decodeQueueItems(session.queue) };
 }
 
 export function deleteSession(sessionID: string) {

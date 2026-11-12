@@ -25,6 +25,16 @@ import (
 
 // --- 聊天输入构建 ---
 
+// publishStreamFailure 为执行前或收尾失败发布明确终态，避免留下永远运行中的快照。
+func publishStreamFailure(stream *taskstream.Stream, sessionID, message string) {
+	stream.SetStatus("error")
+	stream.Publish(errorEventPayload(sessionID, message))
+	runID, _ := stream.CurrentTurn()
+	terminal := processingEndEventPayload(sessionID, runID, "处理失败")
+	terminal["status"] = "error"
+	stream.Publish(terminal)
+}
+
 func newTurnRunID(sessionID string) string {
 	return fmt.Sprintf("%s:run:%s", sessionID, uuid.NewString())
 }
@@ -352,21 +362,16 @@ func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.
 		defer stream.CompleteAsk(req.ID)
 
 		memberEvent := memberEventFromMetadata(req.Metadata)
+		memberEvent.RunID, memberEvent.TurnID = stream.CurrentTurn()
 		askEvent := askRequestedEvent(memberEvent, req.ID, req.Info)
 		askEvent.ToolCallID = req.ToolCallID
 		if req.ToolCallID != "" {
 			askEvent.ToolCallRef = "tool_call:" + req.ToolCallID
 		}
 		askEvent.ToolName = req.ToolName
-		askEvent = events.NormalizeEvent(askEvent)
-		recorder.RecordEvent(askEvent)
-
-		askPayload := standardEventPayload(sessionID, askEvent, nil).
-			With("ask_id", req.ID).
-			With("question", req.Info.Question).
-			With("options", req.Info.Options).
-			With("multi_select", req.Info.MultiSelect)
-		stream.Publish(askPayload)
+		if err := recordStreamEvent(stream, recorder, sessionID, askEvent); err != nil {
+			return nil, err
+		}
 
 		var raw any
 		select {
@@ -388,8 +393,9 @@ func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.
 			answerEvent.ToolCallRef = "tool_call:" + req.ToolCallID
 		}
 		answerEvent.ToolName = req.ToolName
-		answerEvent = events.NormalizeEvent(answerEvent)
-		recorder.RecordEvent(answerEvent)
+		if err := recordStreamEvent(stream, recorder, sessionID, answerEvent); err != nil {
+			return nil, err
+		}
 		return resp, nil
 	}
 }
@@ -489,6 +495,9 @@ func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolve
 	result := map[string]any{
 		"type":       event.Type,
 		"agent_name": event.AgentName,
+	}
+	if event.Type == events.EventProcessingEnd {
+		result["status"] = "completed"
 	}
 	if event.RunID != "" {
 		result["run_id"] = event.RunID
@@ -683,6 +692,7 @@ func standardMessageEventPayload(sessionID, runID, turnID, message string) tasks
 func processingEndEventPayload(sessionID, runID, message string) taskstream.Event {
 	turnID := turnIDForRun(runID)
 	payload := standardEventPayload(sessionID, events.ProcessingEnd(runID, turnID, message), nil)
+	payload["status"] = "completed"
 	payload["message"] = message
 	return payload
 }
@@ -779,4 +789,11 @@ func convertContentParts(parts []ContentPart) []domainmessage.ContentPart {
 		result = append(result, part)
 	}
 	return result
+}
+
+func recordStreamEvent(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, event events.Event) error {
+	return recorder.RecordAndEmit(event, func(recorded events.Event) error {
+		stream.PublishRuntime(recorded, standardEventPayload(sessionID, recorded, nil))
+		return nil
+	})
 }

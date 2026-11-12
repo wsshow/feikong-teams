@@ -1,4 +1,5 @@
-import type { ChatEvent, ContentPartDTO, QueueItem } from "./events";
+import type { PresentationSnapshot } from "./presentation";
+import type { ContentPartDTO, QueueItem } from "./events";
 
 export interface SessionSummary {
   session_id: string;
@@ -18,7 +19,8 @@ export interface SessionDetail {
   status?: string;
   favorite?: boolean;
   active_task?: boolean;
-  events?: ChatEvent[];
+  view: PresentationSnapshot;
+  next_offset?: number;
   queue?: QueueItem[];
   message_count?: number;
   allow_tool_details?: boolean;
@@ -34,7 +36,7 @@ export interface ChatViewMessage {
   contentParts?: ContentPartDTO[];
   reasoningContent?: string;
   createdAt?: string;
-  events: ChatEvent[];
+  optimistic?: boolean;
   hidden?: boolean;
 }
 
@@ -59,13 +61,13 @@ export interface RunningChatTask {
 }
 
 export interface ChatState {
+  presentation: PresentationSnapshot;
   activeSessionID: string;
   viewSessionID: string;
   runningTasks: Record<string, RunningChatTask>;
   currentAgent: string;
   mode: string;
   messages: ChatViewMessage[];
-  events: ChatEvent[];
   seenEventKeys: Record<string, true>;
   seenEventKeyOrder: string[];
   seenStreamEventID?: number;

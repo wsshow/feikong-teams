@@ -1,4 +1,5 @@
-import { decodeChatEvent, decodeChatEvents, decodeQueueItems, type ChatEvent, type QueueItem } from "@/types/events";
+import { decodePresentationSnapshot, type PresentationSnapshot } from "@/types/presentation";
+import { decodeChatEvent, decodeQueueItems, type ChatEvent, type QueueItem } from "@/types/events";
 import { expireAuthentication } from "@/lib/auth-session";
 import { APIError, del, get, patch, post } from "./client";
 
@@ -19,33 +20,22 @@ export function streamStatus(sessionID: string, signal?: AbortSignal) {
 export interface StreamSnapshot {
   session_id: string;
   status: string;
+  view: PresentationSnapshot;
+  next_offset: number;
   has_task?: boolean;
   mode?: string;
-  agent_name?: string;
-  event_count: number;
-  retained_count?: number;
-  earliest_offset?: number;
-  replay_truncated?: boolean;
-  next_offset: number;
-  snapshot_offset?: number;
-  more_available?: boolean;
-  limit?: number;
+  current_agent?: string;
   queue?: QueueItem[];
-  events?: ChatEvent[];
   created_at?: string;
   finished_at?: string;
 }
 
-export async function streamSnapshot(sessionID: string, options?: { offset?: number; limit?: number; signal?: AbortSignal }) {
-  const params = new URLSearchParams();
-  if (options?.offset !== undefined) params.set("offset", String(options.offset));
-  if (options?.limit !== undefined) params.set("limit", String(options.limit));
-  const query = params.toString();
-  const snapshot = await get<Omit<StreamSnapshot, "events" | "queue"> & { events?: unknown; queue?: unknown }>(
-    `/api/fkteams/stream/snapshot/${encodeURIComponent(sessionID)}${query ? `?${query}` : ""}`,
+export async function streamSnapshot(sessionID: string, options?: { signal?: AbortSignal }) {
+  const snapshot = await get<Omit<StreamSnapshot, "queue"> & { queue?: unknown }>(
+    `/api/fkteams/stream/snapshot/${encodeURIComponent(sessionID)}`,
     { signal: options?.signal },
   );
-  return { ...snapshot, events: decodeChatEvents(snapshot.events), queue: decodeQueueItems(snapshot.queue) };
+  return { ...snapshot, view: decodePresentationSnapshot(snapshot.view), queue: decodeQueueItems(snapshot.queue) };
 }
 
 export function streamQueue(sessionID: string) {

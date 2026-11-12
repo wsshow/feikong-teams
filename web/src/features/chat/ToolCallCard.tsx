@@ -83,16 +83,12 @@ function toolSummary(tool: ToolCallDTO) {
 }
 
 function toolState(tool: ToolCallDTO) {
-  const result = tool.status === "completed" ? parseObject(tool.result) : undefined;
-  const failed = tool.status === "error" || Boolean(result && (
-    result.success === false
-    || (typeof result.error_message === "string" && result.error_message.trim())
-    || (typeof result.exit_code === "number" && result.exit_code !== 0)
-  ));
+  const failed = tool.status === "error";
   if (failed) return { icon: CircleAlert, label: "失败", tone: "text-destructive", showLabel: true, failed: true };
   if (tool.status === "running") return { icon: LoaderCircle, label: "运行中", tone: "text-primary", showLabel: true, spinning: true };
   if (tool.status === "pending") return { icon: Clock3, label: "等待中", tone: "text-muted-foreground", showLabel: true };
   if (tool.status === "completed") return { icon: Check, label: "已完成", tone: "text-success/75", showLabel: false };
+  if (tool.status === "interrupted") return { icon: CircleSlash, label: "执行中断", tone: "text-muted-foreground", showLabel: true };
   if (tool.status === "cancelled") return { icon: CircleSlash, label: "已取消", tone: "text-muted-foreground", showLabel: true };
   return { icon: Circle, label: "状态未知", tone: "text-muted-foreground/60", showLabel: false };
 }

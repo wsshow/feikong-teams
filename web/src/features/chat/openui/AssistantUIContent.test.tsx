@@ -35,7 +35,7 @@ beforeAll(async () => {
 beforeEach(() => {
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, location: dom.window.location, history: dom.window.history, localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true });
   state.store.dispatch(state.chatActions.finishRunningSession("workspace-assistant"));
-  state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", events: [] }));
+  state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", view: { items: [] } }));
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -82,7 +82,7 @@ test("streams disabled controls, submits once through chat, and restores submitt
   expect(submitButton().matches(":disabled")).toBe(true);
   await submit();
   expect(requests).toHaveLength(1);
-  await act(async () => state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", events: [{ type: "user_message", content: requests[0].message }] })));
+  await act(async () => state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", view: userView(requests[0].message) })));
   await render(content, false, "reloaded");
   expect(container.querySelector('[role="radio"][value="周一"]')?.getAttribute("aria-checked")).toBe("true");
   expect(submitButton().matches(":disabled")).toBe(true);
@@ -266,3 +266,7 @@ test("shared sender preserves ordinary chat targeting, attachments and new-sessi
   state.store.dispatch(state.chatActions.finishRunningSession("ordinary"));
   history.replaceState(null, "", "/assistant");
 });
+
+function userView(content: string): import("@/types/presentation").PresentationSnapshot {
+ return { items: [{id:"user",index:0,order:0,kind:"message",node:{message:{id:"user",role:"user",content},parts:[],order:0,showAgentLabel:false,showCopyAction:false}}] };
+}

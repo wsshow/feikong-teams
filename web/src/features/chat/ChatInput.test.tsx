@@ -32,7 +32,7 @@ beforeEach(async () => {
   state = await import("@/app/store");
   ChatInput = (await import("./ChatInput")).ChatInput;
   state.store.dispatch(state.chatActions.finishRunningSession("workspace-assistant"));
-  state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", events: [{ type: "user_message", content: "old context" }], queue: [{ queue_id: "q", kind: "follow_up", text: "pending task" }] }));
+  state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "workspace-assistant", view: userView("old context"), queue: [{ queue_id: "q", kind: "follow_up", text: "pending task" }] }));
   state.store.dispatch(state.sessionsActions.upsertSession({ session_id: "workspace-assistant", title: "小空" }));
   requests = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -236,8 +236,12 @@ test("clear response cannot replace a different chat opened during the request",
   let resolve!: (response: Response) => void;
   globalThis.fetch = (() => new Promise<Response>((done) => { resolve = done; })) as unknown as typeof fetch;
   await act(async () => button("确认清空").click());
-  await act(async () => state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "ordinary", events: [{ type: "user_message", content: "other chat" }] })));
+  await act(async () => state.store.dispatch(state.chatActions.setSessionDetail({ session_id: "ordinary", view: userView("other chat") })));
   await act(async () => resolve(Response.json({ code: 0, data: { session_id: "workspace-assistant" } })));
   expect(state.store.getState().chat.activeSessionID).toBe("ordinary");
   expect(state.store.getState().chat.messages[0]?.content).toBe("other chat");
 });
+
+function userView(content: string): import("@/types/presentation").PresentationSnapshot {
+ return { items: [{id:"user",index:0,order:0,kind:"message",node:{message:{id:"user",role:"user",content},parts:[],order:0,showAgentLabel:false,showCopyAction:false}}] };
+}

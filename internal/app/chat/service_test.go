@@ -234,3 +234,11 @@ func TestAssistantTextKeepsMessageIdentityAndCompletedContent(t *testing.T) {
 		t.Fatalf("text = %q", got)
 	}
 }
+
+func (h *recordingHistory) RecordAndEmit(e event.Event, sink func(event.Event) error) error {
+	h.RecordEvent(e)
+	if sink != nil {
+		return sink(e)
+	}
+	return nil
+}

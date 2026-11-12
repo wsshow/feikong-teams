@@ -23,7 +23,7 @@ export function ChatPage() {
     state.chat.activeSessionID && state.chat.runningTasks[state.chat.activeSessionID],
   ));
   const messageCount = useAppSelector((state) => state.chat.messages.length);
-  const eventCount = useAppSelector((state) => state.chat.events.length);
+  const itemCount = useAppSelector((state) => state.chat.presentation.items.length);
   const queueCount = useAppSelector((state) => state.chat.queue.length);
   const error = useAppSelector((state) => state.chat.error);
   const [failedSessionID, setFailedSessionID] = useState("");
@@ -32,7 +32,7 @@ export function ChatPage() {
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [jumpControls, setJumpControls] = useState({ distanceFromBottom: 0, jump: () => {} });
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const hasConversation = messageCount > 0 || eventCount > 0 || queueCount > 0 || isProcessing || Boolean(error);
+  const hasConversation = messageCount > 0 || itemCount > 0 || queueCount > 0 || isProcessing || Boolean(error);
   const isLoadingSession = Boolean(
     activeSessionID &&
       activeSessionID !== viewSessionID &&

@@ -26,11 +26,11 @@ test("SSE skips malformed events and validates transport IDs before delivery", a
 
 test("snapshot, history and shared history use the same validated payloads", async () => {
   const fetch = mockFetch(async () => Response.json({ code: 0, data: {
-    session_id: "session", events: [invalid, valid], queue: [{ queue_id: "q", kind: "follow_up" }, { queue_id: 1 }],
+    session_id: "session", view: { items: [] }, next_offset: 12, queue: [{ queue_id: "q", kind: "follow_up" }, { queue_id: 1 }],
   } }));
   try {
     for (const response of [await streamSnapshot("session"), await getSession("session"), await accessPublicShare("share")]) {
-      expect(response.events).toEqual([valid]);
+      expect(response.view).toEqual({ items: [] });
       expect(response.queue).toEqual([{ queue_id: "q", kind: "follow_up" }]);
     }
   } finally { fetch.mockRestore(); }

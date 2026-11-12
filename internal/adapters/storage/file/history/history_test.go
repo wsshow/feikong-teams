@@ -627,7 +627,7 @@ func TestTranscriptRecorderAppendsEventsInWriteOrder(t *testing.T) {
 	if len(transcript) != 2 {
 		t.Fatalf("event count = %d, want 2: %#v", len(transcript), transcript)
 	}
-	if !strings.HasPrefix(transcript[0].ID, "msg_") || !strings.HasPrefix(transcript[1].ID, "msg_") {
+	if transcript[0].ID != "msg-1" || !strings.HasPrefix(transcript[1].ID, "msg_") {
 		t.Fatalf("ids = %q,%q want msg_ prefixes", transcript[0].ID, transcript[1].ID)
 	}
 	if transcript[0].At.IsZero() || transcript[1].At.IsZero() {

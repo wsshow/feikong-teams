@@ -87,8 +87,11 @@ func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool,
 	if !validateSessionID(sessionID) {
 		return nil, errors.New("invalid session ID")
 	}
-	transcriptFile := filepath.Join(sessionDirPath(historyDir, sessionID), eventlog.TranscriptFileName)
-	lines, err := eventlog.LoadTranscriptFromFile(transcriptFile, stores...)
+	records, err := eventlog.LoadSessionTranscriptRecords(sessionDirPath(historyDir, sessionID), stores...)
+	lines := make([]eventlog.TranscriptEvent, len(records))
+	for i, record := range records {
+		lines[i] = record.Event
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +99,15 @@ func sessionShareTranscript(historyDir, sessionID string, allowToolDetails bool,
 		return lines, nil
 	}
 	for index := range lines {
+		if envelope := lines[index].Envelope; envelope != nil {
+			envelope.ToolArgs, envelope.ToolResult, envelope.Content, envelope.Error = "", "", "", ""
+			envelope.Message, envelope.ToolCall, envelope.ToolCalls = nil, nil, nil
+			if envelope.Approval != nil {
+				copy := *envelope.Approval
+				copy.Message = "需要审批"
+				envelope.Approval = &copy
+			}
+		}
 		lines[index].Args = ""
 		lines[index].Result = ""
 		lines[index].ResultRef = ""
@@ -343,6 +355,15 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 			return
 		}
 
+		records := make([]eventlog.SessionTranscriptRecord, len(transcript))
+		for i, item := range transcript {
+			records[i].Event = item
+		}
+		projector, projectionErr := rt.transcriptPresentation(entry.SessionID, records)
+		if projectionErr != nil {
+			Fail(c, http.StatusGone, "shared session unavailable")
+			return
+		}
 		if err := store.Touch(shareID, time.Now()); err != nil {
 			log.Printf("failed to persist session share access time: id=%s, err=%v", shareID, err)
 		}
@@ -350,7 +371,7 @@ func (rt *Runtime) AccessPublicSessionShareHandler() gin.HandlerFunc {
 		OK(c, gin.H{
 			"id":                 shareID,
 			"title":              entry.Title,
-			"events":             rt.transcriptToChatEvents(entry.SessionID, transcript),
+			"view":               projector.Snapshot(),
 			"message_count":      entry.MessageCount,
 			"expires_at":         sharestore.ExpiresAtUnix(entry.ExpiresAt),
 			"created_at":         entry.CreatedAt.Unix(),

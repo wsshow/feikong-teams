@@ -83,7 +83,7 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 	req.EventSink = func(event events.Event) error {
 		reportedErrors.Record(event)
 		if req.History != nil {
-			req.History.RecordEvent(event)
+			return req.History.RecordAndEmit(event, sink)
 		}
 		if sink != nil {
 			return sink(event)
@@ -95,7 +95,7 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 		if CompletionStatus(runErr) == session.StatusError {
 			historyErr = reportedErrors.Unreported(runErr)
 		}
-		persistErr := finalizationFailure(finishHistory(req.History, historyErr))
+		persistErr := finalizationFailure(finishHistory(req.History, historyErr, req.RunID))
 		if finish == nil {
 			return persistErr
 		}

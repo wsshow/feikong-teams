@@ -62,10 +62,17 @@ func (r *Runner) Run(ctx context.Context, input domainmessage.TurnInput, opts ru
 		err = sinkErr
 	}
 	// 生命周期始终闭合，执行错误同时作为返回值交给用例层。
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		_ = c.emit(events.Error(r.agent.Name(), "", err))
 	}
-	endErr := c.emit(events.TurnEnd(opts.RunID, turnID))
+	turnEnd := events.TurnEnd(opts.RunID, turnID)
+	if errors.Is(err, context.Canceled) {
+		turnEnd.Type = domainevent.TypeTurnCancelled
+	} else if err != nil {
+		turnEnd.Type = domainevent.TypeTurnFailed
+		turnEnd.Error = err.Error()
+	}
+	endErr := c.emit(turnEnd)
 	if err == nil {
 		err = endErr
 	}

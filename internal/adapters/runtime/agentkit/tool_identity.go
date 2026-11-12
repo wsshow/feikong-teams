@@ -11,6 +11,7 @@ import (
 
 // toolIdentityTracker 由 converter 的互斥锁保护，不在多个运行之间共享。
 type toolIdentityTracker struct {
+	ownersByID           map[string]string
 	refsByID             map[string]string
 	ordersByID           map[string]int
 	idsByKey             map[string]string
@@ -20,7 +21,8 @@ type toolIdentityTracker struct {
 
 func newToolIdentityTracker() *toolIdentityTracker {
 	return &toolIdentityTracker{
-		refsByID: make(map[string]string), ordersByID: make(map[string]int), idsByKey: make(map[string]string),
+		ownersByID: make(map[string]string),
+		refsByID:   make(map[string]string), ordersByID: make(map[string]int), idsByKey: make(map[string]string),
 		pendingResultsByName: make(map[string][]string),
 		activeResultsByName:  make(map[string]string),
 	}
@@ -40,6 +42,7 @@ func (t *toolIdentityTracker) ensure(sourceMessageID string, position int, scope
 	}
 	ref := "tool_call:" + tc.ID
 	t.refsByID[tc.ID] = ref
+	t.ownersByID[tc.ID] = sourceMessageID
 	if tc.Index != nil {
 		t.ordersByID[tc.ID] = *tc.Index
 	}
@@ -93,6 +96,7 @@ func (t *toolIdentityTracker) attach(event *domainevent.Event, scope MemberScope
 	if order, ok := t.orderForID(event.ToolCallID); ok {
 		event.ToolCallIndex = &order
 	}
+	event.MessageID = t.ownersByID[event.ToolCallID]
 	if event.Type == domainevent.TypeToolCallCompleted && event.ToolName != "" {
 		key := t.resultNameKey(event.ToolName, scope)
 		delete(t.activeResultsByName, key)

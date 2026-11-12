@@ -1,65 +1,80 @@
 package handler
 
 import (
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"fkteams/internal/app/chat/presentation"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
 )
 
-func TestStreamSnapshotReturnsTailByDefault(t *testing.T) {
+func TestStreamSnapshotFallsBackToCommittedHistoryAfterTaskExpires(t *testing.T) {
 	rt := newTestRuntime(t)
-	gin.SetMode(gin.TestMode)
-
-	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: "session-1", Cancel: func() {}})
-	for _, content := range []string{"event-0", "event-1", "event-2", "event-3", "event-4"} {
-		stream.Publish(taskstream.Event{"type": "system_notice", "content": content})
+	const sessionID = "expired-task"
+	recorder := eventlog.NewHistoryRecorder()
+	recorder.SetSessionDir(rt.sessionDirPath(sessionID))
+	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: sessionID, Cancel: func() {}})
+	e := events.Event{Type: events.EventAssistantCompleted, MessageID: "answer", Content: "committed answer"}
+	if err := recorder.RecordAndEmit(e, func(e events.Event) error {
+		stream.PublishRuntime(e, standardEventPayload(sessionID, e, rt.ToolDisplays))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
+	if err := recorder.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := stream.PresentationSnapshot()
+	stream.SetStatus("completed")
+	stream.Done()
+	rt.Streams.Remove(sessionID)
 
 	router := gin.New()
 	router.GET("/stream/snapshot/:sessionID", rt.StreamSnapshotHandler())
-
-	resp := performRequest(router, http.MethodGet, "/stream/snapshot/session-1?limit=2", nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("snapshot status = %d: %s", resp.Code, resp.Body.String())
+	response := performRequest(router, http.MethodGet, "/stream/snapshot/"+sessionID, nil)
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
 	}
-	var got streamSnapshotResponse
-	decodeRawData(t, resp, &got)
-	if got.EventCount != 5 || got.SnapshotOffset != 3 || got.NextOffset != 5 || got.MoreAvailable {
-		t.Fatalf("unexpected snapshot metadata: %#v", got)
+	var got struct {
+		View       presentation.Snapshot `json:"view"`
+		NextOffset uint64                `json:"next_offset"`
+		HasTask    bool                  `json:"has_task"`
 	}
-	if len(got.Events) != 2 || got.Events[0]["content"] != "event-3" || got.Events[1]["content"] != "event-4" {
-		t.Fatalf("unexpected snapshot events: %#v", got.Events)
+	decodeRawData(t, response, &got)
+	if got.HasTask || got.NextOffset != 0 || len(got.View.Items) != len(want.Items) || got.View.Items[0].Node.Message.Content != "committed answer" {
+		t.Fatalf("durable snapshot=%#v", got)
 	}
 }
 
-func TestStreamSnapshotReturnsPageFromOffset(t *testing.T) {
+func TestStreamSnapshotIsCompleteAfterReplayWindowExpires(t *testing.T) {
 	rt := newTestRuntime(t)
-	gin.SetMode(gin.TestMode)
-
-	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: "session-1", Cancel: func() {}})
-	for _, content := range []string{"event-0", "event-1", "event-2", "event-3", "event-4"} {
-		stream.Publish(taskstream.Event{"type": "system_notice", "content": content})
+	stream := rt.Streams.Register(taskstream.StreamConfig{SessionID: "session-1", Cancel: func() {}, MaxRetainedEvents: 1})
+	for i, content := range []string{"first", "second", "third"} {
+		e := events.Event{Type: events.EventUserMessage, EventID: content, MessageID: content, Sequence: int64(i + 1), Content: content}
+		stream.PublishRuntime(e, standardEventPayload("session-1", e, nil))
 	}
-
 	router := gin.New()
 	router.GET("/stream/snapshot/:sessionID", rt.StreamSnapshotHandler())
-
-	resp := performRequest(router, http.MethodGet, "/stream/snapshot/session-1?offset=1&limit=2", nil)
-	if resp.Code != http.StatusOK {
-		t.Fatalf("snapshot status = %d: %s", resp.Code, resp.Body.String())
+	response := performRequest(router, http.MethodGet, "/stream/snapshot/session-1", nil)
+	var got struct {
+		View       presentation.Snapshot `json:"view"`
+		NextOffset uint64                `json:"next_offset"`
 	}
-	var got streamSnapshotResponse
-	decodeRawData(t, resp, &got)
-	if got.EventCount != 5 || got.SnapshotOffset != 1 || got.NextOffset != 3 || !got.MoreAvailable {
-		t.Fatalf("unexpected snapshot metadata: %#v", got)
+	decodeRawData(t, response, &got)
+	if len(got.View.Items) != 3 || got.NextOffset != 3 {
+		t.Fatalf("snapshot=%#v", got)
 	}
-	if len(got.Events) != 2 || got.Events[0]["content"] != "event-1" || got.Events[1]["content"] != "event-2" {
-		t.Fatalf("unexpected snapshot events: %#v", got.Events)
+	e := events.Event{Type: events.EventUserMessage, EventID: "fourth", MessageID: "fourth", Sequence: 4, Content: "fourth"}
+	stream.PublishRuntime(e, standardEventPayload("session-1", e, nil))
+	page := stream.EventsPage(got.NextOffset, 10)
+	if len(page.Events) != 1 || page.Events[0].ID != got.NextOffset {
+		t.Fatalf("snapshot/subscribe boundary=%#v", page)
 	}
 }
 
@@ -108,10 +123,12 @@ func TestStreamEndpointsReportExpiredReplayWindow(t *testing.T) {
 	if snapshot.Code != http.StatusOK {
 		t.Fatalf("snapshot status = %d: %s", snapshot.Code, snapshot.Body.String())
 	}
-	var got streamSnapshotResponse
+	var got struct {
+		NextOffset uint64 `json:"next_offset"`
+	}
 	decodeRawData(t, snapshot, &got)
-	if !got.ReplayTruncated || got.EarliestOffset != 1 || got.EventCount != 3 || got.RetainedCount != 2 {
-		t.Fatalf("snapshot metadata = %#v", got)
+	if got.NextOffset != 3 {
+		t.Fatalf("cursor=%d", got.NextOffset)
 	}
 
 	subscribe := performRequest(router, http.MethodGet, "/stream/subscribe/session-1?offset=0", nil)
@@ -130,7 +147,6 @@ func TestStreamEndpointsRejectInvalidOffsets(t *testing.T) {
 	router.GET("/stream/subscribe/:sessionID", rt.StreamSubscribeHandler())
 
 	for _, path := range []string{
-		"/stream/snapshot/session-1?offset=invalid",
 		"/stream/events/session-1?offset=invalid",
 		"/stream/subscribe/session-1?offset=invalid",
 	} {
@@ -177,15 +193,4 @@ func TestStreamEventsHandlerPaginatesBufferedEvents(t *testing.T) {
 	if len(got.Events) != 2 || got.Events[0].ID != 1 || got.Events[1].ID != 2 {
 		t.Fatalf("events page = %#v", got.Events)
 	}
-}
-
-type streamSnapshotResponse struct {
-	EventCount      int              `json:"event_count"`
-	RetainedCount   int              `json:"retained_count"`
-	EarliestOffset  uint64           `json:"earliest_offset"`
-	ReplayTruncated bool             `json:"replay_truncated"`
-	NextOffset      uint64           `json:"next_offset"`
-	SnapshotOffset  uint64           `json:"snapshot_offset"`
-	MoreAvailable   bool             `json:"more_available"`
-	Events          []map[string]any `json:"events"`
 }

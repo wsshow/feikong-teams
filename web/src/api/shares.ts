@@ -1,4 +1,5 @@
-import { decodeChatEvents, decodeQueueItems } from "@/types/events";
+import { decodePresentationSnapshot } from "@/types/presentation";
+import { decodeQueueItems } from "@/types/events";
 import type { SessionDetail } from "@/types/chat";
 import { del, get, post } from "./client";
 
@@ -41,10 +42,10 @@ export function getPublicShareInfo(shareID: string) {
 }
 
 export async function accessPublicShare(shareID: string, password = "") {
-  const session = await post<Omit<SessionDetail, "events" | "queue"> & { events?: unknown; queue?: unknown }>(
+  const session = await post<Omit<SessionDetail, "queue"> & { queue?: unknown }>(
     `/api/fkteams/public/session-shares/${encodeURIComponent(shareID)}/access`,
     { password },
     { authFailure: "ignore" },
   );
-  return { ...session, events: decodeChatEvents(session.events), queue: decodeQueueItems(session.queue) };
+  return { ...session, view: decodePresentationSnapshot(session.view), queue: decodeQueueItems(session.queue) };
 }

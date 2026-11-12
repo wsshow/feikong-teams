@@ -1,12 +1,10 @@
 import { useEffect, useRef } from "react";
 import { APIError, isAbortError } from "@/api/client";
-import { getSession } from "@/api/sessions";
 import { streamSnapshot, streamStatus, subscribeStream, type StreamSnapshot } from "@/api/stream";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { chatActions, sessionsActions, type AppDispatch } from "@/app/store";
 import type { ChatEvent } from "@/types/events";
 import { EventBatcher } from "./eventBatcher";
-import { clearStreamOffset, readStreamOffset, writeStreamOffset } from "./streamOffsets";
 import { assistantSessionID } from "@/lib/assistant";
 import { refreshAssistant } from "@/features/sessions/sessionThunks";
 
@@ -92,7 +90,7 @@ async function followTaskStream(
   canConsume: () => boolean,
 ) {
   let retryCount = 0;
-  let fallbackOffset = initialOffset;
+  let nextOffset = initialOffset;
   let terminal = false;
   const eventBatcher = new EventBatcher<ChatEvent>((events) => {
     if (signal.aborted || !canConsume()) return;
@@ -102,19 +100,14 @@ async function followTaskStream(
     for (;;) {
       if (signal.aborted) return;
       try {
-        const offset = await resolveSubscribeOffset(sessionID, fallbackOffset, signal, dispatch, canConsume);
+        const offset = nextOffset ?? await replayStreamSnapshot(sessionID, signal, dispatch, canConsume);
+        nextOffset = undefined;
         if (offset === undefined || signal.aborted) return;
         dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connecting" }));
         let connected = false;
         const result = await subscribeStream(sessionID, offset, (events) => {
           if (signal.aborted || !canConsume()) return;
           retryCount = 0;
-          fallbackOffset = undefined;
-          for (const event of events) {
-            if (event.stream_event_id !== undefined) {
-              writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
-            }
-          }
           if (!connected) {
             connected = true;
             dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
@@ -129,13 +122,13 @@ async function followTaskStream(
       } catch (error) {
         eventBatcher.flush();
         if (signal.aborted || isAbortError(error) || isAuthenticationError(error)) return;
-        if (error instanceof APIError && error.status === 409) {
-          clearStreamOffset(sessionID);
-          fallbackOffset = undefined;
+        if (error instanceof APIError && error.status === 404) {
+          finishFromStatus(sessionID, "idle", undefined, dispatch);
+          return;
         }
       }
 
-      if (!await shouldReconnect(sessionID, signal, dispatch)) return;
+      if (signal.aborted || !canConsume()) return;
       retryCount += 1;
       await sleep(streamReconnectDelay(retryCount), signal);
     }
@@ -178,42 +171,16 @@ async function monitorTaskStream(sessionID: string, signal: AbortSignal, dispatc
   }
 }
 
-async function resolveSubscribeOffset(
-  sessionID: string,
-  fallbackOffset: number | undefined,
-  signal: AbortSignal,
-  dispatch: AppDispatch,
-  canConsume: () => boolean,
-) {
-  if (signal.aborted || !canConsume()) return undefined;
-  if (fallbackOffset !== undefined) return fallbackOffset;
-  const storedOffset = readStreamOffset(sessionID);
-  if (storedOffset !== undefined) return storedOffset;
-  return replayStreamSnapshot(sessionID, signal, dispatch, canConsume);
-}
-
 async function replayStreamSnapshot(
   sessionID: string,
   signal: AbortSignal,
   dispatch: AppDispatch,
   canConsume: () => boolean,
 ) {
-  let nextOffset = 0;
-  for (;;) {
-    if (signal.aborted || !canConsume()) return undefined;
-    const snapshot = await streamSnapshot(sessionID, { offset: nextOffset, limit: 1000, signal });
-    if (signal.aborted || !canConsume()) return undefined;
-    if (snapshot.replay_truncated) {
-      const detail = await getSession(sessionID, signal);
-      if (signal.aborted || !canConsume()) return undefined;
-      dispatch(chatActions.setSessionDetail(detail));
-      nextOffset = Number(snapshot.earliest_offset || snapshot.snapshot_offset || 0);
-    }
-    const appliedOffset = applyStreamSnapshot(sessionID, snapshot, dispatch, canConsume);
-    if (appliedOffset === undefined) return undefined;
-    if (!snapshot.more_available || appliedOffset <= nextOffset) return appliedOffset;
-    nextOffset = appliedOffset;
-  }
+  if (signal.aborted || !canConsume()) return undefined;
+  const snapshot = await streamSnapshot(sessionID, { signal });
+  if (signal.aborted || !canConsume()) return undefined;
+  return applyStreamSnapshot(sessionID, snapshot, dispatch, canConsume);
 }
 
 function applyStreamSnapshot(
@@ -224,20 +191,13 @@ function applyStreamSnapshot(
 ) {
   if (!canConsume()) return undefined;
   if (snapshot.mode) dispatch(chatActions.setMode(snapshot.mode));
-  dispatch(chatActions.setCurrentAgent(snapshot.agent_name || ""));
+  dispatch(chatActions.setCurrentAgent(snapshot.current_agent || ""));
   if (Array.isArray(snapshot.queue)) {
     dispatch(chatActions.setQueue(snapshot.queue));
   }
-  for (const event of snapshot.events || []) {
-    if (!canConsume()) return undefined;
-    if (event.stream_event_id !== undefined) {
-      writeStreamOffset(sessionID, Number(event.stream_event_id) + 1);
-    }
-  }
-  applyStreamEvents(sessionID, snapshot.events || [], dispatch);
-  const nextOffset = Math.max(Number(snapshot.next_offset || 0), readStreamOffset(sessionID) || 0);
-  writeStreamOffset(sessionID, nextOffset);
-  if (isTerminalStreamStatus(snapshot.status) && !snapshot.more_available) {
+  const nextOffset = snapshot.next_offset;
+  dispatch(chatActions.setPresentationSnapshot({ sessionID, view: snapshot.view, nextOffset }));
+  if (snapshot.has_task === false || isTerminalStreamStatus(snapshot.status)) {
     markSessionFinished(sessionID, snapshot.status, snapshot.finished_at, dispatch);
     return undefined;
   }
@@ -268,7 +228,6 @@ async function shouldReconnect(sessionID: string, signal: AbortSignal, dispatch:
     if (isTerminalStreamStatus(status.status)) {
       markSessionFinished(sessionID, status.status, status.finished_at, dispatch);
     } else {
-      clearStreamOffset(sessionID);
       dispatch(chatActions.finishRunningSession(sessionID));
       dispatch(sessionsActions.updateSessionRuntime({ sessionID, status: status.status, activeTask: false }));
     }
@@ -278,7 +237,6 @@ async function shouldReconnect(sessionID: string, signal: AbortSignal, dispatch:
     if (signal.aborted || isAbortError(error)) return false;
     if (isAuthenticationError(error)) return false;
     if (error instanceof APIError && error.status === 404) {
-      clearStreamOffset(sessionID);
       dispatch(chatActions.finishRunningSession(sessionID));
       dispatch(sessionsActions.updateSessionRuntime({ sessionID, activeTask: false }));
       dispatch(chatActions.setTaskConnectionState({ sessionID, connectionState: "connected" }));
@@ -294,7 +252,6 @@ function finishFromStatus(sessionID: string, status: string, updatedAt: string |
     return;
   }
   if (sessionID === assistantSessionID) void dispatch(refreshAssistant());
-  clearStreamOffset(sessionID);
   dispatch(chatActions.finishRunningSession(sessionID));
   dispatch(sessionsActions.updateSessionRuntime({ sessionID, status, activeTask: false, updatedAt }));
 }
@@ -302,7 +259,6 @@ function finishFromStatus(sessionID: string, status: string, updatedAt: string |
 function markSessionFinished(sessionID: string, status: string, updatedAt: string | undefined, dispatch: AppDispatch) {
   if (sessionID === assistantSessionID) void dispatch(refreshAssistant());
   const timestamp = updatedAt || new Date().toISOString();
-  clearStreamOffset(sessionID);
   dispatch(sessionsActions.updateSessionRuntime({ sessionID, status, activeTask: false, updatedAt: timestamp }));
   dispatch(chatActions.finishRunningSession(sessionID));
 }
@@ -314,9 +270,7 @@ function refreshRenamedAssistant(sessionID: string, events: ChatEvent[], dispatc
 }
 
 function terminalEventStatus(event: ChatEvent) {
-  if (event.type === "processing_end") return "completed";
-  if (event.type === "cancelled") return "cancelled";
-  if (event.type === "error") return "error";
+  if (event.type === "processing_end") return event.status;
   return undefined;
 }
 

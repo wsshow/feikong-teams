@@ -7,6 +7,7 @@ import (
 	"fkteams/internal/runtime/log"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
+	"fkteams/internal/app/chat/presentation"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
@@ -116,13 +118,32 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 			}
 		}
 		recorder, releaseRecorder := rt.acquireRecorderLocked(sessionID)
+		records, viewErr := eventlog.LoadSessionTranscriptRecords(rt.sessionDirPath(sessionID), rt.Documents)
+		if viewErr != nil && !errors.Is(viewErr, os.ErrNotExist) {
+			taskCancel()
+			releaseRecorder()
+			publishStreamFailure(stream, sessionID, "failed to load conversation")
+			stream.Done()
+			Fail(c, http.StatusInternalServerError, "failed to load conversation")
+			return
+		}
+		projector, viewErr := rt.transcriptPresentation(sessionID, records)
+		if viewErr != nil {
+			taskCancel()
+			releaseRecorder()
+			publishStreamFailure(stream, sessionID, "failed to project conversation")
+			stream.Done()
+			Fail(c, http.StatusInternalServerError, "failed to project conversation")
+			return
+		}
+		stream.SetPresentation(projector)
 		manager := memoryFromState(state)
 		turnInput, userDisplayText := buildChatInput(recorder, req.Message, req.Contents, manager)
 
 		if err := rt.updateSessionExecutionMetadata(sessionID, userDisplayText, mode, req.AgentName); err != nil {
 			taskCancel()
 			releaseRecorder()
-			stream.SetStatus("error")
+			publishStreamFailure(stream, sessionID, err.Error())
 			stream.Done()
 			Fail(c, http.StatusInternalServerError, err.Error())
 			return
@@ -140,6 +161,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		}) {
 			taskCancel()
 			releaseRecorder()
+			publishStreamFailure(stream, sessionID, "HTTP runtime is shutting down")
 			stream.Done()
 			Fail(c, http.StatusServiceUnavailable, "HTTP runtime is shutting down")
 			return
@@ -148,11 +170,12 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		unlockSession()
 
 		OK(c, gin.H{
-			"session_id":   sessionID,
-			"status":       "processing",
-			"message":      "task started",
-			"queue":        stream.QueueSnapshot(),
-			"queued_count": stream.QueuedCount(),
+			"session_id":      sessionID,
+			"status":          "processing",
+			"message":         "task started",
+			"user_message_id": initialTurnID + ":user",
+			"queue":           stream.QueueSnapshot(),
+			"queued_count":    stream.QueuedCount(),
 		})
 	}
 }
@@ -421,7 +444,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 				if stream.Status() == "cancelled" {
 					return context.Canceled
 				}
-				stream.Publish(standardEventPayload(sessionID, event, rt.ToolDisplays))
+				stream.PublishRuntime(event, standardEventPayload(sessionID, event, rt.ToolDisplays))
 				reportedErrors.Record(event)
 				return nil
 			},
@@ -442,15 +465,32 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			return rt.finishChat(context.WithoutCancel(ctx), recorder, sessionID, currentDisplayText, manager, runErr)
 		},
 	})
-	if runErr != nil {
-		if appchat.CompletionStatus(runErr) == domainsession.StatusCancelled {
-			stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
-		} else if remaining := reportedErrors.Unreported(runErr); remaining != nil {
+	// 任务退出时只发布已经落盘的展示事实，避免客户端维护另一套收尾规则。
+	records, projectionErr := eventlog.LoadSessionTranscriptRecords(rt.sessionDirPath(sessionID), rt.Documents)
+	var projector *presentation.Projector
+	if errors.Is(projectionErr, os.ErrNotExist) {
+		projectionErr = nil
+	}
+	if projectionErr == nil {
+		projector, projectionErr = rt.transcriptPresentation(sessionID, records)
+	}
+	terminal := processingEndEventPayload(sessionID, currentRunID, "处理完成")
+	terminal["status"] = string(appchat.CompletionStatus(runErr))
+	if runErr != nil && appchat.CompletionStatus(runErr) != domainsession.StatusCancelled {
+		if remaining := reportedErrors.Unreported(runErr); remaining != nil {
 			stream.Publish(errorEventPayload(sessionID, remaining.Error()))
 		}
+	}
+
+	if projectionErr != nil {
+		stream.Publish(errorEventPayload(sessionID, "failed to reconstruct committed conversation"))
+		terminal["status"] = "error"
+		stream.SetStatus("error")
+		stream.Publish(terminal)
 		return
 	}
-	stream.Publish(processingEndEventPayload(sessionID, currentRunID, "处理完成"))
+	stream.PublishPresentation(projector, terminal)
+
 }
 
 // StreamStopHandler 停止正在运行的流式任务
@@ -477,8 +517,6 @@ func (rt *Runtime) StreamStopHandler() gin.HandlerFunc {
 			Fail(c, http.StatusConflict, "任务已结束，无法取消")
 			return
 		}
-		runID, _ := stream.CurrentTurn()
-		stream.Publish(cancelledEventPayload(sessionID, runID, "任务已取消"))
 		OK(c, gin.H{
 			"session_id": sessionID,
 			"message":    "task stop requested",
@@ -648,51 +686,22 @@ func (rt *Runtime) StreamSnapshotHandler() gin.HandlerFunc {
 
 		stream := rt.Streams.Get(sessionID)
 		if stream == nil {
-			Fail(c, http.StatusNotFound, "no active task for this session")
+			rt.GetSessionHandler()(c)
 			return
 		}
 
-		limit := parseSnapshotLimit(c.Query("limit"))
-		offset, hasOffset, err := parseOptionalOffset(c.Query("offset"))
-		if err != nil {
-			Fail(c, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		var page taskstream.EventPage
-		if hasOffset {
-			page = stream.EventsPage(offset, limit)
-		} else {
-			page = stream.TailEventsPage(limit)
-		}
-
-		items := make([]taskstream.Event, 0, len(page.Events))
-		for _, event := range page.Events {
-			items = append(items, event.Data)
-		}
+		state := stream.ConversationSnapshot()
 
 		result := gin.H{
-			"session_id":       sessionID,
-			"status":           stream.Status(),
-			"has_task":         true,
-			"mode":             stream.Mode(),
-			"event_count":      page.EventCount,
-			"retained_count":   page.RetainedEventCount,
-			"earliest_offset":  page.EarliestOffset,
-			"replay_truncated": page.ReplayTruncated,
-			"next_offset":      page.NextOffset,
-			"more_available":   page.MoreAvailable,
-			"queue":            stream.QueueSnapshot(),
-			"events":           items,
-			"snapshot_offset":  page.SnapshotOffset,
-			"limit":            limit,
-			"created_at":       stream.CreatedAt(),
+			"session_id": sessionID, "status": state.Status, "has_task": true,
+			"mode": stream.Mode(), "queue": state.Queue,
+			"view": state.View, "next_offset": state.NextOffset, "created_at": state.CreatedAt,
 		}
 		if doneAt := stream.DoneAt(); !doneAt.IsZero() {
 			result["finished_at"] = doneAt
 		}
 		if stream.AgentName() != "" {
-			result["agent_name"] = stream.AgentName()
+			result["current_agent"] = stream.AgentName()
 		}
 		OK(c, result)
 	}
@@ -710,7 +719,7 @@ func (rt *Runtime) StreamStatusHandler() gin.HandlerFunc {
 		if stream != nil {
 			result := gin.H{
 				"session_id":  sessionID,
-				"status":      stream.Status(),
+				"status":      stream.ClientStatus(),
 				"has_task":    true,
 				"mode":        stream.Mode(),
 				"event_count": stream.EventCount(),
@@ -895,16 +904,19 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 			info := askInterrupt.Info
 			askID := askInterrupt.ID
 			memberEvent := askInterrupt.Event
+			memberEvent.RunID, memberEvent.TurnID = stream.CurrentTurn()
 			askEvent := askRequestedEvent(memberEvent, askID, info)
-			askEvent = events.NormalizeEvent(askEvent)
-			recorder.RecordEvent(askEvent)
-			stream.Publish(standardEventPayload(sessionID, askEvent, nil))
+			if emitErr := recordStreamEvent(stream, recorder, sessionID, askEvent); emitErr != nil {
+				return nil, emitErr
+			}
 
 			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
 			if err == nil {
 				answerEvent := askAnsweredEvent(memberEvent, askID, askResponseFromResult(askID, result), askResponseText(result))
-				answerEvent = events.NormalizeEvent(answerEvent)
-				recorder.RecordEvent(answerEvent)
+				if emitErr := recordStreamEvent(stream, recorder, sessionID, answerEvent); emitErr != nil {
+					return nil, emitErr
+				}
+
 			}
 			return result, err
 		}
@@ -916,8 +928,10 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
 
 		runID, turnID := stream.CurrentTurn()
+		approvalID := uuid.NewString()
 		approvalEvent := events.NormalizeEvent(events.Event{
 			Type:    events.EventApprovalRequested,
+			Detail:  approvalID,
 			RunID:   runID,
 			TurnID:  turnID,
 			Content: msg,
@@ -925,23 +939,26 @@ func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.H
 				Message: msg,
 			},
 		})
-		recorder.RecordEvent(approvalEvent)
-		payload := standardEventPayload(sessionID, approvalEvent, nil)
-		payload["message"] = msg
-		stream.Publish(payload)
+		if emitErr := recordStreamEvent(stream, recorder, sessionID, approvalEvent); emitErr != nil {
+			return nil, emitErr
+		}
 
 		result, err := channelHandler(ctx, interrupts)
 		if err == nil {
 			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(events.NormalizeEvent(events.Event{
+				answerEvent := events.NormalizeEvent(events.Event{
 					Type:    events.EventApprovalAnswered,
+					Detail:  approvalID,
 					RunID:   runID,
 					TurnID:  turnID,
 					Content: text,
 					Approval: &events.ApprovalPayload{
 						Decision: text,
 					},
-				}))
+				})
+				if emitErr := recordStreamEvent(stream, recorder, sessionID, answerEvent); emitErr != nil {
+					return nil, emitErr
+				}
 			}
 		}
 

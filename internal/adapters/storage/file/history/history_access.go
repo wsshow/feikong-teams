@@ -1,6 +1,7 @@
 package eventlog
 
 import (
+	"fkteams/internal/runtime/events"
 	"fmt"
 
 	"strings"
@@ -23,11 +24,13 @@ func (h *HistoryRecorder) RecordCancelled(message string) {
 		return
 	}
 	now := time.Now()
+	terminal := h.sequenceEventLocked(events.NormalizeEvent(events.Event{Type: events.EventCancelled, Content: message}))
 	h.appendTranscriptEvent(TranscriptEvent{
-		At:      now,
-		Type:    TranscriptCancelled,
-		Agent:   "system",
-		Content: message,
+		At:       now,
+		Type:     TranscriptCancelled,
+		Envelope: transcriptEnvelope(terminal),
+		Agent:    "system",
+		Content:  message,
 	}, nil)
 	cancelEvent := MessageEvent{Type: MsgTypeCancelled, Content: message}
 	h.messages = append(h.messages, AgentMessage{

@@ -109,9 +109,13 @@ func TestPublicSessionShareRequiresPassword(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected response data object, got %#v", got.Data)
 	}
-	events, ok := data["events"].([]any)
-	if !ok || len(events) != 1 {
-		t.Fatalf("expected one shared event, got %#v", data["events"])
+	view, ok := data["view"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing view: %#v", data)
+	}
+	items, ok := view["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one shared message, got %#v", view)
 	}
 }
 

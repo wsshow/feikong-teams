@@ -145,3 +145,11 @@ func TestCompletionStatusDoesNotHideOtherFailuresBehindCancellation(t *testing.T
 		}
 	}
 }
+
+func (h *failingHistory) RecordAndEmit(e event.Event, sink func(event.Event) error) error {
+	h.RecordEvent(e)
+	if sink != nil {
+		return sink(e)
+	}
+	return nil
+}

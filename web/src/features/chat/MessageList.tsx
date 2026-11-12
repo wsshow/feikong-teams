@@ -1,8 +1,33 @@
-import { lazy, Suspense, memo, type MouseEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, Check, ChevronRight, CircleHelp, Copy, FileText, GitBranch, Send, ShieldAlert } from "lucide-react";
-import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { assistantAgentID, assistantDisplayName, assistantSessionID } from "@/lib/assistant";
-import { chatActions } from "@/app/store";
+import type { TimelineItem } from "@/types/presentation";
+import {
+  lazy,
+  Suspense,
+  memo,
+  type MouseEvent,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrowDown,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  Copy,
+  FileText,
+  GitBranch,
+  Send,
+  ShieldAlert,
+} from "lucide-react";
+import { useAppSelector } from "@/app/hooks";
+import {
+  assistantAgentID,
+  assistantDisplayName,
+  assistantSessionID,
+} from "@/lib/assistant";
 import { submitApproval, submitAskResponse } from "@/api/stream";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { Button } from "@/components/ui/button";
@@ -17,68 +42,98 @@ import { useDisclosureState } from "./disclosureState";
 import type { ContentPartDTO } from "@/types/events";
 import type { ChatViewMessage } from "@/types/chat";
 import type { AgentInfo } from "@/types/api";
-import { normalizeAgentKey, type AskActivity, type ApprovalActivity, type MessageRenderPart, type MemberActivity, buildTimelineModel, toolEventsKey, eventsForDisplay, timelineItemSpacingClass, approvalDecisionLabel, askResponseSummary, toolActivityKey, messagePartKey, nextRepeatedKey } from "./timeline";
+import {
+  normalizeAgentKey,
+  type AskActivity,
+  type ApprovalActivity,
+  type MessageRenderPart,
+  type MemberActivity,
+  timelineItemSpacingClass,
+  askResponseSummary,
+  toolActivityKey,
+  messagePartKey,
+  nextRepeatedKey,
+} from "./timeline";
 
 import { actionSummary, decodeUIAction } from "./openui/protocol";
 
 const AssistantUIContent = lazy(() => import("./openui/AssistantUIContent"));
 
-export type AskAnsweredHandler = (ask: AskActivity, selected: string[], freeText: string) => void;
+export type AskAnsweredHandler = (
+  ask: AskActivity,
+  selected: string[],
+  freeText: string,
+) => void;
 
-export type ApprovalAnsweredHandler = (approval: ApprovalActivity, decision: 0 | 1 | 2) => void;
+export type ApprovalAnsweredHandler = (
+  approval: ApprovalActivity,
+  decision: 0 | 1 | 2,
+) => void;
 
 export interface JumpToBottomControls {
   distanceFromBottom: number;
   jump: () => void;
 }
 
-export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
+export function MessageList({
+  scrollRef,
+  onJumpToBottomControlsChange,
+}: {
   scrollRef: RefObject<HTMLDivElement | null>;
   onJumpToBottomControlsChange?: (controls: JumpToBottomControls) => void;
 }) {
-  const dispatch = useAppDispatch();
   const messages = useAppSelector((state) => state.chat.messages);
-  const events = useAppSelector((state) => state.chat.events);
-  const isProcessing = useAppSelector((state) => Boolean(
-    state.chat.activeSessionID && state.chat.runningTasks[state.chat.activeSessionID],
-  ));
+  const presentation = useAppSelector((state) => state.chat.presentation);
+  const isProcessing = useAppSelector((state) =>
+    Boolean(
+      state.chat.activeSessionID &&
+      state.chat.runningTasks[state.chat.activeSessionID],
+    ),
+  );
   const statusText = useAppSelector((state) => state.chat.statusText);
   const error = useAppSelector((state) => state.chat.error);
   const errorTitle = useAppSelector((state) => state.chat.errorTitle);
-  const errorSuggestions = useAppSelector((state) => state.chat.errorSuggestions);
+  const errorSuggestions = useAppSelector(
+    (state) => state.chat.errorSuggestions,
+  );
   const technicalError = useAppSelector((state) => state.chat.technicalError);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
   const agents = useAppSelector((state) => state.app.agents);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
-  const [submittedAskIDs, setSubmittedAskIDs] = useState<Set<string>>(() => new Set());
-  const [submittedApprovalIDs, setSubmittedApprovalIDs] = useState<Set<string>>(() => new Set());
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [scrollDistanceFromBottom, setScrollDistanceFromBottom] = useState(0);
-  const displayEvents = useMemo(() => eventsForDisplay(events), [events]);
+
   const canAnswerAsk = Boolean(isProcessing && activeSessionID);
-  const canAnswerApproval = canAnswerAsk;
-  const handleAskAnswered = useCallback((ask: AskActivity, selected: string[], freeText: string) => {
-    setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-    dispatch(chatActions.receiveEvent({
-      type: "ask_answered",
-      session_id: ask.sessionID || activeSessionID,
-      ask_id: ask.id,
-      detail: ask.id,
-      selected,
-      free_text: freeText,
-      content: askResponseSummary(selected, freeText),
-    }));
-  }, [activeSessionID, dispatch]);
-  const timeline = useMemo(
-    () => buildTimelineModel(messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing),
-    [messages, displayEvents, submittedAskIDs, submittedApprovalIDs, isProcessing],
+  const timeline = useMemo(() => {
+    const knownIDs = new Set(presentation.items.map((item) => item.id));
+    const optimistic = messages.filter((message) => !knownIDs.has(message.id));
+    return {
+      items: [
+        ...presentation.items,
+        ...optimistic.map((message, index) => ({
+          id: message.id,
+          index: presentation.items.length + index,
+          kind: "message" as const,
+          order: Number.MAX_SAFE_INTEGER,
+          node: {
+            message,
+            parts: [],
+            showAgentLabel: false,
+            showCopyAction: false,
+            order: Number.MAX_SAFE_INTEGER,
+          },
+        })),
+      ],
+      messages,
+    };
+  }, [presentation, messages]);
+  const hasMatchingTimelineError = timeline.items.some(
+    (item) =>
+      item.kind === "error" &&
+      item.error.message === error &&
+      item.error.title === errorTitle,
   );
-  const hasMatchingTimelineError = timeline.items.some((item) => (
-    item.kind === "error"
-    && item.error.message === error
-    && item.error.title === errorTitle
-  ));
 
   const scrollToBottom = useCallback(() => {
     const scroll = scrollRef.current;
@@ -96,7 +151,7 @@ export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     scrollToBottom();
-  }, [timeline.items, timeline.trailingAsks.length, isProcessing, statusText, error, scrollToBottom, toolEventsKey(displayEvents)]);
+  }, [timeline.items, isProcessing, statusText, error, scrollToBottom]);
 
   useEffect(() => {
     stickToBottomRef.current = true;
@@ -105,14 +160,18 @@ export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
   }, [activeSessionID, scrollToBottom]);
 
   useEffect(() => {
-    onJumpToBottomControlsChange?.({ distanceFromBottom: scrollDistanceFromBottom, jump: jumpToBottom });
+    onJumpToBottomControlsChange?.({
+      distanceFromBottom: scrollDistanceFromBottom,
+      jump: jumpToBottom,
+    });
   }, [jumpToBottom, onJumpToBottomControlsChange, scrollDistanceFromBottom]);
 
   useEffect(() => {
-    return () => onJumpToBottomControlsChange?.({ distanceFromBottom: 0, jump: () => {} });
+    return () =>
+      onJumpToBottomControlsChange?.({ distanceFromBottom: 0, jump: () => {} });
   }, [onJumpToBottomControlsChange]);
 
-  if (timeline.messages.length === 0 && displayEvents.length === 0 && !isProcessing && !error) {
+  if (timeline.items.length === 0 && !isProcessing && !error) {
     return <div className="min-h-0 flex-1" />;
   }
 
@@ -126,19 +185,6 @@ export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
     setShowJumpToBottom(!atBottom);
   }
 
-  function handleApprovalAnswered(approval: ApprovalActivity, decision: 0 | 1 | 2) {
-    const decisionText = approvalDecisionLabel(decision);
-    setSubmittedApprovalIDs((previous) => new Set(previous).add(approval.id));
-    dispatch(chatActions.receiveEvent({
-      type: "approval_answered",
-      session_id: activeSessionID,
-      detail: approval.id,
-      event_id: `local:approval:${approval.id}`,
-      content: decisionText,
-      approval: { decision: decisionText },
-    }));
-  }
-
   return (
     <div className="relative min-h-0 flex-1">
       <div
@@ -147,117 +193,11 @@ export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
         onScroll={handleScroll}
       >
         <div className="mx-auto w-full max-w-4xl">
-          {timeline.items.map((item, index) => {
-            const spacing = timelineItemSpacingClass(timeline.items, index);
-            if (item.kind === "member") {
-              const member = item.member;
-              return (
-                <div key={`member-${member.id}`} className={spacing}>
-                  <MemberActivityBlock
-                    member={member}
-                    agents={agents}
-                    sessionID={activeSessionID}
-                    canAnswerAsk={canAnswerAsk}
-                    onAskAnswered={handleAskAnswered}
-                  />
-                </div>
-              );
-            }
-            if (item.kind === "tool") {
-              return (
-                <div key={`tool-${toolActivityKey(item.part.tool)}`} className={cn(spacing, "space-y-3")}>
-                  <MessagePart
-                    part={item.part}
-                    disclosureID={`timeline:${toolActivityKey(item.part.tool)}`}
-                    sessionID={activeSessionID}
-                    agents={agents}
-                    canAnswerAsk={canAnswerAsk}
-                    onAskAnswered={handleAskAnswered}
-                  />
-                </div>
-              );
-            }
-            if (item.kind === "ask") {
-              return (
-                <div key={`ask-${item.ask.id}`} className={spacing}>
-                  <AskTimelineItem
-                    ask={item.ask}
-                    sessionID={item.ask.sessionID || activeSessionID}
-                    canAnswer={canAnswerAsk}
-                    onAnswered={(selected, freeText) => handleAskAnswered(item.ask, selected, freeText)}
-                  />
-                </div>
-              );
-            }
-            if (item.kind === "approval") {
-              return (
-                <div key={`approval-${item.approval.id}`} className={spacing}>
-                  <ApprovalTimelineItem
-                    approval={item.approval}
-                    sessionID={activeSessionID}
-                    canAnswer={canAnswerApproval}
-                    onAnswered={handleApprovalAnswered}
-                  />
-                </div>
-              );
-            }
-            if (item.kind === "error") {
-              return (
-                <div key={`error-${item.error.id}`} className={spacing}>
-                  <ErrorNotice
-                    title={item.error.title}
-                    message={item.error.message}
-                    suggestions={item.error.suggestions}
-                    technicalDetail={item.error.technicalDetail}
-                    className="mt-0"
-                  />
-                </div>
-              );
-            }
-            const { message, parts, showAgentLabel } = item.node;
-            if (message.hidden) return null;
-            return (
-              <div key={message.id} className={cn(spacing, "space-y-3")}>
-                <MessageRow
-                  message={message}
-                  parts={parts}
-                  sessionID={activeSessionID}
-                  agents={agents}
-                  showAgentLabel={showAgentLabel}
-                  showCopyAction={item.node.showCopyAction}
-                  canAnswerAsk={canAnswerAsk}
-                  onAskAnswered={handleAskAnswered}
-                />
-              </div>
-            );
-          })}
-          {timeline.trailingAsks.map((ask, index) => (
-            <div key={ask.id} className={index === 0 && timeline.items.length === 0 ? "" : "mt-6"}>
-              <AskTimelineItem
-                ask={ask}
-                sessionID={ask.sessionID || activeSessionID}
-                canAnswer={canAnswerAsk}
-                onAnswered={(selected, freeText) => {
-                  setSubmittedAskIDs((previous) => new Set(previous).add(ask.id));
-                  dispatch(chatActions.receiveEvent({
-                    type: "ask_answered",
-                    session_id: ask.sessionID || activeSessionID,
-                    ask_id: ask.id,
-                    detail: ask.id,
-                    selected,
-                    free_text: freeText,
-                    content: askResponseSummary(selected, freeText),
-                  }));
-                }}
-              />
-            </div>
-          ))}
-          <ActivityList
-            tools={timeline.trailingTools}
-            agents={agents}
+          <ConversationItems
+            items={timeline.items}
             sessionID={activeSessionID}
+            agents={agents}
             canAnswerAsk={canAnswerAsk}
-            onAskAnswered={handleAskAnswered}
           />
           {isProcessing ? (
             <div className="message-row mt-6 text-lg text-muted-foreground">
@@ -292,6 +232,99 @@ export function MessageList({ scrollRef, onJumpToBottomControlsChange }: {
   );
 }
 
+export function ConversationItems({
+  items,
+  sessionID = "",
+  agents = [],
+  canAnswerAsk = false,
+  onAskAnswered = () => {},
+  onApprovalAnswered = () => {},
+}: {
+  items: TimelineItem[];
+  sessionID?: string;
+  agents?: AgentInfo[];
+  canAnswerAsk?: boolean;
+  onAskAnswered?: AskAnsweredHandler;
+  onApprovalAnswered?: ApprovalAnsweredHandler;
+}) {
+  return (
+    <>
+      {items.map((item, index) => {
+        const spacing = timelineItemSpacingClass(items, index);
+        if (item.kind === "member") {
+          const member = item.member;
+          return (
+            <div key={`member-${member.id}`} className={spacing}>
+              <MemberActivityBlock
+                member={member}
+                agents={agents}
+                sessionID={sessionID}
+                canAnswerAsk={canAnswerAsk}
+                onAskAnswered={onAskAnswered}
+              />
+            </div>
+          );
+        }
+        if (item.kind === "ask") {
+          return (
+            <div key={`ask-${item.ask.id}`} className={spacing}>
+              <AskTimelineItem
+                ask={item.ask}
+                sessionID={item.ask.sessionID || sessionID}
+                canAnswer={canAnswerAsk && item.ask.active}
+                onAnswered={(selected, freeText) =>
+                  onAskAnswered(item.ask, selected, freeText)
+                }
+              />
+            </div>
+          );
+        }
+        if (item.kind === "approval") {
+          return (
+            <div key={`approval-${item.approval.id}`} className={spacing}>
+              <ApprovalTimelineItem
+                approval={item.approval}
+                sessionID={sessionID}
+                canAnswer={canAnswerAsk && item.approval.active}
+                onAnswered={onApprovalAnswered}
+              />
+            </div>
+          );
+        }
+        if (item.kind === "error") {
+          return (
+            <div key={`error-${item.error.id}`} className={spacing}>
+              <ErrorNotice
+                title={item.error.title}
+                message={item.error.message}
+                suggestions={item.error.suggestions}
+                technicalDetail={item.error.technicalDetail}
+                className="mt-0"
+              />
+            </div>
+          );
+        }
+        const { message, parts, showAgentLabel } = item.node;
+
+        return (
+          <div key={message.id} className={cn(spacing, "space-y-3")}>
+            <MessageRow
+              message={message}
+              parts={parts}
+              sessionID={sessionID}
+              agents={agents}
+              showAgentLabel={showAgentLabel}
+              showCopyAction={item.node.showCopyAction}
+              canAnswerAsk={canAnswerAsk}
+              onAskAnswered={onAskAnswered}
+            />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export function ErrorNotice({
   title,
   message,
@@ -307,9 +340,18 @@ export function ErrorNotice({
 }) {
   const showTechnical = Boolean(technicalDetail && technicalDetail !== message);
   return (
-    <div className={cn("sketch-surface rounded-md border-destructive/45 bg-destructive/5 px-4 py-3 text-sm text-destructive", className ?? "mt-4")}>
+    <div
+      className={cn(
+        "sketch-surface rounded-md border-destructive/45 bg-destructive/5 px-4 py-3 text-sm text-destructive",
+        className ?? "mt-4",
+      )}
+    >
       {title ? <div className="font-semibold">{title}</div> : null}
-      <div className={title ? "mt-1 text-destructive/90" : "text-destructive/90"}>{message}</div>
+      <div
+        className={title ? "mt-1 text-destructive/90" : "text-destructive/90"}
+      >
+        {message}
+      </div>
       {suggestions?.length ? (
         <ul className="mt-2 list-disc space-y-1 pl-5 text-destructive/80">
           {suggestions.map((suggestion) => (
@@ -330,11 +372,19 @@ export function ErrorNotice({
 }
 
 export function scrollDistanceToBottom(element: HTMLElement) {
-  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
+  return Math.max(
+    0,
+    element.scrollHeight - element.scrollTop - element.clientHeight,
+  );
 }
 
 export function loadingStatusText(statusText?: string) {
-  if (!statusText || statusText === "处理中" || statusText === "开始处理您的请求...") return "执行中";
+  if (
+    !statusText ||
+    statusText === "处理中" ||
+    statusText === "开始处理您的请求..."
+  )
+    return "执行中";
   return statusText;
 }
 
@@ -372,7 +422,10 @@ export const MessageRow = memo(function MessageRow({
   const hasContent = Boolean(message.content.trim());
   if (message.role === "system") {
     return (
-      <article id={chatMessageElementID(message.id)} className="message-row w-full scroll-mt-8">
+      <article
+        id={chatMessageElementID(message.id)}
+        className="message-row w-full scroll-mt-8"
+      >
         <div className="mb-2 text-sm text-muted-foreground">系统</div>
         <div className="text-lg leading-9 text-muted-foreground">
           {message.content}
@@ -384,35 +437,59 @@ export const MessageRow = memo(function MessageRow({
   if (message.role === "user") {
     const attachments = messageAttachmentParts(message.contentParts);
     return (
-      <article id={chatMessageElementID(message.id)} className="message-row group flex w-full scroll-mt-8 flex-col items-end gap-2">
+      <article
+        id={chatMessageElementID(message.id)}
+        className="message-row group flex w-full scroll-mt-8 flex-col items-end gap-2"
+      >
         <div className="flex max-w-[92%] flex-col items-end gap-2 sm:max-w-[78%]">
-          {attachments.length ? <UserAttachmentPills attachments={attachments} /> : null}
+          {attachments.length ? (
+            <UserAttachmentPills attachments={attachments} />
+          ) : null}
           {message.content.trim() ? (
             <div className="rounded-2xl bg-accent px-4 py-3 text-base leading-7 text-foreground sm:px-5 sm:py-4 sm:text-lg sm:leading-8">
-              <div className="whitespace-pre-wrap">{decodeUIAction(message.content) ? actionSummary(decodeUIAction(message.content)!) : message.content}</div>
+              <div className="whitespace-pre-wrap">
+                {decodeUIAction(message.content)
+                  ? actionSummary(decodeUIAction(message.content)!)
+                  : message.content}
+              </div>
             </div>
           ) : null}
         </div>
-        <MessageActions align="right" content={message.content} time={message.createdAt} />
+        <MessageActions
+          align="right"
+          content={message.content}
+          time={message.createdAt}
+        />
       </article>
     );
   }
 
-  const textParts = parts.filter((part): part is { type: "text"; content: string } => part.type === "text");
+  const textParts = parts.filter(
+    (part): part is { type: "text"; content: string } => part.type === "text",
+  );
   const copyContent = textParts.map((part) => part.content).join("");
 
   return (
-    <article id={chatMessageElementID(message.id)} className="message-row group w-full scroll-mt-8">
+    <article
+      id={chatMessageElementID(message.id)}
+      className="message-row group w-full scroll-mt-8"
+    >
       {message.agent && showAgentLabel ? (
         <div className="mb-2 text-sm text-muted-foreground">
-          <AgentNameLabel name={message.agent} agent={resolveAgentInfo(message.agent, agents)} />
+          <AgentNameLabel
+            name={message.agent}
+            agent={resolveAgentInfo(message.agent, agents)}
+          />
         </div>
       ) : null}
       <div className="message-parts">
         {(() => {
           const partKeys = new Map<string, number>();
           return parts.map((part) => {
-            const key = nextRepeatedKey(partKeys, messagePartKey(part, message.id));
+            const key = nextRepeatedKey(
+              partKeys,
+              messagePartKey(part, message.id),
+            );
             return (
               <MessagePart
                 key={key}
@@ -427,54 +504,91 @@ export const MessageRow = memo(function MessageRow({
           });
         })()}
       </div>
-      {showCopyAction && (hasContent || copyContent) ? <MessageActions content={copyContent || message.content} compact /> : null}
+      {showCopyAction && (hasContent || copyContent) ? (
+        <MessageActions content={copyContent || message.content} compact />
+      ) : null}
     </article>
   );
 }, messageRowPropsEqual);
 
-export function messageRowPropsEqual(previous: MessageRowProps, next: MessageRowProps) {
-  return previous.message === next.message
-    && previous.sessionID === next.sessionID
-    && previous.agents === next.agents
-    && previous.showAgentLabel === next.showAgentLabel
-    && previous.showCopyAction === next.showCopyAction
-    && previous.canAnswerAsk === next.canAnswerAsk
-    && previous.onAskAnswered === next.onAskAnswered
-    && messageRenderPartsEqual(previous.parts, next.parts);
+export function messageRowPropsEqual(
+  previous: MessageRowProps,
+  next: MessageRowProps,
+) {
+  return (
+    previous.message === next.message &&
+    previous.sessionID === next.sessionID &&
+    previous.agents === next.agents &&
+    previous.showAgentLabel === next.showAgentLabel &&
+    previous.showCopyAction === next.showCopyAction &&
+    previous.canAnswerAsk === next.canAnswerAsk &&
+    previous.onAskAnswered === next.onAskAnswered &&
+    messageRenderPartsEqual(previous.parts, next.parts)
+  );
 }
 
-export function messageRenderPartsEqual(previous: MessageRenderPart[], next: MessageRenderPart[]) {
+export function messageRenderPartsEqual(
+  previous: MessageRenderPart[],
+  next: MessageRenderPart[],
+) {
   if (previous === next) return true;
   if (previous.length !== next.length) return false;
   return previous.every((part, index) => {
     const candidate = next[index];
     if (part.type !== candidate.type) return false;
     if (part.type === "text" || part.type === "reasoning") {
-      return candidate.type === part.type
-        && part.content === candidate.content
-        && part.key === candidate.key
-        && part.streaming === candidate.streaming;
+      return (
+        candidate.type === part.type &&
+        part.content === candidate.content &&
+        part.key === candidate.key &&
+        part.streaming === candidate.streaming
+      );
     }
     if (part.type === "ask") {
-      return candidate.type === "ask" && JSON.stringify(part.ask) === JSON.stringify(candidate.ask);
+      return (
+        candidate.type === "ask" &&
+        JSON.stringify(part.ask) === JSON.stringify(candidate.ask)
+      );
     }
-    return candidate.type === "tool"
-      && JSON.stringify([part.tool, part.member]) === JSON.stringify([candidate.tool, candidate.member]);
+    return (
+      candidate.type === "tool" &&
+      JSON.stringify([part.tool, part.member]) ===
+        JSON.stringify([candidate.tool, candidate.member])
+    );
   });
 }
 
-export function UserAttachmentPills({ attachments }: { attachments: ContentPartDTO[] }) {
+export function UserAttachmentPills({
+  attachments,
+}: {
+  attachments: ContentPartDTO[];
+}) {
   return (
     <div className="flex max-w-full flex-wrap justify-end gap-2">
       {attachments.map((part, index) => {
-        if (isImagePart(part)) return <UserImagePill key={attachmentPartKey(part, index)} part={part} index={index} />;
-        return <UserFilePill key={attachmentPartKey(part, index)} part={part} />;
+        if (isImagePart(part))
+          return (
+            <UserImagePill
+              key={attachmentPartKey(part, index)}
+              part={part}
+              index={index}
+            />
+          );
+        return (
+          <UserFilePill key={attachmentPartKey(part, index)} part={part} />
+        );
       })}
     </div>
   );
 }
 
-export function UserImagePill({ part, index }: { part: ContentPartDTO; index: number }) {
+export function UserImagePill({
+  part,
+  index,
+}: {
+  part: ContentPartDTO;
+  index: number;
+}) {
   const src = part.base64_data
     ? `data:${part.mime_type || "image/png"};base64,${part.base64_data}`
     : part.url || "";
@@ -482,7 +596,9 @@ export function UserImagePill({ part, index }: { part: ContentPartDTO; index: nu
   return (
     <div className="flex h-12 max-w-[10.5rem] items-center gap-2 rounded-xl border border-border/70 bg-muted px-2 py-1.5 text-sm text-foreground sm:max-w-[13rem]">
       <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-background/60">
-        {src ? <img className="h-full w-full object-cover" src={src} alt={label} /> : null}
+        {src ? (
+          <img className="h-full w-full object-cover" src={src} alt={label} />
+        ) : null}
       </div>
       <div className="min-w-0">
         <div className="truncate font-medium leading-5">{label}</div>
@@ -510,7 +626,11 @@ export function messageAttachmentParts(parts?: ContentPartDTO[]) {
 }
 
 export function isImagePart(part: ContentPartDTO) {
-  return part.type === "image_url" || part.type === "image_base64" || Boolean(part.base64_data);
+  return (
+    part.type === "image_url" ||
+    part.type === "image_base64" ||
+    Boolean(part.base64_data)
+  );
 }
 
 export function attachmentPartKey(part: ContentPartDTO, index: number) {
@@ -541,14 +661,23 @@ export function MessagePart({
   canAnswerAsk: boolean;
   onAskAnswered: AskAnsweredHandler;
 }) {
-  if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
+  if (part.type === "reasoning")
+    return (
+      <ReasoningBlock content={part.content} disclosureID={disclosureID} />
+    );
   if (part.type === "tool") {
-    const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
+    const memberAgent = part.member
+      ? resolveAgentInfo(part.member.name, agents)
+      : undefined;
     return (
       <ToolCallCard
         disclosureID={disclosureID}
         tool={part.tool}
-        title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
+        title={
+          part.member ? (
+            <AgentNameLabel name={part.member.name} agent={memberAgent} loud />
+          ) : undefined
+        }
       >
         {part.member ? (
           <MemberActivityDetails
@@ -568,21 +697,47 @@ export function MessagePart({
         <AskTimelineItem
           ask={part.ask}
           sessionID={part.ask.sessionID || sessionID}
-          canAnswer={canAnswerAsk}
-          onAnswered={(selected, freeText) => onAskAnswered(part.ask, selected, freeText)}
+          canAnswer={canAnswerAsk && part.ask.active}
+          onAnswered={(selected, freeText) =>
+            onAskAnswered(part.ask, selected, freeText)
+          }
         />
       </div>
     );
   }
-  if (sessionID === assistantSessionID && /(?:^|\n) {0,3}(?:`{3,}|~{3,})openui-lang(?:\s|$)/.test(part.content)) {
-    return <Suspense fallback={<p className="text-sm text-muted-foreground">正在加载交互内容…</p>}>
-      <AssistantUIContent content={part.content} sourceID={disclosureID} streaming={part.streaming} />
-    </Suspense>;
+  if (
+    sessionID === assistantSessionID &&
+    /(?:^|\n) {0,3}(?:`{3,}|~{3,})openui-lang(?:\s|$)/.test(part.content)
+  ) {
+    return (
+      <Suspense
+        fallback={
+          <p className="text-sm text-muted-foreground">正在加载交互内容…</p>
+        }
+      >
+        <AssistantUIContent
+          content={part.content}
+          sourceID={disclosureID}
+          streaming={part.streaming}
+        />
+      </Suspense>
+    );
   }
-  return <MarkdownContent className="text-base leading-8 sm:text-lg sm:leading-9" content={part.content} />;
+  return (
+    <MarkdownContent
+      className="text-base leading-8 sm:text-lg sm:leading-9"
+      content={part.content}
+    />
+  );
 }
 
-export function ReasoningBlock({ content, disclosureID }: { content: string; disclosureID: string }) {
+export function ReasoningBlock({
+  content,
+  disclosureID,
+}: {
+  content: string;
+  disclosureID: string;
+}) {
   const [open, toggleOpen] = useDisclosureState(disclosureID);
 
   function handleToggle(event: MouseEvent<HTMLButtonElement>) {
@@ -600,7 +755,9 @@ export function ReasoningBlock({ content, disclosureID }: { content: string; dis
       >
         <span className="h-2 w-2 rounded-full bg-warning" />
         <span className="font-semibold">已思考</span>
-        <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
+        <ChevronRight
+          className={cn("h-4 w-4 transition-transform", open && "rotate-90")}
+        />
       </button>
       {open ? (
         <div className="ml-7 border-l border-warning/20 pl-4 pt-2 text-sm leading-7 text-muted-foreground">
@@ -630,14 +787,24 @@ export function ActivityList({
     <div>
       {visibleTools.map((part) => {
         if (part.type !== "tool") return null;
-        const memberAgent = part.member ? resolveAgentInfo(part.member.name, agents) : undefined;
+        const memberAgent = part.member
+          ? resolveAgentInfo(part.member.name, agents)
+          : undefined;
         const key = `activity:${toolActivityKey(part.tool)}`;
         return (
           <ToolCallCard
             key={key}
             disclosureID={key}
             tool={part.tool}
-            title={part.member ? <AgentNameLabel name={part.member.name} agent={memberAgent} loud /> : undefined}
+            title={
+              part.member ? (
+                <AgentNameLabel
+                  name={part.member.name}
+                  agent={memberAgent}
+                  loud
+                />
+              ) : undefined
+            }
           >
             {part.member ? (
               <MemberActivityDetails
@@ -686,7 +853,9 @@ export function MemberActivityBlock({
       >
         <span className="h-2 w-2 rounded-full bg-muted-foreground/35" />
         <AgentNameLabel name={member.name} agent={agent} loud />
-        <ChevronRight className={cn("h-4 w-4 transition-transform", open && "rotate-90")} />
+        <ChevronRight
+          className={cn("h-4 w-4 transition-transform", open && "rotate-90")}
+        />
       </button>
       {open ? (
         <div className="ml-7 space-y-3 border-l border-border/60 pl-4 pt-2">
@@ -722,12 +891,17 @@ export function MemberActivityDetails({
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <GitBranch className="h-3.5 w-3.5" />
         <AgentNameLabel name={member.name} agent={agent} />
-        <span>{member.toolCount ? `${member.toolCount} 个工具调用` : "暂无工具调用"}</span>
+        <span>
+          {member.toolCount ? `${member.toolCount} 个工具调用` : "暂无工具调用"}
+        </span>
       </div>
       {(() => {
         const partKeys = new Map<string, number>();
         return member.parts.map((part) => {
-          const key = nextRepeatedKey(partKeys, messagePartKey(part, member.id));
+          const key = nextRepeatedKey(
+            partKeys,
+            messagePartKey(part, member.id),
+          );
           return (
             <MemberActivityPart
               key={key}
@@ -757,27 +931,49 @@ export function MemberActivityPart({
   canAnswerAsk: boolean;
   onAskAnswered: AskAnsweredHandler;
 }) {
-  if (part.type === "reasoning") return <ReasoningBlock content={part.content} disclosureID={disclosureID} />;
-  if (part.type === "tool") return <ToolCallCard tool={part.tool} disclosureID={disclosureID} />;
+  if (part.type === "reasoning")
+    return (
+      <ReasoningBlock content={part.content} disclosureID={disclosureID} />
+    );
+  if (part.type === "tool")
+    return <ToolCallCard tool={part.tool} disclosureID={disclosureID} />;
   if (part.type === "ask") {
     return (
       <AskTimelineItem
         ask={part.ask}
         sessionID={part.ask.sessionID || sessionID}
         canAnswer={canAnswerAsk}
-        onAnswered={(selected, freeText) => onAskAnswered(part.ask, selected, freeText)}
+        onAnswered={(selected, freeText) =>
+          onAskAnswered(part.ask, selected, freeText)
+        }
       />
     );
   }
-  if (part.type === "text") return <MarkdownContent className="text-base leading-8" content={part.content} />;
+  if (part.type === "text")
+    return (
+      <MarkdownContent className="text-base leading-8" content={part.content} />
+    );
   return null;
 }
 
-export function AgentNameLabel({ name, agent, loud = false }: { name: string; agent?: AgentInfo; loud?: boolean }) {
+export function AgentNameLabel({
+  name,
+  agent,
+  loud = false,
+}: {
+  name: string;
+  agent?: AgentInfo;
+  loud?: boolean;
+}) {
   if (name === assistantAgentID) return <AssistantNameLabel loud={loud} />;
   const label = agentDisplayName(agent, name);
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-2", loud && "font-semibold tracking-normal")}>
+    <span
+      className={cn(
+        "inline-flex min-w-0 items-center gap-2",
+        loud && "font-semibold tracking-normal",
+      )}
+    >
       <span className="truncate">{label}</span>
       {agent?.builtin ? <BuiltinAgentBadge /> : null}
     </span>
@@ -785,8 +981,12 @@ export function AgentNameLabel({ name, agent, loud = false }: { name: string; ag
 }
 
 function AssistantNameLabel({ loud }: { loud: boolean }) {
-  const name = useAppSelector((state) => assistantDisplayName(state.sessions.items));
-  return <span className={cn("truncate", loud && "font-semibold")}>{name}</span>;
+  const name = useAppSelector((state) =>
+    assistantDisplayName(state.sessions.items),
+  );
+  return (
+    <span className={cn("truncate", loud && "font-semibold")}>{name}</span>
+  );
 }
 
 export function BuiltinAgentBadge() {
@@ -803,15 +1003,23 @@ export function resolveAgentInfo(name: string, agents: AgentInfo[]) {
   return agents.find((agent) => {
     if (normalizeAgentKey(agent.name) === key) return true;
     if (normalizeAgentKey(agent.display_name || "") === key) return true;
-    return (agent.aliases || []).some((alias) => normalizeAgentKey(alias) === key);
+    return (agent.aliases || []).some(
+      (alias) => normalizeAgentKey(alias) === key,
+    );
   });
 }
 
-export function agentDisplayName(agent: AgentInfo | undefined, fallback: string) {
-  return agent?.display_name || agent?.name || runtimeAgentDisplayName(fallback) || fallback;
+export function agentDisplayName(
+  agent: AgentInfo | undefined,
+  fallback: string,
+) {
+  return (
+    agent?.display_name ||
+    agent?.name ||
+    runtimeAgentDisplayName(fallback) ||
+    fallback
+  );
 }
-
-
 
 export function runtimeAgentDisplayName(name: string) {
   return runtimeAgentDisplayNames[normalizeAgentKey(name)];
@@ -852,7 +1060,11 @@ export function MessageActions({
         align === "right" && "justify-end",
       )}
     >
-      {time ? <span className="px-1 text-sm text-muted-foreground">{formatTime(time)}</span> : null}
+      {time ? (
+        <span className="px-1 text-sm text-muted-foreground">
+          {formatTime(time)}
+        </span>
+      ) : null}
       <button
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
@@ -881,23 +1093,27 @@ export function AskPanel({
 }) {
   const [selected, setSelected] = useState<string[]>(ask.selected);
   const [freeText, setFreeText] = useState(ask.freeText);
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const hasOptions = ask.options.length > 0;
   const disabledReason = !canAnswer ? "当前任务已结束，无法继续提交回答。" : "";
   const canSubmit = Boolean(
     canAnswer &&
-      sessionID &&
-      ask.id &&
-      !ask.answered &&
-      !submitting &&
-      (hasOptions ? selected.length > 0 || freeText.trim() : freeText.trim()),
+    sessionID &&
+    ask.id &&
+    !ask.answered &&
+    !submitting &&
+    !submitted &&
+    (hasOptions ? selected.length > 0 || freeText.trim() : freeText.trim()),
   );
 
   function toggleOption(option: string) {
     setSelected((current) => {
       if (!ask.multiSelect) return current.includes(option) ? [] : [option];
-      return current.includes(option) ? current.filter((item) => item !== option) : [...current, option];
+      return current.includes(option)
+        ? current.filter((item) => item !== option)
+        : [...current, option];
     });
   }
 
@@ -908,9 +1124,14 @@ export function AskPanel({
     try {
       const text = freeText.trim();
       await submitAskResponse(sessionID, ask.id, { selected, free_text: text });
+      setSubmitted(true);
       onAnswered(selected, text);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : String(submitError));
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : String(submitError),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -922,7 +1143,9 @@ export function AskPanel({
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">{askTitle(ask)}</div>
-          <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">{ask.question}</div>
+          <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">
+            {ask.question}
+          </div>
         </div>
       </div>
       {hasOptions ? (
@@ -934,8 +1157,12 @@ export function AskPanel({
                 key={option}
                 className={cn(
                   "flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-                  canAnswer && !ask.answered ? "cursor-pointer" : "cursor-not-allowed opacity-65",
-                  checked ? "border-primary/25 bg-accent text-foreground" : "border-border bg-background/60 hover:bg-muted/65",
+                  canAnswer && !ask.answered
+                    ? "cursor-pointer"
+                    : "cursor-not-allowed opacity-65",
+                  checked
+                    ? "border-primary/25 bg-accent text-foreground"
+                    : "border-border bg-background/60 hover:bg-muted/65",
                 )}
               >
                 <input
@@ -943,7 +1170,9 @@ export function AskPanel({
                   type={ask.multiSelect ? "checkbox" : "radio"}
                   name={`ask-${ask.id}`}
                   checked={checked}
-                  disabled={!canAnswer || ask.answered || submitting}
+                  disabled={
+                    !canAnswer || ask.answered || submitting || submitted
+                  }
                   onChange={() => toggleOption(option)}
                 />
                 <span className="min-w-0 break-words">{option}</span>
@@ -955,7 +1184,7 @@ export function AskPanel({
       <Textarea
         className="min-h-20 resize-y"
         value={freeText}
-        disabled={!canAnswer || ask.answered || submitting}
+        disabled={!canAnswer || ask.answered || submitting || submitted}
         placeholder={hasOptions ? "补充说明" : "输入回答"}
         onChange={(event) => setFreeText(event.target.value)}
         onKeyDown={(event) => {
@@ -967,9 +1196,16 @@ export function AskPanel({
       />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
-          {ask.answered ? `已回答：${askResponseSummary(ask.selected, ask.freeText) || "空回答"}` : disabledReason || error}
+          {ask.answered
+            ? `已回答：${askResponseSummary(ask.selected, ask.freeText) || "空回答"}`
+            : disabledReason || error}
         </div>
-        <Button type="button" size="sm" onClick={() => void submit()} disabled={!canSubmit}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void submit()}
+          disabled={!canSubmit}
+        >
           <Send className="h-4 w-4" />
           {submitting ? "提交中" : "提交回答"}
         </Button>
@@ -986,7 +1222,9 @@ export function AskRecord({ ask }: { ask: AskActivity }) {
         <CircleHelp className="mt-1 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">{askTitle(ask)}</div>
-          <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">{ask.question}</div>
+          <div className="mt-1 whitespace-pre-wrap text-base leading-7 text-foreground">
+            {ask.question}
+          </div>
           {ask.options.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {ask.options.map((option) => {
@@ -996,7 +1234,9 @@ export function AskRecord({ ask }: { ask: AskActivity }) {
                     key={option}
                     className={cn(
                       "rounded-md border px-2.5 py-1 text-sm",
-                      selected ? "border-primary/25 bg-accent text-primary" : "border-border bg-background/55 text-muted-foreground",
+                      selected
+                        ? "border-primary/25 bg-accent text-primary"
+                        : "border-border bg-background/55 text-muted-foreground",
                     )}
                   >
                     {option}
@@ -1007,7 +1247,9 @@ export function AskRecord({ ask }: { ask: AskActivity }) {
           ) : null}
           <div className="mt-3 rounded-md border border-border bg-background/55 px-3 py-2 text-sm">
             <span className="text-muted-foreground">你的回答：</span>
-            <span className="whitespace-pre-wrap text-foreground">{answer || "空回答"}</span>
+            <span className="whitespace-pre-wrap text-foreground">
+              {answer || "空回答"}
+            </span>
           </div>
         </div>
       </div>
@@ -1027,7 +1269,14 @@ export function AskTimelineItem({
   onAnswered: (selected: string[], freeText: string) => void;
 }) {
   if (ask.answered) return <AskRecord ask={ask} />;
-  return <AskPanel ask={ask} sessionID={sessionID} canAnswer={canAnswer} onAnswered={onAnswered} />;
+  return (
+    <AskPanel
+      ask={ask}
+      sessionID={sessionID}
+      canAnswer={canAnswer && ask.active}
+      onAnswered={onAnswered}
+    />
+  );
 }
 
 export function ApprovalTimelineItem({
@@ -1042,7 +1291,14 @@ export function ApprovalTimelineItem({
   onAnswered: ApprovalAnsweredHandler;
 }) {
   if (approval.answered) return <ApprovalRecord approval={approval} />;
-  return <ApprovalPanel approval={approval} sessionID={sessionID} canAnswer={canAnswer} onAnswered={onAnswered} />;
+  return (
+    <ApprovalPanel
+      approval={approval}
+      sessionID={sessionID}
+      canAnswer={canAnswer && approval.active}
+      onAnswered={onAnswered}
+    />
+  );
 }
 
 export function ApprovalPanel({
@@ -1056,19 +1312,26 @@ export function ApprovalPanel({
   canAnswer: boolean;
   onAnswered: ApprovalAnsweredHandler;
 }) {
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState<0 | 1 | 2 | undefined>();
   const [error, setError] = useState("");
   const disabledReason = !canAnswer ? "当前任务已结束，无法提交审批。" : "";
 
   async function answer(decision: 0 | 1 | 2) {
-    if (!canAnswer || !sessionID || submitting !== undefined) return;
+    if (!canAnswer || !sessionID || submitting !== undefined || submitted)
+      return;
     setSubmitting(decision);
     setError("");
     try {
       await submitApproval(sessionID, decision);
+      setSubmitted(true);
       onAnswered(approval, decision);
     } catch (approvalError) {
-      setError(approvalError instanceof Error ? approvalError.message : String(approvalError));
+      setError(
+        approvalError instanceof Error
+          ? approvalError.message
+          : String(approvalError),
+      );
     } finally {
       setSubmitting(undefined);
     }
@@ -1080,17 +1343,38 @@ export function ApprovalPanel({
         <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-warning">需要权限审批</div>
-          <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-foreground">{approval.message}</div>
+          <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-foreground">
+            {approval.message}
+          </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">{error || disabledReason}</div>
+            <div className="text-sm text-muted-foreground">
+              {error || disabledReason}
+            </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => void answer(0)} disabled={!canAnswer || submitting !== undefined}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void answer(0)}
+                disabled={!canAnswer || submitting !== undefined || submitted}
+              >
                 {submitting === 0 ? "提交中" : "拒绝"}
               </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => void answer(1)} disabled={!canAnswer || submitting !== undefined}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void answer(1)}
+                disabled={!canAnswer || submitting !== undefined || submitted}
+              >
                 {submitting === 1 ? "提交中" : "允许一次"}
               </Button>
-              <Button type="button" size="sm" onClick={() => void answer(2)} disabled={!canAnswer || submitting !== undefined}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void answer(2)}
+                disabled={!canAnswer || submitting !== undefined || submitted}
+              >
                 {submitting === 2 ? "提交中" : "记住允许"}
               </Button>
             </div>
@@ -1108,10 +1392,14 @@ export function ApprovalRecord({ approval }: { approval: ApprovalActivity }) {
         <ShieldAlert className="mt-1 h-4 w-4 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-warning">权限审批</div>
-          <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{approval.message}</div>
+          <div className="mt-1 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
+            {approval.message}
+          </div>
           <div className="mt-3 rounded-md border border-border bg-background/55 px-3 py-2 text-sm">
             <span className="text-muted-foreground">审批结果：</span>
-            <span className="text-foreground">{approval.decision || "已处理"}</span>
+            <span className="text-foreground">
+              {approval.decision || "已处理"}
+            </span>
           </div>
         </div>
       </div>

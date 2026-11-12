@@ -51,6 +51,7 @@ const (
 	TranscriptSystemNotice     = domainhistory.TranscriptSystemNotice
 	TranscriptError            = domainhistory.TranscriptError
 	TranscriptCancelled        = domainhistory.TranscriptCancelled
+	TranscriptRuntime          = domainhistory.TranscriptRuntime
 )
 
 const (
@@ -100,6 +101,7 @@ type assistantMessageKey struct {
 type pendingAssistantMessage struct {
 	event      Event
 	firstEvent int
+	layout     message.OutputLayout
 }
 
 type activeMessageContext struct {
@@ -122,6 +124,9 @@ type subagentRun struct {
 
 // HistoryRecorder 事件历史记录器
 type HistoryRecorder struct {
+	eventMu         sync.Mutex
+	nextSequence    int64
+	messageOrders   map[string]int64
 	Documents       storageport.Documents
 	mu              sync.RWMutex
 	sessionDir      string
@@ -200,13 +205,14 @@ func ptrToolCallRecord(record ToolCallRecord) *ToolCallRecord {
 
 func historyEventEnvelope(event Event, typ MsgEventType) MessageEvent {
 	return MessageEvent{
-		Type:      typ,
-		EventID:   event.EventID,
-		Sequence:  event.Sequence,
-		CreatedAt: event.CreatedAt,
-		RunID:     event.RunID,
-		TurnID:    event.TurnID,
-		MessageID: event.MessageID,
+		Incomplete: event.Incomplete,
+		Type:       typ,
+		EventID:    event.EventID,
+		Sequence:   event.Sequence,
+		CreatedAt:  event.CreatedAt,
+		RunID:      event.RunID,
+		TurnID:     event.TurnID,
+		MessageID:  event.MessageID,
 	}
 }
 

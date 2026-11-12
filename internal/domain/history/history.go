@@ -22,9 +22,11 @@ const (
 	TranscriptSystemNotice     TranscriptEventType = "system_notice"
 	TranscriptError            TranscriptEventType = "error"
 	TranscriptCancelled        TranscriptEventType = "cancelled"
+	TranscriptRuntime          TranscriptEventType = "runtime"
 )
 
 type TranscriptEvent struct {
+	Envelope      *domainevent.Event    `json:"envelope,omitempty"`
 	ID            string                `json:"id"`
 	At            time.Time             `json:"at"`
 	Type          TranscriptEventType   `json:"type"`
@@ -116,6 +118,7 @@ const (
 )
 
 type MessageEvent struct {
+	Incomplete   bool                  `json:"incomplete,omitempty"`
 	Type         MsgEventType          `json:"type"`
 	EventID      string                `json:"event_id,omitempty"`
 	Sequence     int64                 `json:"sequence,omitempty"`

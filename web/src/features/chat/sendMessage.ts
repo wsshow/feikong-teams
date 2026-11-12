@@ -3,7 +3,6 @@ import { chatActions, sessionsActions, type AppDispatch, type RootState } from "
 import { assistantAgentID, assistantSessionID } from "@/lib/assistant";
 import { chatPath, pushAppPath } from "@/lib/navigation";
 import type { ContentPartDTO } from "@/types/events";
-import { clearStreamOffset } from "./streamOffsets";
 
 interface SendMessageRequest {
   sessionID: string;
@@ -34,6 +33,7 @@ export function sendChatMessage(request: SendMessageRequest) {
     }
     try {
       const result = await startStream({ session_id: sessionID, message, contents, mode, agent_name: agent || undefined });
+      if (result.user_message_id) dispatch(chatActions.confirmUserMessage({ id: messageID, serverID: result.user_message_id }));
       const visible = getState().chat.activeSessionID === sessionID;
       if (result.status === "queued") {
         if (visible && Array.isArray(result.queue)) dispatch(chatActions.setQueue(result.queue));
@@ -47,7 +47,6 @@ export function sendChatMessage(request: SendMessageRequest) {
         dispatch(sessionsActions.updateSessionRuntime({ sessionID: result.session_id, status: "processing", activeTask: true, updatedAt: now, mode, currentAgent: agent }));
       }
       const fresh = result.status !== "queued";
-      if (fresh) clearStreamOffset(result.session_id);
       if (!queueing || fresh) dispatch(chatActions.activateRunningSession({ sessionID: result.session_id, initialOffset: fresh ? 0 : undefined, startedAt, activate: visible }));
       if (newSession && visible) pushAppPath(chatPath(result.session_id));
       return result;

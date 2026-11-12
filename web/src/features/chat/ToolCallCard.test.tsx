@@ -83,9 +83,9 @@ test("status distinguishes pending, running, completed, failed and unknown calls
   }
 });
 
-test("completed calls with explicit business failures do not appear successful", async () => {
+test("server-confirmed business failures use the failed state", async () => {
   for (const result of [{ success: false }, { error_message: "file not found" }, { exit_code: 1 }]) {
-    await render({ status: "completed", result: JSON.stringify(result) });
+    await render({ status: "error", result: JSON.stringify(result) });
     expect(header().textContent).toContain("失败");
     expect(header().textContent).not.toContain("已完成");
   }

@@ -158,7 +158,7 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 		}
 
 		stream := rt.Streams.Get(sessionID)
-		activeTask := stream != nil && stream.Status() == "processing"
+		activeTask := stream != nil && stream.ClientStatus() == "processing"
 		queue, ok := rt.queueForSessionResponse(c, sessionID)
 		if !ok {
 			return
@@ -190,14 +190,33 @@ func (rt *Runtime) GetSessionHandler() gin.HandlerFunc {
 			favorite = meta.Favorite
 		}
 
+		projector, projectionErr := rt.transcriptPresentation(sessionID, transcript)
+		if projectionErr != nil {
+			Fail(c, http.StatusInternalServerError, "failed to project conversation")
+			return
+		}
+		view := projector.Snapshot()
+		status := ""
+		if metaErr == nil {
+			status = string(meta.Status)
+		}
+		var cursor uint64
+		if stream != nil {
+			state := stream.ConversationSnapshot()
+			view, cursor, queue, status = state.View, state.NextOffset, state.Queue, state.Status
+			activeTask = state.Status == "processing"
+		}
 		OK(c, gin.H{
 			"session_id":    sessionID,
 			"mode":          mode,
 			"current_agent": currentAgent,
 			"favorite":      favorite,
-			"events":        rt.transcriptRecordsToChatEvents(sessionID, transcript),
+			"view":          view,
+			"next_offset":   cursor,
+			"status":        status,
 			"queue":         queue,
 			"active_task":   activeTask,
+			"has_task":      stream != nil,
 		})
 	}
 }

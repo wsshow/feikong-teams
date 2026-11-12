@@ -1,3 +1,4 @@
+import { isPresentationUpdate, type PresentationUpdate } from "./presentation";
 export interface ToolCallDTO {
   id?: string;
   ref?: string;
@@ -112,6 +113,7 @@ interface UsageDTO { prompt_tokens?: number; completion_tokens?: number; total_t
 interface NoticeDTO { level?: string; message?: string; code?: string }
 
 const envelope = {
+  view_update: field<PresentationUpdate>(isPresentationUpdate),
   session_id: str, stream_event_id: count, run_id: str, turn_id: str,
   event_id: str, sequence: count, created_at: str, agent_name: str,
   run_path: str, message_id: str, block_id: str, block_type: str,
@@ -151,7 +153,7 @@ const eventSchemas = {
   ask_requested: { ...ask, question: required(identity) }, ask_answered: ask,
   approval_requested: approval, approval_answered: approval,
   system_notice: notice, usage_reported: { ...usage, total_tokens: required(count) }, error,
-  processing_start: processing, processing_end: content, queue_updated: queue, cancelled: content,
+  processing_start: processing, processing_end: { ...content, status: required(field<"completed" | "error" | "cancelled">((value) => value === "completed" || value === "error" || value === "cancelled")) }, queue_updated: queue, cancelled: content,
   turn_failed: error, turn_cancelled: content,
   member_started: member, member_completed: member,
   connected: content, pong: content, invalid_api_key: error,

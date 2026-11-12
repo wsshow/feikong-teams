@@ -48,15 +48,15 @@ Runner 每次运行创建独立的 AgentKit 会话，将输入历史交给库，
 
 SSE 与 WebSocket 共用 `chat.Service.RunQueued`：每轮执行、消费下一条队列项、最终收尾只有一份流程。空队列会原子关闭入队；只有历史和 metadata 持久化成功后才发布 completed。同步 HTTP 请求也向同一任务注册表申请会话，禁止与流式任务同时改写同一份历史；同步请求不接受追加队列。
 
-`TurnRequest.History` 提供记录、定稿和 `Flush()` 契约。`chat.Service` 是每回合唯一的记录与定稿所有者：记录发生在展示回调之前，steering 也经过该管线；CLI/JSON/TUI 视图只接收事件。`SessionLifecycle` 只在历史提交后更新 metadata 和记忆，不再重复保存历史。执行取消与收尾失败保留独立的错误来源：只有纯取消映射为 cancelled，任何持久化或收尾失败均映射为 error。每次调用使用独立 RunID，SessionID 只标识长期会话。
+`TurnRequest.History` 提供记录、定稿和 `Flush()` 契约。`chat.Service` 是每回合唯一的记录与定稿所有者：`RecordAndEmit` 串行分配会话序号、记录事实并调用展示接收器，成员问答和审批同样经过该管线，避免并发来源先分配序号却后发布。steering 也经过该管线；CLI/JSON/TUI 视图只接收事件。`SessionLifecycle` 只在历史提交后更新 metadata 和记忆，不再重复保存历史。执行取消与收尾失败保留独立的错误来源：只有纯取消映射为 cancelled，任何持久化或收尾失败均映射为 error。每次调用使用独立 RunID，SessionID 只标识长期会话。
 
 历史记录按消息身份聚合尚未完成的文本和思考；完整消息同时校正内存投影并写入 transcript。取消、失败及回合定稿会保存剩余增量，成员消息保留独立 transcript，已经完成的消息不会在收尾时重复写入。
 
-新 assistant transcript 保留运行时的消息 ID，完成和取消收尾使用相同规则，保证实时显示与历史回放能关联同一条消息上的交互状态；没有消息 ID 的兼容入口仍生成记录 ID，既有历史不改写。
+transcript 保留运行时事件信封，包括 UUID 事件 ID、RunID、TurnID、MessageID、成员与工具归属、会话序号和消息首次出现顺序。`SessionSequence` 由会话记录器分配，重启后从主干及成员记录的最大值继续；展示顺序不依赖墙上时钟或进程级运行序号。完成与取消收尾保留相同的消息和分段身份。Web 展示只接收包含事件信封的新格式，不补造旧记录的身份和顺序。
 
-新 transcript 的消息正文统一保存在 `message` 中，直接使用领域 `Message`，保留同一次模型输出的文本、思考、多模态分段、整组工具调用和供应商元数据。读取旧记录时在领域归一化边界转换旧的扁平正文；展示字段由规范消息派生，不在新记录中再写一份正文。工具执行事件仍独立记录，长结果继续使用 artifact 引用。
+新 transcript 的消息正文统一保存在 `message` 中，直接使用领域 `Message`，保留同一次模型输出的文本、思考、多模态分段、整组工具调用和供应商元数据。正文和思考的交错顺序使用 `OutputParts` 记录稳定分段 ID、UTF-8 字节范围及工具调用 ID，不重复持久化正文。完整消息校正草稿时同步校正这些范围，后端展示直接取规范消息的对应片段。工具执行事件仍独立记录，长结果继续使用 artifact 引用；工具业务结果在摘要前确定明确状态，空输出可以成功。
 
-历史内存投影保存规范消息副本，`ProjectContextMessages` 优先读取该副本，保持并行工具调用属于同一条 assistant 消息；`ToolCallRecord` 只承担工具展示和旧记录兼容。用户历史附件省略、成员输出隔离、摘要边界和取消提示仍由上下文投影策略决定。未执行完成的工具调用补齐空结果以保持消息配对。读取历史返回深拷贝，展示方和模型调用方都不能修改 recorder 内的消息事实。
+历史内存投影保存规范消息副本，`ProjectContextMessages` 优先读取该副本，保持并行工具调用属于同一条 assistant 消息；`ToolCallRecord` 只承担工具展示和旧记录兼容。用户历史附件省略、成员输出隔离、摘要边界和取消提示仍由上下文投影策略决定。已完整生成但未执行完成的工具调用补齐空结果以保持消息配对；取消时尚未生成完整参数的调用标为 `Incomplete`，保留展示草稿但不进入模型上下文。读取历史返回深拷贝，展示方和模型调用方都不能修改 recorder 内的消息事实。
 
 模型错误会同时通过事件与返回值传递，不能只发错误事件后返回成功。取消和审批失败也进入用例收尾路径。事件接收器返回错误时取消执行并保留原始错误。
 
@@ -136,6 +136,7 @@ SDK 中间件使用显式绑定运行时的句柄，适配器校验 backend 与�
 | --- | --- |
 | 会话标题、收藏、当前角色等 metadata | session store/service |
 | 可恢复的聊天记录 | history transcript |
+| 消息分段、成员归属、工具与交互展示状态 | `app/chat/presentation` |
 | 当前模型与工具执行、中断恢复 | 当前运行的 AgentKit 会话 |
 | 待处理 steering、follow-up 与顺序 | `app/chat/taskstream` |
 | 长期记忆 | memory service/store |
@@ -153,7 +154,9 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 模型观察 / AgentKit 工具事件
     → domain/event.Event
     → app 事件管线：session、turn、sequence、history
-    → transcript / transport DTO
+    → transcript 原始信封及规范消息
+    → app/chat/presentation → Web 展示快照与更新
+    → 其他 transport DTO
 ```
 
 库的公共事件没有工具参数分片、产品消息 ID 和完整的多模态输出字段，所以适配器观察同一次模型响应以补齐这些信息，完整消息在产品中间件修复完成后发布；它不负责执行工具或推动模型循环。工具参数第一次出现就确定调用 ID，SDK 执行、`message_delta(tool_args)`、`message_end.tool_calls[]` 和 `tool_start/update/end` 使用相同的 `tool_call_ref`。
@@ -162,7 +165,11 @@ AgentKit 的会话持久化和内置消息队列不与现有产品状态并行�
 
 消息与多模态分段也保留各自的 `Extra`；历史用量与事件共用同一份领域类型，读取时直接复制完整用量载荷。会话分享关闭工具详情时，同时清除规范消息里的工具参数、结果、供应商元数据以及外置结果的摘要和引用，避免通过新载荷绕过分享策略。
 
-增量进入领域协议后统一使用 `Content`，不增加第二个 Delta 字段。UI DTO、历史投影和运行事实保持分层；显示需求不能改变持久化事实模型。
+增量进入领域协议后统一使用 `Content`，不增加第二个 Delta 字段。UI DTO、历史投影和运行事实保持分层；展示内容由运行事实派生。
+
+`app/chat/presentation.Projector` 是 Web 会话展示的唯一生成者。实时事件与 transcript 恢复都经过同一投影器，产生有明确 ID、位置、分段顺序和状态的 `Snapshot` 与 `Update`；SSE、WebSocket、同步 HTTP、会话历史和分享复用该契约。问答与审批的 `active` 由所属运行决定，运行结束后不能因开启下一轮而重新激活。成员内容嵌入所属工具节点，前端无需推测归属。
+
+任务流在同一锁内应用运行事实、发布展示更新并推进传输游标，快照在同一锁内读取 `view` 与 `next_offset`。订阅从该游标继续，不再分页拼接展示历史；缓存窗口过期时重新读取完整快照，整个任务缓存过期后从已提交 transcript 恢复。结束帧 `processing_end` 包含明确的 `completed/error/cancelled` 状态，并以已提交 transcript 生成的展示快照定稿。原始错误事件用于报告错误，客户端只在结束帧或权威终态快照到达后结束订阅，避免漏掉最后一段正文。
 
 ## 组合、配置与持久化
 
@@ -199,7 +206,7 @@ Web 的 `/assistant` 路由映射至固定会话；入口与“新建会话”�
 
 常驻助手消息中的 `openui-lang` 围栏由按需加载的 OpenUI Renderer 渲染，组件定义同时生成 Go 嵌入的提示词。UI 源码沿用消息 `Content` 和 transcript，表单操作作为普通用户消息通过共用提交函数进入现有聊天或 follow-up 队列；不建立第二套运行时、历史或审批通道。已提交字段从用户消息恢复，未提交草稿仅存于当前界面。组件和操作边界见 [助手交互界面](assistant-ui.md)。
 
-聊天的 `timeline.ts` 负责事件去重与展示投影，`MessageList.tsx` 负责组件渲染。配置的 `configModel.ts` 负责默认值、合并和保存格式；智能体编辑、集成编辑和共用字段按职责放在少量组件文件中。SSE、快照和历史回放共用 `decodeChatEvent(s)`，未知事件类型在 API 边界过滤，应用事件类型不再用 `| string` 扩宽。
+聊天的 `timeline.ts` 只保留展示辅助函数，`MessageList.tsx` 与分享页共用 `ConversationItems` 渲染后端节点。前端只根据服务端的 ID、位置和分段键应用替换或追加，不重建事件时序、不解析工具响应推断成败，也不从工具参数恢复问答。配置的 `configModel.ts` 负责默认值、合并和保存格式；智能体编辑、集成编辑和共用字段按职责放在少量组件文件中。SSE 事件使用 `decodeChatEvent(s)`，所有展示快照与更新由 `types/presentation.ts` 统一校验；未知事件类型在 API 边界过滤，应用事件类型不再用 `| string` 扩宽。
 
 ## 扩展点
 
@@ -226,4 +233,6 @@ Web 的 `/assistant` 路由映射至固定会话；入口与“新建会话”�
 
 ### 前端协议边界
 
-`web/src/types/events.ts` 用同一份字段声明生成按 `type` 区分的类型与运行时校验。工具调用、队列项、附件及数值序号在进入 store 之前验证，历史兼容字段也只在此处归一化；投影代码不再解析旧字段。SSE、任务快照、会话历史和分享历史共用 decoder，队列接口共用队列校验。Go handler 的协议样本保存于 `web/src/types/testdata/chat-events.json`，Go 测试防止后端输出悄然变化，Bun 测试验证所有事件类型和历史投影都能被解析。
+`web/src/types/events.ts` 用同一份字段声明生成按 `type` 区分的类型与运行时校验。工具调用、队列项、附件及数值序号在进入 store 之前验证，队列接口共用队列校验。`types/presentation.ts` 校验展示快照、节点更新及分段追加；缺少展示快照时拒绝响应，不回退到前端推导。前台每次重连都先取后端快照及游标，既恢复内容，也确认任务是否已经结束。
+
+Go handler 的原始事件协议样本保存于 `web/src/types/testdata/chat-events.json`；展示协议样本 `chat-view.json` 同时保存每一帧的更新和后端快照。Go 测试防止协议悄然变化，Bun 测试逐帧应用更新并与对应后端快照比较，覆盖思考与正文交错、最终正文改写、并行工具、成员问答和审批。后端另验证实时、落盘重放、进程重启、取消草稿、快照游标边界和并发发布的一致性。

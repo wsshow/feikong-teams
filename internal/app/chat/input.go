@@ -274,6 +274,9 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 		}
 		sourceMessages[event.RunID+"\x00"+event.MessageID] = true
 		for _, call := range event.Message.ToolCalls {
+			if event.Incomplete {
+				continue
+			}
 			sourceCalls[call.ID] = true
 		}
 	}
@@ -317,6 +320,9 @@ func agentMessageToCoreMessages(msg domainhistory.AgentMessage, messageIndex int
 			flushText()
 			flushPendingCalls()
 			source := event.Message.Clone()
+			if event.Incomplete {
+				source.ToolCalls = nil
+			}
 			if source.DisplayText() != "" || len(source.ContentParts) > 0 || len(source.ToolCalls) > 0 {
 				messages = append(messages, source)
 				pendingCalls = source.ToolCalls

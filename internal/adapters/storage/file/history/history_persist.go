@@ -51,6 +51,21 @@ func (h *HistoryRecorder) LoadFromFile(filePath string) error {
 		return err
 	}
 	h.persistErr = nil
+	records, err := LoadSessionTranscriptRecords(h.sessionDir, h.Documents)
+	if err != nil {
+		return err
+	}
+	h.messageOrders = map[string]int64{}
+	for _, record := range records {
+		if e := record.Event.Envelope; e != nil {
+			if e.SessionSequence > h.nextSequence {
+				h.nextSequence = e.SessionSequence
+			}
+			if e.MessageID != "" && e.MessageOrder > 0 {
+				h.messageOrders[e.MessageID] = e.MessageOrder
+			}
+		}
+	}
 	messages, err := projectTranscriptEvents(h.sessionDir, events, h.Documents)
 	if err != nil {
 		return err
@@ -88,12 +103,11 @@ func LoadSessionTranscriptRecords(sessionDir string, stores ...storageport.Docum
 	}
 	records = append(records, subagentRecords...)
 	sort.SliceStable(records, func(i, j int) bool {
-		left := records[i].Event.At
-		right := records[j].Event.At
-		if left.IsZero() || right.IsZero() {
+		left, right := records[i].Event.Envelope, records[j].Event.Envelope
+		if left == nil || right == nil {
 			return false
 		}
-		return left.Before(right)
+		return left.SessionSequence < right.SessionSequence
 	})
 	return records, nil
 }
@@ -161,7 +175,7 @@ func projectTranscriptEvents(sessionDir string, events []TranscriptEvent, stores
 			})
 		case TranscriptAgentStep, TranscriptAssistantMessage:
 			msg := ensure(event.Agent, ts)
-			msg.Events = append(msg.Events, assistantMessageEvents(MessageEvent{CreatedAt: ts, TurnID: turnID, MessageID: messageID}, *event.Message, event.Usage)...)
+			msg.Events = append(msg.Events, assistantMessageEvents(MessageEvent{CreatedAt: ts, TurnID: turnID, MessageID: messageID, Incomplete: event.Envelope != nil && event.Envelope.Incomplete}, *event.Message, event.Usage)...)
 		case TranscriptToolCallStart:
 			msg := ensure(event.Agent, ts)
 			record := transcriptToolCallRecord(event, "")
@@ -292,7 +306,7 @@ func projectSubagentTranscript(events []TranscriptEvent, metadata SubagentMetada
 		msg.EndTime = ts
 		switch event.Type {
 		case TranscriptAgentStep, TranscriptAssistantMessage:
-			msg.Events = append(msg.Events, assistantMessageEvents(MessageEvent{CreatedAt: ts, TurnID: turnID, MessageID: messageID}, *event.Message, event.Usage)...)
+			msg.Events = append(msg.Events, assistantMessageEvents(MessageEvent{CreatedAt: ts, TurnID: turnID, MessageID: messageID, Incomplete: event.Envelope != nil && event.Envelope.Incomplete}, *event.Message, event.Usage)...)
 		case TranscriptToolCallStart:
 			record := transcriptToolCallRecord(event, "")
 			record.Status = "running"

@@ -67,6 +67,7 @@ type modelObservation struct {
 	meta      events.MessageEvent
 	scope     MemberScope
 	calls     map[int]domainmessage.ToolCall
+	layout    domainmessage.OutputLayout
 }
 
 func (m *observedModel) start() (*modelObservation, error) {
@@ -79,7 +80,9 @@ func (m *observedModel) start() (*modelObservation, error) {
 	m.current = o
 	event := events.AssistantStarted(o.meta)
 	o.scope.apply(&event, c)
-	return o, c.emitLocked(event)
+	err := c.emitLocked(event)
+	o.meta.MessageOrder = c.emitter.LastEvent().Sequence
+	return o, err
 }
 
 func (o *modelObservation) chunk(chunk *schema.Message) (*schema.Message, error) {
@@ -101,6 +104,17 @@ func (o *modelObservation) chunk(chunk *schema.Message) (*schema.Message, error)
 			meta.ToolCallID, meta.ToolCallRef, meta.ToolName = call.ID, "tool_call:"+call.ID, call.Function.Name
 		}
 		event := events.AssistantDelta(meta, content)
+		event.MessageOrder = o.meta.MessageOrder
+		partType := "text"
+		if kind == domainevent.DeltaReasoning {
+			partType = "reasoning"
+		}
+		callID := ""
+		if call != nil {
+			partType, callID = "tool", call.ID
+		}
+		part := o.layout.Append(o.meta.MessageID, partType, content, callID)
+		event.BlockID = part.ID
 		if call != nil {
 			event.ToolCallIndex = call.Index
 		}
@@ -179,6 +193,7 @@ func (o *modelObservation) finishLocked(output *schema.Message) error {
 	meta := o.meta
 	meta.Message, meta.Content, meta.ReasoningContent = &message, message.Content, message.ReasoningContent
 	meta.ToolCalls, meta.ToolCallRefs = message.ToolCalls, c.identities.refsFor(message.ToolCalls)
+	meta.OutputParts = o.layout.Complete(meta.MessageID, message)
 	end := events.AssistantCompleted(meta)
 	if output.ResponseMeta != nil && output.ResponseMeta.Usage != nil {
 		usage := output.ResponseMeta.Usage
@@ -198,6 +213,8 @@ func (o *modelObservation) finishLocked(output *schema.Message) error {
 		}
 		c.identities.rememberResult(tc.Function.Name, tc.ID, o.scope)
 		start := events.ToolCallStarted(events.ToolEvent{AgentName: meta.AgentName, ToolCallID: tc.ID, ToolCallRef: "tool_call:" + tc.ID, ToolName: tc.Function.Name, ToolArgs: tc.Function.Arguments, ToolCall: &tc, ToolCallIndex: tc.Index})
+		start.MessageID, start.MessageOrder = meta.MessageID, meta.MessageOrder
+		c.identities.ownersByID[tc.ID] = meta.MessageID
 		o.scope.apply(&start, c)
 		if err := c.emitLocked(start); err != nil {
 			return err

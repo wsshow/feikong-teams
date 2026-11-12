@@ -3,19 +3,18 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fkteams/internal/runtime/events"
 	"fkteams/internal/runtime/log"
+	"os"
 	"sync"
 	"time"
 
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/adapters/transport/http/origin"
-	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/app/appstate"
-	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
-	runtimeport "fkteams/internal/ports/runtime"
-	"fkteams/internal/runtime/events"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -176,8 +175,6 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 					_ = writeJSON(errorEventPayload(sid, "no running task for this session"))
 					continue
 				}
-				runID, _ := stream.CurrentTurn()
-				stream.Publish(cancelledEventPayload(sid, runID, "任务已取消"))
 				_ = writeJSON(map[string]any{"type": "cancellation_requested", "session_id": sid, "message": "取消请求已发送"})
 
 			case "approval":
@@ -204,88 +201,6 @@ func (rt *Runtime) WebSocketHandlerWithState(state *appstate.State) gin.HandlerF
 				_ = writeJSON(errorEventPayload("", "unknown message type"))
 			}
 		}
-	}
-}
-
-// --- WebSocket HITL 中断处理器 ---
-
-// buildInterruptHandler 构建 WebSocket 聊天的 HITL 中断处理器
-func buildInterruptHandler(recorder *eventlog.HistoryRecorder, sessionID string, publish func(taskstream.Event) error, stream *taskstream.Stream) runtimeport.InterruptHandler {
-	channelHandler := appchat.ChannelInterruptHandler(stream.InterruptCh())
-	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
-		// 检查是否为 ask_questions 中断
-		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
-			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)
-			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
-
-			info := askInterrupt.Info
-			askID := askInterrupt.ID
-			memberEvent := askInterrupt.Event
-			askEvent := askRequestedEvent(memberEvent, askID, info)
-			askEvent = events.NormalizeEvent(askEvent)
-			recorder.RecordEvent(askEvent)
-			_ = publish(standardEventPayload(sessionID, askEvent, nil))
-
-			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
-
-			if err == nil {
-				answerEvent := askAnsweredEvent(memberEvent, askID, askResponseFromResult(askID, result), askResponseText(result))
-				answerEvent = events.NormalizeEvent(answerEvent)
-				recorder.RecordEvent(answerEvent)
-			}
-			return result, err
-		}
-
-		// 默认审批流程
-		msg := extractInterruptMessage(interrupts)
-
-		stream.BeginInterrupt(taskstream.InterruptApproval)
-		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
-
-		runID, turnID := stream.CurrentTurn()
-		approvalEvent := events.NormalizeEvent(events.Event{
-			Type:    events.EventApprovalRequested,
-			RunID:   runID,
-			TurnID:  turnID,
-			Content: msg,
-			Approval: &events.ApprovalPayload{
-				Message: msg,
-			},
-		})
-		recorder.RecordEvent(approvalEvent)
-		payload := standardEventPayload(sessionID, approvalEvent, nil)
-		payload["message"] = msg
-		_ = publish(payload)
-
-		result, err := channelHandler(ctx, interrupts)
-
-		if err == nil {
-			if text := approvalDecisionText(result); text != "" {
-				recorder.RecordEvent(events.NormalizeEvent(events.Event{
-					Type:    events.EventApprovalAnswered,
-					RunID:   runID,
-					TurnID:  turnID,
-					Content: text,
-					Approval: &events.ApprovalPayload{
-						Decision: text,
-					},
-				}))
-			}
-		}
-
-		return result, err
-	}
-}
-
-// --- WebSocket 事件回调 ---
-
-// wsEventCallbackBuffered 构建支持断线缓冲的事件发布回调。
-func wsEventCallbackBuffered(sessionID string, stream *taskstream.Stream, resolver toolmeta.Resolver) func(events.Event) error {
-	return func(event events.Event) error {
-		data := convertEventToMapWithResolver(event, resolver)
-		data["session_id"] = sessionID
-		stream.Publish(taskstream.Event(data))
-		return nil
 	}
 }
 
@@ -360,14 +275,24 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	r, err := rt.resolveRunner(taskCtx, mode, wsMsg.AgentName)
 	if err != nil {
 		log.Printf("failed to resolve runner: session=%s, err=%v", sessionID, err)
-		stream.SetStatus("error")
-		stream.Publish(errorEventPayload(sessionID, err.Error()))
+		publishStreamFailure(stream, sessionID, err.Error())
 		return
 	}
 
 	// 构建输入消息
 	recorder, releaseRecorder := rt.acquireRecorder(sessionID)
 	defer releaseRecorder()
+	records, viewErr := eventlog.LoadSessionTranscriptRecords(rt.sessionDirPath(sessionID), rt.Documents)
+	if viewErr != nil && !errors.Is(viewErr, os.ErrNotExist) {
+		publishStreamFailure(stream, sessionID, "failed to load conversation")
+		return
+	}
+	projector, viewErr := rt.transcriptPresentation(sessionID, records)
+	if viewErr != nil {
+		publishStreamFailure(stream, sessionID, "failed to project conversation")
+		return
+	}
+	stream.SetPresentation(projector)
 	manager := memoryFromState(state)
 	turnInput, userDisplayText := buildChatInput(recorder, wsMsg.Message, wsMsg.Contents, manager)
 	currentRunID := newTurnRunID(sessionID)
@@ -375,8 +300,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	stream.SetTurn(currentRunID, currentTurnID)
 
 	if err := rt.updateSessionExecutionMetadata(sessionID, userDisplayText, mode, wsMsg.AgentName); err != nil {
-		stream.SetStatus("error")
-		stream.Publish(errorEventPayload(sessionID, err.Error()))
+		publishStreamFailure(stream, sessionID, err.Error())
 		return
 	}
 	stream.Publish(standardMessageEventPayload(sessionID, currentRunID, currentTurnID, "开始处理您的请求..."))

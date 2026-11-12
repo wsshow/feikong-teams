@@ -103,7 +103,7 @@ func TestRunnerEmitsErrorAndClosesLifecycleOnModelError(t *testing.T) {
 		return event.Type == domainevent.TypeError && strings.Contains(event.Error, "model boom")
 	}, "model error")
 	turnEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
-		return event.Type == domainevent.TypeTurnCompleted
+		return event.Type == domainevent.TypeTurnFailed
 	}, "turn end after error")
 	agentEndIdx := requireEventIndex(t, got, func(event domainevent.Event) bool {
 		return event.Type == domainevent.TypeAgentCompleted

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fkteams/internal/app/appstate"
 	"fkteams/internal/domain/session"
 
@@ -11,8 +12,8 @@ import (
 
 // SessionHistory 描述聊天用例需要编排的历史记录能力。
 type SessionHistory interface {
+	RecordAndEmit(event.Event, func(event.Event) error) error
 	FinalizeCurrent()
-	RecordEvent(event.Event)
 	RecordCancelled(message string)
 	Flush() error
 }
@@ -107,18 +108,19 @@ func cancellationOnly(err error) bool {
 	}
 }
 
-func finishHistory(history SessionHistory, runErr error) error {
+func finishHistory(history SessionHistory, runErr error, runID string) error {
 	if history == nil {
 		return nil
 	}
+	var recordErr error
 	switch CompletionStatus(runErr) {
 	case session.StatusCancelled:
 		history.RecordCancelled("任务已取消")
 	case session.StatusError:
-		history.RecordEvent(event.Event{Type: event.TypeError, Content: runErr.Error(), Error: runErr.Error()})
+		recordErr = history.RecordAndEmit(event.Event{Type: event.TypeError, RunID: runID, Content: runErr.Error(), Error: runErr.Error()}, nil)
 	}
 	history.FinalizeCurrent()
-	return history.Flush()
+	return errors.Join(recordErr, history.Flush())
 }
 
 // NewSessionLifecycle 使用显式元数据存储创建会话收尾用例。

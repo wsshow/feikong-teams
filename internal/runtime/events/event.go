@@ -5,7 +5,7 @@ import (
 	"context"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
-	"fmt"
+	"github.com/google/uuid"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -45,7 +45,7 @@ func NormalizeEvent(event Event) Event {
 		event.Sequence = atomic.AddInt64(&globalEventSequence, 1)
 	}
 	if event.EventID == "" {
-		event.EventID = fmt.Sprintf("evt_%d", event.Sequence)
+		event.EventID = "evt_" + uuid.NewString()
 	}
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()

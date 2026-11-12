@@ -64,8 +64,8 @@ describe("event protocol boundary", () => {
       expect(part.extra).toEqual({ provider: "part-metadata" });
     }
     const usage = decoded.filter((event) => event.usage?.cache_write_tokens !== undefined);
-    expect(usage.length).toBe(4);
-    expect(usage.map((event) => event.usage?.cache_write_tokens)).toEqual([1, 1, 2, 2]);
+    expect(usage.length).toBe(3);
+    expect(usage.map((event) => event.usage?.cache_write_tokens)).toEqual([1, 1, 2]);
     for (const kind of ["image_url", "audio_url", "video_url", "file_url"]) {
       expect(decodeChatEvent({ type: "user_message", content_parts: [{ type: kind, file_id: "files/media" }] })).toBeDefined();
     }

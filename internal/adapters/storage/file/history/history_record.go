@@ -269,18 +269,20 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 		ts = time.Now()
 	}
 	base := TranscriptEvent{
-		At:    ts,
-		Agent: agent,
+		At:       ts,
+		Agent:    agent,
+		Envelope: transcriptEnvelope(event),
 	}
 
 	switch event.Type {
 	case events.EventUserMessage:
 		msg := messageFromEvent(event, message.RoleUser)
 		base.Type = TranscriptUserMessage
+		base.ID = event.MessageID
 		base.Agent = ""
 		base.Message = &msg
 		h.appendTranscriptEvent(base, target)
-	case events.EventAssistantReasoning, events.EventAssistantText:
+	case events.EventAssistantReasoning, events.EventAssistantText, events.EventToolCallArguments:
 		h.bufferAssistantMessage(event)
 		return
 	case events.EventAssistantCompleted:
@@ -288,8 +290,16 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 			return
 		}
 		ctx := h.ensureMessageContext(event)
-		delete(ctx.pendingAssistant, assistantMessageKey{event.RunID, event.MessageID})
 		msg := messageFromEvent(event, message.RoleAssistant)
+		if pending, ok := ctx.pendingAssistant[assistantMessageKey{event.RunID, event.MessageID}]; ok {
+			if len(base.Envelope.OutputParts) == 0 {
+				base.Envelope.OutputParts = pending.layout.Complete(event.MessageID, msg)
+			}
+			if base.Envelope.MessageOrder == 0 {
+				base.Envelope.MessageOrder = pending.event.MessageOrder
+			}
+		}
+		delete(ctx.pendingAssistant, assistantMessageKey{event.RunID, event.MessageID})
 		base.Usage = usageRecordFromEvent(event)
 		if msg.Content == "" && msg.ReasoningContent == "" && len(msg.ContentParts) == 0 && len(msg.ToolCalls) == 0 && len(msg.Extra) == 0 && base.Usage == nil {
 			return
@@ -326,7 +336,7 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 				h.rememberAgentToolCall(pending)
 			}
 		}
-	case EventToolCallCompleted:
+	case EventToolCallCompleted, events.EventToolCallFailed:
 		content := toolResultContentFromEvent(event)
 		if events.IsInternalContinueContent(content) {
 			return
@@ -383,6 +393,10 @@ func (h *HistoryRecorder) recordTranscript(event Event) {
 	case events.EventCancelled:
 		base.Type = TranscriptCancelled
 		base.Content = event.Content
+		h.appendTranscriptEvent(base, target)
+	case events.EventAssistantStarted, events.EventApprovalRequested, events.EventApprovalAnswered, events.EventTurnStarted, events.EventTurnCompleted, events.EventTurnFailed, events.EventTurnCancelled, events.EventMemberStarted, events.EventMemberCompleted, events.EventAgentCompleted, events.EventProcessingEnd:
+		base.Type = TranscriptRuntime
+		base.Envelope = cloneRuntimeEvent(event)
 		h.appendTranscriptEvent(base, target)
 	}
 }
@@ -442,10 +456,29 @@ func (h *HistoryRecorder) bufferAssistantMessage(event Event) {
 		pending.event.Message = nil
 		ctx.assistantOrder = append(ctx.assistantOrder, key)
 	}
-	if event.Type == events.EventAssistantReasoning {
-		pending.event.ReasoningContent += event.Content
+	if event.Type == events.EventToolCallArguments {
+		pending.layout.Append(event.MessageID, "tool", "", event.ToolCallID)
+		index := -1
+		for i, call := range pending.event.ToolCalls {
+			if call.ID == event.ToolCallID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			pending.event.ToolCalls = append(pending.event.ToolCalls, message.ToolCall{ID: event.ToolCallID, Index: event.ToolCallIndex, Function: message.FunctionCall{Name: event.ToolName}})
+			index = len(pending.event.ToolCalls) - 1
+		}
+		pending.event.ToolCalls[index].Function.Arguments += event.Content
+	} else if event.Type == events.EventAssistantReasoning {
+		pending.layout.Append(event.MessageID, "reasoning", event.Content, "")
+		pending.event.ReasoningContent = pending.layout.Reasoning
 	} else {
-		pending.event.Content += event.Content
+		pending.layout.Append(event.MessageID, "text", event.Content, "")
+		pending.event.Content = pending.layout.Text
+	}
+	if event.Type != events.EventToolCallArguments && event.BlockID != "" && len(pending.layout.Parts) > 0 {
+		pending.layout.Parts[len(pending.layout.Parts)-1].ID = event.BlockID
 	}
 	ctx.pendingAssistant[key] = pending
 }
@@ -453,9 +486,14 @@ func (h *HistoryRecorder) bufferAssistantMessage(event Event) {
 func (h *HistoryRecorder) flushAssistantMessages(ctx *activeMessageContext) {
 	for _, key := range ctx.assistantOrder {
 		if pending, ok := ctx.pendingAssistant[key]; ok {
-			if pending.firstEvent >= 0 && pending.firstEvent < len(ctx.msg.Events) {
-				msg := messageFromEvent(pending.event, message.RoleAssistant)
+			pending.event.Incomplete = true
+			pending.event.OutputParts = pending.layout.Complete(pending.event.MessageID, messageFromEvent(pending.event, message.RoleAssistant))
+			msg := messageFromEvent(pending.event, message.RoleAssistant)
+			if pending.firstEvent >= 0 && pending.firstEvent < len(ctx.msg.Events) && (ctx.msg.Events[pending.firstEvent].Type == MsgTypeText || ctx.msg.Events[pending.firstEvent].Type == MsgTypeReasoning) {
 				ctx.msg.Events[pending.firstEvent].Message = &msg
+				ctx.msg.Events[pending.firstEvent].Incomplete = true
+			} else {
+				h.completeAssistantMessage(pending.event)
 			}
 			h.recordTranscript(pending.event)
 		}
@@ -482,7 +520,7 @@ func (h *HistoryRecorder) completeAssistantMessage(event Event) {
 			continue
 		}
 		positions[i] = len(updated)
-		if evt.RunID == event.RunID && evt.MessageID == event.MessageID && (evt.Type == MsgTypeText || evt.Type == MsgTypeReasoning || evt.Type == MsgTypeUsageReported) {
+		if evt.RunID == event.RunID && evt.MessageID == event.MessageID && (evt.Type == MsgTypeText || evt.Type == MsgTypeReasoning || (evt.Type == MsgTypeUsageReported && usageRecordFromEvent(event) != nil)) {
 			continue
 		}
 		updated = append(updated, evt)
@@ -555,6 +593,8 @@ func (h *HistoryRecorder) RecordEvent(event Event) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	event = h.sequenceEventLocked(event)
 
 	if event.Type == events.EventUserMessage {
 		h.finalizeAllActiveMessages()

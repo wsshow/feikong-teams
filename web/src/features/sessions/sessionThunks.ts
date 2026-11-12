@@ -23,7 +23,7 @@ export const renameAssistant = createAsyncThunk("sessions/renameAssistant", asyn
 export const clearAssistant = createAsyncThunk<void, void, { state: RootState }>("sessions/clearAssistant", async (_, { dispatch, getState }) => {
   await clearAssistantContext();
   if (getState().chat.activeSessionID === assistantSessionID) {
-    dispatch(chatActions.setSessionDetail({ session_id: assistantSessionID, mode: "team", current_agent: assistantAgentID, events: [], queue: [] }));
+    dispatch(chatActions.setSessionDetail({ session_id: assistantSessionID, mode: "team", current_agent: assistantAgentID, view: { items: [] }, queue: [] }));
   }
   dispatch(sessionsActions.updateSessionRuntime({ sessionID: assistantSessionID, activeTask: false }));
 });

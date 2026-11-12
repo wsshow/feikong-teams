@@ -11,6 +11,8 @@ package taskstream
 import (
 	"encoding/json"
 	"errors"
+	"fkteams/internal/app/chat/presentation"
+	domainevent "fkteams/internal/domain/event"
 	"fmt"
 	"sort"
 	"sync"
@@ -188,8 +190,10 @@ type StreamConfig struct {
 // Stream 代表单个任务的事件流，是事件投递的核心抽象。
 // 同时支持 Push（Subscriber）和 Pull（Watcher + EventsSince）两种消费方式。
 type Stream struct {
-	mu     sync.Mutex
-	config StreamConfig
+	mu               sync.Mutex
+	presentation     *presentation.Projector
+	presentationDone bool
+	config           StreamConfig
 
 	// 有界事件日志（带递增 ID，支持窗口内断点续传）
 	events         []IndexedEvent
@@ -227,6 +231,68 @@ type Stream struct {
 
 // Publish 发布事件到流。有订阅者时推送，同时写入日志，通知所有监听者。
 func (s *Stream) Publish(event Event) {
+	s.publish(event, nil, nil)
+}
+
+// PublishRuntime 将运行事实、展示更新和续传游标在同一临界区内发布。
+func (s *Stream) PublishRuntime(event domainevent.Event, payload Event) {
+	s.publish(payload, &event, nil)
+}
+
+// SetPresentation 在任务开始前注入从同一份历史事实恢复的投影器。
+func (s *Stream) SetPresentation(projector *presentation.Projector) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.presentation = projector
+}
+
+// PresentationState 在同一锁下读取展示、队列、状态及续传边界。
+type PresentationState struct {
+	View       presentation.Snapshot
+	NextOffset uint64
+	Status     string
+	Queue      []QueuedMessage
+	CreatedAt  time.Time
+	FinishedAt time.Time
+}
+
+// ConversationSnapshot 返回可以直接交给客户端的原子快照。
+func (s *Stream) ConversationSnapshot() PresentationState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	view := presentation.Snapshot{Items: []presentation.Item{}}
+	if s.presentation != nil {
+		view = s.presentation.Snapshot()
+	}
+	status := s.status
+	if !s.done && !s.presentationDone {
+		status = "processing"
+	}
+	return PresentationState{View: view, NextOffset: s.nextID, Status: status, Queue: s.queue.QueueSnapshot(), CreatedAt: s.createdAt, FinishedAt: s.doneAt}
+}
+
+// PresentationSnapshot 返回同一版本的展示和游标。
+func (s *Stream) PresentationSnapshot() (presentation.Snapshot, uint64) {
+	state := s.ConversationSnapshot()
+	return state.View, state.NextOffset
+}
+
+// ClientStatus 在权威展示已发布后才向客户端报告任务终态。
+func (s *Stream) ClientStatus() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.done && !s.presentationDone {
+		return "processing"
+	}
+	return s.status
+}
+
+// PublishPresentation 在收尾完成后发布从已提交事实重建的权威快照。
+func (s *Stream) PublishPresentation(projector *presentation.Projector, payload Event) {
+	s.publish(payload, nil, projector)
+}
+
+func (s *Stream) publish(event Event, runtimeEvent *domainevent.Event, replacement *presentation.Projector) {
 	s.mu.Lock()
 	if s.done {
 		s.mu.Unlock()
@@ -237,6 +303,20 @@ func (s *Stream) Publish(event Event) {
 	id := s.nextID
 	s.nextID++
 	storedEvent := cloneEvent(event)
+	if event["type"] == domainevent.TypeProcessingEnd {
+		s.presentationDone = true
+	}
+	if replacement != nil {
+		s.presentation = replacement
+		snapshot := replacement.Snapshot()
+		storedEvent["view_update"] = presentation.Update{Reset: &snapshot}
+	}
+	if runtimeEvent != nil {
+		if s.presentation == nil {
+			s.presentation = presentation.New(s.config.SessionID)
+		}
+		storedEvent["view_update"] = s.presentation.Apply(*runtimeEvent)
+	}
 	storedEvent["stream_event_id"] = id
 	s.retainEventLocked(IndexedEvent{ID: id, Data: storedEvent})
 
@@ -491,6 +571,9 @@ func estimateEventValueSize(value any) int {
 	switch typed := value.(type) {
 	case nil:
 		return 0
+	case presentation.Update:
+		data, _ := json.Marshal(typed)
+		return len(data)
 	case string:
 		return len(typed)
 	case []byte:
@@ -530,9 +613,16 @@ func cloneIndexedEvents(events []IndexedEvent) []IndexedEvent {
 }
 
 func cloneEvent(event Event) Event {
-	cloned := make(Event, len(event)+1)
-	for key, value := range event {
-		cloned[key] = value
+	cloned := Event(domainmessage.CloneMetadata(map[string]any(event)))
+	if update, ok := event["view_update"].(presentation.Update); ok {
+		update.Remove = append([]string(nil), update.Remove...)
+		update.Items = (presentation.Snapshot{Items: update.Items}).Clone().Items
+		update.Appends = append([]presentation.Append(nil), update.Appends...)
+		if update.Reset != nil {
+			snapshot := update.Reset.Clone()
+			update.Reset = &snapshot
+		}
+		cloned["view_update"] = update
 	}
 	return cloned
 }

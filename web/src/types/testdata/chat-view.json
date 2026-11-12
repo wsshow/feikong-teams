@@ -1,0 +1,3313 @@
+{
+  "frames": [
+    {
+      "update": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "remove": [
+          "parent"
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "",
+                "createdAt": "2026-11-12T00:00:01Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "think",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "",
+                "createdAt": "2026-11-12T00:00:01Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "think",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "appends": [
+          {
+            "message_id": "parent",
+            "type": "reasoning",
+            "item_id": "parent",
+            "key": "parent:thinking",
+            "content": "ing"
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "",
+                "createdAt": "2026-11-12T00:00:01Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "draft",
+                "createdAt": "2026-11-12T00:00:01Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking",
+                  "streaming": true
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "draft",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "draft",
+                "createdAt": "2026-11-12T00:00:01Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking",
+                  "streaming": true
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "draft",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "appends": [
+          {
+            "message_id": "parent",
+            "type": "text",
+            "item_id": "parent",
+            "key": "parent:plan",
+            "content": " plan"
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "draft plan",
+                "createdAt": "2026-11-12T00:00:01Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking",
+                  "streaming": true
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "draft plan",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": []
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": []
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child",
+                        "streaming": true
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child",
+                        "streaming": true
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "appends": [
+          {
+            "message_id": "child",
+            "type": "text",
+            "item_id": "parent",
+            "key": "child:text",
+            "content": " draft"
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child draft",
+                        "streaming": true
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child draft",
+                        "streaming": true
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": true,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [],
+                          "freeText": "",
+                          "answered": false,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child draft",
+                        "streaming": true
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": true,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [],
+                          "freeText": "",
+                          "answered": false,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child draft",
+                        "streaming": true
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child draft",
+                        "streaming": true
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": false,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "status": "pending",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": true,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": false
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": true,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "remove": [
+          "discarded"
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 3,
+            "id": "ask:during-draft",
+            "kind": "ask",
+            "order": 19,
+            "ask": {
+              "active": true,
+              "run_id": "run",
+              "id": "during-draft",
+              "sessionID": "contract",
+              "question": "continue?",
+              "options": [],
+              "multiSelect": false,
+              "selected": [],
+              "freeText": "",
+              "answered": false
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          },
+          {
+            "index": 3,
+            "id": "ask:during-draft",
+            "kind": "ask",
+            "order": 19,
+            "ask": {
+              "active": true,
+              "run_id": "run",
+              "id": "during-draft",
+              "sessionID": "contract",
+              "question": "continue?",
+              "options": [],
+              "multiSelect": false,
+              "selected": [],
+              "freeText": "",
+              "answered": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "items": [
+          {
+            "index": 3,
+            "id": "discarded",
+            "kind": "message",
+            "order": 18,
+            "node": {
+              "message": {
+                "id": "discarded",
+                "role": "assistant",
+                "content": "temporary draft",
+                "createdAt": "2026-11-12T00:00:17Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "text",
+                  "key": "discarded:text",
+                  "content": "temporary draft",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 18
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          },
+          {
+            "index": 3,
+            "id": "discarded",
+            "kind": "message",
+            "order": 18,
+            "node": {
+              "message": {
+                "id": "discarded",
+                "role": "assistant",
+                "content": "temporary draft",
+                "createdAt": "2026-11-12T00:00:17Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "text",
+                  "key": "discarded:text",
+                  "content": "temporary draft",
+                  "streaming": true
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 18
+            }
+          },
+          {
+            "index": 4,
+            "id": "ask:during-draft",
+            "kind": "ask",
+            "order": 19,
+            "ask": {
+              "active": true,
+              "run_id": "run",
+              "id": "during-draft",
+              "sessionID": "contract",
+              "question": "continue?",
+              "options": [],
+              "multiSelect": false,
+              "selected": [],
+              "freeText": "",
+              "answered": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "remove": [
+          "discarded"
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          },
+          {
+            "index": 3,
+            "id": "ask:during-draft",
+            "kind": "ask",
+            "order": 19,
+            "ask": {
+              "active": true,
+              "run_id": "run",
+              "id": "during-draft",
+              "sessionID": "contract",
+              "question": "continue?",
+              "options": [],
+              "multiSelect": false,
+              "selected": [],
+              "freeText": "",
+              "answered": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "update": {
+        "remove": [
+          "discarded"
+        ],
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 3,
+            "id": "ask:during-draft",
+            "kind": "ask",
+            "order": 19,
+            "ask": {
+              "active": false,
+              "run_id": "run",
+              "id": "during-draft",
+              "sessionID": "contract",
+              "question": "continue?",
+              "options": [],
+              "multiSelect": false,
+              "selected": [],
+              "freeText": "",
+              "answered": false
+            }
+          }
+        ]
+      },
+      "snapshot": {
+        "items": [
+          {
+            "index": 0,
+            "id": "user",
+            "kind": "message",
+            "order": 1,
+            "node": {
+              "message": {
+                "id": "user",
+                "role": "user",
+                "content": "research",
+                "createdAt": "2026-11-12T00:00:00Z",
+                "run_id": "run"
+              },
+              "parts": [],
+              "showAgentLabel": false,
+              "showCopyAction": false,
+              "order": 1
+            }
+          },
+          {
+            "index": 1,
+            "id": "parent",
+            "kind": "message",
+            "order": 2,
+            "node": {
+              "message": {
+                "id": "parent",
+                "role": "assistant",
+                "agent": "assistant",
+                "content": "corrected plan",
+                "createdAt": "2026-11-12T00:00:06Z",
+                "run_id": "run"
+              },
+              "parts": [
+                {
+                  "type": "reasoning",
+                  "key": "parent:thinking",
+                  "content": "thinking"
+                },
+                {
+                  "type": "text",
+                  "key": "parent:plan",
+                  "content": "corrected plan"
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:delegate",
+                  "tool": {
+                    "id": "delegate",
+                    "ref": "tool_call:delegate",
+                    "name": "ask_fkagent_researcher",
+                    "display_name": "ask_fkagent_researcher",
+                    "kind": "tool",
+                    "result": "child final",
+                    "status": "completed",
+                    "message_id": "parent"
+                  },
+                  "member": {
+                    "id": "delegate",
+                    "name": "researcher",
+                    "completed": true,
+                    "toolCount": 0,
+                    "parts": [
+                      {
+                        "type": "text",
+                        "key": "child:text",
+                        "content": "child final"
+                      },
+                      {
+                        "type": "ask",
+                        "key": "ask:question",
+                        "ask": {
+                          "active": false,
+                          "run_id": "run",
+                          "id": "question",
+                          "sessionID": "contract",
+                          "question": "choose",
+                          "options": [
+                            "one",
+                            "two"
+                          ],
+                          "multiSelect": true,
+                          "selected": [
+                            "one"
+                          ],
+                          "freeText": "",
+                          "answered": true,
+                          "memberID": "delegate"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "tool",
+                  "key": "parent:tool:search",
+                  "tool": {
+                    "id": "search",
+                    "ref": "tool_call:search",
+                    "name": "search",
+                    "display_name": "search",
+                    "kind": "tool",
+                    "result": "failed",
+                    "status": "error",
+                    "message_id": "parent"
+                  }
+                }
+              ],
+              "showAgentLabel": true,
+              "showCopyAction": false,
+              "order": 2
+            }
+          },
+          {
+            "index": 2,
+            "id": "approval:approval",
+            "kind": "approval",
+            "order": 16,
+            "approval": {
+              "active": false,
+              "run_id": "run",
+              "id": "approval",
+              "order": 16,
+              "message": "continue?",
+              "answered": true,
+              "decision": "denied"
+            }
+          },
+          {
+            "index": 3,
+            "id": "ask:during-draft",
+            "kind": "ask",
+            "order": 19,
+            "ask": {
+              "active": false,
+              "run_id": "run",
+              "id": "during-draft",
+              "sessionID": "contract",
+              "question": "continue?",
+              "options": [],
+              "multiSelect": false,
+              "selected": [],
+              "freeText": "",
+              "answered": false
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
