@@ -93,6 +93,11 @@
 }
 
 @layer components {
+  .dialog-backdrop {
+    @apply fixed inset-0 z-50 !m-0 flex items-end justify-center bg-foreground/15 backdrop-blur-[1px] sm:items-center sm:p-6;
+    height: var(--app-viewport-height, 100dvh);
+  }
+
   .sketch-surface {
     background:
       linear-gradient(135deg, hsl(42 70% 99% / 0.94), hsl(198 68% 96% / 0.44)),

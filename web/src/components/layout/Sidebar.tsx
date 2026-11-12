@@ -425,7 +425,7 @@ function SessionRenameDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
+      className="dialog-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="session-rename-title"
@@ -433,7 +433,7 @@ function SessionRenameDialog({
         if (event.target === event.currentTarget && !saving) onCancel();
       }}
     >
-      <div className="sketch-surface w-full max-w-md rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
             <Pencil className="h-4 w-4" />
@@ -487,7 +487,7 @@ function SessionDeleteDialog({
   if (!session) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
+      className="dialog-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="session-delete-title"
@@ -495,7 +495,7 @@ function SessionDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface w-full max-w-md rounded-2xl bg-card/95 p-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl sm:pb-5 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)]">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />

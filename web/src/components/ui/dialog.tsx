@@ -42,7 +42,7 @@ export function Dialog({
     <dialog
       ref={dialogRef}
       aria-labelledby={titleID}
-      className="fixed inset-0 !m-0 h-[var(--app-viewport-height,100dvh)] max-h-none w-screen max-w-none border-0 bg-transparent p-3 text-foreground backdrop:bg-foreground/15 backdrop:backdrop-blur-[1px] sm:p-6"
+      className="fixed inset-0 !m-0 h-[var(--app-viewport-height,100dvh)] max-h-none w-screen max-w-none border-0 bg-transparent p-0 text-foreground backdrop:bg-foreground/15 backdrop:backdrop-blur-[1px] sm:p-6"
       onCancel={(event) => {
         if (event.target !== event.currentTarget) return;
         event.preventDefault();
@@ -50,14 +50,14 @@ export function Dialog({
       }}
     >
       <div
-        className="flex h-full items-center justify-center"
+        className="flex h-full items-end justify-center sm:items-center"
         onMouseDown={(event) => {
           if (!closeDisabled && event.target === event.currentTarget) onOpenChange(false);
         }}
       >
         <div
           className={cn(
-            "sketch-surface flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-background shadow-xl",
+            "sketch-surface flex max-h-[92%] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border-b-0 bg-background shadow-xl sm:max-h-full sm:rounded-xl sm:border-b-[1.5px]",
             className,
           )}
         >
@@ -71,13 +71,13 @@ export function Dialog({
               </Button>
             ) : null}
           </div>
-          <div className={cn("relative min-h-0 flex-1 p-4", overlay ? "overflow-hidden" : "overflow-auto")}>
+          <div className={cn("relative min-h-0 flex-1 p-4", !footer && "pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4", overlay ? "overflow-hidden" : "overflow-auto")}>
             {children}
             {overlay ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/75 backdrop-blur-[1px]">{overlay}</div>
             ) : null}
           </div>
-          {footer ? <div className="shrink-0 border-t border-border/70 px-4 py-3">{footer}</div> : null}
+          {footer ? <div className="shrink-0 border-t border-border/70 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-3">{footer}</div> : null}
         </div>
       </div>
     </dialog>

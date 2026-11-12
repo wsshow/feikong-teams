@@ -464,7 +464,7 @@ function ShareDeleteDialog({
   if (!share) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
+      className="dialog-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-delete-title"
@@ -472,7 +472,7 @@ function ShareDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-auto rounded-2xl bg-card/95 p-4 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />
@@ -514,7 +514,7 @@ function FileShareDeleteDialog({
   const title = share.file_path || share.file_paths?.[0] || previewLinkID(share);
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/15 p-3 backdrop-blur-[1px] sm:p-6"
+      className="dialog-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="file-share-delete-title"
@@ -522,7 +522,7 @@ function FileShareDeleteDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="sketch-surface max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-auto rounded-2xl bg-card/95 p-4 shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
+      <div className="sketch-surface max-h-[92%] w-full max-w-md overflow-auto rounded-t-2xl bg-card/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-h-full sm:rounded-2xl shadow-[0_18px_48px_hsl(218_30%_20%/0.18)] sm:p-5">
         <div className="flex items-start gap-3">
           <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive">
             <Trash2 className="h-4 w-4" />
