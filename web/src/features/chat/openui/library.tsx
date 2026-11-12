@@ -1,5 +1,6 @@
 import { createLibrary, type PromptOptions } from "@openuidev/react-lang";
-import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
+// 与 ThemeProvider 使用同一入口；0.18.6 的子路径打包了独立的主题上下文。
+import { openuiLibrary } from "@openuidev/react-ui";
 import { useContext } from "react";
 import { InteractionDisabled, InteractionGuard } from "./interaction";
 import { FieldState } from "./fieldState";

@@ -1,8 +1,6 @@
 import { Component, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Renderer, type ActionEvent, type OpenUIError, type ParseResult } from "@openuidev/react-lang";
 import { ThemeProvider } from "@openuidev/react-ui";
-import "@openuidev/react-ui/styles/index.css";
-import "./openui.css";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
 import { assistantSessionID } from "@/lib/assistant";

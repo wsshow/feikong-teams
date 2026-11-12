@@ -1,6 +1,17 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind 3 会展开自身的 base/components/utilities 层，因此用独立的原生层保留优先级。 */
+@layer app-base, openui, app-components, app-utilities;
+@import "@openuidev/react-ui/layered/styles/index.css";
+@import "../features/chat/openui/openui.css";
+
+@layer app-base {
+  @tailwind base;
+}
+@layer app-components {
+  @tailwind components;
+}
+@layer app-utilities {
+  @tailwind utilities;
+}
 
 @layer base {
   :root {

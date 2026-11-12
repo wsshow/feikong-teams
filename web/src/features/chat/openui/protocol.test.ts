@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { actionSummary, decodeUIAction, encodeUIAction, restoreUIState, splitUIMessage } from "./protocol";
 import { createParser } from "@openuidev/react-lang";
 import { assistantUIExamples, assistantUILibrary, assistantUIPromptOptions } from "./library";
-import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
+import { openuiLibrary } from "@openuidev/react-ui";
 import { programProblem, safeExternalURL } from "./program";
 
 describe("assistant UI content", () => {

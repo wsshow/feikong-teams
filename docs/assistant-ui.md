@@ -31,6 +31,8 @@ Web 常驻助手（`/assistant`）支持在消息中生成交互界面，使用 
 - `@ToAssistant(message, context)` 通过现有链路继续对话；`@OpenUrl` 只打开无内嵌凭据的 HTTP/HTTPS 链接。支持 `$变量`、`@Set`、`@Reset` 和官方内置数据函数进行本地筛选与内容探索。不接入 `toolProvider`、浏览器 MCP、Query/Mutation 或 `@Run`；程序经同源 lexer 检查动作白名单、长度与嵌套上限，数据提交限制长度、深度与字段类型。未知或错误程序提供文字回复的降级提示。
 - 流式未完成、程序不完整、提交中、会话已切换或已有对应提交时禁止输入和动作提交。UI 操作是用户输入，不是工具审批凭证。
 - 界面代码按需加载。字段值不应包含密码、API key 或其他凭据。
+- 官方完整样式只在全局 `globals.css` 中导入一次，使用 layered 版本。Tailwind 3 的输出分别放入原生 `app-base`、`app-components`、`app-utilities` 层，优先级为基础重置 < OpenUI < 项目组件 < 工具类；运行时主题变量保持官方的无层注入方式。不要再从消息组件或路由加载另一份完整样式。
+- 组件库与 `ThemeProvider` 统一从 `@openuidev/react-ui` 根入口导入。当前 0.18.6 的 `genui-lib` 子入口包含独立的主题上下文，混用会导致 portal 弹窗取不到主题；升级依赖时回归消息正文、弹窗和日期选择器的主题一致性。
 - Vite 将上游自动加载的 `@openuidev/devtools` 映射为本地空实现，开发环境也不加载 CDN 调试脚本或显示部署推广浮窗。升级 OpenUI 后需检查此映射仍覆盖上游的自动加载入口。
 
 ## 修改组件与提示词

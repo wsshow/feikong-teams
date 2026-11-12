@@ -1,20 +1,22 @@
-.assistant-openui {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
+@layer app-components {
+  .assistant-openui {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
 
-/* 上游默认 card 仅声明 box-shadow，宿主补齐卡片表面，保留 clear/sunk 的语义。 */
-.assistant-openui .openui-card-card {
-  padding: var(--openui-space-l);
-  border-color: var(--openui-border-default);
-  border-radius: 0.75rem;
-  background-color: var(--openui-foreground);
-  box-shadow: 3px 4px 0 hsl(var(--foreground) / 0.08);
-}
+  /* 上游默认 card 仅声明 box-shadow，宿主补齐卡片表面，保留 clear/sunk 的语义。 */
+  .assistant-openui .openui-card-card {
+    padding: var(--openui-space-l);
+    border-color: var(--openui-border-default);
+    border-radius: 0.75rem;
+    background-color: var(--openui-foreground);
+    box-shadow: 3px 4px 0 hsl(var(--foreground) / 0.08);
+  }
 
-/* 大表格在消息内部滚动，不挤宽整个聊天页面。 */
-.assistant-openui > div {
-  min-width: 0;
-  max-width: 100%;
+  /* 大表格在消息内部滚动，不挤宽整个聊天页面。 */
+  .assistant-openui > div {
+    min-width: 0;
+    max-width: 100%;
+  }
 }

@@ -216,6 +216,22 @@ test("link actions reject executable URLs and safely open HTTP sources", async (
   } finally { window.open = originalOpen; }
 });
 
+test("portal dialogs receive the same custom theme as inline message components", async () => {
+  await render('```openui-lang\nroot = Stack([TextContent("正文"), Modal("主题验证", $open, [TextContent("弹窗内容")])])\n$open = true\n```');
+  const portal = document.querySelector(".openui-modal-root")!;
+  expect(portal).not.toBeNull();
+  expect(container.contains(portal)).toBe(false);
+  const themeClass = [...portal.classList].find((name) => name.startsWith("openui-theme-portal-"));
+  expect(themeClass).toBeDefined();
+  const themeCSS = [...document.querySelectorAll("style[data-openui-theme]")].find((style) => style.textContent?.includes(`.${themeClass}`))?.textContent;
+  expect(themeCSS).toContain(".assistant-openui,");
+  expect(themeCSS).toContain("--openui-foreground: hsl(var(--card))");
+  expect(themeCSS).toContain('"Kaiti SC"');
+  await act(async () => document.querySelector<HTMLButtonElement>('.openui-modal-close')!.click());
+  expect(document.querySelector(".openui-modal-root")).toBeNull();
+  expect(requests).toHaveLength(0);
+});
+
 test("reactive form bindings persist along with the submitted field values", async () => {
   const program = `root = Stack([Form("schedule", Buttons([Button("提交", @ToAssistant("设置频率"))]), [FormControl("频率", RadioGroup("frequency", [RadioItem("每天", "", "daily"), RadioItem("每周", "", "weekly")], null, null, $frequency))])])
 $frequency = "daily"`;
