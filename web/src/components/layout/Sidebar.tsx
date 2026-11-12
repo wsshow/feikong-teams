@@ -254,7 +254,7 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <div className="shrink-0 space-y-0.5 px-2 pb-2" data-sidebar-fixed-actions>
+      <div className="shrink-0 space-y-0.5 px-2 pb-0.5" data-sidebar-fixed-actions>
         <SidebarNavItem
           icon={Plus}
           label="新建会话"
