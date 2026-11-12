@@ -3,8 +3,6 @@ package excel
 import (
 	"context"
 	"fmt"
-
-	"github.com/xuri/excelize/v2"
 )
 
 // --- 单元格操作 ---
@@ -38,7 +36,7 @@ func (et *ExcelTools) SetCellValue(ctx context.Context, req *SetCellValueRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetCellValueResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -52,7 +50,7 @@ func (et *ExcelTools) SetCellValue(ctx context.Context, req *SetCellValueRequest
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetCellValueResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -92,7 +90,7 @@ func (et *ExcelTools) GetCellValue(ctx context.Context, req *GetCellValueRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &GetCellValueResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -142,7 +140,7 @@ func (et *ExcelTools) SetCellFormula(ctx context.Context, req *SetCellFormulaReq
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetCellFormulaResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -156,7 +154,7 @@ func (et *ExcelTools) SetCellFormula(ctx context.Context, req *SetCellFormulaReq
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetCellFormulaResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -196,7 +194,7 @@ func (et *ExcelTools) MergeCells(ctx context.Context, req *MergeCellsRequest) (*
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &MergeCellsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -210,7 +208,7 @@ func (et *ExcelTools) MergeCells(ctx context.Context, req *MergeCellsRequest) (*
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &MergeCellsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -250,7 +248,7 @@ func (et *ExcelTools) UnmergeCells(ctx context.Context, req *UnmergeCellsRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &UnmergeCellsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -264,7 +262,7 @@ func (et *ExcelTools) UnmergeCells(ctx context.Context, req *UnmergeCellsRequest
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &UnmergeCellsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -305,7 +303,7 @@ func (et *ExcelTools) SetCellStyle(ctx context.Context, req *SetCellStyleRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetCellStyleResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -319,7 +317,7 @@ func (et *ExcelTools) SetCellStyle(ctx context.Context, req *SetCellStyleRequest
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetCellStyleResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil

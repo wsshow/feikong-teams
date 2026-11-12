@@ -3,8 +3,6 @@ package excel
 import (
 	"context"
 	"fmt"
-
-	"github.com/xuri/excelize/v2"
 )
 
 // --- 工作表操作 ---
@@ -37,7 +35,7 @@ func (et *ExcelTools) CreateSheet(ctx context.Context, req *CreateSheetRequest) 
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &CreateSheetResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -52,7 +50,7 @@ func (et *ExcelTools) CreateSheet(ctx context.Context, req *CreateSheetRequest) 
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &CreateSheetResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -91,7 +89,7 @@ func (et *ExcelTools) DeleteSheet(ctx context.Context, req *DeleteSheetRequest) 
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &DeleteSheetResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -99,9 +97,19 @@ func (et *ExcelTools) DeleteSheet(ctx context.Context, req *DeleteSheetRequest) 
 	}
 	defer f.Close()
 
-	f.DeleteSheet(req.SheetName)
+	index, err := f.GetSheetIndex(req.SheetName)
+	if err != nil || index < 0 {
+		return &DeleteSheetResponse{ErrorMessage: "worksheet not found"}, nil
+	}
+	if len(f.GetSheetList()) == 1 {
+		return &DeleteSheetResponse{ErrorMessage: "cannot delete the last worksheet"}, nil
+	}
 
-	if err := f.Save(); err != nil {
+	if err := f.DeleteSheet(req.SheetName); err != nil {
+		return &DeleteSheetResponse{ErrorMessage: err.Error()}, nil
+	}
+
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &DeleteSheetResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -140,7 +148,7 @@ func (et *ExcelTools) RenameSheet(ctx context.Context, req *RenameSheetRequest) 
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &RenameSheetResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -154,7 +162,7 @@ func (et *ExcelTools) RenameSheet(ctx context.Context, req *RenameSheetRequest) 
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &RenameSheetResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -193,7 +201,7 @@ func (et *ExcelTools) CopySheet(ctx context.Context, req *CopySheetRequest) (*Co
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &CopySheetResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -221,7 +229,7 @@ func (et *ExcelTools) CopySheet(ctx context.Context, req *CopySheetRequest) (*Co
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &CopySheetResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -259,7 +267,7 @@ func (et *ExcelTools) SetActiveSheet(ctx context.Context, req *SetActiveSheetReq
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetActiveSheetResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -268,15 +276,13 @@ func (et *ExcelTools) SetActiveSheet(ctx context.Context, req *SetActiveSheetReq
 	defer f.Close()
 
 	index, err := f.GetSheetIndex(req.SheetName)
-	if err != nil {
-		return &SetActiveSheetResponse{
-			ErrorMessage: fmt.Sprintf("获取工作表索引失败: %v", err),
-		}, nil
+	if err != nil || index < 0 {
+		return &SetActiveSheetResponse{ErrorMessage: "worksheet not found"}, nil
 	}
 
 	f.SetActiveSheet(index)
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetActiveSheetResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -315,7 +321,7 @@ func (et *ExcelTools) SetSheetVisible(ctx context.Context, req *SetSheetVisibleR
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetSheetVisibleResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -329,7 +335,7 @@ func (et *ExcelTools) SetSheetVisible(ctx context.Context, req *SetSheetVisibleR
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetSheetVisibleResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil

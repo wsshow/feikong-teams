@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestGetDocumentInfoForTextFile(t *testing.T) {
 	path := writeDocTestFile(t, "note.txt", "hello\nworld\n")
 
-	resp, err := GetDocumentInfo(context.Background(), &GetDocumentInfoRequest{FilePath: path})
+	resp, err := docTools(t, path).GetDocumentInfo(context.Background(), &GetDocumentInfoRequest{FilePath: path})
 	if err != nil {
 		t.Fatalf("GetDocumentInfo() error = %v", err)
 	}
@@ -29,7 +30,7 @@ func TestGetDocumentInfoForTextFile(t *testing.T) {
 func TestDocumentReadFunctionsReportMissingFile(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.txt")
 
-	info, err := GetDocumentInfo(context.Background(), &GetDocumentInfoRequest{FilePath: missing})
+	info, err := docTools(t, missing).GetDocumentInfo(context.Background(), &GetDocumentInfoRequest{FilePath: missing})
 	if err != nil {
 		t.Fatalf("GetDocumentInfo() error = %v", err)
 	}
@@ -37,7 +38,7 @@ func TestDocumentReadFunctionsReportMissingFile(t *testing.T) {
 		t.Fatalf("info error = %q, want file access error", info.ErrorMessage)
 	}
 
-	pages, err := ReadDocumentByPages(context.Background(), &ReadDocumentByPagesRequest{FilePath: missing, EndPage: -1})
+	pages, err := docTools(t, missing).ReadDocumentByPages(context.Background(), &ReadDocumentByPagesRequest{FilePath: missing, EndPage: intPointer(-1)})
 	if err != nil {
 		t.Fatalf("ReadDocumentByPages() error = %v", err)
 	}
@@ -45,7 +46,7 @@ func TestDocumentReadFunctionsReportMissingFile(t *testing.T) {
 		t.Fatalf("pages error = %q, want read error", pages.ErrorMessage)
 	}
 
-	lines, err := ReadDocumentByLines(context.Background(), &ReadDocumentByLinesRequest{FilePath: missing, EndLine: -1, PageIndex: -1})
+	lines, err := docTools(t, missing).ReadDocumentByLines(context.Background(), &ReadDocumentByLinesRequest{FilePath: missing, EndLine: intPointer(-1), PageIndex: -1})
 	if err != nil {
 		t.Fatalf("ReadDocumentByLines() error = %v", err)
 	}
@@ -53,7 +54,7 @@ func TestDocumentReadFunctionsReportMissingFile(t *testing.T) {
 		t.Fatalf("lines error = %q, want read error", lines.ErrorMessage)
 	}
 
-	smart, err := ReadDocumentSmart(context.Background(), &ReadDocumentSmartRequest{FilePath: missing})
+	smart, err := docTools(t, missing).ReadDocumentSmart(context.Background(), &ReadDocumentSmartRequest{FilePath: missing})
 	if err != nil {
 		t.Fatalf("ReadDocumentSmart() error = %v", err)
 	}
@@ -65,10 +66,10 @@ func TestDocumentReadFunctionsReportMissingFile(t *testing.T) {
 func TestReadDocumentSmartReturnsFullContentWhenSmall(t *testing.T) {
 	path := writeDocTestFile(t, "small.txt", "alpha\nbeta")
 
-	resp, err := ReadDocumentSmart(context.Background(), &ReadDocumentSmartRequest{
+	resp, err := docTools(t, path).ReadDocumentSmart(context.Background(), &ReadDocumentSmartRequest{
 		FilePath:     path,
 		MaxChars:     100,
-		CleanContent: false,
+		CleanContent: boolPointer(false),
 	})
 	if err != nil {
 		t.Fatalf("ReadDocumentSmart() error = %v", err)
@@ -93,10 +94,10 @@ func TestReadDocumentSmartReturnsFullContentWhenSmall(t *testing.T) {
 func TestReadDocumentSmartTruncatesLargeContent(t *testing.T) {
 	path := writeDocTestFile(t, "large.txt", strings.Repeat("0123456789", 100))
 
-	resp, err := ReadDocumentSmart(context.Background(), &ReadDocumentSmartRequest{
+	resp, err := docTools(t, path).ReadDocumentSmart(context.Background(), &ReadDocumentSmartRequest{
 		FilePath:     path,
 		MaxChars:     120,
-		CleanContent: false,
+		CleanContent: boolPointer(false),
 	})
 	if err != nil {
 		t.Fatalf("ReadDocumentSmart() error = %v", err)
@@ -142,7 +143,7 @@ func TestSampleContent(t *testing.T) {
 		t.Fatalf("sampleContent(short) = %q", got)
 	}
 	sampled := sampleContent(content, 400)
-	if len(sampled) > 400 {
+	if utf8.RuneCountInString(sampled) > 400 {
 		t.Fatalf("sampled length = %d, want <= 400", len(sampled))
 	}
 	if !strings.Contains(sampled, "... [中间部分] ...") || !strings.Contains(sampled, "... [后续部分] ...") {
@@ -154,7 +155,7 @@ func TestSampleContent(t *testing.T) {
 }
 
 func TestGetTools(t *testing.T) {
-	tools, err := GetTools()
+	tools, err := docTools(t, filepath.Join(t.TempDir(), "test.txt")).GetTools()
 	if err != nil {
 		t.Fatalf("GetTools() error = %v", err)
 	}
@@ -181,3 +182,14 @@ func writeDocTestFile(t *testing.T, name, content string) string {
 	}
 	return path
 }
+
+func docTools(t *testing.T, path string) *Tools {
+	t.Helper()
+	tools, err := NewTools(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tools
+}
+func intPointer(v int) *int    { return &v }
+func boolPointer(v bool) *bool { return &v }

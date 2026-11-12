@@ -46,7 +46,7 @@ func (et *ExcelTools) CreateStyle(ctx context.Context, req *CreateStyleRequest) 
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &CreateStyleResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -102,7 +102,7 @@ func (et *ExcelTools) CreateStyle(ctx context.Context, req *CreateStyleRequest) 
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &CreateStyleResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -170,7 +170,7 @@ func (et *ExcelTools) SetConditionalFormat(ctx context.Context, req *SetConditio
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetConditionalFormatResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -193,7 +193,7 @@ func (et *ExcelTools) SetConditionalFormat(ctx context.Context, req *SetConditio
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetConditionalFormatResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil

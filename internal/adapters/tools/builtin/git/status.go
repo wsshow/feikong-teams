@@ -60,7 +60,7 @@ func (gt *GitTools) GitStatus(ctx context.Context, req *GitStatusRequest) (*GitS
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitStatusResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

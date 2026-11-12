@@ -4,17 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	storageport "fkteams/internal/ports/storage"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"fkteams/internal/domain/session"
+	storageport "fkteams/internal/ports/storage"
 	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/pathguard"
+	"fkteams/internal/runtime/resources"
 
 	"github.com/google/uuid"
 )
@@ -45,7 +45,7 @@ type TodoList struct {
 type TodoTools struct {
 	Documents   storageport.Documents
 	sessionsDir string
-	mu          sync.Mutex
+	locks       *resources.KeyedLocks
 }
 
 // NewTodoTools 创建一个新的Todo工具实例
@@ -54,11 +54,23 @@ func NewTodoTools(sessionsDir string, stores ...storageport.Documents) (*TodoToo
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
 	}
-	tt := &TodoTools{sessionsDir: absPath}
+	tt := &TodoTools{sessionsDir: absPath, locks: resources.NewKeyedLocks()}
 	if len(stores) > 0 {
 		tt.Documents = stores[0]
 	}
 	return tt, nil
+}
+
+// NewTodoToolsWithLocks 创建使用应用共享资源锁的待办工具。
+func NewTodoToolsWithLocks(dir string, locks *resources.KeyedLocks, stores ...storageport.Documents) (*TodoTools, error) {
+	tools, err := NewTodoTools(dir, stores...)
+	if err != nil {
+		return nil, err
+	}
+	if locks != nil {
+		tools.locks = locks
+	}
+	return tools, nil
 }
 
 // getFilePath 从 context 中提取会话 ID，返回该会话的 todos.json 路径
@@ -211,8 +223,11 @@ func (tt *TodoTools) TodoAdd(ctx context.Context, req *TodoAddRequest) (*TodoAdd
 		return &TodoAddResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoAddResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {
@@ -274,8 +289,11 @@ func (tt *TodoTools) TodoListFunc(ctx context.Context, req *TodoListRequest) (*T
 		return &TodoListResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoListResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {
@@ -368,8 +386,11 @@ func (tt *TodoTools) TodoUpdate(ctx context.Context, req *TodoUpdateRequest) (*T
 		return &TodoUpdateResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoUpdateResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {
@@ -394,6 +415,9 @@ func (tt *TodoTools) TodoUpdate(ctx context.Context, req *TodoUpdateRequest) (*T
 			if req.Status != nil {
 				list.Todos[i].Status = *req.Status
 				// 如果状态变为已完成，设置完成时间
+				if *req.Status != "completed" {
+					list.Todos[i].CompletedAt = nil
+				}
 				if *req.Status == "completed" && list.Todos[i].CompletedAt == nil {
 					now := time.Now()
 					list.Todos[i].CompletedAt = &now
@@ -455,8 +479,11 @@ func (tt *TodoTools) TodoDelete(ctx context.Context, req *TodoDeleteRequest) (*T
 		return &TodoDeleteResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoDeleteResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {
@@ -547,8 +574,11 @@ func (tt *TodoTools) TodoBatchAdd(ctx context.Context, req *TodoBatchAddRequest)
 		return &TodoBatchAddResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoBatchAddResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {
@@ -621,8 +651,11 @@ func (tt *TodoTools) TodoBatchDelete(ctx context.Context, req *TodoBatchDeleteRe
 		return &TodoBatchDeleteResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoBatchDeleteResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {
@@ -707,8 +740,11 @@ func (tt *TodoTools) TodoClear(ctx context.Context, req *TodoClearRequest) (*Tod
 		return &TodoClearResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+	unlock, err := tt.locks.Acquire(ctx, filePath)
+	if err != nil {
+		return &TodoClearResponse{ErrorMessage: err.Error()}, nil
+	}
+	defer unlock()
 
 	list, err := tt.loadFrom(filePath)
 	if err != nil {

@@ -3,10 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
-
 	"strings"
-
-	"github.com/go-git/go-git/v5"
 )
 
 // GitAddRequest 添加文件到暂存区请求
@@ -44,7 +41,7 @@ func (gt *GitTools) GitAdd(ctx context.Context, req *GitAddRequest) (*GitAddResp
 		return nil, err
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitAddResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

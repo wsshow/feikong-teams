@@ -85,3 +85,11 @@ func TestRejectRootSymlinkComponents(t *testing.T) {
 		t.Fatalf("create regular directories: %v", err)
 	}
 }
+
+func TestWorkspaceAllowsNamesStartingWithTwoDots(t *testing.T) {
+	base := t.TempDir()
+	resolved, err := ResolveWorkspace(base, "..notes")
+	if err != nil || resolved.RelPath != "..notes" {
+		t.Fatalf("local dot-prefixed name rejected: %#v %v", resolved, err)
+	}
+}

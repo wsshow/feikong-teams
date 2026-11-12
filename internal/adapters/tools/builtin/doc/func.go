@@ -1,11 +1,16 @@
 package doc
 
 import (
+	"archive/zip"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
+
+	"fkteams/internal/runtime/pathguard"
 
 	"github.com/wsshow/docreader"
 )
@@ -32,7 +37,7 @@ type GetDocumentInfoResponse struct {
 type ReadDocumentByPagesRequest struct {
 	FilePath  string `json:"file_path" jsonschema:"required,description:文档文件路径"`
 	StartPage int    `json:"start_page,omitempty" jsonschema:"description:起始页码（从0开始，默认0）"`
-	EndPage   int    `json:"end_page,omitempty" jsonschema:"description:结束页码（包含，-1表示到末尾，默认-1）"`
+	EndPage   *int   `json:"end_page,omitempty" jsonschema:"description:结束页码（包含，-1表示到末尾，默认-1）"`
 }
 
 // ReadDocumentByPagesResponse 按页读取文档响应
@@ -56,7 +61,7 @@ type PageContentDetail struct {
 type ReadDocumentByLinesRequest struct {
 	FilePath  string `json:"file_path" jsonschema:"required,description:文档文件路径"`
 	StartLine int    `json:"start_line,omitempty" jsonschema:"description:起始行号（从0开始，默认0）"`
-	EndLine   int    `json:"end_line,omitempty" jsonschema:"description:结束行号（包含，-1表示到末尾，默认-1）"`
+	EndLine   *int   `json:"end_line,omitempty" jsonschema:"description:结束行号（包含，-1表示到末尾，默认-1）"`
 	PageIndex int    `json:"page_index,omitempty" jsonschema:"description:指定页面索引（从0开始，仅对多页文档有效，-1表示第一页，默认-1）"`
 }
 
@@ -75,7 +80,7 @@ type ReadDocumentSmartRequest struct {
 	FilePath     string `json:"file_path" jsonschema:"required,description:文档文件路径"`
 	MaxChars     int    `json:"max_chars,omitempty" jsonschema:"description:最大字符数限制（默认50000，建议10000-100000之间）"`
 	SampleMode   bool   `json:"sample_mode,omitempty" jsonschema:"description:采样模式（true=均匀采样全文，false=从头读取，默认false）"`
-	CleanContent bool   `json:"clean_content,omitempty" jsonschema:"description:是否清理文本（移除多余空格、空行等，默认true）"`
+	CleanContent *bool  `json:"clean_content,omitempty" jsonschema:"description:是否清理文本（移除多余空格、空行等，默认true）"`
 }
 
 // ReadDocumentSmartResponse 智能读取文档响应
@@ -91,14 +96,13 @@ type ReadDocumentSmartResponse struct {
 }
 
 // GetDocumentInfo 获取文档基本信息
-func GetDocumentInfo(ctx context.Context, req *GetDocumentInfoRequest) (*GetDocumentInfoResponse, error) {
-	// 检查文件是否存在
-	fileInfo, err := os.Stat(req.FilePath)
+func (t *Tools) GetDocumentInfo(ctx context.Context, req *GetDocumentInfoRequest) (*GetDocumentInfoResponse, error) {
+	path, info, cleanup, err := t.snapshot(ctx, req.FilePath)
 	if err != nil {
-		return &GetDocumentInfoResponse{
-			ErrorMessage: fmt.Sprintf("文件访问失败: %v", err),
-		}, nil
+		return &GetDocumentInfoResponse{ErrorMessage: fmt.Sprintf("文件访问失败，读取文档失败: %v", err)}, nil
 	}
+	defer cleanup()
+	fileInfo := info
 
 	// 获取文件类型
 	ext := strings.ToLower(filepath.Ext(req.FilePath))
@@ -108,37 +112,35 @@ func GetDocumentInfo(ctx context.Context, req *GetDocumentInfoRequest) (*GetDocu
 	// 格式化文件大小
 	fileSize := formatFileSize(fileInfo.Size())
 
-	// 获取元数据
-	doc, err := docreader.ReadDocument(req.FilePath)
+	reader := documentReader(filepath.Ext(path))
+	if reader == nil {
+		return &GetDocumentInfoResponse{ErrorMessage: "unsupported document format"}, nil
+	}
+	metadata, err := reader.GetMetadata(path)
 	if err != nil {
-		return &GetDocumentInfoResponse{
-			FilePath:     req.FilePath,
-			FileType:     fileType,
-			FileSize:     fileSize,
-			ErrorMessage: fmt.Sprintf("读取文档失败: %v", err),
-		}, nil
+		return &GetDocumentInfoResponse{ErrorMessage: fmt.Sprintf("读取文档失败: %v", err)}, nil
 	}
 
 	response := &GetDocumentInfoResponse{
 		FilePath:      req.FilePath,
 		FileType:      fileType,
 		FileSize:      fileSize,
-		EstimatedSize: fmt.Sprintf("约 %d 字符", len(doc.Content)),
-		Metadata:      doc.Metadata,
+		EstimatedSize: fmt.Sprintf("文件 %s；文本大小在读取后确定", fileSize),
+		Metadata:      metadata,
 	}
 
 	// 根据文件类型获取额外信息
 	switch ext {
 	case ".pdf":
-		if pages, ok := doc.Metadata["pages"]; ok {
+		if pages, ok := metadata["pages"]; ok {
 			fmt.Sscanf(pages, "%d", &response.TotalPages)
 		}
 	case ".pptx":
-		if slides, ok := doc.Metadata["slide_count"]; ok {
+		if slides, ok := metadata["slide_count"]; ok {
 			fmt.Sscanf(slides, "%d", &response.TotalPages)
 		}
 	case ".xlsx":
-		if sheets, ok := doc.Metadata["sheets"]; ok {
+		if sheets, ok := metadata["sheets"]; ok {
 			response.SheetNames = strings.Split(sheets, ",")
 			response.TotalSheets = len(response.SheetNames)
 		}
@@ -148,21 +150,34 @@ func GetDocumentInfo(ctx context.Context, req *GetDocumentInfoRequest) (*GetDocu
 }
 
 // ReadDocumentByPages 按页范围读取文档
-func ReadDocumentByPages(ctx context.Context, req *ReadDocumentByPagesRequest) (*ReadDocumentByPagesResponse, error) {
-	// 设置默认值
-	if req.EndPage < 0 {
-		req.EndPage = 999999 // 设置一个很大的值表示读到末尾
+func (t *Tools) ReadDocumentByPages(ctx context.Context, req *ReadDocumentByPagesRequest) (*ReadDocumentByPagesResponse, error) {
+	path, _, cleanup, err := t.snapshot(ctx, req.FilePath)
+	if err != nil {
+		return &ReadDocumentByPagesResponse{ErrorMessage: fmt.Sprintf("文件访问失败，读取文档失败: %v", err)}, nil
 	}
-
-	// 创建读取配置
-	config := docreader.NewReadConfig().WithPageRange(req.StartPage, req.EndPage)
+	defer cleanup()
+	endPage := 999999
+	if req.EndPage != nil && *req.EndPage >= 0 {
+		endPage = *req.EndPage
+	}
+	if req.StartPage < 0 || endPage < req.StartPage {
+		return &ReadDocumentByPagesResponse{ErrorMessage: "invalid page range"}, nil
+	}
+	config := docreader.NewReadConfig().WithPageRange(req.StartPage, endPage)
 
 	// 读取文档
-	result, err := docreader.ReadDocumentWithConfig(req.FilePath, config)
+	result, err := docreader.ReadDocumentWithConfig(path, config)
 	if err != nil {
 		return &ReadDocumentByPagesResponse{
 			ErrorMessage: fmt.Sprintf("读取文档失败: %v", err),
 		}, nil
+	}
+
+	if utf8.RuneCountInString(result.Content) > maxReturnedChars {
+		return &ReadDocumentByPagesResponse{ErrorMessage: "document range exceeds 100000 characters; request a smaller range or use read_document_smart"}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// 构建响应
@@ -187,16 +202,24 @@ func ReadDocumentByPages(ctx context.Context, req *ReadDocumentByPagesRequest) (
 }
 
 // ReadDocumentByLines 按行范围读取文档
-func ReadDocumentByLines(ctx context.Context, req *ReadDocumentByLinesRequest) (*ReadDocumentByLinesResponse, error) {
+func (t *Tools) ReadDocumentByLines(ctx context.Context, req *ReadDocumentByLinesRequest) (*ReadDocumentByLinesResponse, error) {
+	path, _, cleanup, err := t.snapshot(ctx, req.FilePath)
+	if err != nil {
+		return &ReadDocumentByLinesResponse{ErrorMessage: fmt.Sprintf("文件访问失败，读取文档失败: %v", err)}, nil
+	}
+	defer cleanup()
 	pageIndex := req.PageIndex
 	if pageIndex < 0 {
 		pageIndex = 0
 	}
 
 	// 设置默认值
-	endLine := req.EndLine
-	if endLine < 0 {
-		endLine = 999999 // 设置一个很大的值表示读到末尾
+	endLine := 999999
+	if req.EndLine != nil && *req.EndLine >= 0 {
+		endLine = *req.EndLine
+	}
+	if req.StartLine < 0 || endLine < req.StartLine {
+		return &ReadDocumentByLinesResponse{ErrorMessage: "invalid line range"}, nil
 	}
 
 	// 创建读取配置
@@ -204,11 +227,18 @@ func ReadDocumentByLines(ctx context.Context, req *ReadDocumentByLinesRequest) (
 		AddPageLineRange(pageIndex, req.StartLine, endLine)
 
 	// 读取文档
-	result, err := docreader.ReadDocumentWithConfig(req.FilePath, config)
+	result, err := docreader.ReadDocumentWithConfig(path, config)
 	if err != nil {
 		return &ReadDocumentByLinesResponse{
 			ErrorMessage: fmt.Sprintf("读取文档失败: %v", err),
 		}, nil
+	}
+
+	if utf8.RuneCountInString(result.Content) > maxReturnedChars {
+		return &ReadDocumentByLinesResponse{ErrorMessage: "document range exceeds 100000 characters; request a smaller range or use read_document_smart"}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// 构建响应
@@ -229,26 +259,33 @@ func ReadDocumentByLines(ctx context.Context, req *ReadDocumentByLinesRequest) (
 }
 
 // ReadDocumentSmart 智能读取文档（自动适配上下文限制）
-func ReadDocumentSmart(ctx context.Context, req *ReadDocumentSmartRequest) (*ReadDocumentSmartResponse, error) {
+func (t *Tools) ReadDocumentSmart(ctx context.Context, req *ReadDocumentSmartRequest) (*ReadDocumentSmartResponse, error) {
+	path, _, cleanup, err := t.snapshot(ctx, req.FilePath)
+	if err != nil {
+		return &ReadDocumentSmartResponse{ErrorMessage: fmt.Sprintf("文件访问失败，读取文档失败: %v", err)}, nil
+	}
+	defer cleanup()
 	// 设置默认值
 	maxChars := req.MaxChars
 	if maxChars <= 0 {
 		maxChars = 50000 // 默认 50k 字符
 	}
 
-	cleanContent := req.CleanContent
-	if !req.CleanContent && maxChars == 50000 { // 如果用户没有设置，默认启用清理
-		cleanContent = true
+	if maxChars > maxReturnedChars {
+		maxChars = maxReturnedChars
+	}
+	cleanContent := true
+	if req.CleanContent != nil {
+		cleanContent = *req.CleanContent
 	}
 
 	// 首先读取完整文档
 	var doc *docreader.Document
-	var err error
 
 	if cleanContent {
-		doc, err = docreader.ReadDocumentWithClean(req.FilePath)
+		doc, err = docreader.ReadDocumentWithClean(path)
 	} else {
-		doc, err = docreader.ReadDocument(req.FilePath)
+		doc, err = docreader.ReadDocument(path)
 	}
 
 	if err != nil {
@@ -257,7 +294,7 @@ func ReadDocumentSmart(ctx context.Context, req *ReadDocumentSmartRequest) (*Rea
 		}, nil
 	}
 
-	originalSize := len(doc.Content)
+	originalSize := utf8.RuneCountInString(doc.Content)
 
 	response := &ReadDocumentSmartResponse{
 		OriginalSize: originalSize,
@@ -283,12 +320,12 @@ func ReadDocumentSmart(ctx context.Context, req *ReadDocumentSmartRequest) (*Rea
 		response.Suggestion = fmt.Sprintf("文档较大（%d字符），已采样关键部分。建议使用 ReadDocumentByPages 或 ReadDocumentByLines 按需读取特定部分", originalSize)
 	} else {
 		// 默认：从头开始读取
-		response.Content = doc.Content[:maxChars]
+		response.Content = string([]rune(doc.Content)[:maxChars])
 		response.Strategy = "从头截断"
 		response.Suggestion = fmt.Sprintf("文档较大（%d字符），仅返回前 %d 字符。建议使用 ReadDocumentByPages 或 ReadDocumentByLines 按需读取", originalSize, maxChars)
 	}
 
-	response.ReturnedSize = len(response.Content)
+	response.ReturnedSize = utf8.RuneCountInString(response.Content)
 
 	return response, nil
 }
@@ -315,43 +352,143 @@ func formatFileSize(size int64) string {
 
 // sampleContent 从内容中均匀采样
 func sampleContent(content string, maxChars int) string {
-	if len(content) <= maxChars {
+	chars := []rune(content)
+	if maxChars <= 0 {
+		return ""
+	}
+	if len(chars) <= maxChars {
 		return content
 	}
-
-	// 将内容分成3部分：开头、中间、结尾
-	// 预留一些空间给分隔符
 	const separator1 = "\n\n... [中间部分] ...\n\n"
 	const separator2 = "\n\n... [后续部分] ...\n\n"
-	separatorLen := len(separator1) + len(separator2)
-
-	availableChars := maxChars - separatorLen
-	if availableChars < 300 { // 至少需要300字符
-		return content[:maxChars]
+	available := maxChars - utf8.RuneCountInString(separator1+separator2)
+	if available < 300 {
+		return string(chars[:maxChars])
 	}
+	part := available / 3
+	middle := len(chars)/2 - part/2
+	return string(chars[:part]) + separator1 + string(chars[middle:middle+part]) + separator2 + string(chars[len(chars)-part:])
+}
 
-	partSize := availableChars / 3
+const maxDocumentBytes int64 = 32 << 20
+const maxExpandedBytes uint64 = 64 << 20
+const maxReturnedChars = 100000
 
-	start := content[:partSize]
-	middleStart := len(content)/2 - partSize/2
-	middleEnd := len(content)/2 + partSize/2
-	if middleEnd > len(content) {
-		middleEnd = len(content)
+// Tools 持有显式工作区，文档解析器只接触有大小上限的私有快照。
+type Tools struct{ baseDir string }
+
+// NewTools 创建受工作区约束的文档工具。
+func NewTools(baseDir string) (*Tools, error) {
+	abs, err := filepath.Abs(baseDir)
+	if err != nil {
+		return nil, err
 	}
-	middle := content[middleStart:middleEnd]
-
-	endStart := len(content) - partSize
-	if endStart < 0 {
-		endStart = 0
+	if err := os.MkdirAll(abs, 0755); err != nil {
+		return nil, err
 	}
-	end := content[endStart:]
+	return &Tools{baseDir: abs}, nil
+}
 
-	result := fmt.Sprintf("%s%s%s%s%s", start, separator1, middle, separator2, end)
-
-	// 确保不超过限制
-	if len(result) > maxChars {
-		return result[:maxChars]
+func (t *Tools) snapshot(ctx context.Context, path string) (string, os.FileInfo, func(), error) {
+	if path == "" {
+		return "", nil, nil, fmt.Errorf("document path is required")
 	}
+	if err := ctx.Err(); err != nil {
+		return "", nil, nil, err
+	}
+	resolved, err := pathguard.ResolveWorkspace(t.baseDir, path)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	root, err := os.OpenRoot(resolved.BaseAbs)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	file, err := root.Open(resolved.RelPath)
+	root.Close()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxDocumentBytes {
+		return "", nil, nil, fmt.Errorf("document exceeds file limits")
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if !docreader.IsFormatSupported(ext) {
+		return "", nil, nil, fmt.Errorf("unsupported document format")
+	}
+	snapshot, err := os.CreateTemp("", "fkteams-document-*"+ext)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	cleanup := func() { os.Remove(snapshot.Name()) }
+	size, err := io.Copy(snapshot, io.LimitReader(&contextReader{ctx, file}, maxDocumentBytes+1))
+	closeErr := snapshot.Close()
+	if closeErr == nil {
+		closeErr = os.Chtimes(snapshot.Name(), info.ModTime(), info.ModTime())
+	}
+	if err == nil {
+		err = closeErr
+	}
+	if err == nil && size > maxDocumentBytes {
+		err = fmt.Errorf("document exceeds size limit")
+	}
+	if err == nil && (ext == ".docx" || ext == ".xlsx" || ext == ".pptx") {
+		archive, openErr := zip.OpenReader(snapshot.Name())
+		err = openErr
+		if err == nil {
+			var total uint64
+			for _, entry := range archive.File {
+				if entry.UncompressedSize64 > maxExpandedBytes-total {
+					err = fmt.Errorf("document archive exceeds expanded size limit")
+					break
+				}
+				total += entry.UncompressedSize64
+			}
+			archive.Close()
+		}
+	}
+	if err != nil {
+		cleanup()
+		return "", nil, nil, err
+	}
+	return snapshot.Name(), info, cleanup, nil
+}
 
-	return result
+type contextReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (r *contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.source.Read(p)
+}
+
+func documentReader(ext string) docreader.DocumentReader {
+	switch strings.ToLower(ext) {
+	case ".docx":
+		return &docreader.DocxReader{}
+	case ".pdf":
+		return &docreader.PdfReader{}
+	case ".xlsx":
+		return &docreader.XlsxReader{}
+	case ".pptx":
+		return &docreader.PptxReader{}
+	case ".txt":
+		return &docreader.TxtReader{}
+	case ".csv":
+		return &docreader.CsvReader{}
+	case ".md", ".markdown":
+		return &docreader.MdReader{}
+	case ".rtf":
+		return &docreader.RtfReader{}
+	}
+	return nil
 }

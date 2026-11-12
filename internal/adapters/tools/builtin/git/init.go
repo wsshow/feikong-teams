@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-
-	"github.com/go-git/go-git/v5"
 )
 
 // GitInitRequest 初始化仓库请求
@@ -43,7 +41,7 @@ func (gt *GitTools) GitInit(ctx context.Context, req *GitInitRequest) (*GitInitR
 		}, nil
 	}
 
-	_, err = git.PlainInit(path, req.Bare)
+	_, err = gt.initRepository(path, req.Bare)
 	if err != nil {
 		return &GitInitResponse{
 			ErrorMessage: fmt.Sprintf("初始化仓库失败: %v", err),

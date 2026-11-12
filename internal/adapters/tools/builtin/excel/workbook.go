@@ -3,8 +3,6 @@ package excel
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -32,13 +30,11 @@ func (et *ExcelTools) CreateWorkbook(ctx context.Context, req *CreateWorkbookReq
 		}, nil
 	}
 
-	// 确保目录存在
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return &CreateWorkbookResponse{
-			ErrorMessage: fmt.Sprintf("无法创建目录: %v", err),
-		}, nil
+	unlock, err := et.locks.Acquire(ctx, et.baseDir)
+	if err != nil {
+		return nil, err
 	}
+	defer unlock()
 
 	f := excelize.NewFile()
 	defer f.Close()
@@ -52,7 +48,7 @@ func (et *ExcelTools) CreateWorkbook(ctx context.Context, req *CreateWorkbookReq
 	}
 	f.SetActiveSheet(index)
 
-	if err := f.SaveAs(path); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &CreateWorkbookResponse{
 			ErrorMessage: fmt.Sprintf("保存工作簿失败: %v", err),
 		}, nil
@@ -93,7 +89,7 @@ func (et *ExcelTools) OpenWorkbook(ctx context.Context, req *OpenWorkbookRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &OpenWorkbookResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -143,7 +139,7 @@ func (et *ExcelTools) SaveWorkbook(ctx context.Context, req *SaveWorkbookRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SaveWorkbookResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -159,21 +155,15 @@ func (et *ExcelTools) SaveWorkbook(ctx context.Context, req *SaveWorkbookRequest
 				ErrorMessage: err.Error(),
 			}, nil
 		}
-		// 确保目录存在
-		dir := filepath.Dir(savePath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return &SaveWorkbookResponse{
-				ErrorMessage: fmt.Sprintf("无法创建目录: %v", err),
-			}, nil
-		}
-		if err := f.SaveAs(savePath); err != nil {
+
+		if err := et.saveWorkbook(f, savePath); err != nil {
 			return &SaveWorkbookResponse{
 				ErrorMessage: fmt.Sprintf("另存为失败: %v", err),
 			}, nil
 		}
 	} else {
 		savePath = path
-		if err := f.Save(); err != nil {
+		if err := et.saveWorkbook(f, path); err != nil {
 			return &SaveWorkbookResponse{
 				ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 			}, nil
@@ -212,7 +202,7 @@ func (et *ExcelTools) SetWorkbookProps(ctx context.Context, req *SetWorkbookProp
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetWorkbookPropsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -246,7 +236,7 @@ func (et *ExcelTools) SetWorkbookProps(ctx context.Context, req *SetWorkbookProp
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetWorkbookPropsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil

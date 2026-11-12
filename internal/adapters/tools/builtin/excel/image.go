@@ -58,7 +58,7 @@ func (et *ExcelTools) AddPicture(ctx context.Context, req *AddPictureRequest) (*
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &AddPictureResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -88,7 +88,7 @@ func (et *ExcelTools) AddPicture(ctx context.Context, req *AddPictureRequest) (*
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &AddPictureResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -136,7 +136,7 @@ func (et *ExcelTools) AddChart(ctx context.Context, req *AddChartRequest) (*AddC
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &AddChartResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -197,7 +197,7 @@ func (et *ExcelTools) AddChart(ctx context.Context, req *AddChartRequest) (*AddC
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &AddChartResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil

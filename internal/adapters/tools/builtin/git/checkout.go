@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/go-git/go-git/v5"
-
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -33,7 +32,7 @@ func (gt *GitTools) GitCheckout(ctx context.Context, req *GitCheckoutRequest) (*
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitCheckoutResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

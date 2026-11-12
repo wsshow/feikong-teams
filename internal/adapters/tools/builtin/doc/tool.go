@@ -4,27 +4,27 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 )
 
-func GetTools() (tools []runtimeport.Tool, err error) {
+func (t *Tools) GetTools() (tools []runtimeport.Tool, err error) {
 	return runtimeport.NewTools([]runtimeport.ToolDefinition{
 		{Name: "get_document_info", Description: `获取文档的基本信息，包括文件类型、大小、页数、元数据等。支持格式：.docx, .pdf, .xlsx, .pptx, .txt, .csv, .md, .rtf。
-这是读取文档前的第一步，帮助你了解文档结构，决定如何读取。`, Handler: GetDocumentInfo},
+这是读取文档前的第一步，帮助你了解文档结构，决定如何读取。`, Handler: t.GetDocumentInfo},
 		{Name: "read_document_smart", Description: `智能读取文档内容，自动处理大文档。特点：
 - 自动适配上下文限制（默认50000字符）
 - 支持采样模式（均匀采样）或从头截断
 - 自动清理多余空格和空行
 - 文档过大时会提供建议
-适用于：首次阅读文档，快速了解内容概况`, Handler: ReadDocumentSmart},
+适用于：首次阅读文档，快速了解内容概况`, Handler: t.ReadDocumentSmart},
 		{Name: "read_document_by_pages", Description: `按页码范围读取文档内容。支持多页文档如 PDF、PPTX。
 参数：
 - start_page: 起始页（从0开始）
 - end_page: 结束页（-1表示到末尾）
 返回每页的详细信息（页码、行数）。
-适用于：需要读取特定页面或章节`, Handler: ReadDocumentByPages},
+适用于：需要读取特定页面或章节`, Handler: t.ReadDocumentByPages},
 		{Name: "read_document_by_lines", Description: `按行号范围读取文档内容。支持指定页面和行范围。
 参数：
 - start_line: 起始行（从0开始）
 - end_line: 结束行（-1表示到末尾）
 - page_index: 页面索引（-1表示第一页）
-适用于：需要读取特定行或段落`, Handler: ReadDocumentByLines},
+适用于：需要读取特定行或段落`, Handler: t.ReadDocumentByLines},
 	})
 }

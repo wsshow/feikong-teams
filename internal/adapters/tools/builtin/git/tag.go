@@ -3,12 +3,10 @@ package git
 import (
 	"context"
 	"fmt"
-
 	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
-
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -46,7 +44,7 @@ func (gt *GitTools) GitTag(ctx context.Context, req *GitTagRequest) (*GitTagResp
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitTagResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

@@ -5,14 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"fkteams/internal/adapters/tools/workspace"
 	"fkteams/internal/runtime/approval"
+	"fkteams/internal/runtime/atomicfile"
 	"fkteams/internal/runtime/mdiff"
 	"fkteams/internal/runtime/pathguard"
+	"fkteams/internal/runtime/resources"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/spf13/afero"
@@ -20,6 +24,7 @@ import (
 
 // FileTools 文件工具实例，每个agent可以有独立的实例
 type FileTools struct {
+	locks *resources.KeyedLocks
 	// securedFs 是受限制的文件系统，只允许访问指定目录
 	securedFs afero.Fs
 	// osFs 是无限制的操作系统文件系统，用于访问已审批的外部路径
@@ -30,7 +35,7 @@ type FileTools struct {
 
 // NewFileTools 创建一个新的文件工具实例
 // baseDir 是允许操作的基础目录（默认 ~/.fkteams/workspace）
-func NewFileTools(baseDir string) (*FileTools, error) {
+func NewFileTools(baseDir string, shared ...*resources.KeyedLocks) (*FileTools, error) {
 	absPath, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("无法获取绝对路径: %w", err)
@@ -43,9 +48,18 @@ func NewFileTools(baseDir string) (*FileTools, error) {
 		}
 	}
 
-	securedFs := afero.NewBasePathFs(afero.NewOsFs(), absPath)
+	securedFs, err := workspace.New(absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	locks := resources.NewKeyedLocks()
+	if len(shared) > 0 && shared[0] != nil {
+		locks = shared[0]
+	}
 
 	return &FileTools{
+		locks:          locks,
 		securedFs:      securedFs,
 		osFs:           afero.NewOsFs(),
 		allowedBaseDir: absPath,
@@ -116,11 +130,6 @@ func readFileLines(fs afero.Fs, path string) (lines []string, totalLines int, ha
 	totalLines = len(lines)
 	hasTrailingNewline = hasFileTrailingNewline(fs, path)
 
-	// Scanner 在 "text\n\n" 时会产出尾随空行，需去掉以还原真实内容
-	if totalLines > 0 && hasTrailingNewline && lines[totalLines-1] == "" {
-		lines = lines[:totalLines-1]
-		totalLines--
-	}
 	return lines, totalLines, hasTrailingNewline, nil
 }
 
@@ -234,6 +243,9 @@ func openScanner(fs afero.Fs, path string) (*bufio.Scanner, afero.File, error) {
 	info, err := fs.Stat(path)
 	if err != nil {
 		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("path is not a regular file")
 	}
 	if info.Size() > maxFileSize {
 		return nil, nil, fmt.Errorf("文件过大 (%d bytes)，超过限制 (%d bytes)", info.Size(), maxFileSize)
@@ -362,7 +374,7 @@ func (ft *FileTools) FileWrite(ctx context.Context, req *FileWriteRequest) (*Fil
 		}
 	}
 
-	err = afero.WriteFile(rp.fs, rp.path, []byte(req.Content), 0644)
+	err = writeFile(rp.fs, rp.path, []byte(req.Content), 0644)
 	if err != nil {
 		return &FileWriteResponse{
 			ErrorMessage: fmt.Sprintf("写入文件失败: %v", err),
@@ -517,7 +529,10 @@ func (ft *FileTools) Glob(ctx context.Context, req *GlobRequest) (*GlobResponse,
 	truncated := false
 
 	_ = afero.Walk(rp.fs, rp.path, func(path string, fi os.FileInfo, walkErr error) error {
-		if walkErr != nil || fi.IsDir() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if walkErr != nil || fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
 			return walkErr
 		}
 		if len(files) >= maxFiles {
@@ -599,9 +614,15 @@ func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse,
 	if maxCount <= 0 {
 		maxCount = 100
 	}
+	if maxCount > 1000 {
+		maxCount = 1000
+	}
 	contextLines := req.Context
 	if contextLines < 0 {
 		contextLines = 0
+	}
+	if contextLines > 20 {
+		contextLines = 20
 	}
 
 	var matches []GrepMatch
@@ -619,7 +640,10 @@ func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse,
 	} else {
 		// 目录递归搜索
 		_ = afero.Walk(rp.fs, rp.path, func(path string, fi os.FileInfo, walkErr error) error {
-			if walkErr != nil || fi.IsDir() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if walkErr != nil || fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
 				return walkErr
 			}
 			if len(matches) >= maxCount {
@@ -654,80 +678,45 @@ func (ft *FileTools) Grep(ctx context.Context, req *GrepRequest) (*GrepResponse,
 
 // grepFile 在单个文件中搜索，流式匹配不加载全文件
 func (ft *FileTools) grepFile(fs afero.Fs, fsPath, displayPath string, matcher func(string) bool, contextLines, maxCount int) []GrepMatch {
-	info, err := fs.Stat(fsPath)
-	if err != nil || info.Size() > maxFileSize {
-		return nil
-	}
-	file, err := fs.Open(fsPath)
+	scanner, file, err := openScanner(fs, fsPath)
 	if err != nil {
 		return nil
 	}
 	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, maxScannerLineSize)
-
 	var matches []GrepMatch
-	var beforeCtx *ringBuffer
-	if contextLines > 0 {
-		beforeCtx = newRingBuffer(contextLines)
-	}
-
+	before := newRingBuffer(max(1, contextLines))
 	lineNum := 0
+	// 每一行只消费一次，同时供匹配和前后上下文使用。
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-
-		if !matcher(line) {
-			if beforeCtx != nil {
-				beforeCtx.add(lineNum, line)
+		for i := range matches {
+			if lineNum > matches[i].LineNumber && lineNum <= matches[i].LineNumber+contextLines {
+				if matches[i].Context != "" {
+					matches[i].Context += "\n"
+				}
+				matches[i].Context += fmt.Sprintf(" %d: %s", lineNum, line)
 			}
-			continue
 		}
-
-		m := GrepMatch{
-			File:       displayPath,
-			LineNumber: lineNum,
-			Text:       line,
+		if matcher(line) && len(matches) < maxCount {
+			m := GrepMatch{File: displayPath, LineNumber: lineNum, Text: line}
+			if contextLines > 0 {
+				var lines []string
+				for _, entry := range before.getAll() {
+					lines = append(lines, fmt.Sprintf(" %d: %s", entry.line, entry.text))
+				}
+				m.Context = strings.Join(lines, "\n")
+			}
+			matches = append(matches, m)
 		}
-
 		if contextLines > 0 {
-			m.Context = ft.buildGrepContext(scanner, beforeCtx, lineNum, contextLines)
+			before.add(lineNum, line)
 		}
-
-		matches = append(matches, m)
-		if len(matches) >= maxCount {
+		if len(matches) >= maxCount && lineNum >= matches[len(matches)-1].LineNumber+contextLines {
 			break
 		}
-
-		// 重置前置缓冲区
-		if beforeCtx != nil {
-			beforeCtx.add(lineNum, line)
-		}
 	}
-
 	return matches
-}
-
-func (ft *FileTools) buildGrepContext(scanner *bufio.Scanner, beforeCtx *ringBuffer, matchLine, contextLines int) string {
-	var ctxLines []string
-
-	// 前置上下文
-	if beforeCtx != nil {
-		for _, entry := range beforeCtx.getAll() {
-			ctxLines = append(ctxLines, fmt.Sprintf(" %d: %s", entry.line, entry.text))
-		}
-	}
-
-	// 后置上下文：继续读 contextLines 行
-	for i := 1; i <= contextLines; i++ {
-		if !scanner.Scan() {
-			break
-		}
-		ctxLines = append(ctxLines, fmt.Sprintf(" %d: %s", matchLine+i, scanner.Text()))
-	}
-
-	return strings.Join(ctxLines, "\n")
 }
 
 type ringEntry struct {
@@ -792,13 +781,11 @@ func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileE
 		return nil, err
 	}
 
-	// 流式读取文件内容
-	lines, totalLines, hasTrailing, err := readFileLines(rp.fs, rp.path)
+	original, err := readFileContent(rp.fs, rp.path)
 	if err != nil {
-		return &FileEditResponse{ErrorMessage: fmt.Sprintf("读取文件失败: %v", err)}, nil
+		return &FileEditResponse{ErrorMessage: fmt.Sprintf("read file: %v", err)}, nil
 	}
-
-	original := joinLines(lines, hasTrailing)
+	totalLines := countLines(original)
 	matchCount := strings.Count(original, req.OldString)
 	if matchCount == 0 {
 		return &FileEditResponse{
@@ -814,7 +801,7 @@ func (ft *FileTools) FileEdit(ctx context.Context, req *FileEditRequest) (*FileE
 	}
 
 	newContent := strings.Replace(original, req.OldString, req.NewString, 1)
-	if err := afero.WriteFile(rp.fs, rp.path, []byte(newContent), 0644); err != nil {
+	if err := writeFile(rp.fs, rp.path, []byte(newContent), 0644); err != nil {
 		return &FileEditResponse{ErrorMessage: fmt.Sprintf("写入文件失败: %v", err)}, nil
 	}
 
@@ -916,11 +903,7 @@ func (a *fsAccessor) ReadFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines, _, hasTrailing, err := readFileLines(a.ft.securedFs, relPath)
-	if err != nil {
-		return "", err
-	}
-	return joinLines(lines, hasTrailing), nil
+	return readFileContent(a.ft.securedFs, relPath)
 }
 
 func (a *fsAccessor) WriteFile(path string, content string) error {
@@ -935,7 +918,7 @@ func (a *fsAccessor) WriteFile(path string, content string) error {
 			return err
 		}
 	}
-	return afero.WriteFile(a.ft.securedFs, relPath, []byte(content), 0644)
+	return writeFile(a.ft.securedFs, relPath, []byte(content), 0644)
 }
 
 func (a *fsAccessor) DeleteFile(path string) error {
@@ -944,4 +927,36 @@ func (a *fsAccessor) DeleteFile(path string) error {
 		return err
 	}
 	return a.ft.securedFs.Remove(relPath)
+}
+
+func readFileContent(fs afero.Fs, path string) (string, error) {
+	file, err := fs.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("path is not a regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxFileSize {
+		return "", fmt.Errorf("file exceeds size limit")
+	}
+	return string(data), nil
+}
+
+func writeFile(fs afero.Fs, path string, data []byte, mode os.FileMode) error {
+	if secured, ok := fs.(interface {
+		WriteAtomic(string, []byte, os.FileMode) error
+	}); ok {
+		return secured.WriteAtomic(path, data, mode)
+	}
+	return atomicfile.WriteFile(path, data, mode)
 }

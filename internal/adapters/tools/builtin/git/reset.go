@@ -3,11 +3,9 @@ package git
 import (
 	"context"
 	"fmt"
-
 	"strings"
 
 	"github.com/go-git/go-git/v5"
-
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -34,7 +32,7 @@ func (gt *GitTools) GitReset(ctx context.Context, req *GitResetRequest) (*GitRes
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitResetResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

@@ -28,7 +28,7 @@ func TestValidatePathRejectsSiblingPrefix(t *testing.T) {
 	if _, err := gt.validatePath("."); err != nil {
 		t.Fatalf("validate inside path: %v", err)
 	}
-	if _, err := gt.validatePath(sibling); err == nil || !strings.Contains(err.Error(), "访问被拒绝") {
+	if _, err := gt.validatePath(sibling); err == nil || !strings.Contains(err.Error(), "access denied") {
 		t.Fatalf("sibling path error = %v, want denied", err)
 	}
 }

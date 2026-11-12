@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 )
 
@@ -38,7 +37,7 @@ func (gt *GitTools) GitRemote(ctx context.Context, req *GitRemoteRequest) (*GitR
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitRemoteResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

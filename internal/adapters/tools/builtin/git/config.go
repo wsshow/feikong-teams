@@ -3,8 +3,6 @@ package git
 import (
 	"context"
 	"fmt"
-
-	"github.com/go-git/go-git/v5"
 )
 
 // GitConfigRequest 配置操作请求
@@ -38,7 +36,7 @@ func (gt *GitTools) GitConfig(ctx context.Context, req *GitConfigRequest) (*GitC
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitConfigResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

@@ -78,7 +78,7 @@ func ResolveWorkspace(baseDir, userPath string) (ResolvedPath, error) {
 	if relPath == "." {
 		relPath = ""
 	}
-	if relPath != "" && strings.HasPrefix(relPath, "..") {
+	if relPath != "" && !filepath.IsLocal(relPath) {
 		return ResolvedPath{}, fmt.Errorf("path is outside workspace")
 	}
 

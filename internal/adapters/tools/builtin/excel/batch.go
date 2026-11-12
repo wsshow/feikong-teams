@@ -3,6 +3,7 @@ package excel
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -50,7 +51,7 @@ func (et *ExcelTools) BatchCreateSheets(ctx context.Context, req *BatchCreateShe
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchCreateSheetsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -85,7 +86,7 @@ func (et *ExcelTools) BatchCreateSheets(ctx context.Context, req *BatchCreateShe
 		})
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchCreateSheetsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -127,7 +128,7 @@ func (et *ExcelTools) BatchDeleteSheets(ctx context.Context, req *BatchDeleteShe
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchDeleteSheetsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -158,7 +159,7 @@ func (et *ExcelTools) BatchDeleteSheets(ctx context.Context, req *BatchDeleteShe
 		success = append(success, sheetName)
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchDeleteSheetsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -213,7 +214,7 @@ func (et *ExcelTools) BatchSetCellValues(ctx context.Context, req *BatchSetCellV
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchSetCellValuesResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -244,7 +245,7 @@ func (et *ExcelTools) BatchSetCellValues(ctx context.Context, req *BatchSetCellV
 		success = append(success, cv.Cell)
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchSetCellValuesResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -299,7 +300,7 @@ func (et *ExcelTools) BatchFillRows(ctx context.Context, req *BatchFillRowsReque
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchFillRowsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -309,23 +310,20 @@ func (et *ExcelTools) BatchFillRows(ctx context.Context, req *BatchFillRowsReque
 
 	rowsFilled := 0
 	for i, rowData := range req.Data {
-		currentRow := req.StartRow + i
-		for j, value := range rowData {
-			// 将列索引转换为列名（A, B, C...）
-			colName, err := excelize.ColumnNumberToName(j + 1)
-			if err != nil {
-				continue
-			}
-
-			cell := fmt.Sprintf("%s%d", colName, currentRow)
-			if err := f.SetCellValue(req.SheetName, cell, value); err != nil {
-				continue
-			}
+		if len(rowData) == 0 {
+			continue
+		}
+		cell, err := excelize.CoordinatesToCellName(1, req.StartRow+i)
+		if err != nil {
+			return &BatchFillRowsResponse{ErrorMessage: err.Error()}, nil
+		}
+		if err := f.SetSheetRow(req.SheetName, cell, &rowData); err != nil {
+			return &BatchFillRowsResponse{ErrorMessage: err.Error()}, nil
 		}
 		rowsFilled++
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchFillRowsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -379,7 +377,7 @@ func (et *ExcelTools) BatchFillCols(ctx context.Context, req *BatchFillColsReque
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchFillColsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -389,16 +387,21 @@ func (et *ExcelTools) BatchFillCols(ctx context.Context, req *BatchFillColsReque
 
 	colsFilled := 0
 	for colName, colData := range req.Columns {
-		for i, value := range colData {
-			cell := fmt.Sprintf("%s%d", colName, req.StartRow+i)
-			if err := f.SetCellValue(req.SheetName, cell, value); err != nil {
-				continue
-			}
+		col, err := excelize.ColumnNameToNumber(colName)
+		if err != nil {
+			return &BatchFillColsResponse{ErrorMessage: err.Error()}, nil
+		}
+		cell, err := excelize.CoordinatesToCellName(col, req.StartRow)
+		if err != nil {
+			return &BatchFillColsResponse{ErrorMessage: err.Error()}, nil
+		}
+		if err := f.SetSheetCol(req.SheetName, cell, &colData); err != nil {
+			return &BatchFillColsResponse{ErrorMessage: err.Error()}, nil
 		}
 		colsFilled++
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchFillColsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -451,7 +454,7 @@ func (et *ExcelTools) BatchInsertRows(ctx context.Context, req *BatchInsertRowsR
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchInsertRowsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -465,7 +468,7 @@ func (et *ExcelTools) BatchInsertRows(ctx context.Context, req *BatchInsertRowsR
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchInsertRowsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -517,7 +520,7 @@ func (et *ExcelTools) BatchRemoveRows(ctx context.Context, req *BatchRemoveRowsR
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchRemoveRowsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -535,7 +538,7 @@ func (et *ExcelTools) BatchRemoveRows(ctx context.Context, req *BatchRemoveRowsR
 		}
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchRemoveRowsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -581,7 +584,7 @@ func (et *ExcelTools) BatchInsertCols(ctx context.Context, req *BatchInsertColsR
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchInsertColsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -595,7 +598,7 @@ func (et *ExcelTools) BatchInsertCols(ctx context.Context, req *BatchInsertColsR
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchInsertColsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -641,7 +644,7 @@ func (et *ExcelTools) BatchRemoveCols(ctx context.Context, req *BatchRemoveColsR
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchRemoveColsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -659,7 +662,7 @@ func (et *ExcelTools) BatchRemoveCols(ctx context.Context, req *BatchRemoveColsR
 		}
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchRemoveColsResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -712,7 +715,7 @@ func (et *ExcelTools) BatchSetCellStyles(ctx context.Context, req *BatchSetCellS
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &BatchSetCellStylesResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -732,7 +735,16 @@ func (et *ExcelTools) BatchSetCellStyles(ctx context.Context, req *BatchSetCellS
 			continue
 		}
 
-		if err := f.SetCellStyle(req.SheetName, cs.Cell, cs.Cell, cs.StyleID); err != nil {
+		parts := strings.Split(cs.Cell, ":")
+		if len(parts) > 2 {
+			failed = append(failed, FailedResult{Item: cs.Cell, Error: "invalid cell range"})
+			continue
+		}
+		end := parts[0]
+		if len(parts) == 2 {
+			end = parts[1]
+		}
+		if err := f.SetCellStyle(req.SheetName, parts[0], end, cs.StyleID); err != nil {
 			failed = append(failed, FailedResult{
 				Item:  cs.Cell,
 				Error: err.Error(),
@@ -743,7 +755,7 @@ func (et *ExcelTools) BatchSetCellStyles(ctx context.Context, req *BatchSetCellS
 		success = append(success, cs.Cell)
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &BatchSetCellStylesResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil

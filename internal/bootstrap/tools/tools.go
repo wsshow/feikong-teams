@@ -1,8 +1,6 @@
 package tools
 
 import (
-	storageport "fkteams/internal/ports/storage"
-	"fkteams/internal/runtime/resources"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -34,7 +32,9 @@ import (
 	memorytools "fkteams/internal/app/tools/memory"
 	tasktools "fkteams/internal/app/tools/tasks"
 	runtimeport "fkteams/internal/ports/runtime"
+	storageport "fkteams/internal/ports/storage"
 	toolport "fkteams/internal/ports/tools"
+	"fkteams/internal/runtime/resources"
 )
 
 func runtimeDir() string {
@@ -48,6 +48,7 @@ func appdataJavaScriptStateDir() string {
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
 func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Documents) (*apptools.ToolGroupRegistry, error) {
 	sessionsDir := appdata.SessionsDir()
+	sharedLocks := resources.NewKeyedLocks()
 	commands := &commandManagers{byCleaner: make(map[*resources.Cleaner]*commandtool.Manager)}
 	var documents storageport.Documents
 	if len(stores) > 0 {
@@ -106,10 +107,10 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "读取、搜索、创建和修改工作区文件，适合代码编辑、项目检查和文档整理。",
 				Category:      "文件",
 				Builtin:       true,
-				IncludedTools: []string{"file_read", "file_write", "file_search", "file_list"},
+				IncludedTools: []string{"file_read", "file_write", "file_append", "file_edit", "grep", "file_list", "glob", "file_patch"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				fileTools, err := filetool.NewFileTools(ctx.WorkspaceDir)
+				fileTools, err := filetool.NewFileTools(ctx.WorkspaceDir, sharedLocks)
 				if err != nil {
 					return nil, fmt.Errorf("初始化文件工具失败: %w", err)
 				}
@@ -123,10 +124,10 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "管理任务清单和执行进度，适合长任务拆解、跟踪和复盘。",
 				Category:      "协作",
 				Builtin:       true,
-				IncludedTools: []string{"todo_add", "todo_update", "todo_list"},
+				IncludedTools: []string{"todo_add", "todo_list", "todo_update", "todo_delete", "todo_batch_add", "todo_batch_delete", "todo_clear"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				todoTools, err := todotool.NewTodoTools(ctx.SessionsDir, documents)
+				todoTools, err := todotool.NewTodoToolsWithLocks(ctx.SessionsDir, sharedLocks, documents)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Todo工具失败: %w", err)
 				}
@@ -176,7 +177,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "使用 uv 创建隔离 Python 环境、安装依赖并执行 Python 代码。",
 				Category:      "开发",
 				Builtin:       true,
-				IncludedTools: []string{"uv_python"},
+				IncludedTools: []string{"uv_init_env", "uv_install_package", "uv_remove_package", "uv_list_package", "uv_clean_env", "uv_run_script", "uv_get_env_info", "uv_run_code", "uv_check_syntax", "uv_format_code"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				uvTools, err := uvtool.NewUVTools(ctx.RuntimeDir, ctx.WorkspaceDir)
@@ -193,7 +194,7 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "使用 bun 创建隔离 JavaScript 环境、安装依赖并执行 JS/TS 代码。",
 				Category:      "开发",
 				Builtin:       true,
-				IncludedTools: []string{"bun_javascript"},
+				IncludedTools: []string{"bun_init_env", "bun_install_package", "bun_remove_package", "bun_list_package", "bun_clean_env", "bun_run_script", "bun_get_env_info"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
 				bunTools, err := buntool.NewBunTools(ctx.RuntimeDir, ctx.WorkspaceDir)
@@ -210,10 +211,10 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "创建、读取和编辑 Excel 工作簿，处理表格数据、公式、样式和工作表。",
 				Category:      "数据",
 				Builtin:       true,
-				IncludedTools: []string{"excel_create", "excel_read", "excel_write", "excel_style"},
+				IncludedTools: []string{"excel_create_workbook", "excel_open_workbook", "excel_save_workbook", "excel_set_workbook_props", "excel_create_sheet", "excel_delete_sheet", "excel_rename_sheet", "excel_copy_sheet", "excel_set_active_sheet", "excel_set_sheet_visible", "excel_set_cell_value", "excel_get_cell_value", "excel_set_cell_formula", "excel_merge_cells", "excel_unmerge_cells", "excel_set_cell_style", "excel_get_rows", "excel_get_row", "excel_get_col", "excel_get_sheet_data", "excel_get_all_sheets_data", "excel_set_row_height", "excel_set_col_width", "excel_insert_row", "excel_remove_row", "excel_insert_col", "excel_remove_col", "excel_create_style", "excel_set_conditional_format", "excel_add_picture", "excel_add_chart", "excel_batch_create_sheets", "excel_batch_delete_sheets", "excel_batch_set_cell_values", "excel_batch_fill_rows", "excel_batch_fill_cols", "excel_batch_insert_rows", "excel_batch_remove_rows", "excel_batch_insert_cols", "excel_batch_remove_cols", "excel_batch_set_cell_styles"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				excelTools, err := exceltool.NewExcelTools(ctx.WorkspaceDir)
+				excelTools, err := exceltool.NewExcelTools(ctx.WorkspaceDir, sharedLocks)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Excel工具失败: %w", err)
 				}
@@ -253,10 +254,14 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "读取和分析文档文件，支持文档信息、智能读取、按页和按行读取。",
 				Category:      "文档",
 				Builtin:       true,
-				IncludedTools: []string{"doc_info", "doc_smart_read", "doc_read_pages", "doc_read_lines"},
+				IncludedTools: []string{"get_document_info", "read_document_smart", "read_document_by_pages", "read_document_by_lines"},
 			},
-			Factory: func(apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				return doctool.GetTools()
+			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
+				tools, err := doctool.NewTools(ctx.WorkspaceDir)
+				if err != nil {
+					return nil, err
+				}
+				return tools.GetTools()
 			},
 		},
 		{
@@ -266,10 +271,10 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "查看状态、提交、分支、日志和差异，适合版本管理和代码变更检查。",
 				Category:      "开发",
 				Builtin:       true,
-				IncludedTools: []string{"git_status", "git_diff", "git_log", "git_commit"},
+				IncludedTools: []string{"git_init", "git_status", "git_add", "git_commit", "git_log", "git_branch", "git_checkout", "git_reset", "git_tag", "git_diff", "git_clean", "git_remove", "git_config", "git_remote"},
 			},
 			Factory: func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-				gitTools, err := gittool.NewGitTools(ctx.WorkspaceDir)
+				gitTools, err := gittool.NewGitTools(ctx.WorkspaceDir, sharedLocks)
 				if err != nil {
 					return nil, fmt.Errorf("初始化Git工具失败: %w", err)
 				}

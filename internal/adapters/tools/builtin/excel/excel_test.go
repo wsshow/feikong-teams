@@ -27,7 +27,7 @@ func TestValidatePathRejectsSiblingPrefix(t *testing.T) {
 		t.Fatalf("create sibling dir: %v", err)
 	}
 
-	if _, err := tools.validatePath(filepath.Join(sibling, "book.xlsx")); err == nil || !strings.Contains(err.Error(), "访问被拒绝") {
+	if _, err := tools.validatePath(filepath.Join(sibling, "book.xlsx")); err == nil || !strings.Contains(err.Error(), "access denied") {
 		t.Fatalf("validatePath sibling error = %v, want access denied", err)
 	}
 

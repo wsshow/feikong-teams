@@ -2,14 +2,15 @@ package todo
 
 import (
 	"context"
-	sqlitestore "fkteams/internal/adapters/storage/sqlite"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	sqlitestore "fkteams/internal/adapters/storage/sqlite"
 	"fkteams/internal/domain/session"
+	"fkteams/internal/runtime/resources"
 )
 
 func newTestTodoTools(t *testing.T) (*TodoTools, context.Context) {
@@ -291,5 +292,39 @@ func TestDatabaseTodoRejectsSymlinkAndCrossSessionPath(t *testing.T) {
 	data, _ := os.ReadFile(outside)
 	if string(data) != `{"todos":[]}` {
 		t.Fatal("outside target modified")
+	}
+}
+
+func TestTodoSharedLocksPreserveUpdatesAcrossInstances(t *testing.T) {
+	dir := t.TempDir()
+	locks := resources.NewKeyedLocks()
+	a, err := NewTodoToolsWithLocks(dir, locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := NewTodoToolsWithLocks(dir, locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := session.WithID(context.Background(), "shared-session")
+	var wg sync.WaitGroup
+	for i := range 32 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			tool := a
+			if i%2 == 0 {
+				tool = b
+			}
+			resp, err := tool.TodoAdd(ctx, &TodoAddRequest{Title: "item"})
+			if err != nil || !resp.Success {
+				t.Errorf("add: %#v %v", resp, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	resp, err := a.TodoListFunc(ctx, &TodoListRequest{})
+	if err != nil || resp.TotalCount != 32 {
+		t.Fatalf("lost updates across instances: %#v %v", resp, err)
 	}
 }

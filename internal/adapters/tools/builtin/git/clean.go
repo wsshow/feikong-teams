@@ -30,7 +30,7 @@ func (gt *GitTools) GitClean(ctx context.Context, req *GitCleanRequest) (*GitCle
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitCleanResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

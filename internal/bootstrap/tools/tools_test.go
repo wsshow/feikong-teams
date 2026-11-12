@@ -2,6 +2,10 @@ package tools
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -133,4 +137,45 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestToolCatalogMatchesResolvedBuiltinNames(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("FEIKONG_APP_DIR", root)
+	// 工具声明的校验不依赖本机安装或启动脚本运行时。
+	bin := t.TempDir()
+	for _, name := range []string{"bun", "uv"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	registry, err := RegisterDefaults(mcpadapter.NewProvider())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := apptools.WithResolveContextPatch(context.Background(), apptools.ToolResolveContext{WorkspaceDir: filepath.Join(root, "workspace"), SessionsDir: filepath.Join(root, "sessions"), RuntimeDir: filepath.Join(root, "runtime")})
+	for _, group := range registry.Infos() {
+		if !group.Builtin || group.Name == "ssh" {
+			continue
+		}
+		tools, err := registry.GetToolsByName(ctx, group.Name)
+		if err != nil {
+			t.Fatalf("resolve %s: %v", group.Name, err)
+		}
+		actual := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			info, err := tool.Info(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual = append(actual, info.Name)
+		}
+		expected := append([]string(nil), group.IncludedTools...)
+		sort.Strings(expected)
+		sort.Strings(actual)
+		if !reflect.DeepEqual(expected, actual) {
+			t.Fatalf("catalog %s differs: declared=%v actual=%v", group.Name, expected, actual)
+		}
+	}
 }

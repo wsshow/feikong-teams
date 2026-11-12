@@ -11,6 +11,7 @@ import (
 
 // GetRowsRequest 获取所有行请求
 type GetRowsRequest struct {
+	StartRow  int    `json:"start_row,omitempty" jsonschema:"description=起始行号（从1开始），配合 next_row 继续读取"`
 	Path      string `json:"path" jsonschema:"description=工作簿文件路径,required"`
 	SheetName string `json:"sheet_name" jsonschema:"description=工作表名称,required"`
 	MaxRows   int    `json:"max_rows,omitempty" jsonschema:"description=最大返回行数(默认100)"`
@@ -18,6 +19,8 @@ type GetRowsRequest struct {
 
 // GetRowsResponse 获取所有行响应
 type GetRowsResponse struct {
+	Truncated    bool       `json:"truncated,omitempty"`
+	NextRow      int        `json:"next_row,omitempty"`
 	Rows         [][]string `json:"rows,omitempty" jsonschema:"description=行数据"`
 	RowCount     int        `json:"row_count" jsonschema:"description=实际返回的行数"`
 	Message      string     `json:"message,omitempty" jsonschema:"description=操作结果消息"`
@@ -39,7 +42,7 @@ func (et *ExcelTools) GetRows(ctx context.Context, req *GetRowsRequest) (*GetRow
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &GetRowsResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -47,24 +50,13 @@ func (et *ExcelTools) GetRows(ctx context.Context, req *GetRowsRequest) (*GetRow
 	}
 	defer f.Close()
 
-	rows, err := f.GetRows(req.SheetName)
+	rows, truncated, err := readSheetRows(ctx, f.File, req.SheetName, req.StartRow, req.MaxRows, 256, 100)
 	if err != nil {
-		return &GetRowsResponse{
-			ErrorMessage: fmt.Sprintf("获取行数据失败: %v", err),
-		}, nil
-	}
-
-	maxRows := req.MaxRows
-	if maxRows <= 0 {
-		maxRows = 100
-	}
-
-	if len(rows) > maxRows {
-		rows = rows[:maxRows]
+		return &GetRowsResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	return &GetRowsResponse{
-		Rows:     rows,
+		Rows: rows, Truncated: truncated, NextRow: max(1, req.StartRow) + len(rows),
 		RowCount: len(rows),
 		Message:  fmt.Sprintf("成功获取 %d 行数据", len(rows)),
 	}, nil
@@ -99,7 +91,7 @@ func (et *ExcelTools) GetRow(ctx context.Context, req *GetRowRequest) (*GetRowRe
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &GetRowResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -107,27 +99,23 @@ func (et *ExcelTools) GetRow(ctx context.Context, req *GetRowRequest) (*GetRowRe
 	}
 	defer f.Close()
 
-	rows, err := f.GetRows(req.SheetName)
+	rows, _, err := readSheetRows(ctx, f.File, req.SheetName, req.Row, 1, 256, 1)
 	if err != nil {
-		return &GetRowResponse{
-			ErrorMessage: fmt.Sprintf("获取行数据失败: %v", err),
-		}, nil
+		return &GetRowResponse{ErrorMessage: err.Error()}, nil
 	}
-
-	if req.Row > len(rows) {
-		return &GetRowResponse{
-			ErrorMessage: fmt.Sprintf("行号 %d 超出范围，工作表只有 %d 行", req.Row, len(rows)),
-		}, nil
+	if len(rows) == 0 {
+		return &GetRowResponse{ErrorMessage: "row is outside worksheet data"}, nil
 	}
 
 	return &GetRowResponse{
-		Row:     rows[req.Row-1],
+		Row:     rows[0],
 		Message: fmt.Sprintf("成功获取第 %d 行数据", req.Row),
 	}, nil
 }
 
 // GetColRequest 获取单列请求
 type GetColRequest struct {
+	StartRow  int    `json:"start_row,omitempty" jsonschema:"description=起始行号（从1开始），配合 next_row 继续读取"`
 	Path      string `json:"path" jsonschema:"description=工作簿文件路径,required"`
 	SheetName string `json:"sheet_name" jsonschema:"description=工作表名称,required"`
 	Col       string `json:"col" jsonschema:"description=列名(如A),required"`
@@ -136,6 +124,8 @@ type GetColRequest struct {
 
 // GetColResponse 获取单列响应
 type GetColResponse struct {
+	Truncated    bool     `json:"truncated,omitempty"`
+	NextRow      int      `json:"next_row,omitempty"`
 	Col          []string `json:"col,omitempty" jsonschema:"description=列数据"`
 	Message      string   `json:"message,omitempty" jsonschema:"description=操作结果消息"`
 	ErrorMessage string   `json:"error_message,omitempty" jsonschema:"description=错误信息"`
@@ -156,7 +146,7 @@ func (et *ExcelTools) GetCol(ctx context.Context, req *GetColRequest) (*GetColRe
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &GetColResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -164,46 +154,30 @@ func (et *ExcelTools) GetCol(ctx context.Context, req *GetColRequest) (*GetColRe
 	}
 	defer f.Close()
 
-	cols, err := f.GetCols(req.SheetName)
-	if err != nil {
-		return &GetColResponse{
-			ErrorMessage: fmt.Sprintf("获取列数据失败: %v", err),
-		}, nil
-	}
-
-	// 将列名转换为索引
 	colIndex, err := excelize.ColumnNameToNumber(req.Col)
 	if err != nil {
-		return &GetColResponse{
-			ErrorMessage: fmt.Sprintf("列名无效: %v", err),
-		}, nil
+		return &GetColResponse{ErrorMessage: "invalid column name"}, nil
 	}
-
-	if colIndex > len(cols) {
-		return &GetColResponse{
-			ErrorMessage: fmt.Sprintf("列 %s 不存在", req.Col),
-		}, nil
+	rows, truncated, err := readSheetRows(ctx, f.File, req.SheetName, req.StartRow, req.MaxRows, 1, 100, colIndex)
+	if err != nil {
+		return &GetColResponse{ErrorMessage: err.Error()}, nil
 	}
-
-	colData := cols[colIndex-1]
-
-	maxRows := req.MaxRows
-	if maxRows <= 0 {
-		maxRows = 100
-	}
-
-	if len(colData) > maxRows {
-		colData = colData[:maxRows]
+	colData := make([]string, len(rows))
+	for i, row := range rows {
+		if len(row) > 0 {
+			colData[i] = row[0]
+		}
 	}
 
 	return &GetColResponse{
-		Col:     colData,
+		Col: colData, Truncated: truncated, NextRow: max(1, req.StartRow) + len(rows),
 		Message: fmt.Sprintf("成功获取列 %s 的数据，共 %d 个单元格", req.Col, len(colData)),
 	}, nil
 }
 
 // GetSheetDataRequest 获取工作表所有数据请求
 type GetSheetDataRequest struct {
+	StartRow  int    `json:"start_row,omitempty" jsonschema:"description=起始行号（从1开始），配合 next_row 继续读取"`
 	Path      string `json:"path" jsonschema:"description=工作簿文件路径,required"`
 	SheetName string `json:"sheet_name" jsonschema:"description=工作表名称,required"`
 	MaxRows   int    `json:"max_rows,omitempty" jsonschema:"description=最大返回行数(默认1000)"`
@@ -212,6 +186,8 @@ type GetSheetDataRequest struct {
 
 // GetSheetDataResponse 获取工作表所有数据响应
 type GetSheetDataResponse struct {
+	Truncated    bool       `json:"truncated,omitempty"`
+	NextRow      int        `json:"next_row,omitempty"`
 	Data         [][]string `json:"data,omitempty" jsonschema:"description=工作表数据"`
 	RowCount     int        `json:"row_count" jsonschema:"description=实际返回的行数"`
 	ColCount     int        `json:"col_count" jsonschema:"description=实际返回的列数"`
@@ -234,7 +210,7 @@ func (et *ExcelTools) GetSheetData(ctx context.Context, req *GetSheetDataRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &GetSheetDataResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -242,32 +218,9 @@ func (et *ExcelTools) GetSheetData(ctx context.Context, req *GetSheetDataRequest
 	}
 	defer f.Close()
 
-	rows, err := f.GetRows(req.SheetName)
+	rows, truncated, err := readSheetRows(ctx, f.File, req.SheetName, req.StartRow, req.MaxRows, req.MaxCols, 1000)
 	if err != nil {
-		return &GetSheetDataResponse{
-			ErrorMessage: fmt.Sprintf("获取工作表数据失败: %v", err),
-		}, nil
-	}
-
-	maxRows := req.MaxRows
-	if maxRows <= 0 {
-		maxRows = 1000
-	}
-	maxCols := req.MaxCols
-	if maxCols <= 0 {
-		maxCols = 50
-	}
-
-	// 限制行数
-	if len(rows) > maxRows {
-		rows = rows[:maxRows]
-	}
-
-	// 限制列数
-	for i := range rows {
-		if len(rows[i]) > maxCols {
-			rows[i] = rows[i][:maxCols]
-		}
+		return &GetSheetDataResponse{ErrorMessage: err.Error()}, nil
 	}
 
 	colCount := 0
@@ -278,7 +231,7 @@ func (et *ExcelTools) GetSheetData(ctx context.Context, req *GetSheetDataRequest
 	}
 
 	return &GetSheetDataResponse{
-		Data:     rows,
+		Data: rows, Truncated: truncated, NextRow: max(1, req.StartRow) + len(rows),
 		RowCount: len(rows),
 		ColCount: colCount,
 		Message:  fmt.Sprintf("成功获取工作表数据，%d 行 × %d 列", len(rows), colCount),
@@ -294,6 +247,7 @@ type GetAllSheetsDataRequest struct {
 
 // SheetData 工作表数据
 type SheetData struct {
+	Truncated bool       `json:"truncated,omitempty"`
 	SheetName string     `json:"sheet_name" jsonschema:"description=工作表名称"`
 	Data      [][]string `json:"data" jsonschema:"description=工作表数据"`
 	RowCount  int        `json:"row_count" jsonschema:"description=行数"`
@@ -317,7 +271,7 @@ func (et *ExcelTools) GetAllSheetsData(ctx context.Context, req *GetAllSheetsDat
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path, true)
 	if err != nil {
 		return &GetAllSheetsDataResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -326,6 +280,9 @@ func (et *ExcelTools) GetAllSheetsData(ctx context.Context, req *GetAllSheetsDat
 	defer f.Close()
 
 	sheetList := f.GetSheetList()
+	if len(sheetList) > 32 {
+		return &GetAllSheetsDataResponse{ErrorMessage: "too many sheets; request individual sheets"}, nil
+	}
 
 	maxRows := req.MaxRows
 	if maxRows <= 0 {
@@ -338,21 +295,9 @@ func (et *ExcelTools) GetAllSheetsData(ctx context.Context, req *GetAllSheetsDat
 
 	var sheets []SheetData
 	for _, sheetName := range sheetList {
-		rows, err := f.GetRows(sheetName)
+		rows, truncated, err := readSheetRows(ctx, f.File, sheetName, 1, maxRows, maxCols, 100)
 		if err != nil {
-			continue // 跳过无法读取的工作表
-		}
-
-		// 限制行数
-		if len(rows) > maxRows {
-			rows = rows[:maxRows]
-		}
-
-		// 限制列数
-		for i := range rows {
-			if len(rows[i]) > maxCols {
-				rows[i] = rows[i][:maxCols]
-			}
+			return &GetAllSheetsDataResponse{ErrorMessage: err.Error()}, nil
 		}
 
 		colCount := 0
@@ -363,10 +308,10 @@ func (et *ExcelTools) GetAllSheetsData(ctx context.Context, req *GetAllSheetsDat
 		}
 
 		sheets = append(sheets, SheetData{
-			SheetName: sheetName,
-			Data:      rows,
-			RowCount:  len(rows),
-			ColCount:  colCount,
+			SheetName: sheetName, Truncated: truncated,
+			Data:     rows,
+			RowCount: len(rows),
+			ColCount: colCount,
 		})
 	}
 
@@ -406,7 +351,7 @@ func (et *ExcelTools) SetRowHeight(ctx context.Context, req *SetRowHeightRequest
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetRowHeightResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -420,7 +365,7 @@ func (et *ExcelTools) SetRowHeight(ctx context.Context, req *SetRowHeightRequest
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetRowHeightResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -461,7 +406,7 @@ func (et *ExcelTools) SetColWidth(ctx context.Context, req *SetColWidthRequest) 
 		}, nil
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &SetColWidthResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -475,7 +420,7 @@ func (et *ExcelTools) SetColWidth(ctx context.Context, req *SetColWidthRequest) 
 		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &SetColWidthResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -520,7 +465,7 @@ func (et *ExcelTools) InsertRow(ctx context.Context, req *InsertRowRequest) (*In
 		count = 1
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &InsertRowResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -528,15 +473,13 @@ func (et *ExcelTools) InsertRow(ctx context.Context, req *InsertRowRequest) (*In
 	}
 	defer f.Close()
 
-	for i := 0; i < count; i++ {
-		if err := f.InsertRows(req.SheetName, req.Row, 1); err != nil {
-			return &InsertRowResponse{
-				ErrorMessage: fmt.Sprintf("插入行失败: %v", err),
-			}, nil
-		}
+	if err := f.InsertRows(req.SheetName, req.Row, count); err != nil {
+		return &InsertRowResponse{
+			ErrorMessage: fmt.Sprintf("插入行失败: %v", err),
+		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &InsertRowResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -581,7 +524,7 @@ func (et *ExcelTools) RemoveRow(ctx context.Context, req *RemoveRowRequest) (*Re
 		count = 1
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &RemoveRowResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -598,7 +541,7 @@ func (et *ExcelTools) RemoveRow(ctx context.Context, req *RemoveRowRequest) (*Re
 		}
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &RemoveRowResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -643,7 +586,7 @@ func (et *ExcelTools) InsertCol(ctx context.Context, req *InsertColRequest) (*In
 		count = 1
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &InsertColResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -651,15 +594,13 @@ func (et *ExcelTools) InsertCol(ctx context.Context, req *InsertColRequest) (*In
 	}
 	defer f.Close()
 
-	for i := 0; i < count; i++ {
-		if err := f.InsertCols(req.SheetName, req.Col, 1); err != nil {
-			return &InsertColResponse{
-				ErrorMessage: fmt.Sprintf("插入列失败: %v", err),
-			}, nil
-		}
+	if err := f.InsertCols(req.SheetName, req.Col, count); err != nil {
+		return &InsertColResponse{
+			ErrorMessage: fmt.Sprintf("插入列失败: %v", err),
+		}, nil
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &InsertColResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -704,7 +645,7 @@ func (et *ExcelTools) RemoveCol(ctx context.Context, req *RemoveColRequest) (*Re
 		count = 1
 	}
 
-	f, err := excelize.OpenFile(path)
+	f, err := et.openWorkbook(ctx, path)
 	if err != nil {
 		return &RemoveColResponse{
 			ErrorMessage: fmt.Sprintf("打开工作簿失败: %v", err),
@@ -721,7 +662,7 @@ func (et *ExcelTools) RemoveCol(ctx context.Context, req *RemoveColRequest) (*Re
 		}
 	}
 
-	if err := f.Save(); err != nil {
+	if err := et.saveWorkbook(f, path); err != nil {
 		return &RemoveColResponse{
 			ErrorMessage: fmt.Sprintf("保存失败: %v", err),
 		}, nil
@@ -730,4 +671,72 @@ func (et *ExcelTools) RemoveCol(ctx context.Context, req *RemoveColRequest) (*Re
 	return &RemoveColResponse{
 		Message: fmt.Sprintf("成功删除列 %s 开始的 %d 列", req.Col, count),
 	}, nil
+}
+
+func readSheetRows(ctx context.Context, f *excelize.File, sheet string, start, limit, maxCols, defaultRows int, selectedColumn ...int) ([][]string, bool, error) {
+	if start <= 0 {
+		start = 1
+	}
+	if limit <= 0 {
+		limit = defaultRows
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+	if maxCols <= 0 {
+		maxCols = 50
+	}
+	if maxCols > 256 {
+		maxCols = 256
+	}
+	rows, err := f.Rows(sheet)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var result [][]string
+	rowIndex := 0
+	size := 0
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+		rowIndex++
+		if rowIndex < start {
+			continue
+		}
+		if len(result) >= limit {
+			return result, true, nil
+		}
+		cols, err := rows.Columns()
+		if err != nil {
+			return nil, false, err
+		}
+		if len(selectedColumn) > 0 {
+			column := selectedColumn[0]
+			if len(cols) < column {
+				cols = nil
+			} else {
+				cols = cols[column-1:]
+			}
+		}
+
+		if len(cols) > maxCols {
+			cols = cols[:maxCols]
+		}
+		for _, value := range cols {
+			size += len(value)
+		}
+		if size > 1<<20 {
+			return nil, false, fmt.Errorf("worksheet output exceeds 1 MB; request fewer rows or columns")
+		}
+		result = append(result, cols)
+	}
+	if err := rows.Error(); err != nil {
+		return nil, false, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, false, err
+	}
+	return result, false, nil
 }

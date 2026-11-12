@@ -3,11 +3,9 @@ package git
 import (
 	"context"
 	"fmt"
-
 	"time"
 
 	"github.com/go-git/go-git/v5"
-
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -49,7 +47,7 @@ func (gt *GitTools) GitCommit(ctx context.Context, req *GitCommitRequest) (*GitC
 		return nil, err
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitCommitResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),

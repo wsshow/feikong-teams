@@ -2,10 +2,10 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-git/go-git/v5"
-
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -40,7 +40,7 @@ func (gt *GitTools) GitBranch(ctx context.Context, req *GitBranchRequest) (*GitB
 		}, nil
 	}
 
-	repo, err := git.PlainOpen(path)
+	repo, err := gt.openRepository(path)
 	if err != nil {
 		return &GitBranchResponse{
 			ErrorMessage: fmt.Sprintf("无法打开仓库: %v", err),
@@ -115,6 +115,10 @@ func (gt *GitTools) listBranches(repo *git.Repository) (*GitBranchResponse, erro
 }
 
 func (gt *GitTools) createBranch(repo *git.Repository, name string, startPoint string) (*GitBranchResponse, error) {
+	if err := plumbing.NewBranchReferenceName(name).Validate(); err != nil {
+		return &GitBranchResponse{ErrorMessage: fmt.Sprintf("invalid branch name: %v", err)}, nil
+	}
+
 	if name == "" {
 		return &GitBranchResponse{
 			ErrorMessage: "分支名称不能为空",
@@ -146,7 +150,13 @@ func (gt *GitTools) createBranch(repo *git.Repository, name string, startPoint s
 	refName := plumbing.NewBranchReferenceName(name)
 	ref := plumbing.NewHashReference(refName, hash)
 
-	err := repo.Storer.SetReference(ref)
+	if _, err := repo.Reference(refName, false); !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		if err == nil {
+			return &GitBranchResponse{ErrorMessage: "branch already exists"}, nil
+		}
+		return &GitBranchResponse{ErrorMessage: fmt.Sprintf("inspect branch: %v", err)}, nil
+	}
+	err := repo.Storer.CheckAndSetReference(ref, nil)
 	if err != nil {
 		return &GitBranchResponse{
 			ErrorMessage: fmt.Sprintf("创建分支失败: %v", err),
@@ -159,6 +169,10 @@ func (gt *GitTools) createBranch(repo *git.Repository, name string, startPoint s
 }
 
 func (gt *GitTools) deleteBranch(repo *git.Repository, name string) (*GitBranchResponse, error) {
+	if err := plumbing.NewBranchReferenceName(name).Validate(); err != nil {
+		return &GitBranchResponse{ErrorMessage: fmt.Sprintf("invalid branch name: %v", err)}, nil
+	}
+
 	if name == "" {
 		return &GitBranchResponse{
 			ErrorMessage: "分支名称不能为空",
