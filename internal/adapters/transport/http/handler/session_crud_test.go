@@ -9,9 +9,36 @@ import (
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/chat/taskstream"
+	domainsession "fkteams/internal/domain/session"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestOpenAssistantHandlerRestoresRenamedSession(t *testing.T) {
+	rt := newTestRuntime(t)
+	router := gin.New()
+	router.POST("/assistant", rt.OpenAssistantHandler())
+	router.POST("/rename", rt.RenameSessionHandler())
+	for _, name := range []string{"助手", "小空"} {
+		resp := performJSON(router, http.MethodPost, "/assistant", `{}`)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("open: %d %s", resp.Code, resp.Body.String())
+		}
+		var data struct {
+			SessionID string `json:"session_id"`
+			Title     string `json:"title"`
+			Agent     string `json:"current_agent"`
+		}
+		decodeRawData(t, resp, &data)
+		if data.SessionID != domainsession.AssistantID || data.Title != name || data.Agent != domainsession.AssistantAgent {
+			t.Fatalf("assistant = %#v", data)
+		}
+		resp = performJSON(router, http.MethodPost, "/rename", `{"session_id":"`+data.SessionID+`","title":"小空"}`)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("rename: %s", resp.Body.String())
+		}
+	}
+}
 
 func TestSessionCRUDHandlers(t *testing.T) {
 	rt := newTestRuntime(t)

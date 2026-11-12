@@ -41,7 +41,7 @@ func (s *ChatSessionStore) UpdateMetadata(_ context.Context, update appchat.Meta
 			if update.Status != "" {
 				meta.Status = domainsession.Status(update.Status)
 			}
-			if update.UpdateDefaultTitle && update.TitleSource != "" && isDefaultTitle(meta.Title) {
+			if update.SessionID != domainsession.AssistantID && update.UpdateDefaultTitle && update.TitleSource != "" && isDefaultTitle(meta.Title) {
 				meta.Title = truncateTitle(update.TitleSource)
 			}
 		}

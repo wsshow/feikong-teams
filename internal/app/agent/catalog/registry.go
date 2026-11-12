@@ -10,8 +10,10 @@ import (
 	"fkteams/internal/app/agent/catalog/fkteamshelper"
 	"fkteams/internal/app/agent/catalog/researcher"
 	"fkteams/internal/app/agent/catalog/visitor"
+	"fkteams/internal/app/agent/catalog/workspaceassistant"
 	"fkteams/internal/app/config"
 	apptools "fkteams/internal/app/tools"
+	domainsession "fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fmt"
 	"maps"
@@ -250,6 +252,10 @@ type builtinAgentSpec struct {
 func builtinAgentSpecs() []builtinAgentSpec {
 	return []builtinAgentSpec{
 		{
+			id: domainsession.AssistantAgent, displayName: "助手", enabledByDefault: true,
+			definition: workspaceassistant.DefaultDefinition,
+		},
+		{
 			id:               "coordinator",
 			displayName:      "协调者",
 			aliases:          []string{"小队长"},
@@ -318,7 +324,7 @@ func IsBuiltinAgentID(id string) bool {
 
 // IsRequiredBuiltinAgentID reports whether id belongs to a required built-in entry.
 func IsRequiredBuiltinAgentID(id string) bool {
-	return id == "coordinator"
+	return id == "coordinator" || id == domainsession.AssistantAgent
 }
 
 func ConfigItems(cfg *config.Config) []config.AgentConfig {

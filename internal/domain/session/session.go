@@ -12,6 +12,12 @@ import (
 // ID 是稳定的会话标识。
 type ID string
 
+// AssistantID 是当前应用常驻助手的固定会话标识。
+const AssistantID = "workspace-assistant"
+
+// AssistantAgent 是常驻助手使用的内置智能体标识。
+const AssistantAgent = "workspace_assistant"
+
 // Status 是会话对外可见的生命周期状态。
 type Status string
 

@@ -89,9 +89,17 @@ func (s *Service) Update(ctx context.Context, req UpdateRequest) (domainsession.
 		return domainsession.Metadata{}, apperror.New(apperror.CodeInvalidArgument, "at least one session field is required")
 	}
 	if req.Title != nil {
+		if req.SessionID == domainsession.AssistantID {
+			if err := validateAssistantName(*req.Title); err != nil {
+				return domainsession.Metadata{}, err
+			}
+		}
 		if strings.TrimSpace(*req.Title) == "" {
 			return domainsession.Metadata{}, apperror.New(apperror.CodeInvalidArgument, "session title is required")
 		}
+	}
+	if req.SessionID == domainsession.AssistantID && ((req.CurrentAgent != nil && *req.CurrentAgent != domainsession.AssistantAgent) || (req.Mode != nil && *req.Mode != "team")) {
+		return domainsession.Metadata{}, apperror.New(apperror.CodeInvalidArgument, "assistant execution target cannot be changed")
 	}
 	return repository.UpdateSession(ctx, req.SessionID, func(metadata *domainsession.Metadata) error {
 		if req.Title != nil {

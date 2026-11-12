@@ -96,6 +96,8 @@ var toolPolicies = map[string]ToolPolicy{
 	"session_attachment_read": readOnlyPolicy("", false),
 	"session_search":          readOnlyPolicy("", false),
 	"session_read":            readOnlyPolicy("", false),
+	"assistant_profile":       readOnlyPolicy("", false),
+	"assistant_rename":        destructivePolicy("", false),
 
 	// Excel 读取
 	"excel_open_workbook":       readOnlyPolicy("", false),
