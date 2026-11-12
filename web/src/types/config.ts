@@ -4,6 +4,7 @@ export interface ModelConfig {
   use_for?: string[];
   provider: string;
   model: string;
+  supports_vision?: boolean;
   api_key?: string;
   base_url?: string;
   extra_headers?: string;

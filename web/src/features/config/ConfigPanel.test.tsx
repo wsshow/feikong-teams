@@ -101,6 +101,19 @@ test("model cards open isolated edits and cancellation restores renamed identifi
   expect(dialog().querySelector<HTMLInputElement>('[aria-label="ID"]')?.value).toBe("main");
 });
 
+test("model vision setting saves explicit values and can return to provider behavior", async () => {
+  for (const [label, expected] of [["支持", true], ["不支持", false], ["未设置（沿用供应商行为）", undefined]] as const) {
+    await click("编辑示例模型");
+    await click("视觉输入", dialog());
+    await click(label, dialog());
+    await click("确认并保存", dialog());
+    expect(writes.at(-1)?.models?.[0].supports_vision).toBe(expected);
+    await click("编辑示例模型");
+    expect(button("视觉输入", dialog()).textContent).toContain(label);
+    await click("取消", dialog());
+  }
+});
+
 test("save conflicts preserve input, block duplicate saves while pending, and close only after a successful retry", async () => {
   let finish!: (response: Response) => void;
   respondToSave = () => new Promise((resolve) => { finish = resolve; });

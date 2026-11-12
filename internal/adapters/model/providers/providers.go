@@ -12,6 +12,7 @@ import (
 
 	"fkteams/internal/adapters/model/providers/copilot"
 	"fkteams/internal/adapters/model/providers/providerkit"
+	modelregistry "fkteams/internal/runtime/model"
 )
 
 // Type 模型提供者类型
@@ -31,11 +32,12 @@ const (
 
 // Config 统一模型配置
 type Config struct {
-	Provider     Type              // 提供者类型，为空时自动检测
-	APIKey       string            // API 密钥
-	BaseURL      string            // API 地址
-	Model        string            // 模型名称
-	ExtraHeaders map[string]string // 额外 HTTP 请求头（如网关认证等）
+	Provider       Type              // 提供者类型，为空时自动检测
+	APIKey         string            // API 密钥
+	BaseURL        string            // API 地址
+	Model          string            // 模型名称
+	ExtraHeaders   map[string]string // 额外 HTTP 请求头（如网关认证等）
+	SupportsVision *bool             // nil 沿用供应商行为
 }
 
 // Factory 模型创建函数类型
@@ -131,15 +133,17 @@ func (r *Registry) NewChatModel(ctx context.Context, cfg *Config) (runtimeport.C
 	}
 
 	chatModel, err := f(ctx, &providerkit.Config{
-		APIKey:       cfg.APIKey,
-		BaseURL:      cfg.BaseURL,
-		Model:        cfg.Model,
-		ExtraHeaders: cfg.ExtraHeaders,
+		Provider:       string(t),
+		APIKey:         cfg.APIKey,
+		BaseURL:        cfg.BaseURL,
+		Model:          cfg.Model,
+		ExtraHeaders:   cfg.ExtraHeaders,
+		SupportsVision: cfg.SupportsVision,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return chatModel, nil
+	return modelregistry.WithVisionSupport(chatModel, cfg.SupportsVision, cfg.Model), nil
 }
 
 // Detect 从 BaseURL 或模型名称自动检测提供者类型

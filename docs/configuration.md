@@ -25,6 +25,7 @@ provider = "openai"
 base_url = "https://api.openai.com/v1"
 api_key = "your_api_key"
 model = "gpt-5"
+supports_vision = true
 
 [[models]]
 id = "fast"
@@ -34,6 +35,7 @@ provider = "deepseek"
 base_url = "https://api.deepseek.com/v1"
 api_key = "your_deepseek_key"
 model = "deepseek-chat"
+supports_vision = false
 ```
 
 字段说明：
@@ -47,9 +49,12 @@ model = "deepseek-chat"
 | `base_url` | 模型服务地址 |
 | `api_key` | 模型服务密钥 |
 | `model` | 上游真实模型名 |
+| `supports_vision` | 视觉输入能力：`true` 允许发送图片，`false` 在请求前拒绝图片；省略时沿用供应商适配器行为 |
 | `extra_headers` | 额外 HTTP 请求头，格式为 `Key:Value,Other:Value` |
 
 `use_for` 不能在多个模型中重复配置。必须有一个模型包含 `chat`；`agent`、`title`、`summary` 未配置时会回退到 `chat` 模型。
+
+在 Web 设置的“模型”页编辑模型卡片，可将“视觉输入”设为“支持”“不支持”或“未设置（沿用供应商行为）”，保存后立即用于后续任务。此设置由用户按实际模型能力选择，不按模型名称推断。开启不会为纯文本模型增加视觉能力，上游仍可能拒绝请求。DeepSeek 显式开启视觉时使用 OpenAI 兼容接口传递图片，绕过原生 SDK 的纯文本限制；未设置时保持原生 SDK 行为。
 
 ## 服务与认证
 

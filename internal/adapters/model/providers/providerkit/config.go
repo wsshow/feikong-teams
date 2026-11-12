@@ -13,11 +13,12 @@ import (
 
 // Config 统一模型配置（供各 provider 子包使用）
 type Config struct {
-	Provider     string            // 提供者类型
-	APIKey       string            // API 密钥
-	BaseURL      string            // API 地址
-	Model        string            // 模型名称
-	ExtraHeaders map[string]string // 额外 HTTP 请求头
+	Provider       string            // 提供者类型
+	APIKey         string            // API 密钥
+	BaseURL        string            // API 地址
+	Model          string            // 模型名称
+	ExtraHeaders   map[string]string // 额外 HTTP 请求头
+	SupportsVision *bool             // nil 沿用供应商行为
 }
 
 // ModelInfo 模型信息（复用顶层结构）

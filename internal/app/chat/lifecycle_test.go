@@ -56,6 +56,7 @@ func TestMarkProcessingWithTargetPersistsExecutionSelection(t *testing.T) {
 }
 
 type failingHistory struct {
+	events        []event.Event
 	err           error
 	finalized     bool
 	finalizations int
@@ -63,15 +64,38 @@ type failingHistory struct {
 	cancellations int
 }
 
-func (h *failingHistory) FinalizeCurrent()       { h.finalized = true; h.finalizations++ }
-func (*failingHistory) RecordEvent(event.Event)  {}
-func (h *failingHistory) RecordCancelled(string) { h.cancellations++ }
-func (h *failingHistory) Flush() error           { h.flushes++; return h.err }
+func (h *failingHistory) FinalizeCurrent()          { h.finalized = true; h.finalizations++ }
+func (h *failingHistory) RecordEvent(e event.Event) { h.events = append(h.events, e) }
+func (h *failingHistory) RecordCancelled(string)    { h.cancellations++ }
+func (h *failingHistory) Flush() error              { h.flushes++; return h.err }
 
 type lifecycleRunner struct{ err error }
 
 func (r lifecycleRunner) Run(context.Context, message.TurnInput, runtimeport.RunOptions) (*runtimeport.RunResult, error) {
 	return nil, r.err
+}
+
+type reportingErrorRunner struct{ err error }
+
+func (r reportingErrorRunner) Run(_ context.Context, _ message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+	if err := opts.Sink(event.Event{Type: event.TypeError, Error: r.err.Error()}); err != nil {
+		return nil, err
+	}
+	return nil, r.err
+}
+
+func TestRunTurnRecordsReturnedErrorOnlyWhenNotAlreadyReported(t *testing.T) {
+	runErr := errors.New("deepseek does not support image_url type")
+	for _, runner := range []runtimeport.Runner{lifecycleRunner{runErr}, reportingErrorRunner{runErr}} {
+		history := &failingHistory{}
+		_, err := NewService().RunTurn(context.Background(), TurnRequest{SessionID: "session", Runner: runner, History: history})
+		if !errors.Is(err, runErr) {
+			t.Fatalf("lost run error: %v", err)
+		}
+		if len(history.events) != 1 || history.events[0].Type != event.TypeError {
+			t.Fatalf("history should contain one error: %+v", history.events)
+		}
+	}
 }
 
 func TestTurnFinalizesHistoryOnceBeforeMetadata(t *testing.T) {

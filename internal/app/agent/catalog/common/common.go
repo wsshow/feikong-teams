@@ -33,11 +33,12 @@ func NewChatModel(ctx context.Context) (runtimeport.ChatModel, error) {
 // NewChatModelWithModelConfig 使用 ModelConfig 创建聊天模型
 func NewChatModelWithModelConfig(ctx context.Context, mc *config.ModelConfig) (runtimeport.ChatModel, error) {
 	return NewChatModelWithConfig(ctx, &modelregistry.Config{
-		Provider:     modelregistry.Type(mc.Provider),
-		APIKey:       mc.APIKey,
-		BaseURL:      mc.BaseURL,
-		Model:        mc.Model,
-		ExtraHeaders: mc.ParseExtraHeaders(),
+		Provider:       modelregistry.Type(mc.Provider),
+		APIKey:         mc.APIKey,
+		BaseURL:        mc.BaseURL,
+		Model:          mc.Model,
+		ExtraHeaders:   mc.ParseExtraHeaders(),
+		SupportsVision: mc.SupportsVision,
 	})
 }
 

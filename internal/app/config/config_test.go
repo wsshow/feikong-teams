@@ -205,7 +205,7 @@ func TestSaveReloadAndInit(t *testing.T) {
 func TestSnapshotDeepCopiesMutableConfiguration(t *testing.T) {
 	resetConfigForTest(t)
 	original := &Config{
-		Models:    []ModelConfig{{ID: "model", UseFor: []string{ModelUseChat}}},
+		Models:    []ModelConfig{{ID: "model", UseFor: []string{ModelUseChat}, SupportsVision: new(true)}},
 		Server:    Server{AllowOrigins: []string{"https://example.com"}, TrustedProxies: []string{"127.0.0.1"}},
 		OpenAIAPI: OpenAIAPI{APIKeys: []string{"secret"}},
 		Agents: Agents{Items: []AgentConfig{{
@@ -220,6 +220,7 @@ func TestSnapshotDeepCopiesMutableConfiguration(t *testing.T) {
 
 	snapshot := Snapshot()
 	snapshot.Models[0].UseFor[0] = "changed"
+	*snapshot.Models[0].SupportsVision = false
 	snapshot.Server.AllowOrigins[0] = "changed"
 	snapshot.OpenAIAPI.APIKeys[0] = "changed"
 	snapshot.Agents.Items[0].Tools[0] = "changed"
@@ -230,6 +231,7 @@ func TestSnapshotDeepCopiesMutableConfiguration(t *testing.T) {
 	snapshot.Tools.Approval.AutoApprove[0] = "changed"
 
 	if original.Models[0].UseFor[0] != ModelUseChat ||
+		!(*original.Models[0].SupportsVision) ||
 		original.Server.AllowOrigins[0] != "https://example.com" ||
 		original.OpenAIAPI.APIKeys[0] != "secret" ||
 		original.Agents.Items[0].Tools[0] != "search" ||
@@ -325,5 +327,8 @@ func TestGenerateExample(t *testing.T) {
 	}
 	if generated.ResolveDefaultModel(ModelUseChat) == nil || generated.Server.Auth.Username != "admin" {
 		t.Fatalf("generated config = %#v", generated)
+	}
+	if generated.Models[0].SupportsVision == nil || !*generated.Models[0].SupportsVision || generated.Models[1].SupportsVision == nil || *generated.Models[1].SupportsVision {
+		t.Fatal("generated vision settings were not preserved")
 	}
 }

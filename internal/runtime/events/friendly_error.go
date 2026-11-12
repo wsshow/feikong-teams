@@ -32,6 +32,7 @@ func NormalizeFriendlyError(raw string) FriendlyError {
 		friendly.Title = "当前模型不支持图片输入"
 		friendly.Message = "这次消息里包含图片，但当前模型" + providerSuffix(provider) + "不支持图片输入。图片和消息已经保存在会话历史中，后续不会自动再次发送给当前模型。"
 		friendly.Suggestions = []string{
+			"在设置的模型配置中检查视觉输入选项。",
 			"切换到支持视觉输入的模型后重试。",
 			"继续用文字描述图片内容后再提问。",
 			"需要查看历史图片时，可让模型读取会话附件信息。",

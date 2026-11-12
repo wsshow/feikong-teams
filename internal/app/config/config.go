@@ -38,16 +38,17 @@ const (
 
 // ModelConfig 可复用的模型配置，通过 ID 稳定引用，Name 仅用于展示。
 type ModelConfig struct {
-	ID           string   `toml:"id" json:"id"`
-	Name         string   `toml:"name" json:"name"`
-	UseFor       []string `toml:"use_for,omitempty" json:"use_for,omitempty"`
-	Provider     string   `toml:"provider,omitempty" json:"provider"`
-	BaseURL      string   `toml:"base_url" json:"base_url"`
-	APIKey       string   `toml:"api_key" json:"api_key"`
-	Model        string   `toml:"model" json:"model"`
-	ExtraHeaders string   `toml:"extra_headers,omitempty" json:"extra_headers"` // 格式: Key1:Value1,Key2:Value2
-	HasAPIKey    bool     `toml:"-" json:"has_api_key,omitempty"`               // 是否已配置 APIKey（前端展示用）
-	OriginalID   string   `toml:"-" json:"original_id,omitempty"`               // 前端加载时的原始 ID，用于 APIKey 还原匹配
+	ID             string   `toml:"id" json:"id"`
+	Name           string   `toml:"name" json:"name"`
+	UseFor         []string `toml:"use_for,omitempty" json:"use_for,omitempty"`
+	Provider       string   `toml:"provider,omitempty" json:"provider"`
+	BaseURL        string   `toml:"base_url" json:"base_url"`
+	APIKey         string   `toml:"api_key" json:"api_key"`
+	Model          string   `toml:"model" json:"model"`
+	SupportsVision *bool    `toml:"supports_vision,omitempty" json:"supports_vision,omitempty"` // nil 沿用供应商行为
+	ExtraHeaders   string   `toml:"extra_headers,omitempty" json:"extra_headers"`               // 格式: Key1:Value1,Key2:Value2
+	HasAPIKey      bool     `toml:"-" json:"has_api_key,omitempty"`                             // 是否已配置 APIKey（前端展示用）
+	OriginalID     string   `toml:"-" json:"original_id,omitempty"`                             // 前端加载时的原始 ID，用于 APIKey 还原匹配
 }
 
 // ParseExtraHeaders 解析额外请求头字符串为 map
@@ -714,6 +715,9 @@ func cloneConfig(cfg *Config) *Config {
 	cloned.Models = append([]ModelConfig(nil), cfg.Models...)
 	for i := range cloned.Models {
 		cloned.Models[i].UseFor = append([]string(nil), cfg.Models[i].UseFor...)
+		if cfg.Models[i].SupportsVision != nil {
+			cloned.Models[i].SupportsVision = new(*cfg.Models[i].SupportsVision)
+		}
 	}
 	cloned.Server.AllowOrigins = append([]string(nil), cfg.Server.AllowOrigins...)
 	cloned.Server.TrustedProxies = append([]string(nil), cfg.Server.TrustedProxies...)
@@ -850,28 +854,31 @@ func GenerateExample() error {
 	exampleConfig := Config{
 		Models: []ModelConfig{
 			{
-				ID:       "main",
-				Name:     "主力模型",
-				UseFor:   []string{ModelUseChat, ModelUseAgent},
-				Provider: "openai",
-				BaseURL:  "https://api.openai.com/v1",
-				APIKey:   "xxxxx",
-				Model:    "GPT-5",
+				ID:             "main",
+				Name:           "主力模型",
+				UseFor:         []string{ModelUseChat, ModelUseAgent},
+				Provider:       "openai",
+				BaseURL:        "https://api.openai.com/v1",
+				APIKey:         "xxxxx",
+				Model:          "GPT-5",
+				SupportsVision: new(true),
 			},
 			{
-				ID:       "fast",
-				Name:     "快速模型",
-				UseFor:   []string{ModelUseTitle, ModelUseSummary},
-				Provider: "deepseek",
-				BaseURL:  "https://api.deepseek.com/v1",
-				APIKey:   "xxxxx",
-				Model:    "deepseek-chat",
+				ID:             "fast",
+				Name:           "快速模型",
+				UseFor:         []string{ModelUseTitle, ModelUseSummary},
+				Provider:       "deepseek",
+				BaseURL:        "https://api.deepseek.com/v1",
+				APIKey:         "xxxxx",
+				Model:          "deepseek-chat",
+				SupportsVision: new(false),
 			},
 			{
-				ID:       "copilot",
-				Name:     "Copilot",
-				Provider: "copilot",
-				Model:    "gpt-4o",
+				ID:             "copilot",
+				Name:           "Copilot",
+				Provider:       "copilot",
+				Model:          "gpt-4o",
+				SupportsVision: new(true),
 			},
 		},
 		Memory: Memory{

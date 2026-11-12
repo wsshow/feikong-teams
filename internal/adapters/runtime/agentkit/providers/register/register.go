@@ -51,11 +51,12 @@ func registerRuntimeModel(registry *modelregistry.Registry, t modelregistry.Type
 	}
 	registry.Register(t, func(ctx context.Context, cfg *modelregistry.Config) (runtimeport.ChatModel, error) {
 		return f(ctx, &providerkit.Config{
-			Provider:     string(cfg.Provider),
-			APIKey:       cfg.APIKey,
-			BaseURL:      cfg.BaseURL,
-			Model:        cfg.Model,
-			ExtraHeaders: cfg.ExtraHeaders,
+			Provider:       string(cfg.Provider),
+			APIKey:         cfg.APIKey,
+			BaseURL:        cfg.BaseURL,
+			Model:          cfg.Model,
+			ExtraHeaders:   cfg.ExtraHeaders,
+			SupportsVision: cfg.SupportsVision,
 		})
 	})
 }

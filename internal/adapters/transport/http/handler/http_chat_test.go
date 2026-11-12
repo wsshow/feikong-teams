@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/config"
 	"fkteams/internal/domain/event"
@@ -18,6 +20,56 @@ import (
 	runtimeport "fkteams/internal/ports/runtime"
 	"github.com/gin-gonic/gin"
 )
+
+func TestStreamReportsAndPersistsRunErrorOnce(t *testing.T) {
+	for _, reported := range []bool{false, true} {
+		t.Run(fmt.Sprint(reported), func(t *testing.T) {
+			runErr := errors.New("deepseek does not support image_url type")
+			rt, router := chatTestRouter(t, func(_ context.Context, _ message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+				if reported {
+					if err := opts.Sink(event.Event{Type: event.TypeError, Error: runErr.Error()}); err != nil {
+						return nil, err
+					}
+				}
+				return nil, runErr
+			})
+			response := postChat(router, "/stream")
+			if response.Code != http.StatusOK {
+				t.Fatalf("stream start: %d %s", response.Code, response.Body.String())
+			}
+			stream := rt.Streams.Get("same")
+			deadline := time.Now().Add(3 * time.Second)
+			for !stream.IsDone() && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if !stream.IsDone() || stream.Status() != "error" {
+				t.Fatalf("stream did not finish with error: %s", stream.Status())
+			}
+			count := 0
+			for _, entry := range stream.EventsSince(0) {
+				if entry.Data["type"] == event.TypeError {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatalf("live errors=%d, want one", count)
+			}
+			records, err := eventlog.LoadSessionTranscriptRecords(rt.sessionDirPath("same"), rt.Documents)
+			if err != nil {
+				t.Fatal(err)
+			}
+			count = 0
+			for _, record := range records {
+				if record.Event.Type == eventlog.TranscriptError {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatalf("persisted errors=%d, want one", count)
+			}
+		})
+	}
+}
 
 type chatRunnerFunc func(context.Context, message.TurnInput, runtimeport.RunOptions) (*runtimeport.RunResult, error)
 

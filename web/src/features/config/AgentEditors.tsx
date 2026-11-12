@@ -119,6 +119,15 @@ export function ModelsTab({ draft, updateDraft }: EditorProps) {
                 />
                 <TextField label="Base URL" value={model.base_url} onChange={(value) => updateModel(updateDraft, index, { base_url: value })} />
                 <ModelAPIKeyField model={model} onChange={(value) => updateModel(updateDraft, index, { api_key: value })} />
+                <div className="space-y-2 md:col-span-2">
+                  <SelectField
+                    label="视觉输入"
+                    value={visionInputSummary(model.supports_vision)}
+                    options={["未设置（沿用供应商行为）", "支持", "不支持"]}
+                    onChange={(value) => updateModel(updateDraft, index, { supports_vision: value === "支持" ? true : value === "不支持" ? false : undefined })}
+                  />
+                  <p className="text-xs leading-5 text-muted-foreground">按实际模型能力选择；支持时发送图片，不支持时在请求前拦截。未设置时保留现有行为。</p>
+                </div>
                 <TextField
                   label="额外请求头"
                   value={model.extra_headers}
@@ -153,8 +162,13 @@ function ModelConfigCard({ model, editorKey, onRemove, children }: {
     summary={[
       { label: "ID", value: model.id || "未设置" },
       { label: "用途", value: modelUsesSummary(model.use_for || []) },
+      { label: "视觉输入", value: visionInputSummary(model.supports_vision) },
       { label: "密钥", value: model.has_api_key || model.api_key ? "已配置" : "未配置" },
     ]} onRemove={onRemove}>{children}</ConfigEditCard>;
+}
+
+function visionInputSummary(supportsVision?: boolean) {
+  return supportsVision === undefined ? "未设置（沿用供应商行为）" : supportsVision ? "支持" : "不支持";
 }
 
 function modelUsesSummary(uses: string[]) {

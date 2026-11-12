@@ -310,6 +310,7 @@ func prepareMemoryLLM(ctx context.Context, cfg *config.Config, state *appstate.S
 	chatModel, err := registry.NewChatModel(ctx, &modelregistry.Config{
 		Provider: modelregistry.Type(modelCfg.Provider), APIKey: modelCfg.APIKey,
 		BaseURL: modelCfg.BaseURL, Model: modelCfg.Model, ExtraHeaders: modelCfg.ParseExtraHeaders(),
+		SupportsVision: modelCfg.SupportsVision,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("prepare memory model: %w", err)

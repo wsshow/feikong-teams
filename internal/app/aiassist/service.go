@@ -101,11 +101,12 @@ func NewDefault(ctx context.Context, registry *modelregistry.Registry) (*Service
 		return nil, fmt.Errorf("model registry is not configured")
 	}
 	model, err := registry.NewChatModel(ctx, &modelregistry.Config{
-		Provider:     modelregistry.Type(modelCfg.Provider),
-		APIKey:       modelCfg.APIKey,
-		BaseURL:      modelCfg.BaseURL,
-		Model:        modelCfg.Model,
-		ExtraHeaders: modelCfg.ParseExtraHeaders(),
+		Provider:       modelregistry.Type(modelCfg.Provider),
+		APIKey:         modelCfg.APIKey,
+		BaseURL:        modelCfg.BaseURL,
+		Model:          modelCfg.Model,
+		ExtraHeaders:   modelCfg.ParseExtraHeaders(),
+		SupportsVision: modelCfg.SupportsVision,
 	})
 	if err != nil {
 		return nil, err

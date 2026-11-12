@@ -27,7 +27,8 @@
         "base_url": "https://api.openai.com/v1",
         "api_key": "",
         "has_api_key": true,
-        "model": "gpt-5"
+        "model": "gpt-5",
+        "supports_vision": true
       }
     ]
   }
@@ -41,6 +42,8 @@
 保存完整配置并热重载运行时依赖。有任务执行或其他配置更新正在进行时返回 **409 Conflict**；本次配置不会发布，任务结束后可重试。
 
 **请求 Body**：完整 `config.Config` JSON。建议先 `GET /api/fkteams/config`，在返回结构上修改后整体提交。
+
+`models[].supports_vision` 为可选布尔值：`true` 允许图片输入，`false` 在模型请求前拒绝图片，省略时沿用供应商适配器行为。保存后对后续任务生效。
 
 敏感字段合并规则：
 

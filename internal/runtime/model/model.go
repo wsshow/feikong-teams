@@ -26,11 +26,12 @@ const (
 
 // Config 是创建聊天模型所需的最小配置。
 type Config struct {
-	Provider     Type
-	APIKey       string
-	BaseURL      string
-	Model        string
-	ExtraHeaders map[string]string
+	Provider       Type
+	APIKey         string
+	BaseURL        string
+	Model          string
+	ExtraHeaders   map[string]string
+	SupportsVision *bool
 }
 
 // Factory 创建运行时聊天模型。
@@ -78,7 +79,11 @@ func (r *Registry) NewChatModel(ctx context.Context, cfg *Config) (runtimeport.C
 	if f == nil {
 		return nil, fmt.Errorf("未知的模型提供者: %s", t)
 	}
-	return f(ctx, cfg)
+	chatModel, err := f(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return WithVisionSupport(chatModel, cfg.SupportsVision, cfg.Model), nil
 }
 
 // WithRegistry 将模型工厂注册表注入当前上下文。

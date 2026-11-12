@@ -408,6 +408,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	steeringSource := buildSteeringSource(stream, sessionID, func() string { return currentRunID }, rt.Queues)
 
 	currentDisplayText := userDisplayText
+	var reportedErrors events.ErrorTracker
 	request := func(input domainmessage.TurnInput) appchat.TurnRequest {
 		return appchat.TurnRequest{
 			SessionID: sessionID, RunID: currentRunID, Runner: r, Input: input,
@@ -421,6 +422,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 					return context.Canceled
 				}
 				stream.Publish(standardEventPayload(sessionID, event, rt.ToolDisplays))
+				reportedErrors.Record(event)
 				return nil
 			},
 		}
@@ -443,8 +445,8 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	if runErr != nil {
 		if appchat.CompletionStatus(runErr) == domainsession.StatusCancelled {
 			stream.Publish(cancelledEventPayload(sessionID, currentRunID, "任务已取消"))
-		} else {
-			stream.Publish(errorEventPayload(sessionID, runErr.Error()))
+		} else if remaining := reportedErrors.Unreported(runErr); remaining != nil {
+			stream.Publish(errorEventPayload(sessionID, remaining.Error()))
 		}
 		return
 	}
