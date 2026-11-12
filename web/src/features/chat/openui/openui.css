@@ -4,8 +4,12 @@
   overflow-wrap: anywhere;
 }
 
-.assistant-openui .openui-card {
+/* 上游默认 card 仅声明 box-shadow，宿主补齐卡片表面，保留 clear/sunk 的语义。 */
+.assistant-openui .openui-card-card {
+  padding: var(--openui-space-l);
+  border-color: var(--openui-border-default);
   border-radius: 0.75rem;
+  background-color: var(--openui-foreground);
   box-shadow: 3px 4px 0 hsl(var(--foreground) / 0.08);
 }
 
