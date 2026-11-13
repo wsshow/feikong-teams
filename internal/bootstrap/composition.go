@@ -4,8 +4,11 @@ package bootstrap
 import (
 	"context"
 	localprocess "fkteams/internal/adapters/process/local"
+	filequeue "fkteams/internal/adapters/storage/file/queue"
 	sqlitestore "fkteams/internal/adapters/storage/sqlite"
 	"fkteams/internal/app/appdata"
+	appchat "fkteams/internal/app/chat"
+	"fkteams/internal/app/chat/taskstream"
 	appprocess "fkteams/internal/app/process"
 	domainmigration "fkteams/internal/domain/migration"
 	memoryport "fkteams/internal/ports/memory"
@@ -57,6 +60,7 @@ func newExecutionDependencies(documents storageport.Documents, memories memorypo
 	}
 
 	var processes *appprocess.Service
+	queues := appchat.NewQueueService(taskstream.NewManager(), filequeue.NewStore(appdata.SessionsDir(), documents), nil)
 	var backendClose func() error
 	if documents != nil {
 		backend, err := localprocess.New(filepath.Join(appdata.Dir(), "runtime", "processes"))
@@ -69,6 +73,7 @@ func newExecutionDependencies(documents storageport.Documents, memories memorypo
 			return nil, err
 		}
 		backendClose = backend.Close
+		processes.SetCompletionSink(queues.DeliverProcess)
 	}
 	toolRegistry, err := bootstraptools.RegisterWithProcesses(mcpProvider, documents, processes)
 	if err != nil {
@@ -93,6 +98,7 @@ func newExecutionDependencies(documents storageport.Documents, memories memorypo
 		ExecutionGate:         &config.ExecutionGate{},
 		ModelProviderRegistry: runtimeDefaults.ModelProviderRegistry,
 		Dependencies: execution.Dependencies{
+			Queues:        queues,
 			Documents:     documents,
 			Processes:     processes,
 			Runtime:       runtimeDefaults.Runtime,

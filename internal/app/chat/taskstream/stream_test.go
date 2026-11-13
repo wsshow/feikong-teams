@@ -771,3 +771,27 @@ func TestQueuedMessageBuildsMultimodalUserMessage(t *testing.T) {
 		t.Fatalf("expected multimodal parts to be preserved, got %#v", msg.ContentParts)
 	}
 }
+
+func TestExternalQueueDisabledStillConsumesInternalResults(t *testing.T) {
+	stream := NewManager().Register(StreamConfig{SessionID: "session", QueueDisabled: true})
+	defer stream.Done()
+	if _, err := stream.EnqueueMessageIfProcessing(QueuedMessage{Text: "external"}); !errors.Is(err, ErrQueueNotProcessing) {
+		t.Fatalf("external queue accepted: %v", err)
+	}
+	if _, err := stream.EnqueueMessage(QueuedMessage{ID: "internal", Text: "completed"}); err != nil {
+		t.Fatal(err)
+	}
+	item, ok := stream.DequeueNextMessageOrSeal()
+	if !ok || item.ID != "internal" {
+		t.Fatalf("internal result blocked: %+v %v", item, ok)
+	}
+	if _, ok := stream.DequeueNextMessageOrSeal(); ok {
+		t.Fatal("empty queue was not sealed")
+	}
+	if _, err := stream.EnqueueMessage(QueuedMessage{ID: "late", Text: "pending for next run"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := stream.DequeueNextMessageOrSeal(); ok || stream.QueuedCount() != 1 {
+		t.Fatal("sealed run consumed a late result")
+	}
+}

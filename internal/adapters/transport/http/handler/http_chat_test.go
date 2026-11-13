@@ -13,10 +13,14 @@ import (
 	"time"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
+	filequeue "fkteams/internal/adapters/storage/file/queue"
+	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/config"
+	"fkteams/internal/app/execution"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
+	domainprocess "fkteams/internal/domain/process"
 	runtimeport "fkteams/internal/ports/runtime"
 	"github.com/gin-gonic/gin"
 )
@@ -68,6 +72,75 @@ func TestStreamReportsAndPersistsRunErrorOnce(t *testing.T) {
 				t.Fatalf("persisted errors=%d, want one", count)
 			}
 		})
+	}
+}
+
+func TestHTTPConsumesCompletionForSyncAndStreaming(t *testing.T) {
+	for _, path := range []string{"/chat", "/stream"} {
+		t.Run(path, func(t *testing.T) {
+			var rt *Runtime
+			var inputs []message.TurnInput
+			runner := chatRunnerFunc(func(_ context.Context, input message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+				inputs = append(inputs, input)
+				answer := "started"
+				if len(inputs) == 1 {
+					if err := rt.Queues.DeliverProcess(domainprocess.Record{ID: "process-http", Owner: domainprocess.Owner{SessionID: "same"}, State: domainprocess.Succeeded, Stdout: "HTTP result"}); err != nil {
+						return nil, err
+					}
+				} else {
+					answer = "completion received"
+				}
+				return &runtimeport.RunResult{}, opts.Sink(event.Event{Type: event.TypeAssistantCompleted, MessageID: opts.RunID + ":answer", Role: message.RoleAssistant, Content: answer, Message: &message.Message{Role: message.RoleAssistant, Content: answer}})
+			})
+			var router *gin.Engine
+			rt, router = chatTestRouter(t, runner)
+			response := postChat(router, path)
+			if response.Code != http.StatusOK {
+				t.Fatalf("request: %d %s", response.Code, response.Body.String())
+			}
+			stream := rt.Streams.Get("same")
+			deadline := time.Now().Add(3 * time.Second)
+			for !stream.IsDone() && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if !stream.IsDone() || stream.Status() != "completed" {
+				t.Fatalf("did not complete: %s", stream.Status())
+			}
+			if len(inputs) != 2 || !strings.Contains(inputs[1].Message.Content, "HTTP result") {
+				t.Fatalf("HTTP completion: %+v", inputs)
+			}
+		})
+	}
+}
+
+func TestHTTPShutdownLeavesOtherApplicationSessionsRunning(t *testing.T) {
+	queues := appchat.NewQueueService(taskstream.NewManager(), filequeue.NewStore(t.TempDir()), nil)
+	externalCancelled := false
+	external, _, err := queues.RegisterIfIdle(taskstream.StreamConfig{SessionID: "channel", Cancel: func() { externalCancelled = true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer external.Done()
+	rt := NewRuntime(RuntimeOptions{HistoryDir: t.TempDir(), Dependencies: execution.Dependencies{Queues: queues}})
+	if rt.Streams != queues.Streams() {
+		t.Fatal("HTTP created a second session registry")
+	}
+	ctx, cancel := rt.newTaskContext(context.Background())
+	defer cancel()
+	stopped := make(chan struct{})
+	if !rt.Go(func() { <-ctx.Done(); close(stopped) }) {
+		t.Fatal("HTTP task not admitted")
+	}
+	if err := rt.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("HTTP did not drain its own task")
+	}
+	if externalCancelled || queues.Streams().Get("channel") != external {
+		t.Fatal("HTTP cancelled another entry's session")
 	}
 }
 

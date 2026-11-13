@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/domain/message"
 	domainprocess "fkteams/internal/domain/process"
 	"sync"
 	"testing"
@@ -264,5 +265,124 @@ func TestProcessCompletionDeliveryRetriesAndDeduplicatesAfterConsumption(t *test
 	items, err := restarted.Snapshot("session")
 	if err != nil || len(items) != 0 {
 		t.Fatalf("duplicate after restart: %+v %v", items, err)
+	}
+}
+
+func TestRunQueuedBindsApplicationQueuesAndRestoresPendingResults(t *testing.T) {
+	store := &receiptedTestStore{receipts: make(map[string]bool)}
+	queues := NewQueueService(taskstream.NewManager(), store, nil)
+	record := domainprocess.Record{ID: "completed-one", Owner: domainprocess.Owner{SessionID: "session"}, State: domainprocess.Succeeded, Stdout: "finished"}
+	if err := queues.DeliverProcess(record); err != nil {
+		t.Fatal(err)
+	}
+	ctx := WithQueues(context.Background(), queues)
+	consumed := 0
+	err := NewService().RunQueued(ctx, QueueRequest{
+		First: TurnRequest{SessionID: "session", Runner: &fakeRunner{}},
+		Next: func(item taskstream.QueuedMessage) (TurnRequest, error) {
+			consumed++
+			if item.ID != record.ID {
+				t.Fatalf("item: %+v", item)
+			}
+			return TurnRequest{SessionID: "session", RunID: QueuedRunID("session", item), Runner: &fakeRunner{}}, nil
+		},
+	})
+	if err != nil || consumed != 1 {
+		t.Fatalf("run=%v consumed=%d", err, consumed)
+	}
+	stream := queues.Streams().Get("session")
+	if stream == nil || !stream.IsDone() || stream.Status() != "completed" {
+		t.Fatal("application did not own and finalize stream")
+	}
+	if err := queues.DeliverProcess(record); err != nil {
+		t.Fatal(err)
+	}
+	items, err := queues.Snapshot("session")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("completion repeated: %+v %v", items, err)
+	}
+}
+
+func TestRunQueuedDoesNotAdmitConcurrentEntryOrConsumeOnSaveFailure(t *testing.T) {
+	store := &queueTestStore{}
+	queues := NewQueueService(taskstream.NewManager(), store, nil)
+	stream, _, err := queues.RegisterIfIdle(taskstream.StreamConfig{SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := func(taskstream.QueuedMessage) (TurnRequest, error) {
+		t.Fatal("unexpected next turn")
+		return TurnRequest{}, nil
+	}
+	ctx := WithQueues(context.Background(), queues)
+	err = NewService().RunQueued(ctx, QueueRequest{First: TurnRequest{SessionID: "session", Runner: &fakeRunner{}}, Next: builder})
+	if err == nil {
+		t.Fatal("admitted a second entry for active session")
+	}
+	stream.Done()
+	store.items = []taskstream.QueuedMessage{{ID: "pending", Text: "completion"}}
+	store.errorOnSave = errors.New("disk full")
+	err = NewService().RunQueued(ctx, QueueRequest{First: TurnRequest{SessionID: "session", Runner: &fakeRunner{}}, Next: builder})
+	if !errors.Is(err, ErrQueuePersistence) {
+		t.Fatalf("persistence failure hidden: %v", err)
+	}
+	items, err := queues.Snapshot("session")
+	if err != nil || len(items) != 1 || items[0].ID != "pending" {
+		t.Fatalf("pending result lost: %+v %v", items, err)
+	}
+}
+
+func TestQueueObserversCannotReplaceDeliveryOrMutateOtherSnapshots(t *testing.T) {
+	queues := NewQueueService(taskstream.NewManager(), &queueTestStore{}, nil)
+	stream, _, err := queues.RegisterIfIdle(taskstream.StreamConfig{SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Done()
+	first, second := 0, 0
+	off := queues.Subscribe(func(_ *taskstream.Stream, items []taskstream.QueuedMessage) { first++; items[0].Text = "mutated" })
+	queues.Subscribe(func(_ *taskstream.Stream, items []taskstream.QueuedMessage) {
+		second++
+		if items[0].Text != "original" {
+			t.Fatal("observer received another observer's mutation")
+		}
+	})
+	item, err := queues.Enqueue(stream, taskstream.QueuedMessage{Text: "original"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	off()
+	off()
+	if _, err := queues.Edit("session", func(q *taskstream.Queue) error {
+		_, err := q.UpdateQueuedMessage(item.ID, "original", nil, "")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if first != 1 || second != 2 {
+		t.Fatalf("observers: %d %d", first, second)
+	}
+}
+
+func TestRunQueuedRejectsSessionAndApplicationMismatch(t *testing.T) {
+	first := NewQueueService(taskstream.NewManager(), &queueTestStore{}, nil)
+	second := NewQueueService(taskstream.NewManager(), &queueTestStore{}, nil)
+	stream, _, err := first.RegisterIfIdle(taskstream.StreamConfig{SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Done()
+	for _, sessionID := range []string{"other-session", "session"} {
+		runner := &fakeRunner{}
+		err := NewService().RunQueued(WithQueues(context.Background(), second), QueueRequest{
+			Stream: stream, First: TurnRequest{SessionID: sessionID, Runner: runner, Input: message.TurnInput{Message: message.Message{Content: "must not run"}}},
+			Next: func(taskstream.QueuedMessage) (TurnRequest, error) {
+				t.Fatal("foreign queue consumed")
+				return TurnRequest{}, nil
+			},
+		})
+		if err == nil || !runner.input.Message.IsEmpty() {
+			t.Fatalf("foreign context admitted: input=%+v err=%v", runner.input, err)
+		}
 	}
 }

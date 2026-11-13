@@ -235,7 +235,7 @@ func (rt *Runtime) handleChatMessage(sm *sessionManager, wsMsg WSMessage, writeJ
 	}
 
 	// 任务 context 独立于连接——断连不会自动取消任务
-	taskCtx, taskCancel := context.WithCancel(appstate.WithState(context.Background(), state))
+	taskCtx, taskCancel := rt.newTaskContext(appstate.WithState(context.Background(), state))
 	defer taskCancel()
 	taskCtx = rt.withExecutionDependencies(taskCtx)
 

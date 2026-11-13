@@ -1543,3 +1543,22 @@ func keyMsg(name, text string, code rune) tea.KeyPressMsg {
 	}
 	return tea.KeyPressMsg(tea.Key{Text: text, Code: code})
 }
+
+func TestRuntimeCompletionContinuationStartsSeparateOutputBlock(t *testing.T) {
+	model := newRuntimeModel(&Runtime{ctx: context.Background(), session: NewSession(ModeTeam, nil, nil), exitSignals: make(chan os.Signal, 1)})
+	model.applyEvent(events.Event{Type: events.EventAssistantText, DeltaKind: events.DeltaOutput, Content: "started"})
+	model.applyEvent(events.Event{Type: events.EventType(events.NotifyProcessingStart), Detail: string(domainmessage.QueueFollowUp), Content: "后台命令完成：process-one"})
+	model.applyEvent(events.Event{Type: events.EventAssistantText, DeltaKind: events.DeltaOutput, Content: "result received"})
+	foundNotice, foundSeparateOutput := false, false
+	for _, block := range model.blocks {
+		if block.Kind == runtimeBlockSystem && block.Title == "后续消息" {
+			foundNotice = true
+		}
+		if block.Content == "result received" {
+			foundSeparateOutput = true
+		}
+	}
+	if !foundNotice || !foundSeparateOutput {
+		t.Fatalf("completion was hidden or merged into earlier output: %+v", model.blocks)
+	}
+}

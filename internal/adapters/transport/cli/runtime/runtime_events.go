@@ -35,10 +35,17 @@ func (m *runtimeModel) applyEvent(event events.Event) {
 	}
 	switch event.Type {
 	case events.EventType(events.NotifyProcessingStart):
-		if event.Detail == "steering" && strings.TrimSpace(event.Content) != "" {
+		title := ""
+		switch event.Detail {
+		case string(domainmessage.QueueSteering):
+			title = "转向消息"
+		case string(domainmessage.QueueFollowUp):
+			title = "后续消息"
+		}
+		if title != "" && strings.TrimSpace(event.Content) != "" {
 			m.activeOutput = -1
 			m.activeReason = -1
-			m.appendBlock(runtimeBlockSystem, "转向消息", event.Content)
+			m.appendBlock(runtimeBlockSystem, title, event.Content)
 		}
 	case events.EventAssistantText, events.EventAssistantReasoning, events.EventToolCallArguments:
 		switch event.DeltaKind {

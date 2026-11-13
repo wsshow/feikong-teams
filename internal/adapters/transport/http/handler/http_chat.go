@@ -89,7 +89,12 @@ func (rt *Runtime) ChatHandlerWithState(state *appstate.State) gin.HandlerFunc {
 		unlock := rt.lockSessionOperation(sessionID)
 		taskCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		stream, admitted := rt.Streams.RegisterIfIdle(taskstream.StreamConfig{SessionID: sessionID, Cancel: cancel, Mode: mode, AgentName: req.AgentName, CleanupTTL: 5 * time.Minute, QueueDisabled: true})
+		stream, admitted, queueErr := rt.Queues.RegisterIfIdle(taskstream.StreamConfig{SessionID: sessionID, Cancel: cancel, Mode: mode, AgentName: req.AgentName, CleanupTTL: 5 * time.Minute, QueueDisabled: true})
+		if queueErr != nil {
+			unlock()
+			writeTaskQueueError(c, queueErr)
+			return
+		}
 		if !admitted {
 			unlock()
 			Fail(c, http.StatusConflict, "session is already processing")
@@ -134,21 +139,32 @@ func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtime
 
 	var collectedEvents []events.Event
 
-	_, runErr := appchat.NewService().RunTurn(taskCtx, appchat.TurnRequest{
-		SessionID:        sessionID,
-		Runner:           r,
-		Input:            turnInput,
-		Summary:          recorder,
-		History:          recorder,
-		NonInteractive:   true,
-		ApprovalRegistry: configuredApprovalRegistry(),
-		EventSink: func(event events.Event) error {
-			collectedEvents = append(collectedEvents, event)
-			stream.PublishRuntime(event, standardEventPayload(sessionID, event, rt.ToolDisplays))
-			return nil
-		},
-		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
-			return rt.finishChat(ctx, sessionID, userDisplayText, err)
+	request := func(input domainmessage.TurnInput, runID string) appchat.TurnRequest {
+		return appchat.TurnRequest{
+			SessionID:        sessionID,
+			RunID:            runID,
+			Runner:           r,
+			Input:            input,
+			Summary:          recorder,
+			History:          recorder,
+			NonInteractive:   true,
+			ApprovalRegistry: configuredApprovalRegistry(),
+			EventSink: func(event events.Event) error {
+				collectedEvents = append(collectedEvents, event)
+				stream.PublishRuntime(event, standardEventPayload(sessionID, event, rt.ToolDisplays))
+				return nil
+			},
+			OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
+				return rt.finishChat(ctx, sessionID, userDisplayText, err)
+			},
+		}
+	}
+	runErr := appchat.NewService().RunQueued(taskCtx, appchat.QueueRequest{
+		Stream: stream, Queues: rt.Queues, First: request(turnInput, ""),
+		Next: func(queued taskstream.QueuedMessage) (appchat.TurnRequest, error) {
+			runID := appchat.QueuedRunID(sessionID, queued)
+			publishQueuedExecutionStart(stream, sessionID, queued, runID)
+			return request(buildQueuedChatInput(recorder, queued, manager), runID), nil
 		},
 	})
 	stream.SetStatus(string(appchat.CompletionStatus(runErr)))

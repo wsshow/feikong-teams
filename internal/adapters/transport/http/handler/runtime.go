@@ -31,7 +31,8 @@ import (
 // Runtime 持有单个 HTTP server 实例的运行态依赖。
 type Runtime struct {
 	RuntimeOptions
-	Queues *appchat.QueueService
+	queuesOwned      bool
+	unsubscribeQueue func()
 
 	sessionOperationsMu sync.Mutex
 	sessionOperations   map[string]*sessionOperationLock
@@ -79,6 +80,10 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		opt.MigrationStatus.State = "completed"
 	}
 	streams := opt.Streams
+	queuesOwned := opt.Queues == nil
+	if opt.Queues != nil {
+		streams = opt.Queues.Streams()
+	}
 	if streams == nil {
 		streams = taskstream.NewManager()
 	}
@@ -87,7 +92,7 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 		opt.ExecutionGate = &config.ExecutionGate{}
 	}
 	taskContext, cancelTasks := context.WithCancel(context.Background())
-	rt := &Runtime{RuntimeOptions: opt, shutdownDone: make(chan struct{}), taskContext: taskContext, cancelTasks: cancelTasks}
+	rt := &Runtime{RuntimeOptions: opt, queuesOwned: queuesOwned, shutdownDone: make(chan struct{}), taskContext: taskContext, cancelTasks: cancelTasks}
 
 	if rt.Sessions == nil {
 		rt.Sessions = eventlog.NewSessionHistoryManager()
@@ -99,12 +104,12 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	if rt.QueueStore == nil {
 		rt.QueueStore = filequeue.NewStore(rt.HistoryDir, rt.Documents)
 	}
-	rt.Queues = appchat.NewQueueService(rt.Streams, rt.QueueStore, func(stream *taskstream.Stream, items []taskstream.QueuedMessage) {
+	if rt.Queues == nil {
+		rt.Queues = appchat.NewQueueService(rt.Streams, rt.QueueStore, nil)
+	}
+	rt.unsubscribeQueue = rt.Queues.Subscribe(func(stream *taskstream.Stream, items []taskstream.QueuedMessage) {
 		publishQueueSnapshot(stream, stream.SessionID(), items)
 	})
-	if rt.Processes != nil {
-		rt.Processes.SetCompletionSink(rt.Queues.DeliverProcess)
-	}
 
 	if rt.RunnerCache == nil {
 		rt.RunnerCache = appagent.NewCache()
@@ -152,7 +157,9 @@ func (rt *Runtime) Start(ctx context.Context) error {
 		rt.stopParent = stopParent
 	}
 	rt.tasksMu.Unlock()
-	rt.Streams.StartCleanup(ctx, time.Minute)
+	if rt.queuesOwned {
+		rt.Streams.StartCleanup(ctx, time.Minute)
+	}
 	return nil
 }
 
@@ -197,6 +204,12 @@ func (rt *Runtime) beginTask() (func(), bool) {
 	return func() { once.Do(rt.tasks.Done) }, true
 }
 
+func (rt *Runtime) newTaskContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(rt.taskContext, cancel)
+	return ctx, func() { stop(); cancel() }
+}
+
 // BeginShutdown 拒绝新后台任务并取消仍在运行的流。
 func (rt *Runtime) BeginShutdown() {
 	if rt == nil {
@@ -212,13 +225,16 @@ func (rt *Runtime) BeginShutdown() {
 		if stopParent != nil {
 			stopParent()
 		}
-		if rt.Streams != nil {
+		if rt.Streams != nil && rt.queuesOwned {
 			rt.Streams.StopCleanup()
 			rt.Streams.CancelAll()
 		}
 		go func() {
 			rt.tasks.Wait()
 			rt.resourceCloseOnce.Do(func() {
+				if rt.unsubscribeQueue != nil {
+					rt.unsubscribeQueue()
+				}
 				if rt.ChunkUploads != nil {
 					rt.ChunkUploads.Close()
 				}

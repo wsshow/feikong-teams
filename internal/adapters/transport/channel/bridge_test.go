@@ -2,6 +2,11 @@ package channel
 
 import (
 	"context"
+	filequeue "fkteams/internal/adapters/storage/file/queue"
+	appchat "fkteams/internal/app/chat"
+	"fkteams/internal/app/chat/taskstream"
+	"fkteams/internal/app/execution"
+	domainprocess "fkteams/internal/domain/process"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +20,56 @@ import (
 type approvalProbeRunner struct {
 	called bool
 	err    error
+}
+
+type completionRunnerFunc func(context.Context, domainmessage.TurnInput, runtimeport.RunOptions) (*runtimeport.RunResult, error)
+
+func (f completionRunnerFunc) Run(ctx context.Context, input domainmessage.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+	return f(ctx, input, opts)
+}
+
+func TestBridgeConsumesCompletionThroughApplicationQueue(t *testing.T) {
+	dir := t.TempDir()
+	queues := appchat.NewQueueService(taskstream.NewManager(), filequeue.NewStore(dir), nil)
+	ch := &fakeChannel{name: "completion"}
+	manager := NewManager(nil, NewFactoryRegistry())
+	manager.channels[ch.name] = ch
+	bridge := NewBridgeWithOptions(manager, "team", BridgeOptions{HistoryDir: dir})
+	bridge.SetRuntimeDependencies(execution.Dependencies{Queues: queues})
+	var inputs []domainmessage.TurnInput
+	bridge.runner = completionRunnerFunc(func(ctx context.Context, input domainmessage.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+		inputs = append(inputs, input)
+		if err := approval.Require(ctx, approval.StoreCommand, "probe", "probe"); err != nil {
+			t.Fatalf("channel completion changed approval policy: %v", err)
+		}
+		answer := "started"
+		if len(inputs) == 1 {
+			if err := queues.DeliverProcess(domainprocess.Record{ID: "process-channel", Owner: domainprocess.Owner{SessionID: "session"}, State: domainprocess.Succeeded, Stdout: "channel result"}); err != nil {
+				return nil, err
+			}
+		} else {
+			answer = "completion received"
+		}
+		emitter := events.NewEmitter(opts.RunID, events.TurnID(opts.RunID, 1), opts.Sink)
+		meta := events.MessageEvent{MessageID: opts.RunID + ":answer", Role: domainmessage.RoleAssistant, Content: answer}
+		if err := emitter.Emit(events.AssistantDelta(meta, answer)); err != nil {
+			return nil, err
+		}
+		return &runtimeport.RunResult{}, emitter.Emit(events.AssistantCompleted(meta))
+	})
+	bridge.processBatch(context.Background(), "session", []queuedMessage{{channelName: ch.name, chatID: "chat", userInput: "start"}})
+	if len(inputs) != 2 || !strings.Contains(inputs[1].Message.Content, "channel result") {
+		t.Fatalf("channel completion: %+v", inputs)
+	}
+	found := false
+	for _, sent := range ch.sent {
+		if strings.Contains(sent.msg.Content, "completion received") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("completion reply was not delivered: %+v", ch.sent)
+	}
 }
 
 func (r *approvalProbeRunner) Run(ctx context.Context, _ domainmessage.TurnInput, _ runtimeport.RunOptions) (*runtimeport.RunResult, error) {

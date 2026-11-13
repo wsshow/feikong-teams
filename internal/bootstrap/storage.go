@@ -123,6 +123,9 @@ func (d *ExecutionDependencies) closeStorage() error {
 		if d.Processes != nil {
 			d.storageCloseError = errors.Join(d.storageCloseError, d.Processes.Close())
 		}
+		if d.Queues != nil {
+			d.storageCloseError = errors.Join(d.storageCloseError, d.Queues.Stop(context.Background()))
+		}
 		if d.processBackendClose != nil {
 			d.storageCloseError = errors.Join(d.storageCloseError, d.processBackendClose())
 		}

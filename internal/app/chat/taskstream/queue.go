@@ -11,6 +11,7 @@ import (
 type Queue struct {
 	config      StreamConfig
 	accepting   bool
+	processing  bool
 	steering    []QueuedMessage
 	followUps   []QueuedMessage
 	queuedBytes int
@@ -19,7 +20,7 @@ type Queue struct {
 
 // NewQueue 创建使用默认容量限制的离线队列。
 func NewQueue() *Queue {
-	return &Queue{config: StreamConfig{MaxQueuedMessages: defaultMaxQueuedMessages, MaxQueuedMessageBytes: defaultMaxQueuedMessageBytes}, accepting: true}
+	return &Queue{config: StreamConfig{MaxQueuedMessages: defaultMaxQueuedMessages, MaxQueuedMessageBytes: defaultMaxQueuedMessageBytes}, accepting: true, processing: true}
 }
 
 func (q *Queue) clone() *Queue {
@@ -35,7 +36,8 @@ func (s *Stream) ChangeQueue(change func(*Queue) error, save func([]QueuedMessag
 	defer s.mu.Unlock()
 	draft := s.queue.clone()
 	draft.config = s.config
-	draft.accepting = !s.done && s.status == "processing" && !s.config.QueueDisabled
+	draft.processing = !s.done && s.status == "processing"
+	draft.accepting = draft.processing && !s.config.QueueDisabled
 	if err := change(draft); err != nil {
 		return nil, err
 	}
@@ -137,7 +139,7 @@ func (s *Queue) DequeueNextMessage() (QueuedMessage, bool) {
 // DequeueNextMessageOrSeal 原子地取得下一条消息；队列为空时关闭入队，状态在持久化收尾后更新。
 // 与 EnqueueMessageIfProcessing 配合，保证已接受的消息不会落入“检查空队列”和“任务完成”之间的缝隙。
 func (s *Queue) DequeueNextMessageOrSeal() (QueuedMessage, bool) {
-	if !s.accepting {
+	if !s.processing || s.queueClosed {
 		return QueuedMessage{}, false
 	}
 	if msg, ok := s.dequeueNextMessageLocked(); ok {

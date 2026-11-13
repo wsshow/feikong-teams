@@ -95,7 +95,7 @@ func (rt *Runtime) StreamStartHandlerWithState(state *appstate.State) gin.Handle
 		}
 
 		// 创建任务并交给当前 HTTP runtime 的 stream hub 管理。
-		taskCtx, taskCancel := context.WithCancel(ctx)
+		taskCtx, taskCancel := rt.newTaskContext(ctx)
 		stream, created, queueErr := rt.Queues.RegisterIfIdle(taskstream.StreamConfig{
 			SessionID:  sessionID,
 			Cancel:     taskCancel,

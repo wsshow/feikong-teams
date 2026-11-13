@@ -321,13 +321,12 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 		}
 		return []domainmessage.Message{message}, nil
 	}
-	for {
-		currentRunID = session.sessionID() + ":" + NewDirectSessionID()
-		_, err := appchat.NewService().RunTurn(queryCtx, appchat.TurnRequest{
+	request := func(input domainmessage.TurnInput, runID string) appchat.TurnRequest {
+		return appchat.TurnRequest{
 			SessionID:        session.sessionID(),
-			RunID:            currentRunID,
+			RunID:            runID,
 			Runner:           e.runner,
-			Input:            currentInput,
+			Input:            input,
 			Summary:          recorder,
 			History:          session.turnHistory(recorder),
 			InterruptHandler: runtimeport.InterruptHandler(handler),
@@ -351,6 +350,21 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 			},
 			EventSink: func(event events.Event) error {
 				return innerCallback(event)
+			},
+		}
+	}
+	for {
+		currentRunID = session.sessionID() + ":" + NewDirectSessionID()
+		err := appchat.NewService().RunQueued(queryCtx, appchat.QueueRequest{
+			First: request(currentInput, currentRunID),
+			Next: func(queued domainmessage.QueuedMessage) (appchat.TurnRequest, error) {
+				runID := appchat.QueuedRunID(session.sessionID(), queued)
+				notice := events.ProcessingStart(runID, events.TurnID(runID, 1), queued.DisplayText)
+				notice.Detail = string(queued.Kind)
+				if err := innerCallback(notice); err != nil {
+					return appchat.TurnRequest{}, err
+				}
+				return request(appchat.BuildQueuedInput(recorder, queued, e.memory), runID), nil
 			},
 		})
 

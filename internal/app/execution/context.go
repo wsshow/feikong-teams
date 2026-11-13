@@ -3,6 +3,7 @@ package execution
 
 import (
 	"context"
+	"fkteams/internal/app/chat"
 	appprocess "fkteams/internal/app/process"
 	storageport "fkteams/internal/ports/storage"
 
@@ -16,6 +17,7 @@ import (
 
 // Dependencies 保存应用实例的执行能力；副本共享注册表，不包含会话状态或取消信号。
 type Dependencies struct {
+	Queues        *chat.QueueService
 	Processes     *appprocess.Service
 	Documents     storageport.Documents
 	Runtime       runtimeport.Runtime
@@ -34,6 +36,7 @@ func (d Dependencies) Context(parent context.Context) context.Context {
 	}
 	parent = context.WithValue(parent, documentsKey{}, documentDependency{d.Documents})
 	parent = context.WithValue(parent, processesKey{}, d.Processes)
+	parent = chat.WithQueues(parent, d.Queues)
 	ctx := runtimeport.WithRuntime(parent, d.Runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, d.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, d.ModelRegistry)
@@ -53,6 +56,7 @@ func FromContext(ctx context.Context) Dependencies {
 		d.Documents = dependency.documents
 	}
 	d.Processes, _ = ctx.Value(processesKey{}).(*appprocess.Service)
+	d.Queues = chat.QueuesFromContext(ctx)
 	d.Runtime, _ = runtimeport.RuntimeFromContext(ctx)
 	d.Interrupt, _ = runtimeport.InterruptRuntimeFromContext(ctx)
 	d.ModelRegistry, _ = modelregistry.RegistryFromContext(ctx)

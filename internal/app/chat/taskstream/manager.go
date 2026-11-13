@@ -20,6 +20,7 @@ type Manager struct {
 	streams       map[string]*Stream
 	cleanupMu     sync.Mutex
 	cleanupCancel context.CancelFunc
+	cleanupDone   chan struct{}
 }
 
 // NewManager 创建新的 Manager
@@ -164,12 +165,16 @@ func (m *Manager) StartCleanup(ctx context.Context, interval time.Duration) {
 	cleanupCtx, cancel := context.WithCancel(ctx)
 	m.cleanupMu.Lock()
 	previous := m.cleanupCancel
+	previousDone := m.cleanupDone
 	m.cleanupCancel = cancel
-	m.cleanupMu.Unlock()
+	done := make(chan struct{})
+	m.cleanupDone = done
 	if previous != nil {
 		previous()
+		<-previousDone
 	}
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -181,6 +186,7 @@ func (m *Manager) StartCleanup(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}()
+	m.cleanupMu.Unlock()
 }
 
 // StopCleanup 停止后台清理协程。
@@ -190,11 +196,14 @@ func (m *Manager) StopCleanup() {
 	}
 	m.cleanupMu.Lock()
 	cancel := m.cleanupCancel
+	done := m.cleanupDone
 	m.cleanupCancel = nil
-	m.cleanupMu.Unlock()
+	m.cleanupDone = nil
 	if cancel != nil {
 		cancel()
+		<-done
 	}
+	m.cleanupMu.Unlock()
 }
 
 func (m *Manager) cleanup() {

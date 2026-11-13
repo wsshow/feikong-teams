@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	domainprocess "fkteams/internal/domain/process"
+	"fkteams/internal/domain/session"
 	"fkteams/internal/ports/storage"
+	"fkteams/internal/runtime/events"
 	"fmt"
 	"sync"
+	"time"
 
 	"fkteams/internal/app/chat/taskstream"
 )
@@ -23,8 +26,38 @@ type QueueRequest struct {
 
 // RunQueued 串行执行回合，原子地封闭空队列，完成持久化后再结束任务。
 func (s *Service) RunQueued(ctx context.Context, req QueueRequest) (err error) {
-	if req.Stream == nil || req.Next == nil {
-		return fmt.Errorf("chat queue requires a stream and input builder")
+	if req.Next == nil {
+		return fmt.Errorf("chat queue requires an input builder")
+	}
+	if req.Queues == nil {
+		req.Queues = QueuesFromContext(ctx)
+	}
+	if req.Stream == nil {
+		if req.Queues == nil {
+			_, err = s.RunTurn(ctx, req.First)
+			if req.Finish != nil {
+				err = errors.Join(err, finalizationFailure(req.Finish(err)))
+			}
+			return err
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		var created bool
+		req.Stream, created, err = req.Queues.RegisterIfIdle(taskstream.StreamConfig{SessionID: req.First.SessionID, Cancel: cancel, CleanupTTL: 5 * time.Minute, QueueDisabled: true})
+		if err != nil {
+			return err
+		}
+		if !created {
+			return fmt.Errorf("session is already processing")
+		}
+		defer req.Stream.Done()
+	}
+	if req.First.SessionID != req.Stream.SessionID() {
+		return fmt.Errorf("chat queue session mismatch")
+	}
+	if req.Queues != nil && req.Queues.Streams().Get(req.First.SessionID) != req.Stream {
+		return fmt.Errorf("chat queue belongs to another application")
 	}
 	defer func() {
 		if req.Finish != nil {
@@ -34,6 +67,10 @@ func (s *Service) RunQueued(ctx context.Context, req QueueRequest) (err error) {
 	}()
 	current := req.First
 	for {
+		if current.RunID == "" {
+			current.RunID = current.SessionID + ":" + session.NewID()
+		}
+		req.Stream.SetTurn(current.RunID, events.TurnID(current.RunID, 1))
 		if _, err = s.RunTurn(ctx, current); err != nil {
 			return err
 		}
@@ -60,17 +97,23 @@ func (s *Service) RunQueued(ctx context.Context, req QueueRequest) (err error) {
 		if err != nil {
 			return err
 		}
+		if current.SessionID != req.Stream.SessionID() {
+			return fmt.Errorf("queued turn session mismatch")
+		}
 	}
 }
 
 // QueueService 统一队列恢复、修改、消费、保存与通知的顺序。
 // 同一会话串行提交，不同会话的磁盘操作互不阻塞。
 type QueueService struct {
-	streams *taskstream.Manager
-	store   storage.QueueStore
-	publish func(*taskstream.Stream, []taskstream.QueuedMessage)
-	mu      sync.Mutex
-	locks   map[string]*queueLock
+	streams      *taskstream.Manager
+	store        storage.QueueStore
+	publish      func(*taskstream.Stream, []taskstream.QueuedMessage)
+	mu           sync.Mutex
+	locks        map[string]*queueLock
+	listenersMu  sync.Mutex
+	listeners    map[uint64]func(*taskstream.Stream, []taskstream.QueuedMessage)
+	nextListener uint64
 }
 
 type queueLock struct {
@@ -83,7 +126,81 @@ var ErrQueuePersistence = errors.New("queue persistence failed")
 
 // NewQueueService 创建应用实例持有的队列用例。
 func NewQueueService(streams *taskstream.Manager, store storage.QueueStore, publish func(*taskstream.Stream, []taskstream.QueuedMessage)) *QueueService {
-	return &QueueService{streams: streams, store: store, publish: publish, locks: make(map[string]*queueLock)}
+	return &QueueService{streams: streams, store: store, publish: publish, locks: make(map[string]*queueLock), listeners: make(map[uint64]func(*taskstream.Stream, []taskstream.QueuedMessage))}
+}
+
+// Streams 返回与队列事务绑定的会话运行注册表，入口不能再创建另一份注册表。
+func (s *QueueService) Streams() *taskstream.Manager { return s.streams }
+
+// Name 返回应用队列服务的生命周期名称。
+func (s *QueueService) Name() string { return "chat-queues" }
+
+// Start 启动已结束会话的缓存清理，取消由应用上下文传递。
+func (s *QueueService) Start(ctx context.Context) error {
+	s.streams.StartCleanup(ctx, time.Minute)
+	return nil
+}
+
+// Stop 在入口排空后停止清理任务并释放会话缓存。
+func (s *QueueService) Stop(context.Context) error {
+	s.streams.StopCleanup()
+	s.streams.CancelAll()
+	return nil
+}
+
+// Subscribe 订阅已提交快照；观察者只负责展示，不替换应用的完成投递器。
+func (s *QueueService) Subscribe(publish func(*taskstream.Stream, []taskstream.QueuedMessage)) func() {
+	if publish == nil {
+		return func() {}
+	}
+	s.listenersMu.Lock()
+	s.nextListener++
+	id := s.nextListener
+	s.listeners[id] = publish
+	s.listenersMu.Unlock()
+	return sync.OnceFunc(func() { s.listenersMu.Lock(); delete(s.listeners, id); s.listenersMu.Unlock() })
+}
+
+func (s *QueueService) notify(stream *taskstream.Stream, items []taskstream.QueuedMessage) {
+	if stream == nil {
+		return
+	}
+	if s.publish != nil {
+		s.publish(stream, cloneQueueItems(items))
+	}
+	s.listenersMu.Lock()
+	listeners := make([]func(*taskstream.Stream, []taskstream.QueuedMessage), 0, len(s.listeners))
+	for _, publish := range s.listeners {
+		listeners = append(listeners, publish)
+	}
+	s.listenersMu.Unlock()
+	for _, publish := range listeners {
+		publish(stream, cloneQueueItems(items))
+	}
+}
+
+func cloneQueueItems(items []taskstream.QueuedMessage) []taskstream.QueuedMessage {
+	copy := append([]taskstream.QueuedMessage(nil), items...)
+	for i := range copy {
+		copy[i].Parts = items[i].Message().Clone().ContentParts
+	}
+	return copy
+}
+
+type queuesKey struct{}
+
+// WithQueues 为所有入口绑定同一应用队列用例；nil 可以显式清除上层绑定。
+func WithQueues(ctx context.Context, queues *QueueService) context.Context {
+	return context.WithValue(ctx, queuesKey{}, queues)
+}
+
+// QueuesFromContext 提取当前应用的队列用例。
+func QueuesFromContext(ctx context.Context) *QueueService {
+	if ctx == nil {
+		return nil
+	}
+	queues, _ := ctx.Value(queuesKey{}).(*QueueService)
+	return queues
 }
 
 func (s *QueueService) lock(id string) func() {
@@ -127,7 +244,7 @@ func (s *QueueService) RegisterIfIdle(cfg taskstream.StreamConfig) (*taskstream.
 	unlock := s.lock(cfg.SessionID)
 	defer unlock()
 	stream, created := s.streams.RegisterIfIdle(cfg)
-	if !created || cfg.QueueDisabled {
+	if !created {
 		return stream, created, nil
 	}
 	items, err := s.load(cfg.SessionID)
@@ -197,9 +314,7 @@ func (s *QueueService) changeAndSave(id string, stream *taskstream.Stream, chang
 	if err != nil {
 		return nil, err
 	}
-	if stream != nil && s.publish != nil {
-		s.publish(stream, snapshot)
-	}
+	s.notify(stream, snapshot)
 	return snapshot, nil
 }
 

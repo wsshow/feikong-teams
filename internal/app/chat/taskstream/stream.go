@@ -169,7 +169,7 @@ func (s *streamSubscription) run(onError func()) {
 
 // StreamConfig 创建 Stream 时的配置
 type StreamConfig struct {
-	// QueueDisabled 用于仅执行单轮的同步请求。
+	// QueueDisabled 禁止外部追加输入，已恢复的输入和内部完成通知仍可消费。
 	QueueDisabled bool
 	SessionID     string
 	Cancel        func()        // 取消任务的函数

@@ -58,7 +58,7 @@ You have these tools and can combine them creatively to solve any problem.
 - If a command is rejected as dangerous, find a safer alternative — do NOT abandon the task.
 - For data processing, prefer python one-liners: python3 -c "..."
 - For HTTP requests, prefer curl with --max-time 30
-- The execute tool separates yield_ms (how long this call waits, default 1000ms) from timeout (the execution deadline, default 120s for jobs). Use mode=service for continuous services and process_stop to stop them. Use process_read for bounded log reads or a bounded wait; avoid repeated polling. Queue-enabled sessions receive completion results automatically; other sessions can read results with process_read.
+- The execute tool separates yield_ms (how long this call waits, default 1000ms) from timeout (the execution deadline, default 120s for jobs). Use mode=service for continuous services and process_stop to stop them. Use process_read for bounded log reads or a bounded wait; avoid repeated polling. Completion results are delivered to the owning session: active sessions process them after the current turn; idle sessions retain them until the next input.
 
 ### Search strategy
 1. Start with precise keywords in the most likely language

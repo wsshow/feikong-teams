@@ -380,6 +380,16 @@ func newPrintEvent() (func(Event), func()) {
 
 	printFn = func(event Event) {
 		switch event.Type {
+		case runtimeevents.EventType(domainevent.NotifyProcessingStart):
+			if event.Detail == string(domainmessage.QueueFollowUp) && strings.TrimSpace(event.Content) != "" {
+				tryFlush()
+				if inReasoning {
+					inReasoning = false
+					fmt.Print("\033[0m\n")
+				}
+				agentName = ""
+				fmt.Printf("\n\033[1;33m[后续消息] %s\033[0m\n", event.Content)
+			}
 		case EventAssistantText, EventAssistantReason, EventToolCallArgs:
 			switch event.DeltaKind {
 			case domainevent.DeltaReasoning:

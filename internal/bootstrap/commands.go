@@ -25,6 +25,9 @@ func (d *ExecutionDependencies) configureServices(app *lifecycle.Application) fu
 		}
 		return d.closeStorage()
 	})
+	if d.Queues != nil {
+		app.RegisterService(d.Queues)
+	}
 	if d.Processes != nil {
 		app.RegisterService(d.Processes)
 	}

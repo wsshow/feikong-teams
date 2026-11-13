@@ -68,11 +68,24 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 		Message: message.Message{Role: message.RoleUser, Content: task},
 	}
 
-	_, err = e.chat.RunTurn(ctx, appchat.TurnRequest{
+	first := appchat.TurnRequest{
 		SessionID: "fkteams_scheduler_" + taskID,
 		Runner:    r,
 		Input:     input,
 		EventSink: callback,
+	}
+	err = e.chat.RunQueued(ctx, appchat.QueueRequest{
+		First: first,
+		Next: func(queued message.QueuedMessage) (appchat.TurnRequest, error) {
+			// 调度没有会话历史，复用有界报告延续上下文，避免另建无界事件缓冲。
+			next := first
+			next.Input = message.TurnInput{
+				Context: []message.Message{input.Message, {Role: message.RoleAssistant, Content: getResult()}},
+				Message: queued.Message(),
+			}
+			next.RunID = appchat.QueuedRunID(first.SessionID, queued)
+			return next, nil
+		},
 	})
 	if err != nil {
 		errMsg := fmt.Sprintf("execution error: %v", err)

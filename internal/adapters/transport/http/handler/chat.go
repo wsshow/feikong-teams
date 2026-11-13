@@ -41,7 +41,7 @@ func newTurnRunID(sessionID string) string {
 
 func queuedTurnRunID(sessionID string, queued taskstream.QueuedMessage) string {
 	if queued.ID != "" {
-		return fmt.Sprintf("%s:queue:%s", sessionID, queued.ID)
+		return appchat.QueuedRunID(sessionID, queued)
 	}
 	return newTurnRunID(sessionID)
 }
@@ -98,17 +98,7 @@ func queuedChatMessage(kind taskstream.QueueKind, message string, contents []Con
 }
 
 func buildQueuedChatInput(recorder *eventlog.HistoryRecorder, msg taskstream.QueuedMessage, manager appstate.MemoryManager) domainmessage.TurnInput {
-	if len(msg.Parts) > 0 {
-		displayText := appchat.ExtractTextFromParts(msg.Parts)
-		if displayText == "" {
-			displayText = msg.DisplayText
-		}
-		if displayText == "" {
-			displayText = msg.Text
-		}
-		return appchat.BuildMultimodalTurnInputWithMemory(recorder, displayText, msg.Parts, manager)
-	}
-	return appchat.BuildTurnInputWithMemory(recorder, msg.Text, manager)
+	return appchat.BuildQueuedInput(recorder, msg, manager)
 }
 
 func enqueueTaskMessage(stream *taskstream.Stream, sessionID string, kind taskstream.QueueKind, message string, contents []ContentPart) (taskstream.QueuedMessage, error) {

@@ -13,6 +13,7 @@ func TestCleanupLifecycleCanBeReplacedAndStopped(t *testing.T) {
 	manager.StartCleanup(context.Background(), time.Hour)
 	manager.cleanupMu.Lock()
 	first := manager.cleanupCancel
+	firstDone := manager.cleanupDone
 	manager.cleanupMu.Unlock()
 	if first == nil {
 		t.Fatal("cleanup was not started")
@@ -21,12 +22,23 @@ func TestCleanupLifecycleCanBeReplacedAndStopped(t *testing.T) {
 	manager.StartCleanup(context.Background(), time.Hour)
 	manager.cleanupMu.Lock()
 	second := manager.cleanupCancel
+	secondDone := manager.cleanupDone
 	manager.cleanupMu.Unlock()
 	if second == nil {
 		t.Fatal("replacement cleanup was not started")
 	}
+	select {
+	case <-firstDone:
+	default:
+		t.Fatal("replacement returned before old cleanup exited")
+	}
 
 	manager.StopCleanup()
+	select {
+	case <-secondDone:
+	default:
+		t.Fatal("stop returned before cleanup exited")
+	}
 	manager.cleanupMu.Lock()
 	defer manager.cleanupMu.Unlock()
 	if manager.cleanupCancel != nil {

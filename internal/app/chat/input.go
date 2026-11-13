@@ -22,6 +22,26 @@ type MemorySearcher interface {
 	Search(query string, topK int) []domainmemory.MemoryEntry
 }
 
+// BuildQueuedInput 使用当前已提交历史构造队列回合，保留正文和多模态语义。
+func BuildQueuedInput(recorder HistoryProjector, item domainmessage.QueuedMessage, manager MemorySearcher) domainmessage.TurnInput {
+	query := item.Text
+	if len(item.Parts) > 0 {
+		query = ExtractTextFromParts(item.Parts)
+		if query == "" {
+			query = item.DisplayText
+		}
+		if query == "" {
+			query = item.Text
+		}
+	}
+	return buildInput(recorder, item.Message(), query, manager)
+}
+
+// QueuedRunID 为一次已消费队列项生成跨入口一致的运行标识。
+func QueuedRunID(sessionID string, item domainmessage.QueuedMessage) string {
+	return fmt.Sprintf("%s:queue:%s", sessionID, item.ID)
+}
+
 // BuildTurnInput 构建一轮输入（长期记忆 + 对话历史 + 用户输入）
 func BuildTurnInput(recorder HistoryProjector, userInput string) domainmessage.TurnInput {
 	return BuildTurnInputWithMemory(recorder, userInput, nil)

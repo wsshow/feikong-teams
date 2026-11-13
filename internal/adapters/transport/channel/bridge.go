@@ -13,6 +13,7 @@ import (
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/execution"
 	appschedule "fkteams/internal/app/schedule"
+	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
@@ -444,28 +445,37 @@ func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 
-	_, runErr := appchat.NewService().RunTurn(ctx, appchat.TurnRequest{
-		SessionID:        sessionID,
-		Runner:           r,
-		Input:            turnInput,
-		Summary:          recorder,
-		History:          recorder,
-		NonInteractive:   true,
-		ApprovalRegistry: approval.NewAutoApproveRegistry(),
-		EventSink:        rc.handleEvent,
-		OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
-			rc.flush()
-			store := eventlog.NewChatSessionStore(b.historyDir, b.sessions.Documents)
-			lifecycleErr := appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
-				SessionID:    sessionID,
-				TitleSource:  combinedInput,
-				DefaultTitle: "通道会话",
-				Error:        err,
-			})
-			if !rc.replied {
-				_ = b.manager.SendText(ctx, channelName, chatID, "...")
-			}
-			return lifecycleErr
+	request := func(input domainmessage.TurnInput, runID string) appchat.TurnRequest {
+		return appchat.TurnRequest{
+			SessionID:        sessionID,
+			RunID:            runID,
+			Runner:           r,
+			Input:            input,
+			Summary:          recorder,
+			History:          recorder,
+			NonInteractive:   true,
+			ApprovalRegistry: approval.NewAutoApproveRegistry(),
+			EventSink:        rc.handleEvent,
+			OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
+				rc.flush()
+				store := eventlog.NewChatSessionStore(b.historyDir, b.sessions.Documents)
+				lifecycleErr := appchat.NewSessionLifecycle(store).Finish(ctx, appchat.FinishRequest{
+					SessionID:    sessionID,
+					TitleSource:  combinedInput,
+					DefaultTitle: "通道会话",
+					Error:        err,
+				})
+				if !rc.replied {
+					_ = b.manager.SendText(ctx, channelName, chatID, "...")
+				}
+				return lifecycleErr
+			},
+		}
+	}
+	runErr := appchat.NewService().RunQueued(ctx, appchat.QueueRequest{
+		First: request(turnInput, ""),
+		Next: func(queued domainmessage.QueuedMessage) (appchat.TurnRequest, error) {
+			return request(appchat.BuildQueuedInput(recorder, queued, b.memoryManager()), appchat.QueuedRunID(sessionID, queued)), nil
 		},
 	})
 	if runErr != nil {

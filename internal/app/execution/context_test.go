@@ -7,6 +7,8 @@ import (
 
 	agents "fkteams/internal/app/agent/catalog"
 	"fkteams/internal/app/agent/catalog/toolmeta"
+	"fkteams/internal/app/chat"
+	"fkteams/internal/app/chat/taskstream"
 	apptools "fkteams/internal/app/tools"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/hooks"
@@ -19,6 +21,7 @@ type marker struct{}
 
 func newTestDependencies() Dependencies {
 	return Dependencies{
+		Queues:    chat.NewQueueService(taskstream.NewManager(), nil, nil),
 		Processes: &appprocess.Service{},
 		Runtime:   &runtimeIdentity{}, Interrupt: &interruptIdentity{},
 		ModelRegistry: modelregistry.NewRegistry(),
