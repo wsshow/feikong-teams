@@ -112,18 +112,12 @@ bun run dev
 ```bash
 mkdir -p data
 docker compose pull
-
-# 仅在首次使用时生成配置，已有配置请保留
-docker compose run --rm fkteams generate config
-```
-
-编辑 `data/config/config.toml` 配置模型后启动：
-
-```bash
 docker compose up -d
 ```
 
-访问 <http://localhost:23456> 即可使用。升级镜像时执行 `docker compose pull && docker compose up -d`。
+启动后访问 <http://localhost:23456>，进入「系统配置 → 模型」添加模型，填写提供商、模型名称、API Key 等信息，并确保模型用途包含 `chat`，保存后即可开始使用。配置会自动保存到宿主机 `data/config/config.toml`，无需提前生成或手动编辑配置文件。
+
+升级镜像时执行 `docker compose pull && docker compose up -d`。
 
 从旧版分目录挂载的 Compose 配置升级时，先停止旧容器并备份数据。旧配置未挂载的 `/app/data`（SQLite 数据库）和 `/app/javascript` 可能仍在旧容器内，需要在删除旧容器前复制到宿主机 `./data/data` 和 `./data/javascript`；仅复制原来挂载的几个子目录不足以保存全部状态。
 
@@ -131,10 +125,6 @@ docker compose up -d
 
 ```bash
 mkdir -p data
-docker run --rm -v "$(pwd)/data:/app" \
-  fkteams/fkteams:latest generate config
-
-# 配置 data/config/config.toml 后启动
 docker run -d \
   --name fkteams \
   --restart unless-stopped \
@@ -142,6 +132,8 @@ docker run -d \
   -v "$(pwd)/data:/app" \
   fkteams/fkteams:latest
 ```
+
+启动后访问 <http://localhost:23456>，在「系统配置 → 模型」添加并保存模型配置，确保模型用途包含 `chat`，即可开始使用。无需提前生成或手动编辑配置文件，配置会自动保存到宿主机 `data/config/config.toml`。
 
 镜像默认使用 `web --host 0.0.0.0` 启动，`FEIKONG_APP_DIR` 默认为 `/app`。程序位于 `/usr/local/bin/fkteams`，整体挂载数据目录不会遮挡程序。环境变量可通过 Compose 的 `environment` 或 `docker run -e` 传入。
 
