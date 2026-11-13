@@ -3,11 +3,15 @@ package bootstrap
 
 import (
 	"context"
+	localprocess "fkteams/internal/adapters/process/local"
 	sqlitestore "fkteams/internal/adapters/storage/sqlite"
+	"fkteams/internal/app/appdata"
+	appprocess "fkteams/internal/app/process"
 	domainmigration "fkteams/internal/domain/migration"
 	memoryport "fkteams/internal/ports/memory"
 	storageport "fkteams/internal/ports/storage"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -26,12 +30,13 @@ import (
 // ExecutionDependencies 保存一次应用实例所需的执行依赖。
 // 各注册表均为实例所有，避免入口依赖可变的进程级全局状态。
 type ExecutionDependencies struct {
-	MigrationStatus   domainmigration.Status
-	database          *sqlitestore.Database
-	unlockStorage     func() error
-	storageCloseOnce  sync.Once
-	storageCloseError error
-	MemoryStore       memoryport.Store
+	MigrationStatus     domainmigration.Status
+	database            *sqlitestore.Database
+	unlockStorage       func() error
+	storageCloseOnce    sync.Once
+	storageCloseError   error
+	processBackendClose func() error
+	MemoryStore         memoryport.Store
 	execution.Dependencies
 	ExecutionGate         *config.ExecutionGate
 	ModelProviderRegistry *modelproviders.Registry
@@ -51,8 +56,26 @@ func newExecutionDependencies(documents storageport.Documents, memories memorypo
 		return nil, fmt.Errorf("initialize runtime dependencies: %w", err)
 	}
 
-	toolRegistry, err := bootstraptools.RegisterDefaults(mcpProvider, documents)
+	var processes *appprocess.Service
+	var backendClose func() error
+	if documents != nil {
+		backend, err := localprocess.New(filepath.Join(appdata.Dir(), "runtime", "processes"))
+		if err != nil {
+			return nil, fmt.Errorf("initialize process backend: %w", err)
+		}
+		processes, err = appprocess.NewService(backend, backend)
+		if err != nil {
+			backend.Close()
+			return nil, err
+		}
+		backendClose = backend.Close
+	}
+	toolRegistry, err := bootstraptools.RegisterWithProcesses(mcpProvider, documents, processes)
 	if err != nil {
+		if processes != nil {
+			processes.Close()
+			backendClose()
+		}
 		return nil, fmt.Errorf("register default tools: %w", err)
 	}
 	hookBus := hooks.NewBus()
@@ -66,10 +89,12 @@ func newExecutionDependencies(documents storageport.Documents, memories memorypo
 
 	return &ExecutionDependencies{
 		MemoryStore:           memories,
+		processBackendClose:   backendClose,
 		ExecutionGate:         &config.ExecutionGate{},
 		ModelProviderRegistry: runtimeDefaults.ModelProviderRegistry,
 		Dependencies: execution.Dependencies{
 			Documents:     documents,
+			Processes:     processes,
 			Runtime:       runtimeDefaults.Runtime,
 			Interrupt:     runtimeDefaults.Interrupt,
 			ModelRegistry: runtimeDefaults.ModelRegistry,

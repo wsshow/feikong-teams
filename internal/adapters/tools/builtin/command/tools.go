@@ -1,17 +1,13 @@
 package command
 
-import (
-	runtimeport "fkteams/internal/ports/runtime"
-)
+import runtimeport "fkteams/internal/ports/runtime"
 
-// GetTools 返回命令行工具列表
+// GetTools 返回命令执行和任务管理工具。
 func (t *CommandTools) GetTools() ([]runtimeport.Tool, error) {
-
 	return runtimeport.NewTools([]runtimeport.ToolDefinition{
-		{Name: "execute", Description: "命令执行工具，带安全审批功能。可执行任意 shell 命令并自动评估安全风险。安全命令直接执行，危险命令暂停并请求用户审批。超时控制默认60秒，最大600秒。使用时必须提供执行原因。" +
-			"耗时超过15秒的命令会自动转入后台执行并返回 task_id。" +
-			"输出超过1MB会被截断并标记 output_truncated，此时建议将输出重定向到文件。" +
-			"对于需要持续运行的服务类命令（如 HTTP server、watch、tail -f 等），设置 background=true，命令立即返回 task_id 和 PID，由同一个任务管理器管理；使用 task_action=terminate 终止。" +
-			"后台任务管理: task_action=list 列出所有任务, task_action=status+task_id 查询状态, task_action=terminate+task_id 终止任务。", Handler: t.SmartExecute},
+		{Name: "execute", Description: "在工作区执行 shell 命令并进行安全审批。job 默认执行期限120秒，service 默认持续运行；timeout 指定执行期限。yield_ms 只控制本次等待预算，默认1000毫秒，耗尽后返回 task_id，后台归应用管理。background=true 立即返回；常驻服务同时设置 mode=service。使用 process_read 分页读取日志或有界等待，process_stop 停止。输出日志保留最新4MiB，响应仅提供尾部。不要通过反复轮询等待完成；支持队列的入口会接收完成通知。", Handler: t.SmartExecute},
+		{Name: "process_read", Description: "读取当前会话任务状态及合并日志，支持字节游标、输出预算和最长30秒等待终态；轮转缺口以 truncated 标记。", Handler: t.Read},
+		{Name: "process_stop", Description: "停止当前会话的命令任务；先发送终止信号，最多等待3秒后强制清理进程组并返回最终状态。", Handler: t.Stop},
+		{Name: "process_list", Description: "列出当前会话和工作区所属的命令任务及明确状态。", Handler: t.List},
 	})
 }

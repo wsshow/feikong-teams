@@ -263,3 +263,27 @@ func TestCommittedImageEditCleansUnusedVersionsWithoutFollowingLinks(t *testing.
 		t.Fatalf("outside changed: %s %v", data, err)
 	}
 }
+
+func TestDeliveryReceiptSurvivesQueueConsumptionAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	item := domainmessage.QueuedMessage{ID: "process-one", Text: "completed"}
+	if err := store.SaveWithReceipt("session", []domainmessage.QueuedMessage{item}, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save("session", nil); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewStore(dir)
+	received, err := restarted.HasReceipt("session", item.ID)
+	if err != nil || !received {
+		t.Fatalf("receipt lost: %v %v", received, err)
+	}
+	items, err := restarted.Load("session")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("consumed input restored: %+v %v", items, err)
+	}
+	if err := store.SaveWithReceipt("session", nil, "../escape"); err == nil {
+		t.Fatal("receipt path escape accepted")
+	}
+}

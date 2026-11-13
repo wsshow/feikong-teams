@@ -25,6 +25,9 @@ func (d *ExecutionDependencies) configureServices(app *lifecycle.Application) fu
 		}
 		return d.closeStorage()
 	})
+	if d.Processes != nil {
+		app.RegisterService(d.Processes)
+	}
 	cfg := app.Config()
 	memoryService := services.NewMemoryService(cfg.WorkspaceDir, app.State(), d.MemoryStore)
 	memoryService.Enabled = cfg.MemoryEnabled

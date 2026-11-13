@@ -46,6 +46,7 @@ const (
 )
 
 type queueSnapshotFile struct {
+	Receipts  map[string]time.Time          `json:"receipts,omitempty"`
 	Version   int                           `json:"version"`
 	SessionID string                        `json:"session_id"`
 	UpdatedAt time.Time                     `json:"updated_at"`
@@ -53,10 +54,37 @@ type queueSnapshotFile struct {
 }
 
 func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) error {
+	return s.save(sessionID, queue, "")
+}
+
+// SaveWithReceipt 将队列和后台结果的投递回执原子提交。
+func (s *Store) SaveWithReceipt(sessionID string, queue []domainmessage.QueuedMessage, receipt string) error {
+	if !domainsession.ValidID(receipt) {
+		return fmt.Errorf("invalid receipt ID")
+	}
+	return s.save(sessionID, queue, receipt)
+}
+
+func (s *Store) save(sessionID string, queue []domainmessage.QueuedMessage, receipt string) error {
 	if !domainsession.ValidID(sessionID) {
 		return fmt.Errorf("invalid session ID")
 	}
-	root, err := s.openSession(sessionID, len(queue) > 0)
+	receipts, err := s.receipts(sessionID)
+	if err != nil {
+		return err
+	}
+	for id, at := range receipts {
+		if time.Since(at) > 8*24*time.Hour {
+			delete(receipts, id)
+		}
+	}
+	if receipt != "" {
+		receipts[receipt] = time.Now()
+	}
+	if len(receipts) > 8192 {
+		return fmt.Errorf("queue receipt quota reached")
+	}
+	root, err := s.openSession(sessionID, len(queue) > 0 || len(receipts) > 0)
 	if errors.Is(err, os.ErrNotExist) && len(queue) == 0 {
 		if s.Documents != nil {
 			if removeErr := s.removeSnapshot(nil, sessionID); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
@@ -69,7 +97,7 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 		return err
 	}
 	defer root.Close()
-	if len(queue) == 0 {
+	if len(queue) == 0 && len(receipts) == 0 {
 		// 先验证清理边界，提交之后的垃圾回收失败不能否定快照提交。
 		if err := pathguard.RejectRootSymlinkComponents(root, "attachments/queue"); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -102,6 +130,7 @@ func (s *Store) Save(sessionID string, queue []domainmessage.QueuedMessage) erro
 
 	data, err := json.MarshalIndent(queueSnapshotFile{
 		Version:   1,
+		Receipts:  receipts,
 		SessionID: sessionID,
 		UpdatedAt: time.Now(),
 		Items:     items,
@@ -182,6 +211,52 @@ func (s *Store) Load(sessionID string) ([]domainmessage.QueuedMessage, error) {
 		items = append(items, restored)
 	}
 	return items, nil
+}
+
+// HasReceipt 查询已经提交的投递标识，即使队列项已消费也保留回执。
+func (s *Store) HasReceipt(sessionID, receipt string) (bool, error) {
+	receipts, err := s.receipts(sessionID)
+	_, ok := receipts[receipt]
+	return ok, err
+}
+
+func (s *Store) receipts(sessionID string) (map[string]time.Time, error) {
+	if !domainsession.ValidID(sessionID) {
+		return nil, fmt.Errorf("invalid session ID")
+	}
+	receipts := make(map[string]time.Time)
+	root, err := s.openSession(sessionID, false)
+	if errors.Is(err, os.ErrNotExist) {
+		return receipts, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	data, err := s.readSnapshot(root, sessionID)
+	if errors.Is(err, os.ErrNotExist) {
+		return receipts, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPersistentQueueSnapshotBytes {
+		return nil, fmt.Errorf("queue snapshot is too large")
+	}
+	var snapshot queueSnapshotFile
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return nil, err
+	}
+	if snapshot.Version != 1 || snapshot.SessionID != sessionID {
+		return nil, fmt.Errorf("invalid queue snapshot metadata")
+	}
+	if len(snapshot.Receipts) > 8192 {
+		return nil, fmt.Errorf("queue receipt quota reached")
+	}
+	if snapshot.Receipts != nil {
+		receipts = snapshot.Receipts
+	}
+	return receipts, nil
 }
 
 func persistentQueuePath(sessionDir string) string {

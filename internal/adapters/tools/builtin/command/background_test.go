@@ -2,129 +2,178 @@ package command
 
 import (
 	"context"
-	"fmt"
+	localprocess "fkteams/internal/adapters/process/local"
+	appprocess "fkteams/internal/app/process"
+	domain "fkteams/internal/domain/process"
+	"fkteams/internal/domain/session"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
-
-	"fkteams/internal/domain/session"
 )
 
-func TestBackgroundLifecycleAndSessionIsolation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix shell fixture")
+func newTestTools(t *testing.T, opts ...Option) *CommandTools {
+	t.Helper()
+	backend, err := localprocess.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	manager := NewManager()
-	defer manager.Close()
-	dir := t.TempDir()
-	tools := NewCommandTools(dir, WithManager(manager))
+	service, err := appprocess.NewService(backend, backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Error(err)
+		}
+		if err := backend.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return NewCommandTools(t.TempDir(), append([]Option{WithService(service)}, opts...)...)
+}
+
+func TestBackgroundDeadlineAndSessionIsolation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fixture")
+	}
+	tools := newTestTools(t)
 	ctx := session.WithID(context.Background(), "one")
-	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "sleep 10", Background: true, Timeout: 1})
+	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "printf ready; sleep 10", Background: true, Timeout: 1})
 	if err != nil || !resp.Success || resp.TaskID == "" || resp.PID == 0 {
 		t.Fatalf("start: %#v %v", resp, err)
 	}
 	other := session.WithID(context.Background(), "two")
-	hidden, err := tools.SmartExecute(other, &SmartExecuteRequest{TaskID: resp.TaskID, TaskAction: "status"})
-	if err != nil || hidden.ErrorMessage == "" {
-		t.Fatalf("cross-session task access: %#v %v", hidden, err)
-	}
-	listed, _ := tools.SmartExecute(other, &SmartExecuteRequest{TaskAction: "list"})
-	if len(listed.Tasks) != 0 {
-		t.Fatalf("cross-session task list: %#v", listed)
-	}
-	separate := NewCommandTools(t.TempDir(), WithManager(manager))
-	hidden, _ = separate.SmartExecute(ctx, &SmartExecuteRequest{TaskID: resp.TaskID})
+	hidden, _ := tools.Read(other, &ReadRequest{TaskID: resp.TaskID})
 	if hidden.ErrorMessage == "" {
-		t.Fatal("cross-workspace task access")
+		t.Fatal("cross-session read allowed")
 	}
-	manager.mu.Lock()
-	task := manager.tasks[resp.TaskID]
-	manager.mu.Unlock()
-	select {
-	case <-task.finished:
-	case <-time.After(4 * time.Second):
-		t.Fatal("background timeout did not stop process")
+	listed, _ := tools.List(other, &ListRequest{})
+	if len(listed.Tasks) != 0 {
+		t.Fatal("cross-session list")
 	}
-	result, _ := tools.SmartExecute(ctx, &SmartExecuteRequest{TaskID: resp.TaskID})
-	if result.Success || !strings.Contains(result.ErrorMessage, "timed out") {
-		t.Fatalf("timeout: %#v", result)
+	separate := NewCommandTools(t.TempDir(), WithService(tools.service))
+	hidden, _ = separate.Read(ctx, &ReadRequest{TaskID: resp.TaskID})
+	if hidden.ErrorMessage == "" {
+		t.Fatal("cross-workspace read")
 	}
-	// 结果读取可重复，避免重试时丢失任务结果。
-	repeated, _ := tools.SmartExecute(ctx, &SmartExecuteRequest{TaskID: resp.TaskID})
-	if repeated.ErrorMessage != result.ErrorMessage {
-		t.Fatal("result was consumed by first read")
+	result, err := tools.Read(ctx, &ReadRequest{TaskID: resp.TaskID, WaitMS: 6000})
+	if err != nil || result.Status != domain.TimedOut || result.Success || !strings.Contains(result.Output.Text, "ready") {
+		t.Fatalf("deadline: %#v %v", result, err)
+	}
+	repeated, _ := tools.Read(ctx, &ReadRequest{TaskID: resp.TaskID})
+	if repeated.Output.Text != result.Output.Text || repeated.Status != domain.TimedOut {
+		t.Fatal("read consumed result")
 	}
 }
 
-func TestManagerCloseWaitsAndOnlyRemovesOwnedFiles(t *testing.T) {
+func TestYieldAndLiveCursorReadDoNotChangeServiceLifetime(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("Unix shell fixture")
+		t.Skip("Unix fixture")
 	}
-	dir := t.TempDir()
-	keep := filepath.Join(dir, "cmd_output_user.txt")
+	tools := newTestTools(t)
+	ctx, cancel := context.WithCancel(session.WithID(context.Background(), "one"))
+	yield := 20
+	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "printf hello; sleep 20", Mode: "service", YieldMS: &yield})
+	cancel()
+	if err != nil || resp.Status != domain.Running || !resp.IsBackground {
+		t.Fatalf("yield: %#v %v", resp, err)
+	}
+	owner := session.WithID(context.Background(), "one")
+	cursor := int64(0)
+	result, _ := tools.Read(owner, &ReadRequest{TaskID: resp.TaskID, Cursor: &cursor, Limit: 3, WaitMS: 100})
+	if result.Status != domain.Running || result.Output.Text != "hel" || result.Next != 3 {
+		t.Fatalf("live read: %#v", result)
+	}
+	cursor = result.Next
+	next, _ := tools.Read(owner, &ReadRequest{TaskID: resp.TaskID, Cursor: &cursor})
+	if next.Output.Text != "lo" || next.Next != 5 {
+		t.Fatalf("cursor: %#v", next)
+	}
+	stopped, _ := tools.Stop(owner, &StopRequest{TaskID: resp.TaskID})
+	if !stopped.Success || stopped.Status != domain.Cancelled {
+		t.Fatalf("stop: %#v", stopped)
+	}
+	again, _ := tools.Stop(owner, &StopRequest{TaskID: resp.TaskID})
+	if again.Status != domain.Cancelled {
+		t.Fatalf("repeated stop: %#v", again)
+	}
+}
+
+func TestCloseWaitsAndKeepsLogsAndUnownedFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fixture")
+	}
+	tools := newTestTools(t)
+	keep := filepath.Join(tools.workDir, "user.txt")
 	if err := os.WriteFile(keep, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	manager := NewManager()
-	tools := NewCommandTools(dir, WithManager(manager))
-	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "sleep 20", Background: true})
-	if err != nil || !resp.Success {
-		t.Fatalf("start: %#v %v", resp, err)
-	}
-	manager.mu.Lock()
-	task := manager.tasks[resp.TaskID]
-	manager.mu.Unlock()
-	if err := manager.Close(); err != nil {
+	resp, _ := tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "printf saved; sleep 20", Background: true, Mode: "service"})
+	if err := tools.service.Close(); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-task.finished:
-	default:
-		t.Fatal("Close returned before process exit")
+	result, _ := tools.Read(context.Background(), &ReadRequest{TaskID: resp.TaskID})
+	if result.Status != domain.Interrupted {
+		t.Fatalf("shutdown: %#v", result)
 	}
 	if _, err := os.Stat(keep); err != nil {
-		t.Fatalf("unowned file was removed: %v", err)
+		t.Fatal(err)
 	}
-	resp, _ = tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "echo closed"})
-	if resp.Success {
-		t.Fatal("closed manager accepted new command")
-	}
-}
-
-func TestBackgroundRejectsCancelledAndOverCapacityBeforeStarting(t *testing.T) {
-	tools := NewCommandTools(t.TempDir())
-	defer tools.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "echo cancelled", Background: true})
-	if err != nil || resp.Success {
-		t.Fatalf("cancelled start: %#v %v", resp, err)
-	}
-	tools.manager.mu.Lock()
-	for i := range maxBackgroundTasks {
-		tools.manager.tasks[fmt.Sprint(i)] = &backgroundTask{}
-	}
-	tools.manager.mu.Unlock()
-	marker := filepath.Join(tools.workDir, "started")
-	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "touch started", Background: true})
-	if err != nil || resp.Success {
-		t.Fatalf("capacity: %#v %v", resp, err)
-	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatal("capacity rejection happened after process start")
+	after, _ := tools.SmartExecute(context.Background(), &SmartExecuteRequest{Command: "printf forbidden"})
+	if after.Success {
+		t.Fatal("closed service accepted command")
 	}
 }
 
 func TestTaskOperationValidation(t *testing.T) {
-	tools := NewCommandTools(t.TempDir())
-	defer tools.Close()
+	tools := newTestTools(t)
 	for _, req := range []*SmartExecuteRequest{{TaskID: "missing"}, {TaskAction: "terminate"}, {TaskAction: "invalid"}} {
 		resp, err := tools.SmartExecute(context.Background(), req)
 		if err != nil || resp.ErrorMessage == "" {
-			t.Fatalf("operation: %#v %v", resp, err)
+			t.Fatalf("invalid operation: %#v %v", resp, err)
 		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resp, _ := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "printf forbidden", Background: true})
+	if resp.Success {
+		t.Fatal("cancelled request accepted")
+	}
+	for _, req := range []*ReadRequest{{TaskID: "missing", Cursor: ptr64(-2)}, {TaskID: "missing", WaitMS: -1}, {TaskID: "missing", WaitMS: 30001}, {TaskID: "missing", Limit: 65537}} {
+		resp, _ := tools.Read(context.Background(), req)
+		if resp.ErrorMessage == "" {
+			t.Fatal("invalid read accepted")
+		}
+	}
+}
+func ptr64(n int64) *int64 { return &n }
+
+func TestForegroundCancellationDrainsBeforeReturning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fixture")
+	}
+	tools := newTestTools(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	yield := 30000
+	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "sleep 20", YieldMS: &yield})
+	if err != nil || resp.Status != domain.Cancelled || resp.ExitCode == nil {
+		t.Fatalf("cancel: %#v %v", resp, err)
+	}
+}
+
+func TestNilToolRequestsReturnBusinessErrors(t *testing.T) {
+	tools := newTestTools(t)
+	execute, _ := tools.SmartExecute(context.Background(), nil)
+	read, _ := tools.Read(context.Background(), nil)
+	stop, _ := tools.Stop(context.Background(), nil)
+	if execute.ErrorMessage == "" || read.ErrorMessage == "" || stop.ErrorMessage == "" {
+		t.Fatal("nil request was accepted")
 	}
 }

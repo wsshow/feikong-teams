@@ -3,7 +3,6 @@ package tools
 import (
 	"fmt"
 	"path/filepath"
-	"sync"
 
 	eventlog "fkteams/internal/adapters/storage/file/history"
 	taskstore "fkteams/internal/adapters/storage/task"
@@ -23,6 +22,7 @@ import (
 	mcpadapter "fkteams/internal/adapters/tools/mcp"
 	"fkteams/internal/app/appdata"
 	"fkteams/internal/app/config"
+	appprocess "fkteams/internal/app/process"
 	appsession "fkteams/internal/app/session"
 	apptask "fkteams/internal/app/task"
 	apptools "fkteams/internal/app/tools"
@@ -47,13 +47,17 @@ func appdataJavaScriptStateDir() string {
 
 // RegisterDefaults 将工具适配器连接到新的应用工具注册表实例。
 func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Documents) (*apptools.ToolGroupRegistry, error) {
-	sessionsDir := appdata.SessionsDir()
-	sharedLocks := resources.NewKeyedLocks()
-	commands := &commandManagers{byCleaner: make(map[*resources.Cleaner]*commandtool.Manager)}
 	var documents storageport.Documents
 	if len(stores) > 0 {
 		documents = stores[0]
 	}
+	return RegisterWithProcesses(mcpProvider, documents, nil)
+}
+
+// RegisterWithProcesses 将命令工具绑定到应用所有的进程服务。
+func RegisterWithProcesses(mcpProvider toolport.MCPProvider, documents storageport.Documents, processes *appprocess.Service) (*apptools.ToolGroupRegistry, error) {
+	sessionsDir := appdata.SessionsDir()
+	sharedLocks := resources.NewKeyedLocks()
 	histories := eventlog.NewSessionHistoryManager()
 	histories.Documents = documents
 	resolveCtx := apptools.ToolResolveContext{
@@ -154,9 +158,9 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "在工作区内执行 shell 命令，适合构建、测试、检查和自动化脚本。",
 				Category:      "开发",
 				Builtin:       true,
-				IncludedTools: []string{"execute"},
+				IncludedTools: []string{"execute", "process_read", "process_stop", "process_list"},
 			},
-			Factory: commandToolGroup(commandtool.ApprovalModeHITL, commands),
+			Factory: commandToolGroup(commandtool.ApprovalModeHITL, processes),
 		},
 		{
 			Info: apptools.ToolGroupInfo{
@@ -165,10 +169,10 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 				Description:   "后台任务内部使用的命令执行工具，遇到高风险命令时自动拒绝。",
 				Category:      "内部",
 				Builtin:       true,
-				IncludedTools: []string{"execute"},
+				IncludedTools: []string{"execute", "process_read", "process_stop", "process_list"},
 				Hidden:        true,
 			},
-			Factory: commandToolGroup(commandtool.ApprovalModeReject, commands),
+			Factory: commandToolGroup(commandtool.ApprovalModeReject, processes),
 		},
 		{
 			Info: apptools.ToolGroupInfo{
@@ -372,23 +376,8 @@ func RegisterDefaults(mcpProvider toolport.MCPProvider, stores ...storageport.Do
 	return registry, nil
 }
 
-type commandManagers struct {
-	mu        sync.Mutex
-	byCleaner map[*resources.Cleaner]*commandtool.Manager
-}
-
-func commandToolGroup(mode commandtool.ApprovalMode, pool *commandManagers) apptools.ToolGroupFactory {
+func commandToolGroup(mode commandtool.ApprovalMode, processes *appprocess.Service) apptools.ToolGroupFactory {
 	return func(ctx apptools.ToolResolveContext) ([]runtimeport.Tool, error) {
-		pool.mu.Lock()
-		manager := pool.byCleaner[ctx.Cleaner]
-		if manager == nil || manager.Closed() {
-			manager = commandtool.NewManager()
-			pool.byCleaner[ctx.Cleaner] = manager
-			if ctx.Cleaner != nil {
-				ctx.Cleaner.Add(manager.Close)
-			}
-		}
-		pool.mu.Unlock()
-		return commandtool.NewCommandTools(ctx.WorkspaceDir, commandtool.WithManager(manager), commandtool.WithApprovalMode(mode)).GetTools()
+		return commandtool.NewCommandTools(ctx.WorkspaceDir, commandtool.WithService(processes), commandtool.WithApprovalMode(mode)).GetTools()
 	}
 }

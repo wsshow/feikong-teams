@@ -3,6 +3,7 @@ package execution
 
 import (
 	"context"
+	appprocess "fkteams/internal/app/process"
 	storageport "fkteams/internal/ports/storage"
 
 	agents "fkteams/internal/app/agent/catalog"
@@ -15,6 +16,7 @@ import (
 
 // Dependencies 保存应用实例的执行能力；副本共享注册表，不包含会话状态或取消信号。
 type Dependencies struct {
+	Processes     *appprocess.Service
 	Documents     storageport.Documents
 	Runtime       runtimeport.Runtime
 	Interrupt     runtimeport.InterruptRuntime
@@ -31,6 +33,7 @@ func (d Dependencies) Context(parent context.Context) context.Context {
 		parent = context.Background()
 	}
 	parent = context.WithValue(parent, documentsKey{}, documentDependency{d.Documents})
+	parent = context.WithValue(parent, processesKey{}, d.Processes)
 	ctx := runtimeport.WithRuntime(parent, d.Runtime)
 	ctx = runtimeport.WithInterruptRuntime(ctx, d.Interrupt)
 	ctx = modelregistry.WithRegistry(ctx, d.ModelRegistry)
@@ -49,6 +52,7 @@ func FromContext(ctx context.Context) Dependencies {
 	if dependency, ok := ctx.Value(documentsKey{}).(documentDependency); ok {
 		d.Documents = dependency.documents
 	}
+	d.Processes, _ = ctx.Value(processesKey{}).(*appprocess.Service)
 	d.Runtime, _ = runtimeport.RuntimeFromContext(ctx)
 	d.Interrupt, _ = runtimeport.InterruptRuntimeFromContext(ctx)
 	d.ModelRegistry, _ = modelregistry.RegistryFromContext(ctx)
@@ -61,3 +65,5 @@ func FromContext(ctx context.Context) Dependencies {
 
 type documentsKey struct{}
 type documentDependency struct{ documents storageport.Documents }
+
+type processesKey struct{}

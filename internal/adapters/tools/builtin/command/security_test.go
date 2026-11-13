@@ -44,7 +44,7 @@ func TestSplitShellCommandsRespectsQuotesAndOrOperator(t *testing.T) {
 }
 
 func TestSmartExecuteRejectsDangerousCommandWithoutRunning(t *testing.T) {
-	tools := NewCommandTools(t.TempDir(), WithApprovalMode(ApprovalModeReject))
+	tools := newTestTools(t, WithApprovalMode(ApprovalModeReject))
 	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{
 		Command: "rm -rf /",
 		Reason:  "test rejection",
@@ -64,7 +64,7 @@ func TestSmartExecuteRejectsDangerousCommandWithoutRunning(t *testing.T) {
 }
 
 func TestSmartExecuteSafeCommand(t *testing.T) {
-	tools := NewCommandTools(t.TempDir(), WithApprovalMode(ApprovalModeReject))
+	tools := newTestTools(t, WithApprovalMode(ApprovalModeReject))
 	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{
 		Command: "printf fkteams",
 		Reason:  "test safe execution",

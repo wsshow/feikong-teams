@@ -2,18 +2,13 @@ package command
 
 import (
 	"context"
-	"errors"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-	"time"
-	"unicode/utf8"
 )
 
 func TestSmartExecuteValidationAndExitCodeHints(t *testing.T) {
-	tools := NewCommandTools(t.TempDir(), WithApprovalMode(ApprovalModeReject))
+	tools := newTestTools(t, WithApprovalMode(ApprovalModeReject))
 
 	resp, err := tools.SmartExecute(context.Background(), &SmartExecuteRequest{})
 	if err != nil {
@@ -26,12 +21,12 @@ func TestSmartExecuteValidationAndExitCodeHints(t *testing.T) {
 	resp, err = tools.SmartExecute(context.Background(), &SmartExecuteRequest{
 		Command: "echo ok",
 		Reason:  "test timeout validation",
-		Timeout: 601,
+		Timeout: 86401,
 	})
 	if err != nil {
 		t.Fatalf("SmartExecute timeout validation error: %v", err)
 	}
-	if resp.ErrorMessage != "timeout must be <= 600 seconds" {
+	if resp.ErrorMessage != "timeout must be between 1 and 86400 seconds when specified" {
 		t.Fatalf("timeout error = %q", resp.ErrorMessage)
 	}
 
@@ -54,54 +49,6 @@ func TestSmartExecuteValidationAndExitCodeHints(t *testing.T) {
 	}
 	if !strings.Contains(resp.ErrorMessage, "grep") {
 		t.Fatalf("grep miss error message = %q", resp.ErrorMessage)
-	}
-}
-
-func TestExecutionContextBuildResponse(t *testing.T) {
-	workDir := t.TempDir()
-	req := &SmartExecuteRequest{Command: "echo hello"}
-	ec := newExecutionContext(context.Background(), req, SecurityEvaluation{Level: LevelModerate, Description: "写入文件", Risks: []string{"覆盖文件"}}, time.Second, workDir)
-	ec.startTime = time.Now().Add(-10 * time.Millisecond)
-	if _, err := ec.stdout.WriteString(strings.Repeat("line\n", 30_000)); err != nil {
-		t.Fatalf("write stdout: %v", err)
-	}
-
-	resp := ec.buildResponse(nil)
-	if !resp.Success {
-		t.Fatalf("expected success response, got %#v", resp)
-	}
-	if resp.ExitCode == nil || *resp.ExitCode != 0 {
-		t.Fatalf("exit code = %v, want 0", resp.ExitCode)
-	}
-	if resp.OutputFilePath == "" || resp.OutputPreview == "" {
-		t.Fatalf("expected large output to be saved, got path=%q preview=%q", resp.OutputFilePath, resp.OutputPreview)
-	}
-	if _, err := os.Stat(filepath.Join(workDir, resp.OutputFilePath)); err != nil {
-		t.Fatalf("stat output file: %v", err)
-	}
-	if !strings.Contains(resp.WarningMessage, "中等风险命令") {
-		t.Fatalf("expected moderate warning, got %q", resp.WarningMessage)
-	}
-
-	timeoutCtx := newExecutionContext(context.Background(), req, SecurityEvaluation{Level: LevelSafe}, time.Nanosecond, workDir)
-	timeoutCtx.startTime = time.Now()
-	<-timeoutCtx.cmdCtx.Done()
-	timeoutResp := timeoutCtx.buildResponse(context.DeadlineExceeded)
-	if timeoutResp.ExitCode == nil || *timeoutResp.ExitCode != -1 {
-		t.Fatalf("timeout exit code = %v, want -1", timeoutResp.ExitCode)
-	}
-	if !strings.Contains(timeoutResp.ErrorMessage, "timed out") {
-		t.Fatalf("timeout error message = %q", timeoutResp.ErrorMessage)
-	}
-
-	failedCtx := newExecutionContext(context.Background(), req, SecurityEvaluation{Level: LevelSafe}, time.Second, workDir)
-	failedCtx.startTime = time.Now()
-	failedResp := failedCtx.buildResponse(errors.New("boom"))
-	if failedResp.ExitCode == nil || *failedResp.ExitCode != -1 {
-		t.Fatalf("failed exit code = %v, want -1", failedResp.ExitCode)
-	}
-	if !strings.Contains(failedResp.ErrorMessage, "execution failed") {
-		t.Fatalf("failed error message = %q", failedResp.ErrorMessage)
 	}
 }
 
@@ -133,45 +80,5 @@ func TestInterpretExitCode(t *testing.T) {
 				t.Fatalf("interpretExitCode = %q, want containing %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestSaveOutputToFileAndShellHelpers(t *testing.T) {
-	workDir := t.TempDir()
-	content := strings.Repeat("row\n", outputPreviewLines+5)
-	relPath, preview, err := saveOutputToFile(content, workDir)
-	if err != nil {
-		t.Fatalf("saveOutputToFile: %v", err)
-	}
-	if filepath.IsAbs(relPath) {
-		t.Fatalf("output path should be relative, got %q", relPath)
-	}
-	if !strings.Contains(preview, "完整内容见文件") {
-		t.Fatalf("expected truncated preview hint, got %q", preview)
-	}
-	got, err := os.ReadFile(filepath.Join(workDir, relPath))
-	if err != nil {
-		t.Fatalf("read output file: %v", err)
-	}
-	if string(got) != content {
-		t.Fatalf("output file content mismatch")
-	}
-
-	shell, args := buildShellCommand("echo ok")
-	if shell == "" || len(args) == 0 {
-		t.Fatalf("buildShellCommand returned shell=%q args=%#v", shell, args)
-	}
-}
-
-func TestSingleLineOutputPreviewHasByteBudget(t *testing.T) {
-	path, preview, err := saveOutputToFile(strings.Repeat("中", 100000), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path == "" || len(preview) > outputPreviewBytes+100 {
-		t.Fatalf("unbounded preview: %d", len(preview))
-	}
-	if !utf8.ValidString(preview) {
-		t.Fatal("preview splits a UTF-8 character")
 	}
 }

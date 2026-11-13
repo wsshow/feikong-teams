@@ -108,6 +108,7 @@ func (d *ExecutionDependencies) prepareStorage(ctx context.Context, mode httpser
 		return ctx, err
 	}
 	d.Dependencies = fresh.Dependencies
+	d.processBackendClose = fresh.processBackendClose
 	d.ExecutionGate = fresh.ExecutionGate
 	d.ModelProviderRegistry = fresh.ModelProviderRegistry
 	d.MemoryStore = fresh.MemoryStore
@@ -119,8 +120,14 @@ func (d *ExecutionDependencies) prepareStorage(ctx context.Context, mode httpser
 }
 func (d *ExecutionDependencies) closeStorage() error {
 	d.storageCloseOnce.Do(func() {
+		if d.Processes != nil {
+			d.storageCloseError = errors.Join(d.storageCloseError, d.Processes.Close())
+		}
+		if d.processBackendClose != nil {
+			d.storageCloseError = errors.Join(d.storageCloseError, d.processBackendClose())
+		}
 		if d.database != nil {
-			d.storageCloseError = d.database.Close()
+			d.storageCloseError = errors.Join(d.storageCloseError, d.database.Close())
 		}
 		if d.unlockStorage != nil {
 			d.storageCloseError = errors.Join(d.storageCloseError, d.unlockStorage())

@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	appprocess "fkteams/internal/app/process"
 	"testing"
 
 	agents "fkteams/internal/app/agent/catalog"
@@ -18,7 +19,8 @@ type marker struct{}
 
 func newTestDependencies() Dependencies {
 	return Dependencies{
-		Runtime: &runtimeIdentity{}, Interrupt: &interruptIdentity{},
+		Processes: &appprocess.Service{},
+		Runtime:   &runtimeIdentity{}, Interrupt: &interruptIdentity{},
 		ModelRegistry: modelregistry.NewRegistry(),
 		ToolRegistry:  apptools.NewToolGroupRegistry(),
 		ToolDisplays:  toolmeta.NewRegistry(),

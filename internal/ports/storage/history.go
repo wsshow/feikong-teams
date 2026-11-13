@@ -18,3 +18,10 @@ type QueueStore interface {
 	Load(sessionID string) ([]message.QueuedMessage, error)
 	Save(sessionID string, items []message.QueuedMessage) error
 }
+
+// ReceiptedQueueStore 在同一原子快照中提交队列和投递回执，消费后仍可去重。
+type ReceiptedQueueStore interface {
+	QueueStore
+	HasReceipt(sessionID, receipt string) (bool, error)
+	SaveWithReceipt(sessionID string, items []message.QueuedMessage, receipt string) error
+}

@@ -102,6 +102,10 @@ func NewRuntime(options ...RuntimeOptions) *Runtime {
 	rt.Queues = appchat.NewQueueService(rt.Streams, rt.QueueStore, func(stream *taskstream.Stream, items []taskstream.QueuedMessage) {
 		publishQueueSnapshot(stream, stream.SessionID(), items)
 	})
+	if rt.Processes != nil {
+		rt.Processes.SetCompletionSink(rt.Queues.DeliverProcess)
+	}
+
 	if rt.RunnerCache == nil {
 		rt.RunnerCache = appagent.NewCache()
 	}

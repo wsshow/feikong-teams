@@ -40,6 +40,9 @@ var toolPolicies = map[string]ToolPolicy{
 
 	// 命令和分发
 	"execute":        destructivePolicy(approval.StoreCommand, false),
+	"process_read":   readOnlyPolicy("", false),
+	"process_list":   readOnlyPolicy("", false),
+	"process_stop":   destructivePolicy(approval.StoreCommand, false),
 	"dispatch_tasks": destructivePolicy(approval.StoreDispatch, false),
 
 	// SSH 工具

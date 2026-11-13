@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fkteams/internal/app/chat/taskstream"
+	domainprocess "fkteams/internal/domain/process"
 	"sync"
 	"testing"
 	"time"
@@ -205,5 +206,63 @@ func TestCancelledQueueRetainsSteeringForNextRun(t *testing.T) {
 	items, err := service.TakeSteering(stream, 1)
 	if err != nil || len(items) != 0 || stream.QueuedCount() != 1 || len(store.items) != 1 {
 		t.Fatalf("consumed=%v, err=%v, queued=%v", items, err, store.items)
+	}
+}
+
+type receiptedTestStore struct {
+	queueTestStore
+	receipts map[string]bool
+}
+
+func (s *receiptedTestStore) HasReceipt(_, receipt string) (bool, error) {
+	return s.receipts[receipt], nil
+}
+func (s *receiptedTestStore) SaveWithReceipt(id string, items []taskstream.QueuedMessage, receipt string) error {
+	if err := s.Save(id, items); err != nil {
+		return err
+	}
+	s.receipts[receipt] = true
+	return nil
+}
+
+func TestProcessCompletionDeliveryRetriesAndDeduplicatesAfterConsumption(t *testing.T) {
+	manager := taskstream.NewManager()
+	store := &receiptedTestStore{receipts: make(map[string]bool)}
+	published := 0
+	queues := NewQueueService(manager, store, func(*taskstream.Stream, []taskstream.QueuedMessage) { published++ })
+	stream, _, err := queues.RegisterIfIdle(taskstream.StreamConfig{SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := domainprocess.Record{ID: "process-one", Owner: domainprocess.Owner{SessionID: "session"}, State: domainprocess.Succeeded, Stdout: "completed"}
+	store.errorOnSave = errors.New("disk unavailable")
+	if err := queues.DeliverProcess(record); err == nil {
+		t.Fatal("acknowledged failed delivery")
+	}
+	if stream.QueuedCount() != 0 || published != 0 || store.receipts[record.ID] {
+		t.Fatal("failed delivery became visible")
+	}
+	store.errorOnSave = nil
+	if err := queues.DeliverProcess(record); err != nil {
+		t.Fatal(err)
+	}
+	item, ok, err := queues.TakeNext(stream)
+	if err != nil || !ok || item.ID != record.ID {
+		t.Fatalf("completion: %+v %v", item, err)
+	}
+	if err := queues.DeliverProcess(record); err != nil {
+		t.Fatal(err)
+	}
+	if stream.QueuedCount() != 0 {
+		t.Fatal("duplicated consumed completion")
+	}
+	// 重建用例后仍使用同一持久化回执，不依赖内存去重表。
+	restarted := NewQueueService(taskstream.NewManager(), store, nil)
+	if err := restarted.DeliverProcess(record); err != nil {
+		t.Fatal(err)
+	}
+	items, err := restarted.Snapshot("session")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("duplicate after restart: %+v %v", items, err)
 	}
 }

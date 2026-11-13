@@ -1,218 +1,105 @@
 package command
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
+	appprocess "fkteams/internal/app/process"
+	domain "fkteams/internal/domain/process"
+	"fkteams/internal/domain/session"
 	"fkteams/internal/runtime/approval"
-	"fkteams/internal/runtime/executil"
 )
 
-// ApprovalMode 审批模式
+// ApprovalMode 指定危险命令的审批策略。
 type ApprovalMode int
 
 const (
-	ApprovalModeHITL   ApprovalMode = iota // 危险命令触发中断审批
-	ApprovalModeReject                     // 危险命令直接拒绝
+	ApprovalModeHITL ApprovalMode = iota
+	ApprovalModeReject
 )
 
-// Option 配置选项
+// Option 配置命令工具依赖。
 type Option func(*CommandTools)
 
-// WithApprovalMode 设置审批模式
+// WithApprovalMode 设置审批模式。
 func WithApprovalMode(mode ApprovalMode) Option {
 	return func(t *CommandTools) { t.approvalMode = mode }
 }
 
-// CommandTools 命令行工具，带安全审批功能
+// WithService 注入应用实例持有的进程用例。
+func WithService(service *appprocess.Service) Option {
+	return func(t *CommandTools) { t.service = service }
+}
+
+// CommandTools 负责命令参数与安全审批，任务状态由应用用例持有。
 type CommandTools struct {
-	manager      *Manager
+	service      *appprocess.Service
 	workDir      string
 	approvalMode ApprovalMode
 }
 
-// NewCommandTools 创建命令行工具实例
+// NewCommandTools 创建工具声明；执行时必须显式注入进程用例。
 func NewCommandTools(workDir string, opts ...Option) *CommandTools {
 	t := &CommandTools{workDir: workDir}
 	for _, opt := range opts {
 		opt(t)
 	}
-	if t.manager == nil {
-		t.manager = NewManager()
-	}
 	return t
 }
 
-// SmartExecuteRequest 智能执行请求
+// SmartExecuteRequest 将命令执行期限与本次等待预算分开。
 type SmartExecuteRequest struct {
-	Command    string `json:"command,omitempty" jsonschema:"description=要执行的 shell 命令（执行命令时必填）"`
-	Timeout    int    `json:"timeout,omitempty" jsonschema:"description=超时时间（秒）默认60秒最大600秒"`
-	Reason     string `json:"reason,omitempty" jsonschema:"description=执行该命令的原因和目的（执行命令时必填）"`
-	Background bool   `json:"background,omitempty" jsonschema:"description=是否后台运行。对于需要持续运行的服务类命令（如 HTTP server、watch、tail -f 等）设为 true，命令会立即返回 PID，通过 kill PID 终止"`
-	TaskID     string `json:"task_id,omitempty" jsonschema:"description=后台任务ID，配合 task_action 使用"`
-	TaskAction string `json:"task_action,omitempty" jsonschema:"description=后台任务操作: list(列出所有任务) status(查询状态) terminate(终止任务)"`
+	Command    string `json:"command,omitempty" jsonschema:"description=要执行的 shell 命令"`
+	Reason     string `json:"reason,omitempty" jsonschema:"description=执行目的"`
+	Mode       string `json:"mode,omitempty" jsonschema:"description=job（默认）为有限任务；service 为常驻服务"`
+	Timeout    int    `json:"timeout,omitempty" jsonschema:"description=执行期限秒数。0或省略使用模式默认值：job 120秒，service 无限；显式正值范围1到86400"`
+	YieldMS    *int   `json:"yield_ms,omitempty" jsonschema:"description=本次等待预算毫秒，默认1000，范围0到30000。耗尽后返回任务ID，不改变执行期限"`
+	Background bool   `json:"background,omitempty" jsonschema:"description=立即返回任务ID。后台运行仍受 mode 和 timeout 管理，服务请同时指定 mode=service"`
+	TaskID     string `json:"task_id,omitempty" jsonschema:"description=兼容旧接口的任务ID，推荐使用 process_read 或 process_stop"`
+	TaskAction string `json:"task_action,omitempty" jsonschema:"description=兼容旧接口：list、status、terminate"`
 }
 
-// SmartExecuteResponse 智能执行响应
+// SmartExecuteResponse 返回稳定任务ID、明确状态及有界输出尾部。
 type SmartExecuteResponse struct {
 	Success         bool                 `json:"success"`
 	Stdout          string               `json:"stdout,omitempty"`
 	Stderr          string               `json:"stderr,omitempty"`
-	ExitCode        *int                 `json:"exit_code,omitempty" jsonschema:"description=命令退出码，仅命令执行完成时有值"`
+	ExitCode        *int                 `json:"exit_code,omitempty"`
 	ExecutionTime   string               `json:"execution_time,omitempty"`
 	SecurityLevel   string               `json:"security_level,omitempty"`
 	Command         string               `json:"command,omitempty"`
 	ErrorMessage    string               `json:"error_message,omitempty"`
 	WarningMessage  string               `json:"warning_message,omitempty"`
-	OutputTruncated bool                 `json:"output_truncated,omitempty" jsonschema:"description=输出内容因超出大小限制被截断，可能需要将输出重定向到文件以获取完整内容"`
-	OutputFilePath  string               `json:"output_file_path,omitempty" jsonschema:"description=完整输出已写入此文件"`
-	OutputPreview   string               `json:"output_preview,omitempty" jsonschema:"description=输出内容的预览片段"`
-	IsBackground    bool                 `json:"is_background,omitempty" jsonschema:"description=命令已转入后台执行，使用返回的 task_id 查询结果"`
-	TaskID          string               `json:"task_id,omitempty" jsonschema:"description=后台任务ID"`
-	PID             int                  `json:"pid,omitempty" jsonschema:"description=后台进程PID，可通过 kill PID 终止"`
-	Tasks           []BackgroundTaskInfo `json:"tasks,omitempty" jsonschema:"description=后台任务列表"`
+	OutputTruncated bool                 `json:"output_truncated,omitempty"`
+	OutputPreview   string               `json:"output_preview,omitempty"`
+	IsBackground    bool                 `json:"is_background,omitempty"`
+	TaskID          string               `json:"task_id,omitempty"`
+	PID             int                  `json:"pid,omitempty"`
+	Status          domain.State         `json:"status,omitempty"`
+	Tasks           []BackgroundTaskInfo `json:"tasks,omitempty"`
 }
 
-// BackgroundTaskInfo 后台任务信息
+// BackgroundTaskInfo 是当前会话内可见的任务摘要。
 type BackgroundTaskInfo struct {
-	TaskID      string `json:"task_id"`
-	Command     string `json:"command"`
-	Status      string `json:"status"`
-	ElapsedTime string `json:"elapsed_time"`
+	TaskID      string       `json:"task_id"`
+	Command     string       `json:"command"`
+	Status      domain.State `json:"status"`
+	ElapsedTime string       `json:"elapsed_time"`
 }
 
-// intPtr 辅助函数，返回 int 指针
-func intPtr(v int) *int { return &v }
-
-// executionContext 单次命令执行的上下文，封装所有执行期间的共享状态
-type executionContext struct {
-	req       *SmartExecuteRequest
-	eval      SecurityEvaluation
-	cmdCtx    context.Context
-	cancel    context.CancelFunc
-	stdout    bytes.Buffer
-	stderr    bytes.Buffer
-	stdoutLW  *limitedWriter
-	stderrLW  *limitedWriter
-	startTime time.Time
-	timeout   time.Duration
-	workDir   string
-}
-
-const maxOutputSize = 1 << 20
-
-// 输出超过此大小时写入临时文件而非截断
-const outputFileThreshold = 100 << 10
-
-// 存文件后返回的预览行数
-const outputPreviewLines = 100
-const outputPreviewBytes = 8 << 10
-
-func newExecutionContext(parent context.Context, req *SmartExecuteRequest, eval SecurityEvaluation, timeout time.Duration, workDir string) *executionContext {
-	// 执行归属任务管理器，前台取消由调用方显式传递，转后台后继续受应用控制。
-	cmdCtx, cancel := context.WithTimeout(parent, timeout)
-	ec := &executionContext{
-		req:     req,
-		eval:    eval,
-		cmdCtx:  cmdCtx,
-		cancel:  cancel,
-		timeout: timeout,
-		workDir: workDir,
-	}
-	ec.stdoutLW = &limitedWriter{w: &ec.stdout, limit: maxOutputSize}
-	ec.stderrLW = &limitedWriter{w: &ec.stderr, limit: maxOutputSize}
-	return ec
-}
-
-// buildResponse 构建命令执行响应
-func (ec *executionContext) buildResponse(err error) *SmartExecuteResponse {
-	elapsed := time.Since(ec.startTime)
-
-	stdout := ec.stdout.String()
-	resp := &SmartExecuteResponse{
-		Success:         err == nil,
-		Command:         ec.req.Command,
-		Stderr:          ec.stderr.String(),
-		ExecutionTime:   elapsed.Round(time.Millisecond).String(),
-		SecurityLevel:   securityLevelName(ec.eval.Level),
-		OutputTruncated: ec.stdoutLW.truncated || ec.stderrLW.truncated,
-	}
-
-	// 大输出存文件：超过阈值时写入临时文件，返回路径和预览
-	artifact := stdout
-	stderrOverflow := len(resp.Stderr) > outputPreviewBytes
-	if stderrOverflow {
-		artifact += "\n[stderr]\n" + resp.Stderr
-		resp.Stderr = executil.String([]byte(resp.Stderr[:outputPreviewBytes]), true)
-	}
-	if len(artifact) > outputFileThreshold || stderrOverflow {
-		if filePath, preview, writeErr := saveOutputToFile(artifact, ec.workDir); writeErr == nil {
-			resp.OutputFilePath = filePath
-			resp.OutputPreview = preview
-			// 已落盘，不占用消息上下文
-			resp.Stdout = fmt.Sprintf("输出已写入 %s（共 %d 字节）", filePath, len(artifact))
-		} else {
-			resp.Stdout = executil.String([]byte(stdout[:min(len(stdout), outputPreviewBytes)]), len(stdout) > outputPreviewBytes)
-			resp.WarningMessage = "failed to persist command output; preview only"
-			resp.OutputTruncated = true
-		}
-	} else {
-		resp.Stdout = stdout
-	}
-
-	if err != nil {
-		if ec.cmdCtx.Err() != nil {
-			resp.ExitCode = intPtr(-1)
-			if errors.Is(ec.cmdCtx.Err(), context.DeadlineExceeded) {
-				resp.ErrorMessage = fmt.Sprintf("command timed out after %s", ec.timeout)
-			} else {
-				resp.ErrorMessage = "command cancelled"
-			}
-		} else if exitErr, ok := err.(*exec.ExitError); ok {
-			code := exitErr.ExitCode()
-			resp.ExitCode = intPtr(code)
-			// 非零退出码语义映射
-			if msg := interpretExitCode(ec.req.Command, code); msg != "" {
-				resp.ErrorMessage = msg
-			}
-		} else {
-			resp.ExitCode = intPtr(-1)
-			resp.ErrorMessage = fmt.Sprintf("execution failed: %v", err)
-		}
-	} else {
-		resp.ExitCode = intPtr(0)
-	}
-
-	if ec.eval.Level == LevelModerate {
-		if resp.WarningMessage != "" {
-			resp.WarningMessage += "; "
-		}
-		resp.WarningMessage += fmt.Sprintf("中等风险命令: %s - %s",
-			ec.eval.Description, strings.Join(ec.eval.Risks, "; "))
-	}
-
-	if resp.OutputTruncated {
-		truncMsg := "输出内容已截断，建议将输出重定向到文件获取完整内容"
-		if resp.WarningMessage != "" {
-			resp.WarningMessage += "; " + truncMsg
-		} else {
-			resp.WarningMessage = truncMsg
-		}
-	}
-
-	return resp
+func (t *CommandTools) owner(ctx context.Context) domain.Owner {
+	id, _ := session.IDFromContext(ctx)
+	return domain.Owner{Workspace: t.workDir, SessionID: id}
 }
 
 // SmartExecute 智能执行命令，危险命令根据审批模式处理
 func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteRequest) (*SmartExecuteResponse, error) {
+	if req == nil {
+		return &SmartExecuteResponse{ErrorMessage: "request is required"}, nil
+	}
 	if err := ctx.Err(); err != nil {
 		return &SmartExecuteResponse{ErrorMessage: err.Error()}, nil
 	}
@@ -264,56 +151,54 @@ func (t *CommandTools) SmartExecute(ctx context.Context, req *SmartExecuteReques
 }
 
 func (t *CommandTools) executeCommand(ctx context.Context, req *SmartExecuteRequest, eval SecurityEvaluation) (*SmartExecuteResponse, error) {
-	timeout := 60 * time.Second
-	if req.Timeout > 600 || req.Timeout < 0 {
-		return &SmartExecuteResponse{ErrorMessage: "timeout must be <= 600 seconds"}, nil
+	if t.service == nil {
+		return &SmartExecuteResponse{ErrorMessage: "process service is not configured"}, nil
 	}
-	if req.Timeout > 0 {
-		timeout = time.Duration(req.Timeout) * time.Second
+	mode := req.Mode
+	if mode == "" {
+		mode = "job"
 	}
-	task, err := t.manager.start(ctx, t.workDir, req, eval, timeout)
+	if mode != "job" && mode != "service" {
+		return &SmartExecuteResponse{ErrorMessage: "mode must be job or service"}, nil
+	}
+	if req.Timeout < 0 || req.Timeout > 86400 {
+		return &SmartExecuteResponse{ErrorMessage: "timeout must be between 1 and 86400 seconds when specified"}, nil
+	}
+	timeout := time.Duration(req.Timeout) * time.Second
+	if timeout == 0 && mode == "job" {
+		timeout = 120 * time.Second
+	}
+	yield := time.Second
+	if req.YieldMS != nil {
+		if *req.YieldMS < 0 || *req.YieldMS > 30000 {
+			return &SmartExecuteResponse{ErrorMessage: "yield_ms must be between 0 and 30000"}, nil
+		}
+		yield = time.Duration(*req.YieldMS) * time.Millisecond
+	}
+	record, err := t.service.Execute(ctx, appprocess.Request{Owner: t.owner(ctx), Command: req.Command, Mode: domain.Mode(mode), Timeout: timeout, Yield: yield, Background: req.Background})
 	if err != nil {
 		return &SmartExecuteResponse{ErrorMessage: err.Error()}, nil
 	}
-	if req.Background {
-		return task.runningResponse(), nil
+	resp := response(record)
+	resp.SecurityLevel = securityLevelName(eval.Level)
+	if eval.Level == LevelModerate {
+		resp.WarningMessage = fmt.Sprintf("中等风险命令: %s - %s", eval.Description, strings.Join(eval.Risks, "; "))
 	}
-	timer := time.NewTimer(backgroundThreshold)
-	defer timer.Stop()
-	select {
-	case <-task.finished:
-		return task.result(), nil
-	case <-timer.C:
-		return task.runningResponse(), nil
-	case <-ctx.Done():
-		task.cancel()
-		<-task.finished
-		return task.result(), nil
-	}
+	return resp, nil
 }
 
-// WithManager 注入同一应用资源生命周期内共享的命令管理器。
-func WithManager(manager *Manager) Option {
-	return func(t *CommandTools) {
-		if manager != nil {
-			t.manager = manager
+func response(record domain.Record) *SmartExecuteResponse {
+	elapsed := time.Since(record.StartedAt)
+	if !record.FinishedAt.IsZero() {
+		elapsed = record.FinishedAt.Sub(record.StartedAt)
+	}
+	resp := &SmartExecuteResponse{Success: record.State == domain.Running || record.State == domain.Succeeded, TaskID: record.ID, Command: record.Command, Status: record.State, PID: record.PID, Stdout: record.Stdout, Stderr: record.Stderr, ExitCode: record.ExitCode, ExecutionTime: elapsed.Round(time.Millisecond).String(), ErrorMessage: record.Error, IsBackground: record.Background, OutputTruncated: record.OutputBytes > int64(len(record.Stdout)+len(record.Stderr))}
+	if record.State == domain.Failed && record.ExitCode != nil {
+		if hint := interpretExitCode(record.Command, *record.ExitCode); hint != "" {
+			resp.ErrorMessage = hint
 		}
 	}
-}
-
-// Close 取消并等待所属命令退出，然后清理该管理器创建的输出文件。
-func (t *CommandTools) Close() error { return t.manager.Close() }
-
-func buildShellCommand(command string) (shell string, args []string) {
-	switch runtime.GOOS {
-	case "windows":
-		utf8Prefix := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
-		return "powershell", []string{"-NonInteractive", "-Command", utf8Prefix + command}
-	case "darwin", "linux":
-		return "/bin/bash", []string{"-l", "-c", command}
-	default:
-		return "/bin/sh", []string{"-l", "-c", command}
-	}
+	return resp
 }
 
 // interpretExitCode 将非零退出码映射为人类可读的解释
@@ -372,43 +257,4 @@ func shellExitMeaning(code int) string {
 		return "exit 参数无效"
 	}
 	return ""
-}
-
-// saveOutputToFile 将大输出写入临时文件，返回文件路径和预览
-func saveOutputToFile(content, workDir string) (string, string, error) {
-	file, err := os.CreateTemp(workDir, "cmd_output_*.txt")
-	if err != nil {
-		return "", "", err
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(content); err != nil {
-		os.Remove(file.Name())
-		return "", "", err
-	}
-
-	if err := file.Sync(); err != nil {
-		os.Remove(file.Name())
-		return "", "", err
-	}
-	if err := file.Close(); err != nil {
-		os.Remove(file.Name())
-		return "", "", err
-	}
-
-	// 生成预览：截取前 outputPreviewLines 行
-	preview := content
-	lines := strings.Split(content, "\n")
-	if len(lines) > outputPreviewLines {
-		preview = strings.Join(lines[:outputPreviewLines], "\n")
-		preview += fmt.Sprintf("\n\n... 已截断（共 %d 行，完整内容见文件）", len(lines))
-	}
-
-	if len(preview) > outputPreviewBytes {
-		preview = executil.String([]byte(preview[:outputPreviewBytes]), true)
-	}
-
-	// 返回相对路径，让 file_read 直接在工作目录内解析，避免外部路径审批
-	relPath, _ := filepath.Rel(workDir, file.Name())
-	return relPath, preview, nil
 }
