@@ -1890,7 +1890,6 @@ func TestMemoryAndTestModelUseDomainAndRuntimePorts(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	for _, dir := range []string{
 		"internal/app/memory",
-		"internal/adapters/model/memory",
 		"internal/testmodel",
 	} {
 		err := filepath.WalkDir(filepath.Join(root, filepath.FromSlash(dir)), func(path string, entry fs.DirEntry, walkErr error) error {

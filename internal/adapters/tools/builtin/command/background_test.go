@@ -79,21 +79,35 @@ func TestYieldAndLiveCursorReadDoNotChangeServiceLifetime(t *testing.T) {
 	tools := newTestTools(t)
 	ctx, cancel := context.WithCancel(session.WithID(context.Background(), "one"))
 	yield := 20
-	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "printf hello; sleep 20", Mode: "service", YieldMS: &yield})
+	// 延迟首批输出，确保调用方取消后仍会继续执行，并覆盖日志尚未就绪的情况。
+	resp, err := tools.SmartExecute(ctx, &SmartExecuteRequest{Command: "sleep 0.2; printf hello; sleep 20", Mode: "service", YieldMS: &yield})
 	cancel()
 	if err != nil || resp.Status != domain.Running || !resp.IsBackground {
 		t.Fatalf("yield: %#v %v", resp, err)
 	}
 	owner := session.WithID(context.Background(), "one")
 	cursor := int64(0)
-	result, _ := tools.Read(owner, &ReadRequest{TaskID: resp.TaskID, Cursor: &cursor, Limit: 3, WaitMS: 100})
-	if result.Status != domain.Running || result.Output.Text != "hel" || result.Next != 3 {
-		t.Fatalf("live read: %#v", result)
+	var result *ReadResponse
+	// wait_ms 只等待终态；在有界期限内确认完整输出就绪，再验证分页游标。
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		result, err = tools.Read(owner, &ReadRequest{TaskID: resp.TaskID, Cursor: &cursor, Limit: 3, WaitMS: 100})
+		if err != nil || result.ErrorMessage != "" || result.Status != domain.Running {
+			t.Fatalf("live read: response=%+v output=%+v err=%v", result.SmartExecuteResponse, result.Output, err)
+		}
+		if result.Output.Total >= int64(len("hello")) {
+			break
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("timed out waiting for live output: %+v", result.Output)
+		}
+	}
+	if result.Output.Text != "hel" || result.Next != 3 {
+		t.Fatalf("live read: %+v", result.Output)
 	}
 	cursor = result.Next
-	next, _ := tools.Read(owner, &ReadRequest{TaskID: resp.TaskID, Cursor: &cursor})
-	if next.Output.Text != "lo" || next.Next != 5 {
-		t.Fatalf("cursor: %#v", next)
+	next, err := tools.Read(owner, &ReadRequest{TaskID: resp.TaskID, Cursor: &cursor})
+	if err != nil || next.ErrorMessage != "" || next.Output.Text != "lo" || next.Next != 5 {
+		t.Fatalf("cursor: response=%+v output=%+v err=%v", next.SmartExecuteResponse, next.Output, err)
 	}
 	stopped, _ := tools.Stop(owner, &StopRequest{TaskID: resp.TaskID})
 	if !stopped.Success || stopped.Status != domain.Cancelled {
