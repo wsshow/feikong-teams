@@ -427,7 +427,7 @@ func shouldSpaceBeforeBlock(prev runtimeBlockKind, current runtimeBlockKind) boo
 	case runtimeBlockUser, runtimeBlockReasoning, runtimeBlockDone:
 		return true
 	case runtimeBlockAssistant:
-		return prev == runtimeBlockTool || prev == runtimeBlockMember || prev == runtimeBlockReasoning
+		return prev == runtimeBlockUser || prev == runtimeBlockTool || prev == runtimeBlockMember || prev == runtimeBlockReasoning
 	case runtimeBlockTool:
 		return prev != runtimeBlockTool
 	case runtimeBlockMember:
