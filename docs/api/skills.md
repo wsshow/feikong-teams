@@ -1,178 +1,54 @@
 # 技能管理 API
 
-## GET /api/fkteams/skills
+基础路径 `/api/fkteams/skills`，认证与响应包装见 [API 总览](README.md)。技能目录与编写方式见 [Skills 指南](../skills.md)。
 
-列出本地已安装技能。
+## 本地技能
 
-**成功响应**：
+| 接口 | 行为与响应 data |
+| --- | --- |
+| `GET /api/fkteams/skills` | `{skills: [{slug, name, description}], total}` |
+| `POST /api/fkteams/skills` | 创建技能，返回 `{skill: {slug, name, description}, message}` |
+| `DELETE /api/fkteams/skills/:slug` | 删除整个技能，返回 `{slug, message}` |
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "skills": [],
-    "total": 0
-  }
-}
-```
-
-`skills` 元素结构来自 `commands/skill.LocalSkillInfo`。
-
----
-
-## GET /api/fkteams/skills/search
-
-搜索技能市场。
-
-**Query 参数**：
-
-| 参数 | 类型 | 必填 | 默认 | 说明 |
-| ---- | ---- | ---- | ---- | ---- |
-| `q` | string | 是 | - | 搜索关键词 |
-| `page` | int | 否 | `1` | 页码，必须大于 0 |
-| `size` | int | 否 | `20` | 每页数量，最大 50 |
-| `sort` | string | 否 | `downloads` | 排序字段 |
-| `order` | string | 否 | `desc` | 排序方向 |
-
-**成功响应**：
+创建请求：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "skills": [],
-    "total": 0,
-    "page": 1,
-    "size": 20
-  }
-}
+{"slug":"review-helper","name":"代码审查","description":"检查改动和验证结果","content":""}
 ```
 
-**失败响应**：
+`slug` 由 1–64 个小写字母、数字、`_`、`-` 组成，首位为字母或数字。`name` 省略时使用 slug，`content` 省略时生成基础 `SKILL.md`；同名目录已存在返回 400。
 
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `keyword is required` | 缺少 `q` |
-| 503 | `no skill provider available` | 无可用技能市场提供者 |
-| 500 | 错误详情 | 搜索失败 |
+## 市场搜索与安装
 
----
+`GET /api/fkteams/skills/search` 参数：
 
-## POST /api/fkteams/skills/install
+| 参数 | 默认与说明 |
+| --- | --- |
+| `q` | 必填关键词 |
+| `page` | 默认 1 |
+| `size` | 默认 20，最大 50 |
+| `sort` / `order` | 默认 downloads / desc |
 
-从技能市场安装技能。
+返回 `{skills: [...], total, page, size}`。缺少关键词返回 400，无市场提供者返回 503，查询失败返回 500。
 
-**请求 Body**：
+`POST /api/fkteams/skills/install`：
 
 ```json
-{
-  "slug": "skill-slug"
-}
+{"slug":"video-frames"}
 ```
 
-**成功响应**：
+使用默认市场安装最新版本，成功返回 `{slug, message: "skill installed"}`。需要指定版本或市场时使用 CLI。
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "slug": "skill-slug",
-    "message": "skill installed"
-  }
-}
-```
+## 技能文件
 
-**失败响应**：
+所有 `path` 都相对于当前技能目录，路径逃逸与符号链接访问会被拒绝。
 
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `slug is required` | 缺少 slug |
-| 503 | `no skill provider available` | 无可用技能市场提供者 |
-| 500 | 错误详情 | 安装失败 |
+| 接口 | 参数与响应 |
+| --- | --- |
+| `GET /api/fkteams/skills/:slug/files` | 可选 query `path`；返回 `{slug, files}` 文件树 |
+| `POST /api/fkteams/skills/:slug/files` | Body `{path, content, is_dir}`，创建文件或目录 |
+| `GET /api/fkteams/skills/:slug/file` | 必填 query `path`；返回 `{slug, path, content}` |
+| `PUT /api/fkteams/skills/:slug/file` | Body `{path, content}`，保存文件 |
+| `DELETE /api/fkteams/skills/:slug/file` | 必填 query `path`，删除文件或目录 |
 
----
-
-## DELETE /api/fkteams/skills/:slug
-
-删除本地已安装技能。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "slug": "skill-slug",
-    "message": "skill removed"
-  }
-}
-```
-
----
-
-## GET /api/fkteams/skills/:slug/files
-
-列出技能目录文件。
-
-**Query 参数**：
-
-| 参数 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `path` | string | 否 | 技能目录内的相对路径 |
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "slug": "skill-slug",
-    "files": []
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `slug is required` | 缺少 slug |
-| 404 | 错误详情 | 技能或路径不存在 |
-
----
-
-## GET /api/fkteams/skills/:slug/file
-
-读取技能文件内容。
-
-**Query 参数**：
-
-| 参数 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `path` | string | 是 | 技能目录内文件路径 |
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "slug": "skill-slug",
-    "path": "SKILL.md",
-    "content": "# Skill"
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `slug and path are required` | 参数缺失 |
-| 404 | 错误详情 | 技能或文件不存在 |
+文件写操作成功返回 `{slug, path, message}`。`SKILL.md` 不能单独删除；移除整个技能请使用技能删除接口。读取文件不存在返回 404，写入参数或路径错误返回 400。AI 草稿生成见[通用接口](misc.md#ai-辅助草稿)。

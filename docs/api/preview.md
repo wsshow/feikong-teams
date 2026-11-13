@@ -1,289 +1,73 @@
-# 文件预览
+# 文件预览与分享 API
+
+通过文件链接公开预览或下载工作区文件。管理操作使用普通登录认证，访问链接使用独立密码与期限校验。响应包装见 [API 总览](README.md)。
 
 ## POST /api/fkteams/preview
 
-创建文件预览链接（支持单文件和多文件，可设置过期时间和访问密码）。
+创建单文件或多文件链接：
 
-**请求 Body**：
+```json
+{"file_paths":["docs/report.pdf","images/logo.png"],"password":"example-password","expires_in":7200}
+```
 
-单文件：
+| 字段 | 说明 |
+| --- | --- |
+| `file_path` / `file_paths` | 单路径或路径数组，至少一个；均相对于工作区 |
+| `password` | 可选访问密码 |
+| `expires_in` | 秒，默认 1 天、最长 30 天，负数表示永不过期 |
+
+成功返回：
+
+```json
+{"id":"preview-1","file_path":"docs/report.pdf","file_paths":["docs/report.pdf","images/logo.png"],"expires_at":1760007200,"created_at":1760000000}
+```
+
+浏览器访问 `/p/:linkId`。路径无效返回 400，文件不存在返回 404，创建失败返回 500。
+
+## 链接管理
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET /api/fkteams/preview` | 返回有效链接数组，字段同创建响应；过期条目会清理 |
+| `DELETE /api/fkteams/preview/:linkId` | 撤销链接，成功 data 为 null，不存在返回 404 |
+
+## 信息与密码验证
+
+`GET /api/fkteams/preview/:linkId/info` 无需普通登录或密码，返回预览所需信息：
 
 ```json
 {
-  "file_path": "docs/report.pdf",
-  "password": "abc123",
-  "expires_in": 7200
+  "file_name": "report.pdf",
+  "file_size": 51200,
+  "file_count": 1,
+  "files": [{"path":"docs/report.pdf","name":"report.pdf","is_dir":false,"size":51200}],
+  "content_type": "application/pdf",
+  "require_password": false,
+  "authorized": true,
+  "previewable": true,
+  "expires_at": 1760007200
 }
 ```
 
-多文件：
+密码保护的链接在授权前只返回基本信息，省略完整路径、文件清单和大小。
+
+`POST /api/fkteams/preview/:linkId/auth` 验证密码：
 
 ```json
-{
-  "file_paths": ["docs/report.pdf", "images/logo.png"],
-  "password": "abc123",
-  "expires_in": 7200
-}
+{"password":"example-password"}
 ```
 
-| 字段         | 类型     | 必填 | 说明                                                       |
-| ------------ | -------- | ---- | ---------------------------------------------------------- |
-| `file_path`  | string   | 条件 | 单文件相对路径（`file_path` 和 `file_paths` 至少提供一个） |
-| `file_paths` | string[] | 条件 | 多文件相对路径数组                                         |
-| `password`   | string   | 否   | 访问密码，不设则无需密码                                   |
-| `expires_in` | int      | 否   | 过期时间（秒），默认 86400（1 天），最长 30 天；小于 0 表示永不过期 |
+成功返回 `{authenticated: true}` 并设置有效期一小时的 `HttpOnly`、`SameSite=Strict` `fk_preview_{linkId}` Cookie，HTTPS 下附带 Secure。凭据绑定链接、密码哈希与期限；链接失效或凭据过期后不能继续访问。
 
-**成功响应** (200)：
+非浏览器客户端也可在文件请求中发送 `X-Preview-Password` Header。密码不接受 query 参数。错误密码或缺少密码返回 401，尝试过多返回 429 和 Retry-After。
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "id": "a1b2c3d4e5f6...",
-    "file_path": "docs/report.pdf",
-    "file_paths": ["docs/report.pdf"],
-    "expires_at": 1700007200,
-    "created_at": 1700000000
-  }
-}
-```
+## 读取与渲染
 
-**失败响应**：
+| 接口 | 行为 |
+| --- | --- |
+| `GET /api/fkteams/preview/:linkId` | 单文件直接返回，图片/PDF/文本/音视频等 inline，其他 attachment；多文件返回 ZIP |
+| `GET /api/fkteams/preview/:linkId/render/*filepath` | inline 返回主文件或其相对资源；空路径重定向至主文件名 |
 
-| 状态码 | message                      | 说明           |
-| ------ | ---------------------------- | -------------- |
-| 400    | 参数错误                     | JSON 解析失败  |
-| 400    | 缺少文件路径                 | 未提供文件路径 |
-| 400    | 无效的文件路径               | 路径遍历       |
-| 404    | 文件不存在: \<path\>         | 路径不可达     |
-| 500    | 生成链接失败                 | 随机数生成错误 |
-| 500    | 密码处理失败                 | 密码哈希失败   |
+浏览器自动携带预览 Cookie，包括 iframe 内相对资源请求。资源访问受分享目录和工作区边界限制，不能通过相对路径读取目录外文件。
 
----
-
-## GET /api/fkteams/preview/:linkId
-
-通过预览链接访问/下载文件。
-
-**路径参数**：
-
-| 参数     | 类型   | 说明    |
-| -------- | ------ | ------- |
-| `linkId` | string | 链接 ID |
-
-设置密码的分享必须先调用 `POST /api/fkteams/preview/:linkId/auth`。浏览器会自动携带该接口签发的短期 Cookie；非浏览器客户端也可通过请求头直接提交密码。
-
-| 参数                 | 位置   | 说明                               |
-| -------------------- | ------ | ---------------------------------- |
-| `X-Preview-Password` | Header | 访问密码，适用于非浏览器客户端     |
-| `fk_preview_{linkId}` | Cookie | 密码验证成功后自动签发的短期凭据   |
-
-密码不接受 Query 参数，避免进入访问日志、浏览器历史和 Referer。
-
-**成功响应** (200)：
-
-文件内容直接返回。可浏览器预览的类型（图片/PDF/文本/音视频等）以 `Content-Disposition: inline` 返回，其他类型以 `attachment` 方式下载。多文件时打包为 ZIP 返回。
-
-**失败响应**：
-
-| 状态码 | message              | 说明           |
-| ------ | -------------------- | -------------- |
-| 400    | 缺少链接 ID          | 路径参数为空   |
-| 401    | 需要输入访问密码     | 未提供密码     |
-| 401    | 密码错误             | 密码不匹配     |
-| 429    | 尝试次数过多         | 需等待 `Retry-After` 指定的秒数 |
-| 404    | 链接不存在或已失效   | 链接未找到     |
-| 404    | 文件不存在或已被删除 | 原文件已被移除 |
-| 410    | 链接已过期           | 超过过期时间   |
-
----
-
-## POST /api/fkteams/preview/:linkId/auth
-
-验证文件分享密码并签发有效期一小时的预览凭据。
-
-**请求 Body**：
-
-```json
-{
-  "password": "abc123"
-}
-```
-
-**成功响应** (200)：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "authenticated": true
-  }
-}
-```
-
-响应设置 `HttpOnly`、`SameSite=Strict` 的 `fk_preview_{linkId}` Cookie；HTTPS 请求同时设置 `Secure`。Cookie 保存的是与链接、密码哈希和过期时间绑定的 HMAC 签名，不包含原始密码。修改分享密码、链接失效或凭据到期后，旧凭据自动失效。
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid preview authentication request` | 请求体解析失败 |
-| 401 | `preview password is required` | 未提供密码 |
-| 401 | `invalid preview password` | 密码错误 |
-| 404 | `preview link not found` | 链接不存在 |
-| 410 | `preview link expired` | 链接已过期 |
-| 429 | `too many authentication attempts` | 尝试次数过多，响应包含 `Retry-After` |
-
----
-
-## GET /api/fkteams/preview/:linkId/info
-
-获取预览链接的文件信息（不需要密码验证）。
-
-**路径参数**：
-
-| 参数     | 类型   | 说明    |
-| -------- | ------ | ------- |
-| `linkId` | string | 链接 ID |
-
-**成功响应** (200)：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "file_name": "report.pdf",
-    "file_size": 51200,
-    "file_count": 1,
-    "files": [
-      {
-        "path": "docs/report.pdf",
-        "name": "report.pdf",
-        "is_dir": false,
-        "size": 51200
-      }
-    ],
-    "content_type": "application/pdf",
-    "require_password": false,
-    "authorized": true,
-    "previewable": true,
-    "expires_at": 1700007200
-  }
-}
-```
-
-| 字段               | 说明                               |
-| ------------------ | ---------------------------------- |
-| `file_name`        | 首个文件的文件名                   |
-| `file_size`        | 文件大小（单文件时有效）           |
-| `file_count`       | 共享的文件数量                     |
-| `files`            | 文件列表信息                       |
-| `content_type`     | 文件 MIME 类型                     |
-| `require_password` | 是否需要密码                       |
-| `authorized`       | 当前请求是否已持有有效预览凭据     |
-| `previewable`      | 是否可在线预览（单文件且支持类型） |
-| `expires_at`       | 过期时间（Unix 时间戳）            |
-
-密码保护的分享在授权前只返回渲染所需的基本信息，不返回完整路径、文件清单或文件大小。
-
-**失败响应**：
-
-| 状态码 | message            | 说明         |
-| ------ | ------------------ | ------------ |
-| 400    | 缺少链接 ID        | 参数为空     |
-| 404    | 链接不存在或已失效 | 未找到链接   |
-| 410    | 链接已过期         | 超过过期时间 |
-
----
-
-## GET /api/fkteams/preview
-
-列出所有有效的预览链接。
-
-**成功响应** (200)：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": [
-    {
-      "id": "a1b2c3d4e5f6...",
-      "file_path": "docs/report.pdf",
-      "expires_at": 1700007200,
-      "created_at": 1700000000
-    }
-  ]
-}
-```
-
-已过期的链接会自动清理，不在列表中返回。
-
----
-
-## DELETE /api/fkteams/preview/:linkId
-
-手动删除（撤销）预览链接。
-
-**路径参数**：
-
-| 参数     | 类型   | 说明    |
-| -------- | ------ | ------- |
-| `linkId` | string | 链接 ID |
-
-**成功响应** (200)：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": null
-}
-```
-
-**失败响应**：
-
-| 状态码 | message     | 说明       |
-| ------ | ----------- | ---------- |
-| 400    | 缺少链接 ID | 参数为空   |
-| 404    | 链接不存在  | 未找到链接 |
-
----
-
-## GET /api/fkteams/preview/:linkId/render/*filepath
-
-直接渲染预览文件内容，适用于 HTML 文件的完整预览（支持相对路径资源加载）。当 `filepath` 为空时会 302 跳转到主文件名；否则解析为主文件目录下的相对路径资源。
-
-**路径参数**：
-
-| 参数       | 类型   | 说明                                       |
-| ---------- | ------ | ---------------------------------------- |
-| `linkId`   | string | 链接 ID                                  |
-| `filepath` | string | 相对路径资源（空或 `/` 表示主文件） |
-
-**请求参数** (Header/Cookie)：
-
-| 参数                  | 位置   | 说明                                         |
-| --------------------- | ------ | -------------------------------------------- |
-| `X-Preview-Password`  | Header | 访问密码，适用于非浏览器客户端               |
-| `fk_preview_{linkId}` | Cookie | 认证通过后自动设置，用于 iframe 内资源请求    |
-
-**成功响应** (200)：
-
-文件内容以 `Content-Disposition: inline` 方式返回（浏览器直接渲染）。首次密码认证通过后会设置 Cookie（有效期 1 小时），使 iframe 内相对路径资源自动携带凭据。
-
-**失败响应**：
-
-| 状态码 | message              | 说明             |
-| ------ | -------------------- | ---------------- |
-| 400    | 缺少链接 ID          | 参数为空         |
-| 401    | 需要输入访问密码     | 未提供密码或密码错误 |
-| 429    | 尝试次数过多         | 需等待 `Retry-After` 指定的秒数 |
-| 403    | 禁止访问该路径       | 尝试访问主文件目录外 |
-| 404    | 链接不存在或已失效   | 链接未找到       |
-| 404    | 文件不存在           | 原文件已被移除   |
-| 400    | 不支持目录           | 目标资源是目录   |
-| 410    | 链接已过期           | 超过过期时间     |
+这组公开读取接口的常见失败：401 需密码、403 路径禁止、404 链接或文件不存在、410 已过期、429 密码尝试限流。无密码链接的持有者可以直接读取，请在分享前检查内容。

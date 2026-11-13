@@ -32,7 +32,7 @@ $env:FKTEAMS_INSTALL_DIR = "D:\fkteams"
 
 ## 从源码构建
 
-源码构建需要 Go 和 Bun。前端构建产物 `web/dist` 不提交到仓库，Go 编译前需要先生成；Makefile 的构建目标会自动完成 Bun 依赖安装和前端生产构建。
+源码构建需要 Go（版本见 `go.mod`）和 Bun。前端构建产物 `web/dist` 不提交到仓库，Go 编译前需要先生成；Makefile 的构建目标会自动完成 Bun 依赖安装和前端生产构建。
 
 ```bash
 # 构建当前平台
@@ -60,7 +60,7 @@ make dev
 
 命令会安装前端依赖、生成 Go 嵌入所需的前端产物，并将固定版本的 Air 安装到 `release/dev/`。首次运行需要联网下载依赖，无需全局安装 Air。
 
-访问 <http://127.0.0.1:5173> 开发页面：Vite 提供前端热更新，并将 API 和 WebSocket 代理到 `127.0.0.1:23456`。Air 监听 `cmd/`、`internal/` 下的 Go 源码与提示词模板，以及 `go.mod`、`go.sum` 和 `web/embed.go`；编译成功后自动重启后端，编译失败时保留上一次成功启动的服务。后端重启会中断正在执行的请求。
+访问 <http://127.0.0.1:5173>：Vite 提供前端热更新，将 API 和 WebSocket 代理到 `127.0.0.1:23456`。Air 监听 Go 代码与提示词变更并重启后端，编译失败时保留上一次成功的服务。后端重启会中断正在执行的请求。
 
 按 `Ctrl+C` 同时停止前后端；任一开发进程退出时也会停止另一进程。端口被占用时请先停止已有服务，开发命令不会主动终止占用端口的其他进程。
 
@@ -89,15 +89,14 @@ go run ./cmd/fkteams
 go run ./cmd/fkteams serve
 ```
 
-### 前端开发
+### 开发验证
 
 ```bash
-cd web
-bun install
-bun run dev
+make check                # 格式、前端类型与构建、Go vet/test、diff check
+cd web && bun test src    # 前端测试
 ```
 
-前端开发服务器用于热更新；需要从 Go Web 服务验证完整嵌入式产物时，重新执行 `make web-build`。
+定向测试与提交约定见[开发指南](../AGENTS.md)。生成的 `web/dist/` 和 `release/` 不提交。
 
 ## Docker 部署
 
@@ -133,7 +132,7 @@ docker run -d \
   fkteams/fkteams:latest
 ```
 
-启动后访问 <http://localhost:23456>，在「系统配置 → 模型」添加并保存模型配置，确保模型用途包含 `chat`，即可开始使用。无需提前生成或手动编辑配置文件，配置会自动保存到宿主机 `data/config/config.toml`。
+模型配置方式与 Compose 相同，保存在宿主机 `data/config/config.toml`。
 
 镜像默认使用 `web --host 0.0.0.0` 启动，`FEIKONG_APP_DIR` 默认为 `/app`。程序位于 `/usr/local/bin/fkteams`，整体挂载数据目录不会遮挡程序。环境变量可通过 Compose 的 `environment` 或 `docker run -e` 传入。
 
@@ -190,13 +189,6 @@ git tag v0.30.0
 git push origin v0.30.0
 ```
 
-发布流程：
+工作流先执行质量检查，再在 amd64、arm64 原生 runner 上分别构建并验证镜像，两边通过后合并为双架构版本标签。镜像发布与二进制发布独立执行，失败可在 Actions 重跑，细节见 [docker.yml](../.github/workflows/docker.yml)。
 
-1. 校验 tag 格式，执行 `make check`、前端测试、发布策略测试和构建上下文隔离测试。
-2. 在 `ubuntu-24.04`、`ubuntu-24.04-arm` 原生 runner 上分别构建镜像，并上传尚无版本标签的候选 digest。
-3. 两种架构分别验证系统软件安装、Python/JavaScript 包安装、编译工具、版本信息、Web 页面及数据卷重建恢复。
-4. 两边都成功后，将通过测试的 digest 合并为双架构镜像，发布 `fkteams/fkteams:v0.30.0`。
-
-`v0.30.0-rc.1` 等预发布只更新自己的版本标签。只有当前远端 Git tags 中版本号最高的正式版本才更新 `latest`，补发较旧版本不会回退它。该判断以 Git tag 为准：若更高正式版本已打 tag 但构建失败，较旧版本也不会接管 `latest`；修复并重跑更高版本的 workflow 即可。
-
-tag 格式为 `vMAJOR.MINOR.PATCH[-PRERELEASE]`，不支持 Docker 标签无法表示的 `+build` 后缀。失败后可在 Actions 中重跑；镜像发布与现有 GoReleaser 二进制发布独立触发，各自显示执行结果。版本标签各自发布，只有 `latest` 更新串行执行；短时间推送多个正式版本时应确认最高版本的 `latest` job 成功，必要时重跑被 GitHub 等待队列替换的 job。
+预发布仅更新自身版本标签；当前最高正式 Git tag 才更新 `latest`，补发旧版本不会回退它。若最高版本构建失败，修复后重跑该版本。tag 使用 `vMAJOR.MINOR.PATCH[-PRERELEASE]`，不支持 `+build`。连续发布多个正式版本后，确认最高版本的 latest job 成功。

@@ -1,101 +1,45 @@
-# 长期记忆
+# 长期记忆 API
+
+基础路径 `/api/fkteams/memory`，认证与响应包装见 [API 总览](README.md)。关闭模型记忆读写后仍可手动管理，行为和容量见[长期记忆](../memory.md)。
 
 ## GET /api/fkteams/memory
 
-获取所有长期记忆条目列表。
-
-**成功响应** (200)：
+返回条目数组：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": [
-    {
-      "id": "memory-example",
-      "type": "fact",
-      "version": 1,
-      "scope": "",
-      "summary": "记忆摘要",
-      "detail": "记忆内容",
-      "tags": [],
-      "hit_count": 0,
-      "created_at": "2025-01-01T12:00:00Z"
-    }
-  ]
-}
-```
-
-> 默认应用即使关闭模型记忆读写，仍提供手动管理。嵌入模式未装配记忆服务时返回空数组 `[]`。
-
----
-
-## DELETE /api/fkteams/memory
-
-删除匹配指定摘要的记忆条目。
-
-**请求 Body**：
-
-```json
-{
-  "summary": "string"
-}
-```
-
-| 字段      | 类型   | 必填 | 说明             |
-| --------- | ------ | ---- | ---------------- |
-| `summary` | string | 是   | 要删除的记忆摘要 |
-
-**成功响应** (200)：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "deleted": 1
+[
+  {
+    "id": "memory-example",
+    "version": 1,
+    "type": "preference",
+    "scope": "",
+    "summary": "回答风格",
+    "detail": "优先使用简洁的中文说明",
+    "tags": ["沟通"]
   }
-}
+]
 ```
 
-**失败响应**：
-
-| 状态码 | message                    | 说明         |
-| ------ | -------------------------- | ------------ |
-| 400    | 长期记忆未启用             | 未装配记忆服务   |
-| 400    | 参数错误: summary 不能为空 | 缺少 summary |
-| 404    | 未找到匹配的记忆条目       | 无匹配条目   |
-
----
-
-## POST /api/fkteams/memory/clear
-
-清空所有长期记忆。
-
-**成功响应** (200)：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "cleared": 10
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message        | 说明       |
-| ------ | -------------- | ---------- |
-| 400    | 长期记忆未启用 | 未装配记忆服务 |
+条目还包含创建、更新时间和来源等信息。未装配服务时返回空数组。
 
 ## PUT /api/fkteams/memory
 
-新增或编辑记忆。请求字段为 `id`（新增时省略）、`version`（更新时必填）、`type`、`scope`、`summary`、`detail` 和字符串数组 `tags`。类型支持 preference、fact、feedback、lesson、decision、insight、experience。
+新增或更新完整条目：
 
-成功返回完整条目，编辑保留原 ID、创建时间、来源会话和命中统计。无效字段返回 400，不存在的 ID 返回 404，版本冲突返回 409，存储失败返回 500，服务不可用返回 503。只有持久化成功后才发布修改。
+```json
+{"type":"preference","scope":"","summary":"回答风格","detail":"优先使用简洁的中文说明","tags":["沟通"]}
+```
 
-## DELETE /api/fkteams/memory/:id
+新增省略 `id`；更新必须带读取到的 `id` 与 `version`。`type` 支持 preference、fact、feedback、lesson、decision、insight、experience。`scope` 为空表示全局。
 
-按稳定 ID 删除单条记忆。成功返回 `{"deleted":1}`；不存在返回 404，存储失败返回 500，且保留原条目。管理页面使用此接口，避免相同摘要的记忆被一起删除。
+成功返回完整条目。字段无效或容量已满返回 400，不存在返回 404，版本冲突返回 409，存储失败返回 500，服务不可用返回 503。保存失败保留原值。
+
+## 删除与清空
+
+| 接口 | 请求与响应 |
+| --- | --- |
+| `DELETE /api/fkteams/memory/:id` | 按稳定 ID 删除，返回 `{deleted: 1}`；不存在返回 404 |
+| `POST /api/fkteams/memory/clear` | 清空，返回 `{cleared: N}` |
+| `DELETE /api/fkteams/memory` | 兼容接口，Body `{summary}`，返回 `{deleted: N}` |
+
+新客户端使用 ID 删除，避免同摘要条目一起被删。删除、清空失败返回错误并保留原数据。

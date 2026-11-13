@@ -1,214 +1,78 @@
 # 通用接口
 
-## GET /health
+认证与响应包装见 [API 总览](README.md)。
 
-兼容健康检查，语义等同进程存活检查。
+## 健康检查
 
-**成功响应**：
+| 接口 | 说明 |
+| --- | --- |
+| `GET /health` | 兼容存活检查，返回 `{status: "ok"}` |
+| `GET /live` | 进程存活检查，同 health |
+| `GET /ready` | 核心 Runtime 自检，成功包含 status: ready 与自检信息，未就绪返回 503 |
+
+健康路由同样经过登录认证。启用认证时探针应携带 Cookie 或 Bearer Token，否则会被重定向到登录页。
+
+## 登录与退出
+
+`POST /api/fkteams/login`：
+
+```json
+{"username":"admin","password":"your_password","cookie_only":true}
+```
+
+未启用认证时返回 404。成功设置有效期 7 天的 `HttpOnly`、`SameSite=Strict` `fk_token` Cookie，HTTPS 下附带 Secure。
+
+- `cookie_only: true` 返回 `{authenticated: true}`，供 Web 使用。
+- 省略或为 false 时返回 `{token: "..."}`，供非浏览器客户端使用 Bearer Header。
+
+凭据错误返回 401，过多尝试返回 429 和 Retry-After。`POST /api/fkteams/logout` 清除 Cookie，即使 Token 已失效仍可调用。
+
+## 基础查询
+
+| 接口 | 响应 |
+| --- | --- |
+| `GET /api/fkteams/version` | `{version, buildDate}` |
+| `GET /api/fkteams/agents` | 智能体数组，字段包括 name、description、可选 aliases |
+| `GET /api/fkteams/favicon` | query 传 domain 或 url，可选 size；返回图标二进制，上游不可用时使用 fallback SVG |
+
+## AI 辅助草稿
+
+以下 POST 接口使用默认对话模型，超时 60 秒。响应为待审查草稿，生成后不会直接写配置或安装技能。
+
+| 接口 | 请求字段 | 响应 data |
+| --- | --- | --- |
+| `/api/fkteams/ai/agents/draft` | instruction；可选 existing_agents、available_tools、available_models、default_model_id | `{agents: [...]}` |
+| `/api/fkteams/ai/skills/draft` | instruction；可选 existing_skills | `{skill: {slug, name, description, content}}` |
+| `/api/fkteams/ai/javascript/draft` | kind: tool/hook、instruction；可选 existing_ids、current_tool 或 current_hook | `{kind, tool}` 或 `{kind, hook}` |
+| `/api/fkteams/ai/text/rewrite` | instruction、text；可选 scenario、context | `{text}` |
+
+JavaScript 草稿在返回前校验语法和入口，默认不启用。工具与角色字段见[配置接口](config.md)和 [JavaScript 扩展](../javascript.md)。请求或生成失败返回 400，客户端主动断开可返回 499。
+
+## POST /api/fkteams/javascript/test
+
+试运行尚未保存的 JavaScript 工具：
 
 ```json
 {
-  "code": 0,
-  "message": "success",
-  "data": {
-    "status": "ok"
-  }
+  "tool": {
+    "id": "text_count",
+    "name": "字符统计",
+    "description": "统计输入长度",
+    "read_only": true,
+    "parameters": {"type":"object","properties":{"text":{"type":"string"}}},
+    "source": "function execute(input) { return String(input.text || '').length; }"
+  },
+  "input": {"text":"示例"}
 }
 ```
 
----
+返回 `{result, raw, notices: [{level, message}]}`。试运行会真实访问宿主工具和持久化状态，仍执行工具策略与审批；不是无副作用的语法检查。校验或执行失败返回 400，工具注册表不可用返回 503。
 
-## GET /live
+## 系统控制
 
-进程存活检查。服务进程能够处理 HTTP 请求时返回 200。
+| 接口 | 行为与响应 data |
+| --- | --- |
+| `POST /api/fkteams/shutdown` | 请求优雅关闭，返回 `{message: "server is shutting down"}` |
+| `POST /api/fkteams/restart` | 请求优雅重启，返回 `{message: "server is restarting"}` |
 
----
-
-## GET /ready
-
-核心 Runtime 就绪检查。Runtime 未配置、初始化状态损坏或 Runtime 自检失败时返回 503；成功时返回 `status: ready` 和 Runtime 自检信息。
-
----
-
-## POST /api/fkteams/login
-
-登录获取 Token。接口始终注册，但仅在 `[server.auth] enabled = true` 时可用；未启用认证时返回 `404`。
-
-**请求 Body**：
-
-```json
-{
-  "username": "admin",
-  "password": "your_password",
-  "cookie_only": false
-}
-```
-
-`cookie_only` 可选。Web UI 设置为 `true`，使 Token 不进入 JavaScript 响应；普通 API 客户端可省略并取得 Bearer Token。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "token": "hex_payload.hex_signature"
-  }
-}
-```
-
-无论是否启用 `cookie_only`，服务端都会设置有效期 7 天的 `HttpOnly`、`SameSite=Strict` Cookie；HTTPS 请求同时设置 `Secure`。Token payload 为 `username|expiry(RFC3339)`，签名为 HMAC-SHA256。
-
-`cookie_only: true` 时成功响应不返回 Token：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "authenticated": true
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `请求格式错误` | 请求体解析失败 |
-| 401 | `用户名或密码错误` | 凭证不匹配 |
-| 429 | `too many authentication attempts` | 尝试次数过多，响应包含 `Retry-After` |
-
----
-
-## POST /api/fkteams/logout
-
-清除 `fk_token` Cookie。接口不要求有效 Token，因此登录已过期或认证配置刚刚变更时仍可调用。
-
----
-
-## GET /api/fkteams/version
-
-获取服务版本信息。
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "version": "0.0.1",
-    "buildDate": "2026-06-10 16:53:39"
-  }
-}
-```
-
----
-
-## GET /api/fkteams/agents
-
-获取所有可用智能体。
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": [
-    {
-      "name": "coder",
-      "description": "软件工程师",
-      "aliases": ["code"]
-    }
-  ]
-}
-```
-
-| 字段 | 说明 |
-| ---- | ---- |
-| `name` | 智能体名称 |
-| `description` | 描述 |
-| `aliases` | 别名数组，可能为空或省略 |
-
----
-
-## GET /api/fkteams/favicon
-
-来源图标代理。常用于 Web 前端展示搜索结果/引用来源 favicon。
-
-**Query 参数**：
-
-| 参数 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `domain` | string | 否 | 域名 |
-| `url` | string | 否 | 完整 URL；未提供 `domain` 时从 URL 提取域名 |
-| `size` | int | 否 | 图标尺寸，默认由后端处理 |
-
-**成功响应**：返回图标二进制，`Content-Type` 可能为 `image/x-icon`、`image/png`、`image/svg+xml` 等。
-
-上游不可用时会返回 fallback SVG。
-
----
-
-## POST /api/fkteams/ai/javascript/draft
-
-根据自然语言生成 JavaScript 工具或流程 Hook 草稿。接口使用默认对话模型，返回前会校验结构、goja 语法和入口函数。
-
-生成工具：
-
-```json
-{
-  "kind": "tool",
-  "instruction": "创建一个统计文本字符数的只读工具",
-  "existing_ids": ["other_tool"]
-}
-```
-
-生成 Hook 时将 `kind` 改为 `hook`。重写现有草稿可额外传入 `current_tool` 或 `current_hook`。返回的扩展默认不启用，客户端应让用户审查后再写入配置。
-
----
-
-## POST /api/fkteams/shutdown
-
-请求服务优雅关闭。仅当生命周期管理器可用时成功。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "message": "server is shutting down"
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message |
-| ------ | ------- |
-| 500 | `shutdown not available` |
-
----
-
-## POST /api/fkteams/restart
-
-请求服务优雅重启。仅当生命周期管理器可用时成功。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "message": "server is restarting"
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message |
-| ------ | ------- |
-| 500 | `restart not available` |
+生命周期控制器不可用时返回 500。存储维护接口见[存储与升级](../storage.md#cli-与纯-api)。

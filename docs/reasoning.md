@@ -6,8 +6,8 @@ fkteams 原生支持推理/思考模型（如 DeepSeek-R1、OpenAI o1/o3 等）�
 
 - **流式思考输出**：推理模型在生成最终回答前的思考过程，会通过 `assistant_reasoning_delta` 事件实时输出
 - **CLI 模式**：思考内容以灰色斜体显示（[思考] ...），与正式回答区分
-- **Web 模式**：通过 WebSocket 的 `assistant_reasoning_delta` 事件传递，前端可自行定制展示样式
-- **历史记录**：思考内容以 `reasoning` 类型事件记录在对话历史中
+- **Web 模式**：后端将思考分段投影为 `view_update`，前端按展示契约更新
+- **历史记录**：规范消息保留 `reasoning_content` 及分段顺序，重新打开会话可恢复展示
 
 ## 事件类型
 
@@ -16,4 +16,4 @@ fkteams 原生支持推理/思考模型（如 DeepSeek-R1、OpenAI o1/o3 等）�
 | `assistant_reasoning_delta`          | 推理/思考过程的流式增量内容      |
 | `assistant_completed`（含 `reasoning_content`） | 非流式完整消息，包含推理内容字段 |
 
-> **注意**：只有支持推理/思考的模型才会产生此类事件，普通模型不受影响。
+只有提供思考输出的模型适配器才会产生这些内容。事件与展示契约见[事件协议](events.md)。

@@ -10,28 +10,13 @@
 fkteams web
 ```
 
-启动后访问 `http://localhost:23456` 即可使用 Web 界面。
+打开 <http://localhost:23456>，选择工作模式后输入任务。侧栏可新建、搜索、重命名、导出和删除会话。
 
-Web 界面特性：
-
-- 实时聊天界面，支持流式输出显示
-- 智能滚动控制和历史消息浏览
-- 完整的 Markdown 渲染支持
-- 一键导出对话历史为 HTML 文件
-- 任务运行中可继续发送任务；输入默认作为续问排队，有未执行内容时显示队列面板，支持转为转向、编辑、删除和调整顺序
-- 响应式设计，支持移动端访问
-- 可折叠侧边栏和模式切换
-- 可选的登录认证（通过环境变量配置）
+任务运行中继续发送的内容默认作为续问排队；队列面板可将其转为转向，也可编辑、删除或调整顺序。转向在下一次模型调用前生效，续问在当前回合结束后执行。登录认证见[配置指南](configuration.md#服务与认证)。
 
 #### 常驻助手
 
-侧栏顶部的“助手”入口位于“新建会话”下方，两者固定显示，不随功能导航和会话列表滚动。点击助手直接开始聊天，再次打开或刷新会恢复同一份历史；“新建会话”仍用于创建普通团队会话。
-
-助手可以在现有权限范围内查看配置工作区的文件，列出用户会话、按关键词检索标题和正文，并按需读取相关上下文。工作区默认是 `~/.fkteams/workspace`（设置 `FEIKONG_APP_DIR` 时位于该目录下的 `workspace`），并非启动命令所在的任意目录。文件操作、命令执行和审批继续遵守原有规则。
-
-可以直接说“以后叫你小空”，助手会调用改名工具保存名称。名称为 1～40 个字符，保存在服务端，刷新或重启后保留。改名成功后侧栏、聊天输入区和助手消息署名同步更新。新会话首页和助手聊天页不显示顶部标题栏；手机端仍可通过左上角导航按钮打开侧栏。
-
-例如：“帮我找一下以前讨论发布计划的会话”“看看工作区有哪些文件”“根据之前的预算讨论整理一份总结”。历史搜索按会话分页，结果包含来源会话及命中片段；长消息可以继续分页读取，不会一次性装载所有历史。
+侧栏“助手”会恢复同一个常驻会话，可读取工作区、检索历史、记忆偏好和跟进任务。可以直接说“以后叫你小空”为它改名。使用方式见[个人助手](personal-assistant.md)，表单、图表和输入框命令见[助手交互界面](assistant-ui.md)。
 
 ### 纯 API 服务模式
 
@@ -61,29 +46,7 @@ fkteams -m deep
 fkteams -m group
 ```
 
-### 从源码编译运行
-
-```bash
-make native
-
-# 也可以直接从源码启动
-make web-build
-go run ./cmd/fkteams web
-
-# Web界面模式
-./release/fkteams_darwin_arm64 web
-
-# 默认启动团队模式
-./release/fkteams_darwin_arm64
-
-# 启动深度分析模式
-./release/fkteams_darwin_arm64 -m deep
-
-# 启动多智能体讨论模式
-./release/fkteams_darwin_arm64 -m group
-```
-
-完整的构建环境、跨平台编译和前端开发说明见[部署指南](./deployment.md)。
+源码构建和开发运行见[部署指南](deployment.md#从源码构建)。
 
 ## 模型登录与管理
 
@@ -111,7 +74,9 @@ fkteams login copilot --import
 
 ```bash
 fkteams model ls
-fkteams model rm
+fkteams model lr --name main       # 查询该配置的上游模型
+fkteams model sw --name main       # 切换默认对话模型
+fkteams model rm --name old-model
 fkteams logout openai
 ```
 
@@ -125,85 +90,35 @@ fkteams logout openai
 
 规则文件支持通过 `@import` 拆分。内容会在每次模型调用前临时注入，不会写入会话历史，因此适合保存项目架构、代码规范和验证命令等长期上下文。
 
-## 使用场景
+## 终端交互
 
-### Web 界面模式 - 推荐用法
-
-**适合场景**：
-
-- 日常对话和任务处理
-- 需要查看历史消息的场景
-- 展示给他人或协作使用
-- 移动设备访问
-
-**使用流程**：
-
-1. 启动 Web 服务：`./fkteams web`
-2. 浏览器访问：`http://localhost:23456`
-3. 在界面中选择工作模式（团队模式/深度模式/圆桌讨论模式）
-4. 开始对话，实时查看 AI 回复和工具执行过程
-5. 使用"管理历史"功能搜索、导出、管理历史对话
-
-### 命令行模式
-
-**适合场景**：
-
-- 服务器环境下使用
-- 自动化脚本集成
-- 开发和调试
-- 终端重度用户
-
-**使用流程**：
-
-1. 启动：`./fkteams -m team`
-2. 输入任务描述
-3. 查看实时输出和工具调用
-4. 使用内置命令管理历史和模式切换
-
-## Web 界面使用
-
-1. 启动 Web 服务：`./fkteams web`
-2. 打开浏览器访问：`http://localhost:23456`
-3. 在聊天界面输入你的问题或任务
-4. 实时查看 AI 助手的回复和工具调用过程
-5. 使用侧边栏切换工作模式（团队/深度/自定义/讨论）
-6. 点击"新建会话"按钮创建新的对话会话
-7. 通过侧边栏历史会话列表快速切换历史对话
-8. 点击"管理历史"按钮打开历史记录管理面板（支持搜索、导出、重命名、删除）
-
-## 命令行使用
-
-启动后，在命令行输入你的问题或任务：
-
-```
-请输入您的问题: 帮我写几篇相互关联的小小说，然后创建一个网站来展示这些小说。
-```
+启动 `fkteams` 后直接输入任务，或使用以下命令。
 
 ### 常用命令
 
-| 命令                            | 说明                                                  |
+| 命令 | 说明 |
 | ------------------------------- | ----------------------------------------------------- |
-| `quit` / `q`                    | 退出程序                                              |
-| `help`                          | 显示帮助信息                                          |
-| `list_agents`                   | 列出所有可用的智能体                                  |
-| `@智能体名 [查询内容]`          | 切换到指定智能体并可选执行查询                        |
-| `switch_work_mode`              | 切换工作模式（团队模式/深度模式/圆桌讨论模式） |
-| `save_chat_history`             | 保存聊天历史到当前会话文件                            |
-| `list_chat_history`             | 列出所有可用的聊天历史会话                            |
-| `load_chat_history`             | 选择并加载聊天历史会话                                |
-| `clear_chat_history`            | 清空当前聊天历史                                      |
-| `save_chat_history_to_markdown` | 导出聊天历史为 Markdown 文件                          |
-| `save_chat_history_to_html`     | 导出聊天历史为 HTML 文件                              |
-| `list_schedule`                 | 列出所有定时任务                                      |
-| `cancel_schedule`               | 选择并取消定时任务                                    |
-| `delete_schedule`               | 选择并删除定时任务                                    |
-| `list_memory`                   | 列出所有长期记忆条目                                  |
-| `delete_memory`                 | 选择并删除记忆条目                                    |
-| `clear_memory`                  | 清空所有长期记忆                                      |
+| `quit` / `q` | 退出程序 |
+| `help` | 显示帮助信息 |
+| `list_agents` | 列出所有可用的智能体 |
+| `@智能体名 [查询内容]` | 切换到指定智能体并可选执行查询 |
+| `switch_work_mode` | 切换工作模式（团队模式/深度模式/圆桌讨论模式） |
+| `save_chat_history` | 保存聊天历史到当前会话文件 |
+| `list_chat_history` | 列出所有可用的聊天历史会话 |
+| `load_chat_history` | 选择并加载聊天历史会话 |
+| `clear_chat_history` | 清空当前聊天历史 |
+| `save_chat_history_to_markdown` | 导出聊天历史为 Markdown 文件 |
+| `save_chat_history_to_html` | 导出聊天历史为 HTML 文件 |
+| `list_schedule` | 列出所有定时任务 |
+| `cancel_schedule` | 选择并取消定时任务 |
+| `delete_schedule` | 选择并删除定时任务 |
+| `list_memory` | 列出所有长期记忆条目 |
+| `delete_memory` | 选择并删除记忆条目 |
+| `clear_memory` | 清空所有长期记忆 |
 
 任务运行中直接输入内容并按 Enter 会加入转向队列，并立即显示在终端消息流里；下一次模型调用前会合并消费当前所有未执行转向。运行中按 `Esc` 会暂停当前任务，并将尚未执行的转向消息回填到输入框，便于继续修改后重新提交。
 
-## 智能体切换功能
+## 智能体切换
 
 从交互模式下，你可以直接与单个智能体对话，无需启动整个团队：
 
@@ -240,163 +155,96 @@ list_agents
 
 **提示**：输入 `@` 符号后会自动显示可用的智能体列表供选择。
 
-## 定时任务功能
+## 定时任务
 
-coordinator 支持通过自然语言设置定时任务，任务会在后台静默执行，不影响前台交互。
+可通过对话安排一次性或周期任务，例如“5 分钟后检查构建结果”“每个工作日早上 9 点整理新闻”。时间、频率或内容不明确时，助手会先追问。也可在 Web 定时任务页创建、修改、取消或删除安排。
 
-如果时间、频率或执行内容不够明确，coordinator 会先追问必要信息，确认后才会创建可执行的定时任务，不会直接生成含糊的计划。
-
-**使用示例**：
-
-```
-# 一次性任务
-请输入您的问题: 5分钟后帮我搜索一下最新的AI新闻
-
-# 重复任务（coordinator 会自动转换为 cron 表达式）
-请输入您的问题: 每30分钟搜索一次比特币实时价格
-请输入您的问题: 每天早上9点搜索最新的AI新闻
-请输入您的问题: 工作日每天下午5点生成日报
-
-# 信息不明确时，coordinator 会先澄清
-请输入您的问题: 下周提醒我看一下项目进度
-# coordinator 会追问：下周哪一天、几点提醒？
-
-请输入您的问题: 定期帮我搜一下 AI 新闻
-# coordinator 会追问：需要多久执行一次？从什么时候开始？
-
-# 通过 AI 对话查看/取消/删除定时任务
-请输入您的问题: 列出当前所有定时任务
-请输入您的问题: 取消那个搜索新闻的定时任务
-请输入您的问题: 删除所有已完成的定时任务
-
-# 通过 CLI 命令管理定时任务
-list_schedule
-cancel_schedule
-delete_schedule
-```
-
-- 定时任务在后台静默执行，执行结果保存在 `~/.fkteams/scheduler/results/` 目录
-- 支持标准 cron 表达式（重复任务）和一次性定时任务
-- 当时间、频率或任务内容存在歧义时，会先进行必要澄清，再创建任务
-- 终端模式下使用 `list_schedule` 命令查看任务状态
-- 定时任务配置存储在 `~/.fkteams/scheduler/scheduled_tasks.json` 文件中
+应用需要保持运行才能执行调度。任务定义与状态保存在 SQLite，报告位于应用目录的 `scheduler/results/`。Web 会通知未读结果；CLI 使用 `list_schedule` 查看任务。重启后中断的执行标为失败，需要核对实际效果后再安排。通知与恢复行为见[个人助手](personal-assistant.md#后台安排与结果)，集成方式见[定时任务 API](api/schedule.md)。
 
 ## 命令行用法
 
 ```bash
 # 默认交互模式
-./fkteams
+fkteams
 
 # 直接查询模式
-./fkteams -q "你的问题"
+fkteams -q "你的问题"
 
 # 管道输入模式
-echo "解释一下 Go 的 context 包" | ./fkteams
+echo "解释一下 Go 的 context 包" | fkteams
 
 # 管道传入文件内容
-cat main.go | ./fkteams -q "审查这段代码"
+cat main.go | fkteams -q "审查这段代码"
 
 # 管道与 agent 子命令配合
-cat error.log | ./fkteams agent -n coder -q "分析这个错误日志"
+cat error.log | fkteams agent -n coder -q "分析这个错误日志"
 
 # 指定工作模式
-./fkteams -m deep
+fkteams -m deep
 
 # 恢复历史会话（交互模式）
-./fkteams -r "20260302_091249"
+fkteams -r "<session-id>"
 
 # 恢复历史会话并直接查询
-./fkteams -r "20260302_091249" -q "继续上次的问题"
+fkteams -r "<session-id>" -q "继续上次的问题"
 ```
 
 ### 子命令
 
-| 命令               | 说明                                  |
+| 命令 | 说明 |
 | ------------------ | ------------------------------------- |
-| `web`              | 启动 Web 服务器模式（推荐）           |
-| `serve`            | 启动纯 API 服务（无 Web 界面）        |
-| `session list`     | 列出所有可用的聊天历史会话            |
-| `update`           | 检查并更新到最新版本                  |
-| `init`             | 初始化运行环境（安装/升级 uv 等依赖） |
-| `generate config`  | 生成示例配置文件                      |
-| `generate apikey`  | 生成 OpenAI 兼容 API 密钥             |
-| `agent`            | 指定单个 Agent 执行任务               |
-| `agent list`       | 列出所有可用的 Agent                  |
+| `web` | 启动 Web 服务器模式（推荐） |
+| `serve` | 启动纯 API 服务（无 Web 界面） |
+| `session list` | 列出所有可用的聊天历史会话 |
+| `update` | 检查并更新到最新版本 |
+| `init` | 初始化运行环境（安装/升级 uv 等依赖） |
+| `generate config` | 生成示例配置文件 |
+| `generate apikey` | 生成 OpenAI 兼容 API 密钥 |
+| `agent` | 指定单个 Agent 执行任务 |
+| `agent list` | 列出所有可用的 Agent |
 | `login <provider>` | 登录模型服务商（openai, deepseek 等） |
-| `logout`           | 退出登录                              |
-| `model ls`         | 列出已配置的模型                      |
-| `model lr`         | 查询服务商的可用模型                  |
-| `model rm`         | 移除指定的模型配置                    |
-| `tool list`        | 列出所有可用的工具                    |
-| `skill list`       | 列出本地已安装的技能                  |
-| `skill search`     | 搜索技能市场                          |
-| `skill install`    | 安装技能                              |
-| `skill remove`     | 移除本地技能                          |
+| `auth` | 管理 Web 登录认证，见 `fkteams auth --help` |
+| `logout` | 退出登录 |
+| `model ls` | 列出已配置的模型 |
+| `model lr` | 查询服务商的可用模型 |
+| `model sw` | 切换默认对话模型 |
+| `model rm` | 移除指定的模型配置 |
+| `tool list` | 列出所有可用的工具 |
+| `skill list` | 列出本地已安装的技能 |
+| `skill search` | 搜索技能市场 |
+| `skill install` | 安装技能 |
+| `skill remove` | 移除本地技能 |
 
 ### 全局参数
 
-| 参数        | 简写 | 说明                                                                           |
+| 参数 | 简写 | 说明 |
 | ----------- | ---- | ------------------------------------------------------------------------------ |
-| `--mode`    | `-m` | 工作模式: `team`（团队）、`deep`（深度）或 `group`（讨论） |
-| `--query`   | `-q` | 直接查询模式，执行完查询后退出                                                 |
-| `--resume`  | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用                                     |
-| `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                             |
-| `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`git`/`dispatch`，逗号分隔）      |
-| `--version` | `-v` | 显示版本信息                                                                   |
+| `--mode` | `-m` | 工作模式: `team`（团队）、`deep`（深度）或 `group`（讨论） |
+| `--query` | `-q` | 直接查询模式，执行完查询后退出 |
+| `--resume` | `-r` | 恢复指定的聊天历史会话，可与 `-q` 组合使用 |
+| `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令 |
+| `--approve` |  | 自动批准指定操作类别（`all`/`command`/`file`/`git`/`dispatch`，逗号分隔） |
+| `--version` | `-v` | 显示版本信息 |
 
 ### 管道输入
 
-支持通过 Unix 管道将内容传递给 fkteams，自动进入非交互模式：
-
-```bash
-# 管道内容作为查询
-echo "帮我解释这段代码的作用" | ./fkteams
-
-# 管道内容 + -q 参数组合（-q 作为指令前缀，管道内容附在其后）
-cat src/main.go | ./fkteams -q "审查以下代码并指出问题:"
-
-# 与 agent 子命令配合
-git diff HEAD~1 | ./fkteams agent -n coder -q "审查这次提交的改动"
-
-# 与其他工具链组合
-curl -s https://example.com/api | ./fkteams -q "解析这个 API 响应"
-```
-
-**规则**：
-
-- 管道有内容时自动进入非交互（直接查询）模式
-- 同时提供 `-q` 参数时，查询内容为 `-q` 文本 + 换行 + 管道内容
-- 管道为空且无 `-q` 参数时会提示错误
+管道有内容时自动进入非交互查询模式。同时提供 `-q` 时，查询内容为 `-q` 文本、换行和管道内容；空管道且没有 `-q` 时返回错误。
 
 ### agent 子命令参数
 
-| 参数        | 简写 | 说明                                                                |
+| 参数 | 简写 | 说明 |
 | ----------- | ---- | ------------------------------------------------------------------- |
-| `list`      |      | 列出所有可用的 Agent                                                |
-| `--name`    | `-n` | Agent 名称（必填，与 list 互斥）                                    |
-| `--query`   | `-q` | 直接查询模式，执行完查询后退出                                      |
-| `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令                  |
-| `--format`  |      | 输出格式: `default`（格式化）或 `json`（原始JSON）                  |
-| `--approve` |      | 自动批准指定操作类别（`all`/`command`/`file`/`git`/`dispatch`，逗号分隔） |
+| `list` |  | 列出所有可用的 Agent |
+| `--name` | `-n` | Agent 名称（必填，与 list 互斥） |
+| `--query` | `-q` | 直接查询模式，执行完查询后退出 |
+| `--temporary` | `--temp` | 开启临时会话，不保存聊天历史且不显示恢复命令 |
+| `--format` |  | 输出格式: `default`（格式化）或 `json`（原始JSON） |
+| `--approve` |  | 自动批准指定操作类别（`all`/`command`/`file`/`git`/`dispatch`，逗号分隔） |
 
 会话默认保存，可通过全局 `--resume` 恢复；如需额外导出 HTML，请在交互模式内执行 `save_chat_history_to_html`。
 
 ```bash
-# 列出所有可用的 Agent
-./fkteams agent list
-
-# 直接查询（默认保存历史）
-./fkteams agent --name researcher --query "搜索最新的 Go 语言新闻"
-
-# 查询 fkteams 的使用和扩展方式
-./fkteams agent -n fkteams_helper -q "如何创建自定义工具和流程 Hook？"
-
-# JSON 格式输出原始事件
-./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --format json
-
-# 临时查询，不保存历史
-./fkteams agent -n researcher -q "搜索最新的 Go 语言新闻" --temporary
-
-# 交互模式（进入指定 Agent 的对话）
-./fkteams agent -n coder
+fkteams agent -n coder                         # 指定角色交互
+fkteams agent -n researcher -q "检索资料" --format json
+fkteams agent -n researcher -q "临时问答" --temporary
 ```

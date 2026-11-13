@@ -1,6 +1,8 @@
 # OpenAI 兼容 API
 
-OpenAI 兼容接口挂载在 `/v1`，不使用 Web 登录 Token，而是使用 `[openai_api] api_keys` 配置的 API Key。
+OpenAI 兼容接口挂载在 `/v1`，使用 `[openai_api] api_keys` 配置的独立 API Key。这里只代理模型请求，不执行团队、工具或应用会话用例；需要这些能力请使用[聊天接口](chat.md)。
+
+本页示例是完整的 OpenAI 格式响应，不使用普通 API 的 code/data 包装。
 
 ```http
 Authorization: Bearer <api_key>
@@ -17,7 +19,7 @@ Authorization: Bearer <api_key>
 }
 ```
 
-如果未配置 `[openai_api] api_keys`，同样返回 401，`message` 为 `API key not configured, please set [[openai_api]].api_keys in config.toml`。
+如果未配置 `[openai_api] api_keys`，同样返回 401，提示需配置 `[openai_api] api_keys`。
 
 ## GET /v1/models
 
@@ -61,7 +63,7 @@ Authorization: Bearer <api_key>
 
 **转发规则**：
 
-- 根据 `model` 查找 `config.Get().ResolveModel(model)`。
+- 根据本地模型 ID 查找连接配置。
 - 若配置未写 `provider`，会根据 `base_url` 和真实模型名自动检测。
 - 若未写 `base_url`，会使用对应 provider 的默认 Base URL；Copilot 使用 Copilot 默认地址。
 - 非 Copilot provider 会注入模型配置中的 `api_key` 和 `extra_headers`。

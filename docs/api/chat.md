@@ -1,337 +1,93 @@
 # 聊天 API
 
-聊天能力有三种入口：
+| 入口 | 用途 |
+| --- | --- |
+| `POST /api/fkteams/chat` | 等待任务结束后返回 JSON |
+| `POST /api/fkteams/stream/start` | 后台任务，配合 SSE；见[流式任务](stream.md) |
+| `GET /ws` | WebSocket 对话、订阅与交互 |
 
-| 入口 | 适用场景 | 特点 |
-| ---- | -------- | ---- |
-| `POST /api/fkteams/chat` | 普通 HTTP 调用 | 同步 JSON 响应 |
-| `GET /ws` | Web 前端交互 | WebSocket 推送、HITL、运行中队列、断线后可 `resume` |
-| `POST /api/fkteams/stream/start` | 推荐的后台任务入口 | 任务与连接解耦，详见 [流式任务 API](stream.md) |
+认证和响应包装见 [API 总览](README.md)。需要审批、提问或运行中输入时使用流式任务或 WebSocket。
 
 ## POST /api/fkteams/chat
 
-通过 HTTP 发送聊天消息，返回同步 JSON 响应。实时流式输出统一使用 [流式任务 API](stream.md)。
+请求示例：
 
-> HTTP 聊天默认使用非交互式中断处理。需要完整 HITL 审批或运行中排队管理时，使用 WebSocket 或后台流式任务接口。
+```json
+{"session_id":"example-session","message":"分析这个问题","mode":"team"}
+```
 
-**请求 Body**：
+| 字段 | 说明 |
+| --- | --- |
+| `session_id` | 可选，不提供时生成 UUID；普通 ID 禁止路径分隔符、控制字符和 `.` / `..` |
+| `message` | 文本，与 `contents` 至少提供一个 |
+| `mode` | 默认 `team`；可用 `team`、`deep`、`roundtable`（CLI 对应 -m group） |
+| `agent_name` | 指定单个智能体，优先于 mode |
+| `contents` | 多模态数组；存在时优先作为输入 |
+
+同步响应的 `data`：
 
 ```json
 {
-  "session_id": "可选，不提供则自动生成 UUID",
-  "message": "string",
-  "mode": "team",
-  "agent_name": "string",
-  "contents": []
+  "session_id": "example-session",
+  "content": "完整回复文本",
+  "events": [],
+  "view": {"items": []}
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `session_id` | string | 否 | 会话 ID；不提供时自动生成 UUID |
-| `message` | string | 条件 | 用户文本，和 `contents` 至少提供一个 |
-| `mode` | string | 否 | 运行模式，默认 `team`；具体值由 Runner 缓存解析 |
-| `agent_name` | string | 否 | 指定单个智能体，优先于 `mode` |
-| `contents` | array | 条件 | 多模态内容；存在时优先用于构建输入 |
+`content` 汇总主智能体的可见回答，`events` 为执行事件，`view` 是后端生成的最终展示快照。历史与会话状态保存成功后才返回成功。同一会话执行期间不能追加同步请求或队列，冲突返回 409；`stream=true` 返回 400，请使用后台任务接口。
 
-`contents` 元素结构：
+## 多模态输入
+
+HTTP、WebSocket 和流式启动均接受相同的 `contents`：
 
 ```json
 {
-  "type": "text",
-  "text": "文本内容",
-  "url": "https://example.com/image.png",
-  "base64_data": "...",
-  "mime_type": "image/png",
-  "detail": "auto"
+  "message": "",
+  "contents": [
+    {"type":"text","text":"图片中有什么？"},
+    {"type":"image_url","url":"https://example.com/cat.jpg","detail":"high"}
+  ]
 }
 ```
 
-| `type` | 使用字段 |
-| ------ | -------- |
+| type | 字段 |
+| --- | --- |
 | `text` | `text` |
-| `image_url` | `url`、`detail`，`detail` 支持 `high`、`low`、`auto` |
-| `image_base64` | `base64_data`、`mime_type`，`mime_type` 默认 `image/png` |
-| `audio_url` | `url` |
-| `video_url` | `url` |
-| `file_url` | `url` |
+| `image_url` | `url`，可选 `detail: high/low/auto` |
+| `image_base64` | `base64_data`、`mime_type`（默认 image/png） |
+| `audio_url` / `video_url` / `file_url` | `url`，或上游支持的 `file_id` |
 
-**同步响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "550e8400-e29b-41d4-a716-446655440000",
-    "content": "完整回复文本",
-    "events": []
-  }
-}
-```
-
-`content` 汇总主智能体的可见回答，完整消息替换对应增量，避免重复拼接；`events` 保留按执行顺序返回的完整事件数组。
-
-同一会话在同步、SSE 和 WebSocket 入口之间共享执行占用。同步请求运行期间不能追加队列；请等待当前请求结束。历史与会话状态保存成功后才返回成功响应。
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid request: ...` | 请求体解析失败 |
-| 400 | `message or contents is required` | 消息为空 |
-| 400 | `stream=true is not supported on /api/fkteams/chat; use /api/fkteams/stream/start` | 请求内 SSE 已移除 |
-| 400 | Runner 错误详情 | `agent_name` 指定的智能体不可用 |
-| 409 | `session is already processing` | 会话正在执行其他请求 |
-| 503 | `HTTP runtime is shutting down` | 服务正在关闭 |
-| 500 | 错误详情 | Runner 创建、执行或历史持久化失败 |
+附件可带 `name`。`file_id` 是模型供应商托管引用，不能当作本地路径。实际输入能力及历史附件行为见[多模态支持](../multimodal.md)。
 
 ## WebSocket
 
-### 连接
+连接 `ws://<host>/ws` 或 `wss://<host>/ws`，认证使用 Cookie 或握手 Bearer Header。连接后收到 `connected`；服务端逐条消息复核认证，关闭应用时关闭连接。单条消息上限 32 MiB。
 
-```text
-ws://<host>/ws
-wss://<host>/ws
-```
+客户端消息以 `type` 区分：
 
-启用登录认证时，浏览器通过登录接口设置的 `HttpOnly` `fk_token` Cookie 建立连接；非浏览器客户端可使用 `Authorization: Bearer <token>` 握手 Header。Token 不接受 query 参数。服务端会对连接中的每条消息再次校验 Token，以响应登录过期和认证配置热更新。连接建立后服务端发送：
+| type | 字段与行为 |
+| --- | --- |
+| `chat` / `follow_up` | 必须有 `session_id`；其余输入字段同 HTTP。会话运行中时追加 follow-up |
+| `steer` / `steering` | `session_id`、`message` / `contents`；下次模型调用前消费 |
+| `resume` | `session_id`、`offset`；从该传输游标回放并订阅 |
+| `cancel` | `session_id`；请求停止任务，等待真正结束 |
+| `approval` | `session_id`、`decision`；0 拒绝、1 允许一次、2 允许该项、3 全部允许 |
+| `ask_answered` | `session_id`、`ask_id`、`ask_selected`、`ask_free_text` |
+| `ping` | 返回 `pong` |
 
-```json
-{
-  "type": "connected",
-  "message": "欢迎连接到非空小队"
-}
-```
-
-服务关闭时，后端会主动关闭所有连接。
-
-### 客户端消息结构
+示例：
 
 ```json
-{
-  "type": "chat",
-  "session_id": "会话 ID",
-  "offset": 0,
-  "message": "用户消息",
-  "mode": "team",
-  "agent_name": "coder",
-  "decision": 1,
-  "contents": [],
-  "ask_selected": ["选项 A"],
-  "ask_free_text": "补充文本"
-}
+{"type":"chat","session_id":"example-session","message":"检查工作区","agent_name":"coder"}
 ```
-
-字段按消息类型选择性填写。
-
-### chat / follow_up
-
-发送用户消息。WebSocket 的 `chat` 和 `follow_up` 必须显式携带 `session_id`。
 
 ```json
-{
-  "type": "chat",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "帮我分析这个问题",
-  "mode": "team"
-}
+{"type":"ask_answered","session_id":"example-session","ask_id":"ask-1","ask_selected":["方案 A"],"ask_free_text":""}
 ```
 
-如果会话已有运行中任务，消息会追加为 `follow_up` 队列项，服务端推送：
+`ask_id` 应原样带回，以便并行成员的问题分别路由。未知消息类型返回 error。
 
-- `user_message`，包含 `queued=true`、`queue_id`、`queue_kind`、`queued_count`
-- `queue_updated`，包含最新 `queue` 快照
+服务端任务事件与 SSE 共用结构，展示使用 `view_update`，类型见[事件协议](../events.md)。WebSocket 订阅事件携带 `stream_event_id`；重连前先获取[快照](stream.md#get-apifkteamsstreamsnapshotsessionid)，再将 `next_offset` 用于 resume。缓存窗口过期时重新加载快照，不能靠旧事件推测缺失内容。
 
-### steer / steering
-
-向运行中任务追加 steering。
-
-```json
-{
-  "type": "steer",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "先检查最新日志，再继续原任务"
-}
-```
-
-失败时返回 `type=error`，例如 `no running task to steer`。
-
-### resume
-
-断线后重新绑定当前会话的内存流，并从指定事件 offset 回放。
-
-```json
-{
-  "type": "resume",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "offset": 42
-}
-```
-
-如果任务不存在或已结束，返回：
-
-```json
-{
-  "type": "processing_end",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "任务已完成或不存在"
-}
-```
-
-### cancel
-
-请求取消运行中的任务。
-
-```json
-{
-  "type": "cancel",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-服务端立即确认取消请求：
-
-```json
-{
-  "type": "cancellation_requested",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "取消请求已发送"
-}
-```
-
-任务真正取消后还会推送 `cancelled` 事件。
-
-### approval
-
-提交 HITL 审批决定。
-
-```json
-{
-  "type": "approval",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "decision": 1
-}
-```
-
-| decision | 含义 |
-| -------- | ---- |
-| `0` | 拒绝 |
-| `1` | 允许一次 |
-| `2` | 允许该项 |
-| `3` | 全部允许 |
-
-### ask_answered
-
-提交 `ask_requested` 的回答。
-
-```json
-{
-  "type": "ask_answered",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "ask_id": "ask-id-from-event",
-  "ask_selected": ["选项 A"],
-  "ask_free_text": "补充说明"
-}
-```
-
-当 `ask_requested` 事件包含 `ask_id` 时，提交回答应带回同一个 `ask_id`。并行子智能体同时提问时，服务端会按 `ask_id` 将回答投递给对应成员。
-
-### ping
-
-```json
-{
-  "type": "ping"
-}
-```
-
-服务端返回：
-
-```json
-{
-  "type": "pong"
-}
-```
-
-未知 `type` 返回：
-
-```json
-{
-  "type": "error",
-  "error": "unknown message type"
-}
-```
-
-## 服务端事件
-
-WebSocket 和后台流式任务共享同一套任务事件结构。常见控制事件：
-
-| type | 说明 |
-| ---- | ---- |
-| `connected` | WebSocket 连接建立 |
-| `user_message` | 用户消息；排队时带 `queued`、`queue_id`、`queue_kind` |
-| `processing_start` | 某个轮次开始处理 |
-| `processing_end` | 当前任务全部完成 |
-| `queue_updated` | 未消费队列快照 |
-| `ask_requested` | 需要用户回答问题；并行成员提问会携带 `ask_id` 和成员归属字段 |
-| `approval_required` | 需要用户审批 |
-| `cancelled` | 任务被取消 |
-| `error` | 错误 |
-| `pong` | 心跳响应 |
-
-Agent 事件基础字段：
-
-```json
-{
-  "type": "assistant_text_delta",
-  "session_id": "string",
-  "run_id": "string",
-  "turn_id": "string",
-  "message_id": "string",
-  "agent_name": "string",
-  "run_path": "string",
-  "role": "assistant",
-  "delta_kind": "output",
-  "content": "string",
-  "reasoning_content": "string",
-  "tool_calls": [],
-  "tool_call_ref": "string",
-  "tool_name": "string",
-  "tool_display_name": "string",
-  "tool_kind": "string",
-  "detail": "string",
-  "error": "string",
-  "event_id": "evt_1",
-  "sequence": 1,
-  "created_at": "2026-06-30T00:00:00Z"
-}
-```
-
-字段均为按需返回。业务展示顺序只使用 `sequence`；WebSocket/SSE 续接使用对应传输层 offset。
-
-常见 Agent `type`：
-
-| type | 说明 |
-| ---- | ---- |
-| `agent_started` / `agent_completed` | 智能体执行开始/结束 |
-| `turn_started` / `turn_completed` | 轮次开始/结束 |
-| `assistant_started` / `assistant_reasoning_delta` / `assistant_text_delta` / `assistant_completed` | 模型消息生命周期 |
-| `tool_call_started` / `tool_call_arguments_delta` / `tool_call_result_delta` / `tool_call_completed` | 工具调用生命周期 |
-| `ask_requested` / `ask_answered` | 用户提问与回答记录 |
-| `approval_requested` / `approval_answered` | 审批请求与审批结果 |
-| `system_notice` | 系统状态提示，例如上下文压缩或转交提示 |
-| `usage_reported` | Token 用量 |
-| `error` | 执行错误 |
-| `member_started` / `member_completed` | 成员智能体执行状态 |
-| `context_compress_start` / `context_compress` | 上下文压缩 |
-
-## 队列顺序语义
-
-运行中产生的队列项必须按用户交互顺序渲染：
-
-1. 当前用户问题产生 `user_message` 和 `processing_start`。
-2. 当前智能体持续推送回复事件。
-3. 运行中追加的问题先以 `queued=true` 展示在队列区。
-4. 当队列项开始执行时，服务端推送带 `queued_executing=true` 的 `user_message` 或 `processing_start`，客户端再把它提升为正式轮次。
-
-前端不应仅按接收时间把排队问题直接追加到结果流后面；应优先使用 `run_id`、`turn_id`、`queue_id` 和 `queued_executing` 维护轮次归属。
+`cancel` 的即时确认不表示任务已退出。以 `processing_end` 的终态或后续快照为准；无内存任务的 resume 只返回“任务已完成或不存在”，应再读取会话快照。

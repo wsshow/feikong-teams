@@ -1,510 +1,159 @@
 # 流式任务 API
 
-流式任务 API 用于把任务执行与前端连接解耦。任务在服务端后台运行，事件缓存在内存中；客户端可以通过 SSE 订阅实时事件，也可以用 HTTP 拉取当前缓冲。
+任务在服务端后台运行，连接断开不取消任务。基础路径 `/api/fkteams/stream`，认证与响应包装见 [API 总览](README.md)。
 
-基础路径：`/api/fkteams/stream`
+## 接入流程
 
-## 核心流程
-
-1. `POST /start` 启动后台任务，返回 `session_id`。
-2. `GET /subscribe/:sessionID` 订阅 SSE 实时事件。
-3. 页面刷新或重连时先 `GET /status/:sessionID` 判断任务是否仍在内存中。
-4. 运行中可用 `/steer` 注入 steering，或再次 `/start` 追加 follow-up。
-5. 可用 `/queue/*` 管理尚未消费的队列项。
-6. HITL 场景通过 `/approval` 或 `/ask-response` 提交用户输入。
+1. `POST /start` 提交任务，取得 `session_id`。
+2. `GET /snapshot/:sessionID` 读取 `view`、`queue`、状态和 `next_offset`。
+3. 若有内存任务，从 `next_offset` 调用 `/subscribe/:sessionID` 接收 SSE。
+4. 应用事件中的 `view_update`；等待 `processing_end` 确认最终状态。
+5. 重连时重新读取快照；缓存过期后从已提交历史恢复。
 
 ## POST /api/fkteams/stream/start
 
-启动后台流式任务。如果同一 `session_id` 已有运行中任务，请求会被追加为 `follow_up` 队列项，不会取消当前任务。
+输入字段同[同步聊天](chat.md#post-apifkteamschat)：
 
-**请求 Body**：
+```json
+{"session_id":"example-session","message":"整理工作区资料","mode":"team"}
+```
+
+启动成功的 `data`：
 
 ```json
 {
-  "session_id": "可选，不提供则自动生成 UUID",
-  "message": "用户消息",
-  "mode": "team",
-  "agent_name": "可选，指定单个智能体",
-  "contents": []
+  "session_id": "example-session",
+  "status": "processing",
+  "message": "task started",
+  "user_message_id": "run-turn:user",
+  "queue": [],
+  "queued_count": 0
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `session_id` | string | 否 | 会话 ID；提供时必须是合法会话 ID |
-| `message` | string | 条件 | 文本消息，和 `contents` 至少提供一个 |
-| `mode` | string | 否 | 运行模式，默认 `team`；支持值由 Runner 缓存解析 |
-| `agent_name` | string | 否 | 指定单个智能体，优先于 `mode` |
-| `contents` | array | 条件 | 多模态内容，结构同 [聊天接口](chat.md) |
-
-**启动成功**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "status": "processing",
-    "message": "task started"
-  }
-}
-```
-
-**运行中追加 follow-up**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "status": "queued",
-    "message": "message queued",
-    "queue_kind": "follow_up",
-    "queued_count": 1
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid request: ...` | 请求体解析失败 |
-| 400 | `message or contents is required` | 消息为空 |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 400 | Runner 错误详情 | `agent_name` 指定的智能体不可用 |
-| 409 | `task is finishing; retry the request` | 前一任务正在完成或取消，消息未入队，可稍后重试 |
-| 500 | Runner 错误详情 | Runner 创建失败 |
+同一会话已有运行任务时，新输入进入 follow-up，返回 `status: queued`、`queue_kind: follow_up` 和最新队列。当前任务收尾中则返回 409，消息未入队，稍后可重试。
 
 ## POST /api/fkteams/stream/steer
 
-向运行中的任务追加 steering。steering 会在下一次模型调用前注入上下文，不会打断正在输出的 token 或正在执行的工具。
-
-**请求 Body**：
-
 ```json
-{
-  "session_id": "abc-123",
-  "message": "先处理这个新约束",
-  "contents": []
-}
+{"session_id":"example-session","message":"先检查最新日志","contents":[]}
 ```
 
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "status": "queued",
-    "message": "steering queued",
-    "queue_kind": "steering",
-    "queued_count": 1
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `session_id is required` | 缺少会话 ID |
-| 400 | `message or contents is required` | 消息为空 |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 404 | `no running task for this session` | 会话没有运行中任务 |
-| 409 | `task is finishing; steering was not queued` | 任务已进入完成或取消阶段，消息未入队 |
+steering 在下一次模型调用前消费，不打断当前输出或工具。成功返回 `status: queued`、`queue_kind: steering`、`queue`、`queued_count`；无运行任务返回 404，正在收尾返回 409。
 
 ## 队列管理
 
-运行中追加的 `follow_up` 和 `steering` 都会进入未消费队列。每个队列项包含：
+队列项使用稳定的 `queue_id`：
 
 ```json
 {
-  "id": "queue-id",
+  "queue_id": "queue-1",
   "kind": "follow_up",
-  "text": "原始文本",
+  "text": "补充要求",
   "parts": [],
-  "display_text": "展示文本",
-  "created_at": "2026-06-10T10:00:00Z",
-  "updated_at": "2026-06-10T10:01:00Z"
+  "display_text": "补充要求",
+  "created_at": "2026-11-13T10:00:00Z",
+  "updated_at": "2026-11-13T10:00:00Z"
 }
 ```
 
-队列快照按 `steering` 在前、`follow_up` 在后返回。移动排序只在同类队列内生效。
+以下路径均以 `/api/fkteams/stream` 为前缀：
 
-### GET /api/fkteams/stream/queue/:sessionID
+| 方法与路径 | 请求 / 行为 |
+| --- | --- |
+| `GET /queue/:sessionID` | 返回 `{session_id, queue, queued_count}` |
+| `PATCH /queue/:sessionID/:queueID` | `{message, contents}` 修改内容，两者至少一个 |
+| `DELETE /queue/:sessionID/:queueID` | 删除未消费项 |
+| `POST /queue/:sessionID/:queueID/kind` | `{kind: "follow_up"}` 或 `"steering"` |
+| `POST /queue/:sessionID/:queueID/move` | `{direction: "up"}` 或 `"down"` |
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "queue": [],
-    "queued_count": 0
-  }
-}
-```
-
-### PATCH /api/fkteams/stream/queue/:sessionID/:queueID
-
-修改尚未消费的队列项内容。
-
-```json
-{
-  "message": "更新后的内容",
-  "contents": []
-}
-```
-
-### DELETE /api/fkteams/stream/queue/:sessionID/:queueID
-
-删除尚未消费的队列项。
-
-### POST /api/fkteams/stream/queue/:sessionID/:queueID/kind
-
-切换队列项类型。
-
-```json
-{
-  "kind": "steering"
-}
-```
-
-`kind` 只允许 `follow_up` 或 `steering`。
-
-### POST /api/fkteams/stream/queue/:sessionID/:queueID/move
-
-调整队列项在同类队列内的顺序。
-
-```json
-{
-  "direction": "up"
-}
-```
-
-`direction` 只允许 `up` 或 `down`。
-
-**队列修改成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "queue_item": {},
-    "queue": []
-  }
-}
-```
-
-队列发生变化时，服务端会同时推送 `queue_updated` 事件。
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 400 | `message or contents is required` | PATCH 内容为空 |
-| 400 | `kind must be follow_up or steering` | 队列类型非法 |
-| 400 | `direction must be up or down` | 移动方向非法 |
-| 404 | `no running task for this session` | 无运行中任务 |
-| 404 | `queued message not found` | 队列项不存在或已被消费 |
+队列按 steering、follow-up 分组返回，同类内排序。只能修改尚未消费的项，离线会话同样可管理已保存队列；不存在或已消费返回 404。保存成功后才确认修改，并通过 `queue_updated` 同步。取消后未消费输入保留至下次运行。
 
 ## GET /api/fkteams/stream/snapshot/:sessionID
 
-返回事件、队列和任务元数据的轻量快照。未指定 `offset` 时返回日志尾部；指定后按页顺序返回，适合页面恢复时先追平缓存再接入 SSE。
+一次返回完整展示快照，不分页读取原始事件：
 
-| 参数 | 类型 | 默认 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `offset` | uint | 日志尾页起点 | 可选的起始事件 ID |
-| `limit` | int | `300` | 单页事件数，最大 `1000` |
+```json
+{
+  "session_id": "example-session",
+  "status": "processing",
+  "has_task": true,
+  "mode": "team",
+  "queue": [],
+  "view": {"items": []},
+  "next_offset": 42,
+  "created_at": "2026-11-13T10:00:00Z"
+}
+```
 
-响应中的 `snapshot_offset`、`next_offset`、`event_count` 和 `more_available` 与该页事件在同一次锁内读取，不会因并发推送出现互相矛盾的分页元数据。
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 400 | `invalid offset` | offset 不是无符号整数 |
-| 404 | `no active task for this session` | 内存中没有活跃或保留中的任务 |
+`view` 与 `next_offset` 在同一锁内读取。指定智能体时包含 `current_agent`，结束后可含 `finished_at`。内存任务不存在时返回[会话详情](sessions.md#get-apifkteamssessionssessionid)，包含从 transcript 恢复的展示；会话也不存在返回 404。旧历史格式不支持展示时返回 409，原数据保留。
 
 ## GET /api/fkteams/stream/subscribe/:sessionID
 
-SSE 订阅后台任务事件。支持通过 `Last-Event-ID` 或 `?offset=N` 从指定事件继续接收。
-
-推送事件遵循统一事件协议：
-
-- `event_id`、`sequence`、`created_at`、`session_id`、`type` 为公共字段。
-- `run_id` 和 `turn_id` 标识当前运行和用户回合。
-- `sequence` 是业务展示顺序；`stream_event_id` 只用于 SSE offset 和重连续传。
-- 历史 API 返回的事件与实时事件同构，客户端不得使用单独的历史排序字段。
-
 ```http
-GET /api/fkteams/stream/subscribe/abc-123?offset=0
+GET /api/fkteams/stream/subscribe/example-session?offset=42
 Accept: text/event-stream
 ```
 
-SSE 事件格式：
+SSE 帧：
 
 ```text
 id: 42
-data: {"type":"assistant_text_delta","event_id":"evt_42","sequence":42,"created_at":"2026-06-30T00:00:00Z","session_id":"abc-123","run_id":"abc-123:run:...","turn_id":"abc-123:run:...:turn:1","message_id":"msg_1","role":"assistant","delta_kind":"output","content":"...","stream_event_id":42}
+data: {"type":"assistant_text_delta","session_id":"example-session","message_id":"msg-1","content":"正文","stream_event_id":42,"view_update":{"appends":[{"item_id":"item-1","key":"part-1","content":"正文","message_id":"msg-1","type":"text"}]}}
+
 ```
 
-服务端优先使用 `Last-Event-ID`，并从 `Last-Event-ID + 1` 开始回放；没有该 header 时使用 `offset` query 参数。
+示例为已有分段的追加，实际节点和分段 ID 来自之前的快照或更新。展示更新格式见[事件协议](../events.md#web-展示契约)。
 
-空闲期间服务端每 15 秒发送一次 SSE 注释心跳；单次写入最多等待 15 秒，失联或停止读取的客户端不会长期占用服务端 goroutine。
+- `offset` 是下一条待读取的传输 ID。若有 `Last-Event-ID` Header，则优先从该值加一开始。
+- 缓存窗口过期返回 409，重新取快照；无内存流返回 404，改读会话详情。
+- 每 15 秒发送心跳注释；任务结束并发送完尾部事件后发送 `data: [DONE]`。
+- `processing_end.status` 为 `completed`、`error` 或 `cancelled`，并携带最终展示更新。原始 error 事件不能代替终态。
+- 认证过期或变更会关闭订阅，后台任务继续；重新登录后按快照游标恢复。
 
-启用登录认证时，服务端会在长连接期间周期复核 Token。Token 过期或认证配置变更后会关闭当前订阅，但不会取消后台任务；客户端重新登录后可用最后保存的 offset 继续订阅。
+## 状态与事件拉取
 
-**失败响应**：
+| 接口 | 返回 |
+| --- | --- |
+| `GET /api/fkteams/stream/status/:sessionID` | 内存任务的 status、has_task、mode、event_count、created_at，及可选 agent_name、finished_at；无任务时返回会话 metadata，均不存在返回 404 |
+| `GET /api/fkteams/stream/events/:sessionID` | 分页原始事件，用于程序消费或调试；无内存流返回 404 |
 
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 400 | `invalid offset` | offset 不是无符号整数 |
-| 400 | `invalid Last-Event-ID` | 重连事件 ID 非法或加一后会溢出 |
-| 401 | `未登录或登录已过期` | 建立订阅时 Token 无效 |
-| 404 | `no active task for this session` | 内存中没有活跃或保留中的任务 |
-
-## GET /api/fkteams/stream/events/:sessionID
-
-一次性拉取当前内存流中的已缓冲事件。
-
-**Query 参数**：
-
-| 参数 | 类型 | 默认 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `offset` | uint | `0` | 起始事件 ID |
-| `limit` | int | `300` | 单页事件数，最大 `1000` |
-
-**成功响应**：
+事件拉取支持 `offset`（默认 0）和 `limit`（默认 300、最大 1000），返回：
 
 ```json
 {
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "status": "processing",
-    "events": [
-      {
-        "id": 0,
-        "data": {
-          "type": "processing_start",
-          "event_id": "evt_1",
-          "sequence": 1,
-          "created_at": "2026-06-30T00:00:00Z",
-          "session_id": "abc-123",
-          "run_id": "abc-123:run:...",
-          "turn_id": "abc-123:run:...:turn:1",
-          "content": "开始处理您的请求...",
-          "stream_event_id": 0
-        }
-      }
-    ],
-    "event_count": 1,
-    "next_offset": 1,
-    "more_available": false,
-    "limit": 300,
-    "done": false
-  }
+  "session_id": "example-session",
+  "status": "processing",
+  "events": [{"id":42,"data":{"type":"processing_start","session_id":"example-session"}}],
+  "event_count": 43,
+  "retained_count": 43,
+  "earliest_offset": 0,
+  "replay_truncated": false,
+  "next_offset": 43,
+  "more_available": false,
+  "limit": 300,
+  "done": false
 }
 ```
 
-当 `more_available=true` 时，使用响应中的 `next_offset` 请求下一页。非法 offset 返回 `400 invalid offset`。
+`more_available=true` 时用 `next_offset` 继续，`replay_truncated=true` 时重新获取展示快照。事件分页不用于拼装 Web 初始视图。
 
-## GET /api/fkteams/stream/status/:sessionID
+## 停止与人工输入
 
-查询任务状态。若内存中有任务，返回任务状态；若没有任务但会话历史存在，返回会话元数据；都不存在则返回 404。
+`POST /api/fkteams/stream/stop/:sessionID` 请求停止任务，成功返回 `{session_id, message: "task stop requested"}`；无任务返回 404，任务已结束返回 409。停止请求的成功响应不表示收尾已经结束。
 
-**有任务时**：
+`POST /api/fkteams/stream/approval` 提交审批：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "status": "processing",
-    "has_task": true,
-    "mode": "team",
-    "agent_name": "coder",
-    "event_count": 42,
-    "created_at": "2026-06-10T10:00:00Z",
-    "finished_at": "2026-06-10T10:05:00Z"
-  }
-}
+{"session_id":"example-session","decision":1}
 ```
 
-`agent_name` 仅在启动任务时指定了智能体时返回；`finished_at` 仅任务已结束且仍在内存保留期内返回。
+`decision`：0 拒绝、1 允许一次、2 允许该项、3 全部允许。成功返回 `{message: "approval submitted"}`。
 
-**无任务但会话存在时**：
+`POST /api/fkteams/stream/ask-response` 提交问题回答：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "status": "completed",
-    "has_task": false,
-    "title": "会话标题",
-    "created_at": "2026-06-10T10:00:00Z",
-    "updated_at": "2026-06-10T10:05:00Z"
-  }
-}
+{"session_id":"example-session","ask_id":"ask-1","selected":["方案 A"],"free_text":"补充说明"}
 ```
 
-## POST /api/fkteams/stream/stop/:sessionID
-
-请求停止运行中的后台任务。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "session_id": "abc-123",
-    "message": "task stop requested"
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 404 | `no task found for this session` | 没有任务 |
-| 409 | `task is not running, current status: ...` | 任务已结束或不在运行中 |
-
-## POST /api/fkteams/stream/approval
-
-提交 HITL 审批决定。
-
-**请求 Body**：
-
-```json
-{
-  "session_id": "abc-123",
-  "decision": 1
-}
-```
-
-| decision | 含义 |
-| -------- | ---- |
-| `0` | 拒绝 |
-| `1` | 允许一次 |
-| `2` | 允许该项 |
-| `3` | 全部允许 |
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "message": "approval submitted"
-  }
-}
-```
-
-## POST /api/fkteams/stream/ask-response
-
-提交 `ask_requested` 的回答。
-
-**请求 Body**：
-
-```json
-{
-  "session_id": "abc-123",
-  "ask_id": "ask-id-from-event",
-  "selected": ["选项 A"],
-  "free_text": "补充说明"
-}
-```
-
-当 `ask_requested` 事件包含 `ask_id` 时，提交回答应带回同一个 `ask_id`。并行子智能体同时提问时，服务端会按 `ask_id` 将回答投递给对应成员。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "message": "response submitted"
-  }
-}
-```
-
-`/approval` 和 `/ask-response` 失败响应：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid request body` | 请求体解析失败或缺少 `session_id` |
-| 400 | `invalid session ID` | 会话 ID 不合法 |
-| 404 | `no running task for this session` | 没有运行中任务 |
-| 409 | `no pending approval request` | 当前没有待审批请求 |
-| 409 | `no pending ask request` | 当前没有待回答请求 |
-
-## 事件结构
-
-后台任务事件由内部 Agent 事件转换而来，常见字段如下：
-
-| 字段 | 说明 |
-| ---- | ---- |
-| `type` | 事件类型 |
-| `session_id` | 会话 ID |
-| `stream_event_id` | 当前内存流事件 ID，和 SSE `id` 一致 |
-| `run_id` | 当前用户轮次或队列项运行 ID |
-| `turn_id` | 当前运行中的轮次 ID |
-| `message_id` | 模型消息 ID，用于合并增量 |
-| `agent_name` | 事件所属智能体 |
-| `content` | 文本内容 |
-| `delta_kind` | 增量类型，如正文或工具参数 |
-| `tool_calls` | 工具调用列表 |
-| `tool_call_ref` | 工具调用稳定引用 |
-| `queue_id` | 队列项 ID |
-| `queue_kind` | `follow_up` 或 `steering` |
-| `queued` | 用户消息已排队 |
-| `queued_executing` | 队列项开始执行 |
-
-常见 `type`：
-
-| type | 说明 |
-| ---- | ---- |
-| `user_message` | 用户消息；排队时包含 `queued` 和队列字段 |
-| `processing_start` | 某个用户轮次或队列项开始处理 |
-| `processing_end` | 任务全部完成 |
-| `queue_updated` | 队列快照更新 |
-| `assistant_reasoning_delta` / `assistant_text_delta` | 模型思考或正文输出增量 |
-| `assistant_completed` | 模型消息结束，可能携带 `tool_calls` |
-| `tool_call_started` / `tool_call_arguments_delta` / `tool_call_result_delta` / `tool_call_completed` | 工具调用事件 |
-| `ask_requested` / `ask_answered` | 需要用户回答问题或记录用户回答；并行成员提问会携带 `ask_id` 和成员归属字段 |
-| `approval_required` | 需要用户审批 |
-| `error` | 任务错误 |
-| `cancelled` | 任务被取消 |
-
-## 页面恢复建议
-
-刷新页面或重新打开会话时：
-
-1. `GET /api/fkteams/sessions/:sessionID` 加载已持久化历史。
-2. `GET /api/fkteams/stream/status/:sessionID` 判断是否存在内存任务。
-3. 若 `has_task=true`，分页调用 `GET /api/fkteams/stream/snapshot/:sessionID?offset=0&limit=1000` 拉取当前轮次缓冲和队列。
-4. 再用最后一页的 `next_offset` 调用 `GET /api/fkteams/stream/subscribe/:sessionID?offset=<next_offset>` 接入实时流。
-5. 若状态接口返回 404，则该会话不存在或未保存，客户端应切回主页。
-
-任务完成后内存流会短暂保留，完整历史以会话 API 为准。
+`ask_id` 应与请求事件一致，用于区分并行成员提问。成功返回 `{message: "response submitted"}`。这两个接口均在无运行任务时返回 404，无对应待处理输入时返回 409。

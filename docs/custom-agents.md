@@ -8,16 +8,9 @@
 
 ## 配置示例
 
-```toml
-[[models]]
-id = "main"
-name = "主力模型"
-use_for = ["chat", "agent"]
-provider = "openai"
-base_url = "https://api.openai.com/v1"
-api_key = "your_api_key"
-model = "gpt-5"
+以下示例假定[模型池](configuration.md#模型池)中已配置 `id = "main"`。
 
+```toml
 [[agents.items]]
 id = "frontend"
 name = "前端开发专家"
@@ -39,7 +32,7 @@ enabled = true
 | `description` | 能力描述 |
 | `prompt` | 系统提示词 |
 | `model_id` | 引用 `[[models]].id` |
-| `tools` | 工具列表，可包含内置工具和 `mcp-<server_id>` |
+| `tools` | 工具列表，可包含内置工具组、`javascript` 和 `mcp-<server_id>` |
 | `enabled` | 是否启用该智能体 |
 
 `id` 是引用标识，应保持稳定；`name` 只是展示名称，可以按需要调整。

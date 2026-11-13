@@ -1,193 +1,59 @@
 # 配置与模型 API
 
+配置字段与 TOML 示例见[配置指南](../configuration.md)，认证与响应包装见 [API 总览](README.md)。
+
 ## GET /api/fkteams/config
 
-获取当前配置。响应会对敏感字段脱敏：
+返回配置 JSON，`agents.items` 包含合并后的内置与自定义角色。敏感字段经过脱敏：
 
-- `models[].api_key` 永远返回空字符串，并用 `models[].has_api_key` 标识是否已配置。
-- `models[].original_id` 返回当前稳定 ID；`models[].extra_headers` 已配置时返回 `"***"`。
-- `openai_api.api_keys[]` 返回仅保留末 4 位的掩码。
-- `server.auth.password`、`server.auth.secret`、`agents.items[].ssh.password`、`channels.qq.app_secret` 返回 `"***"`。
-- `channels.discord.token` 只保留末 4 位。
-- `agents.items` 返回合并后的全局智能体目录，包含内置智能体的名称、描述、工具和提示词。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "models": [
-      {
-        "id": "main",
-        "name": "主力模型",
-        "use_for": ["chat", "agent"],
-        "provider": "openai",
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "",
-        "has_api_key": true,
-        "model": "gpt-5",
-        "supports_vision": true
-      }
-    ]
-  }
-}
-```
-
----
+| 字段 | 返回形式 |
+| --- | --- |
+| `models[].api_key` | 空字符串，`has_api_key` 表示是否已配置 |
+| `models[].original_id` | 当前稳定 ID，供修改时保留密钥归属 |
+| `models[].extra_headers` | 已配置时为 `"***"` |
+| `openai_api.api_keys[]`、`channels.discord.token` | 仅保留末 4 位的掩码 |
+| 认证密码、Secret、SSH 密码、QQ app_secret | `"***"` |
 
 ## PUT /api/fkteams/config
 
-保存完整配置并热重载运行时依赖。有任务执行或其他配置更新正在进行时返回 **409 Conflict**；本次配置不会发布，任务结束后可重试。
+先 GET，在返回结构上修改，再整体提交完整配置。任务执行或其他配置更新期间返回 409，请等空闲后重试。
 
-**请求 Body**：完整 `config.Config` JSON。建议先 `GET /api/fkteams/config`，在返回结构上修改后整体提交。
+| 字段 | 保存时如何保留旧值 |
+| --- | --- |
+| `models[].api_key` | 空字符串按 original_id 或 id 恢复；不按数组位置、URL 猜测 |
+| `models[].extra_headers` | `"***"` 按稳定 ID 保留；空字符串清空 |
+| `openai_api.api_keys[]` | 掩码唯一匹配旧值，允许重排或删除 |
+| 认证密码、Secret、SSH 密码、QQ app_secret | `"***"` 保留 |
+| `channels.discord.token` | 掩码值保留 |
 
-`models[].supports_vision` 为可选布尔值：`true` 允许图片输入，`false` 在模型请求前拒绝图片，省略时沿用供应商适配器行为。保存后对后续任务生效。
+成功后保存配置、重载智能体目录、清理 Runner/MCP 缓存、重置通道 Runner 和记忆开关，返回 `{auth_changed: boolean}`。监听地址、后台服务启停和通道连接变更仍需重启。
 
-敏感字段合并规则：
+配置无效（例如 ID 或模型用途重复、认证字段缺失、代理格式不合法）返回 400，保存失败返回 500。`supports_vision` 的省略、true、false 含义见[多模态支持](../multimodal.md#视觉输入配置)。
 
-| 字段 | 保留旧值条件 |
-| ---- | ------------ |
-| `models[].api_key` | 提交空字符串时只按 `original_id` 或 `id` 还原旧密钥；不按数组位置或 URL 猜测 |
-| `models[].extra_headers` | 提交 `"***"` 时按稳定模型 ID 保留旧值；提交空字符串表示清空 |
-| `openai_api.api_keys[]` | 提交 GET 返回的掩码时按掩码唯一匹配旧值，支持重排和删除 |
-| `server.auth.password` / `server.auth.secret` | 提交 `"***"` 时保留旧值 |
-| `agents.items[].ssh.password` | 提交 `"***"` 时保留旧值 |
-| `channels.qq.app_secret` | 提交 `"***"` 时保留旧值 |
-| `channels.discord.token` | 提交掩码值（包含 `**`）时保留旧值 |
+## 工具与提示词目录
 
-保存后会：
+| 接口 | 响应 data |
+| --- | --- |
+| `GET /api/fkteams/config/tools` | 可配置工具组名数组，如 `["file", "command", "search"]` |
+| `GET /api/fkteams/config/tool-catalog` | 工具组目录，包含 name、display_name、description、category、builtin、included_tools |
+| `GET /api/fkteams/config/template-vars` | `{name, description, example}` 数组，包含 os_type、os_arch、workspace_dir |
 
-- 保存配置文件。
-- 重载智能体注册表。
-- 清除 Runner 缓存。
-- 清除 MCP 工具缓存。
-- 重置消息通道 bridge。
-- 替换事先成功构建的长期记忆 LLM 客户端；构建失败时不保存新配置。
+## 模型提供者
 
-监听地址、后台服务启停及消息通道连接配置仍需重启应用。
+`GET /api/fkteams/providers` 返回提供者信息数组，包括标识、展示名称、默认地址等。
 
-**成功响应**：
+`POST /api/fkteams/providers/models` 查询上游可用模型：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "auth_changed": false
-  }
-}
+{"provider":"openai","base_url":"https://api.openai.com/v1","model_id":"main","api_key":""}
 ```
 
-**失败响应**：
+| 字段 | 说明 |
+| --- | --- |
+| `provider` | 必填提供者类型 |
+| `base_url` | 可选服务地址 |
+| `api_key` | 可选；留空时按 model_id / original_id 复用保存的密钥 |
+| `model_id` / `original_id` | 稳定模型身份，不按 URL 匹配旧密钥 |
+| `extra_headers` | 额外请求头，`"***"` 按模型身份恢复旧值 |
 
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `invalid config: ...` | 请求体不是合法配置 |
-| 400 | `duplicate model id: <id>` | 模型 ID 重复 |
-| 400 | `model use_for "<use>" is configured by both <id> and <id>` | 模型用途重复 |
-| 400 | `model original_id is duplicated: <id>` | 多个模型尝试继承同一个旧模型身份 |
-| 400 | `server.auth.<field> is required when authentication is enabled` | 启用认证时用户名、密码或 Secret 缺失 |
-| 400 | `invalid server.trusted_proxies entry <value>` | 可信代理不是有效 IP 或 CIDR |
-| 500 | `failed to save config: ...` | 保存失败 |
-
----
-
-## GET /api/fkteams/config/tools
-
-返回所有可配置的工具名称。
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": ["file", "command", "search"]
-}
-```
-
----
-
-## GET /api/fkteams/config/template-vars
-
-返回系统提示词模板可用变量。
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": [
-    {
-      "name": "os_type",
-      "description": "操作系统类型",
-      "example": "darwin"
-    },
-    {
-      "name": "os_arch",
-      "description": "系统架构",
-      "example": "arm64"
-    },
-    {
-      "name": "workspace_dir",
-      "description": "工作目录路径",
-      "example": "/path/to/workspace"
-    }
-  ]
-}
-```
-
----
-
-## GET /api/fkteams/providers
-
-返回已注册的模型提供者信息。
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": []
-}
-```
-
-具体字段由 `providers.ListProviders()` 返回，通常包含提供者标识、显示名称、默认 Base URL 等信息。
-
----
-
-## POST /api/fkteams/providers/models
-
-查询指定提供者可用模型列表。
-
-**请求 Body**：
-
-```json
-{
-  "provider": "openai",
-  "base_url": "https://api.openai.com/v1",
-  "api_key": "sk-..."
-}
-```
-
-| 字段 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `provider` | string | 是 | 提供者类型 |
-| `base_url` | string | 否 | 提供者 Base URL |
-| `api_key` | string | 否 | API Key；为空且 `base_url` 匹配已有模型配置时会复用已保存密钥 |
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": ["gpt-5", "gpt-5-mini"]
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `参数错误: ...` | 请求体解析失败 |
-| 400 | `provider 不能为空` | 缺少提供者 |
-| 400 | 上游错误详情 | 模型列表查询失败 |
+成功返回 `[{"id":"model-name"}]` 形式的模型数组。参数或上游查询失败返回 400，未装配模型提供者注册表返回 503。

@@ -1,176 +1,63 @@
 # 定时任务 API
 
-定时任务接口用于查看调度器中的任务、取消待执行任务，以及读取任务的最新结果和历史结果。
+基础路径 `/api/fkteams/schedules`，认证与响应包装见 [API 总览](README.md)。调度器未启用时普通操作返回 503，通知查询返回空任务列表。
 
-基础路径：`/api/fkteams/schedules`
+## 创建与修改
+
+`POST /api/fkteams/schedules` 创建，`PUT /api/fkteams/schedules/:id` 修改；均返回 `{task: {...}}`。请求填写 `task`，并在 `execute_at` 和 `cron_expr` 中选择一种安排：
+
+```json
+{"task":"检查发布状态并整理报告","execute_at":"2026-12-01T09:00:00+08:00"}
+```
+
+```json
+{"task":"整理工作日简报","cron_expr":"CRON_TZ=Asia/Shanghai 0 9 * * 1-5"}
+```
+
+一次执行使用带时区的 ISO 8601 时间；周期任务使用五段 cron，可加 `CRON_TZ` 前缀。更新需提交完整任务与时间安排；执行中的任务不能修改，冲突返回 409。无效安排返回 400，不存在返回 404。
 
 ## GET /api/fkteams/schedules
 
-获取定时任务列表。
+可用 `?status=pending` 筛选，返回 `{tasks: [...], total: N}`。
 
-**Query 参数**：
+| 任务字段 | 说明 |
+| --- | --- |
+| `id` / `task` | 任务标识与执行内容 |
+| `cron_expr` / `one_time` | 周期表达式与是否一次执行 |
+| `next_run_at` | 下一次运行时间 |
+| `status` | pending、running、completed、failed 或 cancelled |
+| `created_at` / `last_run_at` | 创建与上次运行时间，后者可省略 |
+| `notification_pending` | 是否有未确认结果 |
+| `last_run_status` | 最近一次执行状态；周期任务的整体 status 可能已恢复 pending |
+| `interrupted` | 上次执行被应用退出或崩溃中断，需先核对实际效果 |
 
-| 参数 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `status` | string | 否 | 按状态过滤，如 `pending`、`running`、`completed`、`failed`、`cancelled` |
+## 取消与删除
 
-**成功响应**：
+| 接口 | 行为与成功响应 |
+| --- | --- |
+| `POST /api/fkteams/schedules/:id/cancel` | 取消安排，返回 `{message: "task cancelled"}` |
+| `DELETE /api/fkteams/schedules/:id` | 删除任务，返回 `{message: "task deleted"}` |
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "tasks": [
-      {
-        "id": "task_001",
-        "task": "每天早上 8 点发送天气报告",
-        "cron_expr": "0 8 * * *",
-        "one_time": false,
-        "next_run_at": "2026-06-11T08:00:00+08:00",
-        "status": "pending",
-        "created_at": "2026-06-10T12:00:00+08:00",
-        "last_run_at": null
-      }
-    ],
-    "total": 1
-  }
-}
-```
+当前状态不允许操作时返回冲突。运行中断不会自动重跑可能已经产生副作用的工作。
 
-`tasks` 元素对应调度任务领域模型：
+## 结果与历史
 
-| 字段 | 说明 |
-| ---- | ---- |
-| `id` | 任务 ID |
-| `task` | 要执行的任务描述 |
-| `cron_expr` | cron 表达式，重复任务才有 |
-| `one_time` | 是否一次性任务 |
-| `next_run_at` | 下次运行时间 |
-| `status` | 任务状态 |
-| `created_at` | 创建时间 |
-| `last_run_at` | 上次运行时间，可能为空 |
+| 接口 | 响应的 data |
+| --- | --- |
+| `GET /api/fkteams/schedules/:id/result` | `{task_id, result}`，result 为最新 Markdown 报告 |
+| `GET /api/fkteams/schedules/:id/history` | `{task_id, history: [{filename, time}], total}` |
+| `GET /api/fkteams/schedules/:id/history/:filename` | `{task_id, filename, content}` |
 
-**失败响应**：
+无历史时返回空列表。指定历史只能读取安全的 `.md` 文件名，不接受目录路径；结果不存在返回 404。
 
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 503 | `scheduler not initialized` | 调度器未初始化 |
-| 500 | 错误详情 | 获取任务失败 |
+## 后台结果通知
 
-## POST /api/fkteams/schedules/:id/cancel
+`GET /api/fkteams/schedules/notifications` 返回 `{tasks: [...]}`，最多 20 条待通知任务。周期任务的未读通知合并为最新一次，完整报告仍在历史中。
 
-取消指定任务。是否允许取消由调度器当前状态决定。
-
-**成功响应**：
+`POST /api/fkteams/schedules/:id/acknowledge` 确认对应运行的通知：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "message": "task cancelled"
-  }
-}
+{"run_at":"2026-11-13T10:00:00Z"}
 ```
 
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `task ID is required` | 缺少任务 ID |
-| 400 | 调度器返回的错误 | 任务不存在或当前状态不允许取消 |
-| 503 | `scheduler not initialized` | 调度器未初始化 |
-| 500 | 错误详情 | 取消失败 |
-
-## GET /api/fkteams/schedules/:id/result
-
-读取任务最新执行结果。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "task_id": "task_001",
-    "result": "# 执行结果\n..."
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `task ID is required` | 缺少任务 ID |
-| 503 | `scheduler not initialized` | 调度器未初始化 |
-| 404 | 错误详情 | 结果不存在或无法读取 |
-
-## GET /api/fkteams/schedules/:id/history
-
-列出任务历史结果文件。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "task_id": "task_001",
-    "history": [
-      {
-        "filename": "20260610_150405.md",
-        "time": "2026-06-10 15:04:05"
-      }
-    ],
-    "total": 1
-  }
-}
-```
-
-无历史结果时 `history` 返回空数组。
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `task ID is required` | 缺少任务 ID |
-| 503 | `scheduler not initialized` | 调度器未初始化 |
-| 500 | 错误详情 | 读取历史列表失败 |
-
-## GET /api/fkteams/schedules/:id/history/:filename
-
-读取指定历史结果文件内容。`filename` 只支持 `.md` 文件名，后端会使用文件名基名防止路径穿越。
-
-**成功响应**：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "task_id": "task_001",
-    "filename": "20260610_150405.md",
-    "content": "# 历史结果\n..."
-  }
-}
-```
-
-**失败响应**：
-
-| 状态码 | message | 说明 |
-| ------ | ------- | ---- |
-| 400 | `task ID and filename are required` | 缺少任务 ID 或文件名 |
-| 503 | `scheduler not initialized` | 调度器未初始化 |
-| 404 | 错误详情 | 历史文件不存在、类型非法或无法读取 |
-
-## GET /api/fkteams/schedules/notifications
-
-返回 `{tasks: [...]}`，最多 20 条 `notification_pending=true` 的任务。`last_run_at` 标识待确认的运行，`last_run_status` 表示这次执行结果；周期任务的 `status` 可以已经回到 `pending`。`interrupted=true` 表示需要核对实际效果后再安排，不能直接自动重跑。调度服务未启用时返回空数组。
-
-## POST /api/fkteams/schedules/:id/acknowledge
-
-请求体为 `{"run_at":"2026-11-12T10:00:00Z"}`，必须使用通知中的原始 `last_run_at`。成功返回 `{acknowledged:true}`；重复确认同一次运行幂等。若已有更新结果则返回 409，不清除新通知；存储失败返回错误，保留待通知状态。确认不会执行任务或改变其运行状态。
+必须原样使用通知的 `last_run_at`。成功返回 `{acknowledged: true}`，同一次确认可重试；已有更新结果返回 409，保留新通知。确认只清除通知，不执行任务。用户端行为见[个人助手](../personal-assistant.md#后台安排与结果)。

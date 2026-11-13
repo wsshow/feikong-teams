@@ -13,7 +13,7 @@ fkteams 支持多模态输入，允许用户在对话中发送文本、图片、
 | `video_url`    | 视频 URL                                          | `url`                      |
 | `file_url`     | 文件 URL                                          | `url`                      |
 
-## WebSocket 消息格式
+## 消息格式
 
 通过 WebSocket 发送多模态消息时，使用 `contents` 字段：
 
@@ -28,22 +28,7 @@ fkteams 支持多模态输入，允许用户在对话中发送文本、图片、
 }
 ```
 
-也可以使用 Base64 编码的图片：
-
-```json
-{
-  "type": "chat",
-  "session_id": "default",
-  "contents": [
-    {"type": "text", "text": "描述这张图片"},
-    {"type": "image_base64", "base64_data": "...", "mime_type": "image/png"}
-  ]
-}
-```
-
-## HTTP API
-
-HTTP POST `/api/fkteams/chat` 同样支持 `contents` 字段，格式与 WebSocket 一致。
+HTTP 聊天、流式任务和 WebSocket 均使用同一 `contents` 结构。Base64 图片与供应商托管 `file_id` 的字段见[聊天 API](api/chat.md#多模态输入)。
 
 ## 视觉输入配置
 
@@ -58,4 +43,4 @@ HTTP POST `/api/fkteams/chat` 同样支持 `contents` 字段，格式与 WebSock
 - `session_attachment_list`：列出当前会话历史中的附件。
 - `session_attachment_read`：按附件 ID 读取附件元数据、URL 或小体积 data URL。
 
-> **注意**：多模态功能的实际效果取决于所使用的模型是否支持对应的输入类型（如视觉理解需要 GPT-4o、Claude 等多模态模型）。
+音频、视频、文件等输入同样取决于上游模型与适配器支持，不能仅凭配置开启。
