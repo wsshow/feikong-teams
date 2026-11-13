@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/execution"
 	domainevent "fkteams/internal/domain/event"
 	"fmt"
@@ -250,48 +251,14 @@ func TestConvertEventToMapUsesPositionToolRefsWhenToolCallIndexMissing(t *testin
 	requireMapValue(t, toolCalls[1], "ref", "tool_call:tool-call-2")
 }
 
-func TestAskInterruptIDPrefersRootCause(t *testing.T) {
-	got := askInterruptID([]runtimeport.Interrupt{
-		{ID: "wrapper"},
-		{ID: "root", IsRootCause: true, Info: &ask.AskInfo{Question: "choose"}},
-	})
-	if got != "root" {
-		t.Fatalf("askInterruptID = %q, want root", got)
-	}
-}
-
-func TestExtractAskInterruptUsesAskRootCauseMetadata(t *testing.T) {
-	order := 2
-	got := extractAskInterrupt([]runtimeport.Interrupt{
-		{ID: "wrapper", IsRootCause: true, Info: "approval"},
-		{
-			ID:             "ask-root",
-			IsRootCause:    true,
-			Info:           &ask.AskInfo{Question: "choose"},
-			MemberCallID:   "member-call",
-			MemberToolName: "ask_fkagent_member",
-			MemberName:     "Member",
-			MemberOrder:    &order,
-		},
-	})
-	if got == nil {
-		t.Fatal("expected ask interrupt")
-	}
-	if got.ID != "ask-root" || got.Info.Question != "choose" {
-		t.Fatalf("unexpected ask interrupt: %#v", got)
-	}
-	if got.Event.MemberCallID != "member-call" || got.Event.MemberOrder == nil || *got.Event.MemberOrder != order {
-		t.Fatalf("member metadata was not preserved: %#v", got.Event)
-	}
-}
-
 func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 	stream := taskstream.NewManager().Register(taskstream.StreamConfig{
 		SessionID: "session-member-ask-order",
 		Cancel:    func() {},
 	})
 	recorder := eventlog.NewHistoryRecorder()
-	handler := buildMemberAskRuntimeHandler(stream, recorder, "session-member-ask-order")
+	recorder.SetSessionDir(t.TempDir())
+	handler := buildMemberAskRuntimeHandler(stream)
 	memberOrder := 1
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -299,27 +266,35 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 	respCh := make(chan *ask.AskResponse, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		resp, err := handler(ctx, ask.RuntimeRequest{
-			ID:         "ask-order-1",
-			ToolCallID: "ask-tool-call-1",
-			ToolName:   "ask_questions",
-			Info: &ask.AskInfo{
-				Question:    "Choose one?",
-				Options:     []string{"A", "B"},
-				MultiSelect: true,
+		var response *ask.AskResponse
+		_, err := appchat.NewService().RunTurn(ctx, appchat.TurnRequest{
+			SessionID: "session-member-ask-order", History: recorder,
+			AskHandler: func(ctx context.Context, req ask.RuntimeRequest) (*ask.AskResponse, error) {
+				resp, err := handler(ctx, req)
+				response = resp
+				return resp, err
 			},
-			Metadata: runtimeport.InterruptMetadata{
-				MemberCallID:   "member-call-1",
-				MemberToolName: "ask_fkagent_member",
-				MemberName:     "Member",
-				MemberOrder:    &memberOrder,
+			EventSink: func(e events.Event) error {
+				if err := prepareStreamInteraction(stream, e); err != nil {
+					return err
+				}
+				stream.PublishRuntime(e, standardEventPayload("session-member-ask-order", e, nil))
+				return nil
 			},
+			Runner: chatRunnerFunc(func(ctx context.Context, _ message.TurnInput, _ runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+				ctx = runtimeport.WithInterruptMetadata(ctx, runtimeport.InterruptMetadata{
+					MemberCallID: "member-call-1", MemberToolName: "ask_fkagent_member", MemberName: "Member", MemberOrder: &memberOrder,
+				})
+				ctx = runtimeport.WithToolRuntimeMetadata(ctx, runtimeport.ToolRuntimeMetadata{CallID: "ask-tool-call-1", Name: "ask_questions"})
+				_, err := ask.AskQuestions(ctx, &ask.AskRequest{Question: "Choose one?", Options: []string{"A", "B"}, MultiSelect: true})
+				return &runtimeport.RunResult{}, err
+			}),
 		})
 		if err != nil {
 			errCh <- err
 			return
 		}
-		respCh <- resp
+		respCh <- response
 	}()
 
 	var askPayload map[string]any
@@ -344,8 +319,8 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 
 	requireMapValue(t, askPayload, "type", events.EventAskRequested)
 	requireMapValue(t, askPayload, "session_id", "session-member-ask-order")
-	requireMapValue(t, askPayload, "ask_id", "ask-order-1")
-	requireMapValue(t, askPayload, "detail", "ask-order-1")
+	askID := askPayload["ask_id"].(string)
+	requireMapValue(t, askPayload, "detail", askID)
 	requireMapValue(t, askPayload, "question", "Choose one?")
 	requireMapValue(t, askPayload, "multi_select", true)
 	requireMapValue(t, askPayload, "tool_call_id", "ask-tool-call-1")
@@ -366,8 +341,8 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 		t.Fatalf("ask notification created_at = %#v, want non-zero time", askPayload["created_at"])
 	}
 
-	if err := stream.SubmitAskResponse("ask-order-1", &ask.AskResponse{
-		AskID:    "ask-order-1",
+	if err := stream.SubmitAskResponse(askID, &ask.AskResponse{
+		AskID:    askID,
 		Selected: []string{"A"},
 	}); err != nil {
 		t.Fatalf("submit ask response: %v", err)
@@ -377,7 +352,7 @@ func TestMemberAskRuntimeHandlerPublishesOrderedAskNotification(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("handler returned error after response: %v", err)
 	case resp := <-respCh:
-		if resp.AskID != "ask-order-1" || len(resp.Selected) != 1 || resp.Selected[0] != "A" {
+		if resp.AskID != askID || len(resp.Selected) != 1 || resp.Selected[0] != "A" {
 			t.Fatalf("unexpected ask response: %#v", resp)
 		}
 	case <-time.After(time.Second):
@@ -484,5 +459,36 @@ func TestFrontendEventContractFixture(t *testing.T) {
 	}
 	if !bytes.Equal(expected, data) {
 		t.Fatal("event contract changed; review and regenerate with FKTEAMS_UPDATE_PROTOCOL_FIXTURE=1 go test ./internal/adapters/transport/http/handler -run TestFrontendEventContractFixture")
+	}
+}
+
+func TestAskAnswerCanArriveBeforeHTTPWaiterStarts(t *testing.T) {
+	stream := taskstream.NewManager().Register(taskstream.StreamConfig{SessionID: "early-answer"})
+	defer stream.Done()
+	_, err := appchat.NewService().RunTurn(context.Background(), appchat.TurnRequest{
+		SessionID:        "early-answer",
+		InterruptHandler: buildStreamInterruptHandler(stream),
+		EventSink: func(e events.Event) error {
+			if err := prepareStreamInteraction(stream, e); err != nil {
+				return err
+			}
+			if e.Type == events.EventAskRequested {
+				return stream.SubmitAskResponse(e.Ask.ID, &ask.AskResponse{FreeText: "early"})
+			}
+			return nil
+		},
+		Runner: chatRunnerFunc(func(ctx context.Context, _ message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+			decisions, err := opts.InterruptHandler(ctx, []runtimeport.Interrupt{{ID: "ask", IsRootCause: true, Info: &ask.AskInfo{Question: "choose?"}}})
+			if err == nil && decisions["ask"].(*ask.AskResponse).FreeText != "early" {
+				t.Fatalf("lost early answer: %+v", decisions)
+			}
+			return &runtimeport.RunResult{}, err
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.SubmitAskResponse("ask", &ask.AskResponse{}); err == nil {
+		t.Fatal("accepted answer after question completed")
 	}
 }

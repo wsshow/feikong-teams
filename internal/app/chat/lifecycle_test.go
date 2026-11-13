@@ -64,6 +64,8 @@ type failingHistory struct {
 	cancellations int
 }
 
+func (h *failingHistory) ReplayEvents() ([]event.Event, error) { return nil, nil }
+
 func (h *failingHistory) FinalizeCurrent()          { h.finalized = true; h.finalizations++ }
 func (h *failingHistory) RecordEvent(e event.Event) { h.events = append(h.events, e) }
 func (h *failingHistory) RecordCancelled(string)    { h.cancellations++ }

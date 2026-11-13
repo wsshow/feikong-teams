@@ -69,18 +69,14 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 			return approval.WithRegistry(ctx, req.ApprovalRegistry)
 		})
 	}
-	if req.AskHandler != nil {
-		contextHooks = append(contextHooks, func(ctx context.Context) context.Context {
-			return ask.WithRuntimeHandler(ctx, req.AskHandler)
-		})
-	}
-
 	if req.RunID == "" {
 		req.RunID = req.SessionID + ":" + session.NewID()
 	}
 	sink, finish := req.EventSink, req.OnFinish
+	interactions := newInteractionRecorder(req.RunID)
 	var reportedErrors events.ErrorTracker
 	req.EventSink = func(event events.Event) error {
+		interactions.observe(event)
 		reportedErrors.Record(event)
 		if req.History != nil {
 			return req.History.RecordAndEmit(event, sink)
@@ -89,6 +85,13 @@ func (s *Service) RunTurn(ctx context.Context, req TurnRequest) (*runtimeport.Ru
 			return sink(event)
 		}
 		return nil
+	}
+	req.InterruptHandler = interactions.interruptHandler(req.InterruptHandler)
+	if req.AskHandler != nil {
+		handler := interactions.askHandler(req.AskHandler)
+		contextHooks = append(contextHooks, func(ctx context.Context) context.Context {
+			return ask.WithRuntimeHandler(ctx, handler)
+		})
 	}
 	req.OnFinish = func(ctx context.Context, result *runtimeport.RunResult, runErr error) error {
 		historyErr := runErr

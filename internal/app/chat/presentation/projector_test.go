@@ -133,3 +133,40 @@ func TestClosedRunDoesNotReactivateEarlierInteractions(t *testing.T) {
 		t.Fatalf("closed interactions=%#v", view)
 	}
 }
+
+func TestCompletedQuestionToolsRecoverReadOnlyHistoryWithoutDuplicateCards(t *testing.T) {
+	for _, structured := range []bool{false, true} {
+		p := New("session")
+		for i, id := range []string{"first", "second"} {
+			seq := int64(i*10 + 1)
+			p.Apply(event.Event{Type: event.TypeToolCallStarted, EventID: id + "-start", RunID: "run", MessageID: id, Sequence: seq, ToolCallID: id, ToolName: "ask_questions", ToolArgs: `{"question":"same question","options":["A","B"],"multi_select":true}`})
+			if structured {
+				p.Apply(event.Event{Type: event.TypeAskRequested, EventID: id + "-ask", RunID: "run", Sequence: seq + 1, ToolCallID: id, Ask: &event.AskPayload{ID: id + "-ask", Question: "same question", Options: []string{"A", "B"}, MultiSelect: true}})
+				p.Apply(event.Event{Type: event.TypeAskAnswered, EventID: id + "-answer", RunID: "run", Sequence: seq + 2, ToolCallID: id, Ask: &event.AskPayload{ID: id + "-ask", Selected: []string{"B"}, FreeText: "details"}})
+			}
+			p.Apply(event.Event{Type: event.TypeToolCallCompleted, EventID: id + "-end", RunID: "run", Sequence: seq + 3, ToolCallID: id, ToolName: "ask_questions", ToolResult: `{"selected":["B"],"free_text":"details"}`})
+		}
+		got := p.Snapshot().Items
+		if len(got) != 2 {
+			t.Fatalf("structured=%v items=%+v", structured, got)
+		}
+		for _, item := range got {
+			if item.Kind != "ask" || item.Ask.Active || !item.Ask.Answered || !item.Ask.MultiSelect || len(item.Ask.Selected) != 1 || item.Ask.Selected[0] != "B" || item.Ask.FreeText != "details" {
+				t.Fatalf("card=%+v", item)
+			}
+		}
+	}
+}
+
+func TestQuestionRecoveryDoesNotInventAnswersForFailedTools(t *testing.T) {
+	for _, result := range []string{`{}`, `{"error_message":"cancelled"}`, `invalid`} {
+		p := New("session")
+		p.Apply(event.Event{Type: event.TypeToolCallStarted, EventID: "start", Sequence: 1, ToolCallID: "ask", ToolName: "ask_questions", ToolArgs: `{"question":"choose?","options":["A","B"]}`})
+		p.Apply(event.Event{Type: event.TypeToolCallCompleted, EventID: "end", Sequence: 2, ToolCallID: "ask", ToolName: "ask_questions", ToolResult: result})
+		for _, item := range p.Snapshot().Items {
+			if item.Ask != nil && (item.Ask.Answered || item.Ask.Active) {
+				t.Fatalf("invented answer: %+v", item.Ask)
+			}
+		}
+	}
+}

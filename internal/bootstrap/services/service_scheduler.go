@@ -8,7 +8,10 @@ import (
 	"sync"
 
 	"fkteams/internal/adapters/scheduler/filecron"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	appagent "fkteams/internal/app/agent"
+	"fkteams/internal/app/appdata"
+	appchat "fkteams/internal/app/chat"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/execution"
 	appschedule "fkteams/internal/app/schedule"
@@ -73,6 +76,12 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 	executor.WithExecutionGate(s.executionGate).WithContextHook(func(ctx context.Context) context.Context {
 		return appschedule.WithService(dependencies.Context(ctx), appService)
 	})
+	histories := eventlog.NewSessionHistoryManager()
+	histories.Documents = s.Documents
+	executor.WithConversationHistory(func(sessionID string) (appchat.SessionHistory, func(), error) {
+		recorder, release := histories.Acquire(sessionID, appdata.SessionsDir())
+		return recorder, release, nil
+	}, eventlog.NewChatSessionStore(appdata.SessionsDir(), s.Documents))
 	sched.SetExecutor(executor)
 	sched.Start()
 	s.stopParent = context.AfterFunc(ctx, sched.BeginShutdown)

@@ -15,6 +15,9 @@ import (
 // RunnerCreator 为每次后台任务创建独立运行器。
 type RunnerCreator func(ctx context.Context) (runtimeport.Runner, error)
 
+// ConversationHistory 为调度运行提供与其他入口相同的会话历史及释放函数。
+type ConversationHistory func(sessionID string) (appchat.SessionHistory, func(), error)
+
 // BackgroundExecutor 将调度任务转换为一次后台聊天运行。
 type BackgroundExecutor struct {
 	executionGate *config.ExecutionGate
@@ -22,6 +25,8 @@ type BackgroundExecutor struct {
 	store         schedulerport.ResultStore
 	chat          *appchat.Service
 	contextHook   func(context.Context) context.Context
+	history       ConversationHistory
+	metadata      appchat.MetadataStore
 }
 
 // NewBackgroundExecutor 创建后台任务执行器。
@@ -41,6 +46,12 @@ func (e *BackgroundExecutor) WithContextHook(hook func(context.Context) context.
 // WithExecutionGate 将任务纳入应用配置更新边界。
 func (e *BackgroundExecutor) WithExecutionGate(gate *config.ExecutionGate) *BackgroundExecutor {
 	e.executionGate = gate
+	return e
+}
+
+// WithConversationHistory 将调度执行纳入共享会话记录和元数据生命周期。
+func (e *BackgroundExecutor) WithConversationHistory(history ConversationHistory, metadata appchat.MetadataStore) *BackgroundExecutor {
+	e.history, e.metadata = history, metadata
 	return e
 }
 
@@ -73,6 +84,21 @@ func (e *BackgroundExecutor) Execute(ctx context.Context, taskID string, task st
 		Runner:    r,
 		Input:     input,
 		EventSink: callback,
+	}
+	if e.history != nil {
+		history, release, historyErr := e.history(first.SessionID)
+		if historyErr != nil {
+			return "", historyErr
+		}
+		defer release()
+		first.History = history
+		lifecycle := appchat.NewSessionLifecycle(e.metadata)
+		if err := lifecycle.MarkProcessing(ctx, first.SessionID, task); err != nil {
+			return "", err
+		}
+		first.OnFinish = func(ctx context.Context, _ *runtimeport.RunResult, runErr error) error {
+			return lifecycle.Finish(ctx, appchat.FinishRequest{SessionID: first.SessionID, TitleSource: task, Error: runErr})
+		}
 	}
 	err = e.chat.RunQueued(ctx, appchat.QueueRequest{
 		First: first,

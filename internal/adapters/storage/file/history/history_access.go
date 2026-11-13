@@ -1,13 +1,40 @@
 package eventlog
 
 import (
+	"errors"
 	"fkteams/internal/runtime/events"
 	"fmt"
+	"os"
 
 	"strings"
 
 	"time"
 )
+
+// ReplayEvents 读取已提交的主干与成员事实，供各入口恢复相同的展示状态。
+func (h *HistoryRecorder) ReplayEvents() ([]events.Event, error) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.sessionDir == "" {
+		return nil, nil
+	}
+	records, err := LoadSessionTranscriptRecords(h.sessionDir, h.Documents)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	result := make([]events.Event, 0, len(records))
+	for _, record := range records {
+		e, err := record.Event.RuntimeEvent()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, e)
+	}
+	return result, nil
+}
 
 const contextCompressNoticeContent = "对话上下文已压缩，旧消息已被总结摘要替代"
 

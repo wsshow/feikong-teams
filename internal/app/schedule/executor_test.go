@@ -81,3 +81,59 @@ func TestScheduledExecutionConsumesCompletionAndIncludesResponseInReport(t *test
 		t.Fatalf("report omitted completion: %q", output)
 	}
 }
+
+type conversationHistory struct {
+	facts     []events.Event
+	finalized bool
+}
+
+func (h *conversationHistory) RecordAndEmit(e events.Event, sink func(events.Event) error) error {
+	h.facts = append(h.facts, e)
+	if sink != nil {
+		return sink(e)
+	}
+	return nil
+}
+func (h *conversationHistory) ReplayEvents() ([]events.Event, error) {
+	return append([]events.Event(nil), h.facts...), nil
+}
+func (h *conversationHistory) FinalizeCurrent()       { h.finalized = true }
+func (h *conversationHistory) RecordCancelled(string) {}
+func (h *conversationHistory) Flush() error           { return nil }
+
+type conversationMetadata struct{ updates []appchat.MetadataUpdate }
+
+func (m *conversationMetadata) UpdateMetadata(_ context.Context, u appchat.MetadataUpdate) error {
+	m.updates = append(m.updates, u)
+	return nil
+}
+
+func TestScheduledExecutionUsesSharedConversationHistoryAndWebPresentation(t *testing.T) {
+	queues := appchat.NewQueueService(taskstream.NewManager(), &notificationStore{receipts: make(map[string]bool)}, nil)
+	history := &conversationHistory{}
+	metadata := &conversationMetadata{}
+	released := 0
+	runner := notificationRunner(func(_ context.Context, _ message.TurnInput, opts runtimeport.RunOptions) (*runtimeport.RunResult, error) {
+		emitter := events.NewEmitter(opts.RunID, events.TurnID(opts.RunID, 1), opts.Sink)
+		return &runtimeport.RunResult{}, emitter.Emit(events.AssistantCompleted(events.MessageEvent{MessageID: opts.RunID + ":answer", Role: message.RoleAssistant, Content: "scheduled answer"}))
+	})
+	executor, err := NewBackgroundExecutor(func(context.Context) (runtimeport.Runner, error) { return runner, nil }, &resultStore{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor.WithConversationHistory(func(id string) (appchat.SessionHistory, func(), error) {
+		if id != "fkteams_scheduler_job" {
+			t.Fatalf("session=%s", id)
+		}
+		return history, func() { released++ }, nil
+	}, metadata)
+	for range 2 {
+		if _, err := executor.Execute(appchat.WithQueues(context.Background(), queues), "job", "run task"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, _ := queues.Streams().Get("fkteams_scheduler_job").PresentationSnapshot()
+	if len(view.Items) != 2 || view.Items[0].Node.Message.Content != "scheduled answer" || !history.finalized || released != 2 || len(metadata.updates) != 4 {
+		t.Fatalf("view=%+v released=%d history=%+v metadata=%+v", view, released, history, metadata)
+	}
+}

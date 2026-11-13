@@ -2,11 +2,15 @@ package channel
 
 import (
 	"context"
+	eventlog "fkteams/internal/adapters/storage/file/history"
 	filequeue "fkteams/internal/adapters/storage/file/queue"
 	appchat "fkteams/internal/app/chat"
+	"fkteams/internal/app/chat/presentation"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/execution"
 	domainprocess "fkteams/internal/domain/process"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -58,6 +62,22 @@ func TestBridgeConsumesCompletionThroughApplicationQueue(t *testing.T) {
 		return &runtimeport.RunResult{}, emitter.Emit(events.AssistantCompleted(meta))
 	})
 	bridge.processBatch(context.Background(), "session", []queuedMessage{{channelName: ch.name, chatID: "chat", userInput: "start"}})
+	stream := queues.Streams().Get("session")
+	live, _ := stream.PresentationSnapshot()
+	facts, err := bridge.sessions.Get("session").ReplayEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay := presentation.New("session")
+	for _, fact := range facts {
+		replay.Apply(fact)
+	}
+	if len(live.Items) != 2 || !reflect.DeepEqual(live, replay.Snapshot()) || stream.ClientStatus() != "completed" {
+		t.Fatalf("channel web stream differs from transcript: live=%+v replay=%+v status=%s", live, replay.Snapshot(), stream.ClientStatus())
+	}
+	if _, err := eventlog.LoadMetadata(filepath.Join(dir, "session")); err != nil {
+		t.Fatal(err)
+	}
 	if len(inputs) != 2 || !strings.Contains(inputs[1].Message.Content, "channel result") {
 		t.Fatalf("channel completion: %+v", inputs)
 	}

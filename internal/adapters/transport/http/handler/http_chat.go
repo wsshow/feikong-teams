@@ -151,7 +151,6 @@ func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtime
 			ApprovalRegistry: configuredApprovalRegistry(),
 			EventSink: func(event events.Event) error {
 				collectedEvents = append(collectedEvents, event)
-				stream.PublishRuntime(event, standardEventPayload(sessionID, event, rt.ToolDisplays))
 				return nil
 			},
 			OnFinish: func(ctx context.Context, _ *runtimeport.RunResult, err error) error {
@@ -167,32 +166,16 @@ func (rt *Runtime) handleSyncChat(c *gin.Context, ctx context.Context, r runtime
 			return request(buildQueuedChatInput(recorder, queued, manager), runID), nil
 		},
 	})
-	stream.SetStatus(string(appchat.CompletionStatus(runErr)))
-	records, projectionErr := eventlog.LoadSessionTranscriptRecords(rt.sessionDirPath(sessionID), rt.Documents)
-	if projectionErr != nil && !errors.Is(projectionErr, os.ErrNotExist) {
-		publishStreamFailure(stream, sessionID, "failed to read committed conversation")
-		Fail(c, http.StatusInternalServerError, "failed to read committed conversation")
-		return
-	}
-	projector, projectionErr := rt.transcriptPresentation(sessionID, records)
-	if projectionErr != nil {
-		publishStreamFailure(stream, sessionID, "failed to project committed conversation")
-		Fail(c, http.StatusInternalServerError, "failed to project committed conversation")
-		return
-	}
-	terminal := processingEndEventPayload(sessionID, "", "处理完成")
-	terminal["status"] = string(appchat.CompletionStatus(runErr))
-	stream.PublishPresentation(projector, terminal)
-
 	if runErr != nil {
 		Fail(c, http.StatusInternalServerError, runErr.Error())
 		return
 	}
 
+	view, _ := stream.PresentationSnapshot()
 	OK(c, gin.H{
 		"session_id": sessionID,
 		"content":    appchat.AssistantText(collectedEvents),
-		"view":       projector.Snapshot(),
+		"view":       view,
 		"events":     collectedEvents,
 	})
 }

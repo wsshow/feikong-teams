@@ -10,14 +10,12 @@ import (
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/config"
 	"fkteams/internal/app/tools/ask"
-	domainevent "fkteams/internal/domain/event"
 	domainmessage "fkteams/internal/domain/message"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/approval"
 	"fkteams/internal/runtime/events"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -199,40 +197,6 @@ func buildSteeringSource(stream *taskstream.Stream, sessionID string, currentRun
 	}
 }
 
-func extractInterruptMessage(interrupts []runtimeport.Interrupt) string {
-	var infos []string
-	for _, ic := range interrupts {
-		if ic.IsRootCause && ic.Info != nil {
-			if s, ok := ic.Info.(fmt.Stringer); ok {
-				infos = append(infos, s.String())
-			} else {
-				infos = append(infos, fmt.Sprintf("%v", ic.Info))
-			}
-		}
-	}
-	if len(infos) > 0 {
-		return strings.Join(infos, "\n")
-	}
-	return "需要审批"
-}
-
-func approvalDecisionText(result map[string]any) string {
-	for _, v := range result {
-		switch v {
-		case 0:
-			return "已拒绝"
-		case 1:
-			return "已允许（一次）"
-		case 2:
-			return "已允许（该项）"
-		case 3:
-			return "已全部允许"
-		}
-		break
-	}
-	return ""
-}
-
 func configuredApprovalRegistry() *approval.Registry {
 	cfg := config.Get()
 	if cfg == nil {
@@ -241,224 +205,40 @@ func configuredApprovalRegistry() *approval.Registry {
 	return approval.NewDefaultSelectiveRegistry(cfg.Tools.Approval.AutoApprove)
 }
 
-// askResponseText 从中断结果中提取 ask_answered 的可读文本
-func askResponseText(result map[string]any) string {
-	for _, v := range result {
-		if resp, ok := v.(*ask.AskResponse); ok {
-			var parts []string
-			if len(resp.Selected) > 0 {
-				parts = append(parts, strings.Join(resp.Selected, ", "))
-			}
-			if resp.FreeText != "" {
-				parts = append(parts, resp.FreeText)
-			}
-			if len(parts) > 0 {
-				return strings.Join(parts, " | ")
-			}
-			return "已回答"
-		}
-	}
-	return fmt.Sprintf("%v", result)
-}
-
-// extractAskInfo 从中断上下文中提取 ask_questions 信息
-func extractAskInfo(interrupts []runtimeport.Interrupt) *ask.AskInfo {
-	if interrupt := extractAskInterrupt(interrupts); interrupt != nil {
-		return interrupt.Info
-	}
-	return nil
-}
-
-type askInterrupt struct {
-	ID    string
-	Info  *ask.AskInfo
-	Event events.Event
-}
-
-func extractAskInterrupt(interrupts []runtimeport.Interrupt) *askInterrupt {
-	for _, ic := range interrupts {
-		if !ic.IsRootCause {
-			continue
-		}
-		info, ok := ic.Info.(*ask.AskInfo)
-		if !ok {
-			continue
-		}
-		return &askInterrupt{
-			ID:    ic.ID,
-			Info:  info,
-			Event: memberEventFromInterrupt(ic),
-		}
-	}
-	return nil
-}
-
-func askInterruptID(interrupts []runtimeport.Interrupt) string {
-	if interrupt := extractAskInterrupt(interrupts); interrupt != nil && interrupt.ID != "" {
-		return interrupt.ID
-	}
-	for _, ic := range interrupts {
-		if ic.ID != "" {
-			return ic.ID
-		}
-	}
-	return ""
-}
-
-func interruptMemberEvent(interrupts []runtimeport.Interrupt) events.Event {
-	for _, ic := range interrupts {
-		if ic.MemberCallID == "" {
-			continue
-		}
-		return memberEventFromInterrupt(ic)
-	}
-	return events.Event{}
-}
-
-func memberEventFromInterrupt(ic runtimeport.Interrupt) events.Event {
-	if ic.MemberCallID == "" {
-		return events.Event{}
-	}
-	return events.Event{
-		MemberCallID:     ic.MemberCallID,
-		MemberToolName:   ic.MemberToolName,
-		MemberName:       ic.MemberName,
-		MemberOrder:      ic.MemberOrder,
-		ParentToolCallID: ic.MemberCallID,
-		ParentToolName:   ic.MemberToolName,
-	}
-}
-
-func memberEventFromMetadata(metadata runtimeport.InterruptMetadata) events.Event {
-	if metadata.MemberCallID == "" {
-		return events.Event{}
-	}
-	return events.Event{
-		MemberCallID:     metadata.MemberCallID,
-		MemberToolName:   metadata.MemberToolName,
-		MemberName:       metadata.MemberName,
-		MemberOrder:      metadata.MemberOrder,
-		ParentToolCallID: metadata.MemberCallID,
-		ParentToolName:   metadata.MemberToolName,
-	}
-}
-
-func buildMemberAskRuntimeHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) ask.RuntimeHandler {
+func buildMemberAskRuntimeHandler(stream *taskstream.Stream) ask.RuntimeHandler {
 	return func(ctx context.Context, req ask.RuntimeRequest) (*ask.AskResponse, error) {
-		responseCh, err := stream.BeginAsk(req.ID)
+		responseCh, err := stream.AskResponseChannel(req.ID)
 		if err != nil {
 			return nil, err
 		}
 		defer stream.CompleteAsk(req.ID)
-
-		memberEvent := memberEventFromMetadata(req.Metadata)
-		memberEvent.RunID, memberEvent.TurnID = stream.CurrentTurn()
-		askEvent := askRequestedEvent(memberEvent, req.ID, req.Info)
-		askEvent.ToolCallID = req.ToolCallID
-		if req.ToolCallID != "" {
-			askEvent.ToolCallRef = "tool_call:" + req.ToolCallID
-		}
-		askEvent.ToolName = req.ToolName
-		if err := recordStreamEvent(stream, recorder, sessionID, askEvent); err != nil {
-			return nil, err
-		}
-
-		var raw any
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case raw = <-responseCh:
+		case raw := <-responseCh:
+			resp, ok := raw.(*ask.AskResponse)
+			if !ok || resp == nil {
+				return nil, fmt.Errorf("invalid ask response")
+			}
+			if resp.AskID == "" {
+				resp.AskID = req.ID
+			}
+			return resp, nil
 		}
-		resp, ok := raw.(*ask.AskResponse)
-		if !ok || resp == nil {
-			return nil, fmt.Errorf("invalid ask response")
-		}
-		if resp.AskID == "" {
-			resp.AskID = req.ID
-		}
-
-		answerEvent := askAnsweredEvent(memberEvent, req.ID, resp, askResponseText(map[string]any{req.ID: resp}))
-		answerEvent.ToolCallID = req.ToolCallID
-		if req.ToolCallID != "" {
-			answerEvent.ToolCallRef = "tool_call:" + req.ToolCallID
-		}
-		answerEvent.ToolName = req.ToolName
-		if err := recordStreamEvent(stream, recorder, sessionID, answerEvent); err != nil {
-			return nil, err
-		}
-		return resp, nil
 	}
 }
 
-func askRequestedEvent(base events.Event, askID string, info *ask.AskInfo) events.Event {
-	event := base
-	event.Type = events.EventAskRequested
-	event.Detail = askID
-	if info == nil {
-		event.Ask = &domainevent.AskPayload{ID: askID}
-		return event
-	}
-	event.Content = info.Question
-	event.Ask = &domainevent.AskPayload{
-		ID:          askID,
-		Question:    info.Question,
-		Options:     append([]string(nil), info.Options...),
-		MultiSelect: info.MultiSelect,
-	}
-	return event
-}
-
-func askAnsweredEvent(base events.Event, askID string, resp *ask.AskResponse, content string) events.Event {
-	event := base
-	event.Type = events.EventAskAnswered
-	event.Content = content
-	event.Detail = askID
-	event.Ask = &domainevent.AskPayload{ID: askID}
-	if resp != nil {
-		event.Ask.Selected = append([]string(nil), resp.Selected...)
-		event.Ask.FreeText = resp.FreeText
-	}
-	return event
-}
-
-func askResponseFromResult(askID string, result runtimeport.InterruptDecisions) *ask.AskResponse {
-	if result == nil {
-		return nil
-	}
-	if askID != "" {
-		if resp, ok := result[askID].(*ask.AskResponse); ok {
-			return resp
+func prepareStreamInteraction(stream *taskstream.Stream, e events.Event) error {
+	switch e.Type {
+	case events.EventAskRequested:
+		if e.Ask != nil {
+			_, err := stream.BeginAsk(e.Ask.ID)
+			return err
 		}
-	}
-	for _, raw := range result {
-		if resp, ok := raw.(*ask.AskResponse); ok {
-			return resp
-		}
+	case events.EventApprovalRequested:
+		stream.BeginInterrupt(taskstream.InterruptApproval)
 	}
 	return nil
-}
-
-func attachMemberPayload(payload map[string]any, event events.Event) map[string]any {
-	if event.MemberCallID != "" {
-		payload["is_member_event"] = true
-		payload["member_call_id"] = event.MemberCallID
-	}
-	if event.MemberToolName != "" {
-		payload["member_tool_name"] = event.MemberToolName
-	}
-	if event.MemberName != "" {
-		payload["member_name"] = event.MemberName
-	}
-	if event.MemberOrder != nil {
-		payload["member_order"] = *event.MemberOrder
-	}
-	if event.ParentToolCallID != "" {
-		payload["parent_tool_call_id"] = event.ParentToolCallID
-	}
-	if event.ParentToolName != "" {
-		payload["parent_tool_name"] = event.ParentToolName
-	}
-	return payload
 }
 
 // --- 事件/内容转换 ---
@@ -468,200 +248,12 @@ func convertEventToMap(event events.Event) map[string]any {
 	return convertEventToMapWithResolver(event, nil)
 }
 
-type fallbackToolDisplayResolver struct{}
-
-func (fallbackToolDisplayResolver) FormatToolDisplay(name string) toolmeta.ToolDisplay {
-	return toolmeta.FallbackDisplay(name)
-}
-
 func (rt *Runtime) convertEventToMap(event events.Event) map[string]any {
 	return convertEventToMapWithResolver(event, rt.ToolDisplays)
 }
 
 func convertEventToMapWithResolver(event events.Event, resolver toolmeta.Resolver) map[string]any {
-	if resolver == nil {
-		resolver = fallbackToolDisplayResolver{}
-	}
-	result := map[string]any{
-		"type":       event.Type,
-		"agent_name": event.AgentName,
-	}
-	if event.Type == events.EventProcessingEnd {
-		result["status"] = "completed"
-	}
-	if event.RunID != "" {
-		result["run_id"] = event.RunID
-	}
-	if event.EventID != "" {
-		result["event_id"] = event.EventID
-	}
-	if event.Sequence != 0 {
-		result["sequence"] = event.Sequence
-	}
-	if !event.CreatedAt.IsZero() {
-		result["created_at"] = event.CreatedAt
-	}
-	if event.TurnID != "" {
-		result["turn_id"] = event.TurnID
-	}
-	if event.MessageID != "" {
-		result["message_id"] = event.MessageID
-	}
-	if event.BlockID != "" {
-		result["block_id"] = event.BlockID
-	}
-	if event.BlockType != "" {
-		result["block_type"] = event.BlockType
-	}
-	if event.Role != "" {
-		result["role"] = event.Role
-	}
-	if event.DeltaKind != "" {
-		result["delta_kind"] = event.DeltaKind
-	}
-	if event.MessageID != "" && event.DeltaKind != "" {
-		result["stream_id"] = fmt.Sprintf("%s:%s", event.MessageID, event.DeltaKind)
-		if event.Sequence != 0 {
-			result["chunk_index"] = event.Sequence
-		}
-	}
-	if event.RunPath != "" {
-		result["run_path"] = event.RunPath
-	}
-	if event.Content != "" {
-		result["content"] = event.Content
-	}
-	if event.Message != nil {
-		if parts := messageContentParts(*event.Message); len(parts) > 0 {
-			result["content_parts"] = parts
-		}
-	}
-	if event.ReasoningContent != "" {
-		result["reasoning_content"] = event.ReasoningContent
-	}
-	if toolCallsFromEvent := events.ToolCallsFromEvent(event); len(toolCallsFromEvent) > 0 {
-		toolCalls := make([]map[string]any, 0, len(toolCallsFromEvent))
-		for i, tc := range toolCallsFromEvent {
-			display := resolver.FormatToolDisplay(tc.Function.Name)
-			toolCall := map[string]any{
-				"name":         tc.Function.Name,
-				"display_name": display.DisplayName,
-				"kind":         display.Kind,
-			}
-			if tc.ID != "" {
-				toolCall["id"] = tc.ID
-			}
-			if ref := events.ToolCallRefAt(event, tc, i); ref != "" {
-				toolCall["ref"] = ref
-			}
-			if tc.Index != nil {
-				toolCall["index"] = *tc.Index
-			}
-			if display.Target != "" {
-				toolCall["target"] = display.Target
-			}
-			if tc.Function.Arguments != "" {
-				toolCall["arguments"] = tc.Function.Arguments
-			}
-			if len(tc.Extra) > 0 {
-				toolCall["extra"] = domainmessage.CloneMetadata(tc.Extra)
-			}
-			toolCalls = append(toolCalls, toolCall)
-		}
-		result["tool_calls"] = toolCalls
-		if len(toolCalls) == 1 {
-			result["tool_call"] = toolCalls[0]
-		}
-	}
-	if event.ToolCallID != "" {
-		result["tool_call_id"] = event.ToolCallID
-	}
-	if event.ToolCallRef != "" {
-		result["tool_call_ref"] = event.ToolCallRef
-	}
-	if event.ToolName != "" {
-		result["tool_name"] = event.ToolName
-		display := resolver.FormatToolDisplay(event.ToolName)
-		result["tool_display_name"] = display.DisplayName
-		result["tool_kind"] = display.Kind
-		if display.Target != "" {
-			result["tool_target"] = display.Target
-		}
-	}
-	if event.ToolCallIndex != nil {
-		result["tool_call_index"] = *event.ToolCallIndex
-	}
-	if event.ToolArgs != "" {
-		result["tool_args"] = event.ToolArgs
-	}
-	if event.ToolResult != "" {
-		result["tool_result"] = event.ToolResult
-	}
-	if events.IsMemberEvent(event) {
-		result["is_member_event"] = true
-	}
-	if event.MemberCallID != "" {
-		result["member_call_id"] = event.MemberCallID
-	}
-	if event.MemberToolName != "" {
-		result["member_tool_name"] = event.MemberToolName
-	}
-	if event.MemberName != "" {
-		result["member_name"] = event.MemberName
-	}
-	if event.MemberOrder != nil {
-		result["member_order"] = *event.MemberOrder
-	}
-	if event.ParentToolCallID != "" {
-		result["parent_tool_call_id"] = event.ParentToolCallID
-	}
-	if event.ParentToolName != "" {
-		result["parent_tool_name"] = event.ParentToolName
-	}
-	if event.Detail != "" {
-		result["detail"] = event.Detail
-	}
-	if event.Error != "" {
-		result["error"] = event.Error
-		attachFriendlyError(result, event.Error)
-	}
-	if event.PromptTokens > 0 {
-		result["prompt_tokens"] = event.PromptTokens
-	}
-	if event.CompletionTokens > 0 {
-		result["completion_tokens"] = event.CompletionTokens
-	}
-	if event.TotalTokens > 0 {
-		result["total_tokens"] = event.TotalTokens
-	}
-	if event.Ask != nil {
-		result["ask_id"] = event.Ask.ID
-		if event.Ask.Question != "" {
-			result["question"] = event.Ask.Question
-		}
-		if len(event.Ask.Options) > 0 {
-			result["options"] = append([]string(nil), event.Ask.Options...)
-		}
-		if event.Ask.MultiSelect {
-			result["multi_select"] = event.Ask.MultiSelect
-		}
-		if len(event.Ask.Selected) > 0 {
-			result["selected"] = append([]string(nil), event.Ask.Selected...)
-		}
-		if event.Ask.FreeText != "" {
-			result["free_text"] = event.Ask.FreeText
-		}
-	}
-	if event.Usage != nil {
-		result["usage"] = event.Usage
-	}
-	if event.Notice != nil {
-		result["notice"] = event.Notice
-	}
-	if event.Approval != nil {
-		result["approval"] = event.Approval
-	}
-	return result
+	return taskstream.RuntimeEventPayload(event, resolver)
 }
 
 func standardEventPayload(sessionID string, event events.Event, resolver toolmeta.Resolver) taskstream.Event {
@@ -779,11 +371,4 @@ func convertContentParts(parts []ContentPart) []domainmessage.ContentPart {
 		result = append(result, part)
 	}
 	return result
-}
-
-func recordStreamEvent(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string, event events.Event) error {
-	return recorder.RecordAndEmit(event, func(recorded events.Event) error {
-		stream.PublishRuntime(recorded, standardEventPayload(sessionID, recorded, nil))
-		return nil
-	})
 }

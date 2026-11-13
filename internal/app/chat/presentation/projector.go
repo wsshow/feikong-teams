@@ -1,6 +1,7 @@
 package presentation
 
 import (
+	"encoding/json"
 	"fkteams/internal/app/agent/catalog/toolmeta"
 	"fkteams/internal/domain/event"
 	"fkteams/internal/domain/message"
@@ -26,6 +27,7 @@ type Projector struct {
 	memberMessages map[string][]string
 	asks           map[string]*Ask
 	askOrders      map[string]int64
+	askTools       map[string]string
 	approvals      map[string]*Approval
 	seen           map[string]bool
 	changed        map[string]bool
@@ -36,7 +38,7 @@ type Projector struct {
 
 // New 创建一个会话级展示投影器。
 func New(sessionID string, displays ...toolmeta.Resolver) *Projector {
-	p := &Projector{items: map[string]*Item{}, messages: map[string]*messageState{}, tools: map[string]*Tool{}, members: map[string]*Member{}, memberMessages: map[string][]string{}, asks: map[string]*Ask{}, askOrders: map[string]int64{}, approvals: map[string]*Approval{}, seen: map[string]bool{}, sessionID: sessionID}
+	p := &Projector{items: map[string]*Item{}, messages: map[string]*messageState{}, tools: map[string]*Tool{}, members: map[string]*Member{}, memberMessages: map[string][]string{}, asks: map[string]*Ask{}, askOrders: map[string]int64{}, askTools: map[string]string{}, approvals: map[string]*Approval{}, seen: map[string]bool{}, sessionID: sessionID}
 	if len(displays) > 0 {
 		p.displays = displays[0]
 	}
@@ -229,9 +231,15 @@ func (p *Projector) Apply(e event.Event) Update {
 		s := p.ensureMessageForTool(e, tool)
 		p.ensureToolPart(s, tool)
 		p.touchMessage(tool.MessageID)
+		if e.Type == event.TypeToolCallCompleted && tool.Name == "ask_questions" && tool.Status == "completed" {
+			p.recoverQuestion(e, tool)
+		}
 	case event.TypeAskRequested, event.TypeAskAnswered:
 		if e.Ask == nil || e.Ask.ID == "" {
 			break
+		}
+		if e.ToolCallID != "" {
+			p.askTools[toolRef(e.ToolCallID)] = e.Ask.ID
 		}
 		a := p.asks[e.Ask.ID]
 		if a == nil {
@@ -343,6 +351,55 @@ func (p *Projector) Apply(e event.Event) Update {
 	}
 	sort.Strings(update.Remove)
 	return update
+}
+
+// recoverQuestion 仅从已经结束的工具事实恢复旧入口遗漏的只读问答，不补造可提交的中断。
+func (p *Projector) recoverQuestion(e event.Event, tool *Tool) {
+	if p.askTools[tool.Ref] != "" {
+		return
+	}
+	var info struct {
+		Question    string   `json:"question"`
+		Options     []string `json:"options"`
+		MultiSelect bool     `json:"multi_select"`
+	}
+	var response struct {
+		Selected []string `json:"selected"`
+		FreeText string   `json:"free_text"`
+	}
+	if json.Unmarshal([]byte(tool.Arguments), &info) != nil || info.Question == "" || json.Unmarshal([]byte(tool.Result), &response) != nil {
+		return
+	}
+	for _, existing := range p.asks {
+		if existing.RunID == e.RunID && existing.MemberID == e.MemberCallID && existing.Question == info.Question {
+			bound := false
+			for _, askID := range p.askTools {
+				if askID == existing.ID {
+					bound = true
+					break
+				}
+			}
+			if bound {
+				continue
+			}
+			p.askTools[tool.Ref] = existing.ID
+			return
+		}
+	}
+	id := tool.Ref
+	a := &Ask{ID: id, SessionID: p.sessionID, MessageID: tool.MessageID, RunID: e.RunID, MemberID: e.MemberCallID,
+		Question: info.Question, Options: append([]string{}, info.Options...), MultiSelect: info.MultiSelect,
+		Selected: append([]string{}, response.Selected...), FreeText: response.FreeText,
+		Answered: len(response.Selected) > 0 || response.FreeText != ""}
+	p.asks[id], p.askOrders[id], p.askTools[tool.Ref] = a, e.Sequence, id
+	if e.MemberCallID != "" {
+		p.ensureMember(e)
+		p.touchMember(e.MemberCallID)
+	} else {
+		key := "ask:" + id
+		p.items[key] = &Item{ID: key, Kind: "ask", Order: e.Sequence, Ask: a}
+		p.changed[key] = true
+	}
 }
 func (p *Projector) ensureMessage(e event.Event, role message.Role) *messageState {
 	id := e.MessageID

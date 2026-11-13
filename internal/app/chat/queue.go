@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fkteams/internal/app/agent/catalog/toolmeta"
+	"fkteams/internal/app/chat/presentation"
 	domainprocess "fkteams/internal/domain/process"
 	"fkteams/internal/domain/session"
 	"fkteams/internal/ports/storage"
@@ -59,18 +61,60 @@ func (s *Service) RunQueued(ctx context.Context, req QueueRequest) (err error) {
 	if req.Queues != nil && req.Queues.Streams().Get(req.First.SessionID) != req.Stream {
 		return fmt.Errorf("chat queue belongs to another application")
 	}
+	var reportedErrors events.ErrorTracker
 	defer func() {
 		if req.Finish != nil {
 			err = errors.Join(err, finalizationFailure(req.Finish(err)))
 		}
 		req.Stream.SetStatus(string(CompletionStatus(err)))
+		projector, replayErr := replayPresentation(req.First, toolmeta.ResolverFromContext(ctx))
+		if replayErr != nil {
+			err = errors.Join(err, finalizationFailure(replayErr))
+			req.Stream.SetStatus(string(CompletionStatus(err)))
+		}
+		if CompletionStatus(err) == session.StatusError {
+			if remaining := reportedErrors.Unreported(err); remaining != nil {
+				failure := taskstream.RuntimeEventPayload(events.NormalizeEvent(events.Error("", "", remaining)), nil)
+				failure["session_id"] = req.First.SessionID
+				req.Stream.Publish(failure)
+			}
+		}
+		runID, turnID := req.Stream.CurrentTurn()
+		terminal := events.NormalizeEvent(events.ProcessingEnd(runID, turnID, "处理完成"))
+		payload := taskstream.RuntimeEventPayload(terminal, nil)
+		payload["session_id"], payload["status"] = req.First.SessionID, string(CompletionStatus(err))
+		if replayErr == nil && req.First.History != nil {
+			req.Stream.PublishPresentation(projector, payload)
+		} else {
+			req.Stream.PublishRuntime(terminal, payload)
+		}
 	}()
+	if req.First.History != nil {
+		projector, replayErr := replayPresentation(req.First, toolmeta.ResolverFromContext(ctx))
+		if replayErr != nil {
+			return replayErr
+		}
+		req.Stream.SetPresentation(projector)
+	}
 	current := req.First
 	for {
 		if current.RunID == "" {
 			current.RunID = current.SessionID + ":" + session.NewID()
 		}
 		req.Stream.SetTurn(current.RunID, events.TurnID(current.RunID, 1))
+		sink := current.EventSink
+		current.EventSink = func(e events.Event) error {
+			if sink != nil {
+				if err := sink(e); err != nil {
+					return err
+				}
+			}
+			payload := taskstream.RuntimeEventPayload(e, toolmeta.ResolverFromContext(ctx))
+			payload["session_id"] = current.SessionID
+			req.Stream.PublishRuntime(e, payload)
+			reportedErrors.Record(e)
+			return nil
+		}
 		if _, err = s.RunTurn(ctx, current); err != nil {
 			return err
 		}
@@ -101,6 +145,21 @@ func (s *Service) RunQueued(ctx context.Context, req QueueRequest) (err error) {
 			return fmt.Errorf("queued turn session mismatch")
 		}
 	}
+}
+
+func replayPresentation(req TurnRequest, displays toolmeta.Resolver) (*presentation.Projector, error) {
+	p := presentation.New(req.SessionID, displays)
+	if req.History == nil {
+		return p, nil
+	}
+	facts, err := req.History.ReplayEvents()
+	if err != nil {
+		return nil, err
+	}
+	for _, fact := range facts {
+		p.Apply(fact)
+	}
+	return p, nil
 }
 
 // QueueService 统一队列恢复、修改、消费、保存与通知的顺序。

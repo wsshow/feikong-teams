@@ -211,18 +211,19 @@ type Stream struct {
 	watcherNext uint64
 
 	// 生命周期
-	done         bool
-	status       string // "processing", "completed", "error", "cancelled"
-	createdAt    time.Time
-	doneAt       time.Time
-	interruptCh  chan any // 审批/ask 通道
-	pendingKind  InterruptKind
-	pendingID    string
-	pendingIDs   map[string]bool
-	submittedIDs map[string]bool
-	pendingAsks  map[string]chan any
-	submitted    bool
-	queue        Queue
+	done          bool
+	status        string // "processing", "completed", "error", "cancelled"
+	createdAt     time.Time
+	doneAt        time.Time
+	interruptCh   chan any // 审批/ask 通道
+	pendingKind   InterruptKind
+	pendingID     string
+	pendingIDs    map[string]bool
+	submittedIDs  map[string]bool
+	pendingAsks   map[string]chan any
+	submittedAsks map[string]bool
+	submitted     bool
+	queue         Queue
 
 	// 所属 Manager 引用（用于 grace timer 自动移除）
 	manager *Manager
@@ -743,6 +744,7 @@ func (s *Stream) BeginAsk(id string) (<-chan any, error) {
 	}
 	if s.pendingAsks == nil {
 		s.pendingAsks = make(map[string]chan any)
+		s.submittedAsks = make(map[string]bool)
 	}
 	if _, exists := s.pendingAsks[id]; exists {
 		return nil, fmt.Errorf("ask request already pending")
@@ -760,9 +762,21 @@ func (s *Stream) CompleteAsk(id string) {
 		return
 	}
 	delete(s.pendingAsks, id)
+	delete(s.submittedAsks, id)
 	if len(s.pendingAsks) == 0 {
 		s.pendingAsks = nil
 	}
+}
+
+// AskResponseChannel 返回请求事件发布前登记的回答通道。
+func (s *Stream) AskResponseChannel(id string) (<-chan any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch := s.pendingAsks[id]
+	if ch == nil {
+		return nil, fmt.Errorf("ask request is not pending")
+	}
+	return ch, nil
 }
 
 // SubmitAskResponse 提交指定 ask ID 的回答。
@@ -778,10 +792,11 @@ func (s *Stream) SubmitAskResponse(id string, value any) error {
 		}
 	}
 	if ch, ok := s.pendingAsks[id]; ok {
-		delete(s.pendingAsks, id)
-		if len(s.pendingAsks) == 0 {
-			s.pendingAsks = nil
+		if s.submittedAsks[id] {
+			s.mu.Unlock()
+			return fmt.Errorf("ask request already submitted")
 		}
+		s.submittedAsks[id] = true
 		s.mu.Unlock()
 		ch <- value
 		return nil

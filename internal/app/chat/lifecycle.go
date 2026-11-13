@@ -10,6 +10,7 @@ import (
 
 // SessionHistory 描述聊天用例需要编排的历史记录能力。
 type SessionHistory interface {
+	ReplayEvents() ([]event.Event, error)
 	RecordAndEmit(event.Event, func(event.Event) error) error
 	FinalizeCurrent()
 	RecordCancelled(message string)

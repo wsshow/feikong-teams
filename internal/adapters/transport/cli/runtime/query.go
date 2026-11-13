@@ -257,8 +257,14 @@ func (e *QueryExecutor) Execute(ctx context.Context, input string) error {
 	recorder.SetToolDisplayResolver(toolmeta.ResolverFromContext(ctx))
 	turnInput := appchat.BuildTurnInputWithMemory(recorder, input, e.memory)
 
-	// 缓存第一次输入作为会话标题（不立即创建文件，等用户保存时才写入）
+	// 保存会话标题和处理状态，让其他入口在运行期间也能发现会话。
 	session.setTitleFromInput(input)
+	if !session.isTemporary() {
+		store := eventlog.NewChatSessionStore(session.historyDir, session.historyManager.Documents)
+		if err := appchat.NewSessionLifecycle(store).MarkProcessing(ctx, session.sessionID(), session.sessionTitle); err != nil {
+			return err
+		}
+	}
 
 	// 创建可取消的 context
 	queryCtx, cancelFunc := context.WithCancel(ctx)

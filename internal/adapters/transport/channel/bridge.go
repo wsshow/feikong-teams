@@ -442,6 +442,11 @@ func (b *Bridge) processBatch(runCtx context.Context, sessionID string, batch []
 	defer releaseRecorder()
 	recorder.SetToolDisplayResolver(toolmeta.ResolverFromContext(ctx))
 	turnInput := appchat.BuildTurnInputWithMemory(recorder, combinedInput, b.memoryManager())
+	store := eventlog.NewChatSessionStore(b.historyDir, b.sessions.Documents)
+	if err := appchat.NewSessionLifecycle(store).MarkProcessing(ctx, sessionID, combinedInput); err != nil {
+		log.Printf("[bridge] mark session processing failed: %v", err)
+		return
+	}
 
 	rc := newReplyCollector(b.manager, channelName, chatID)
 

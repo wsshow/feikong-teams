@@ -16,11 +16,9 @@ import (
 	"fkteams/internal/adapters/storage/file/history"
 	"fkteams/internal/app/appstate"
 	appchat "fkteams/internal/app/chat"
-	"fkteams/internal/app/chat/presentation"
 	"fkteams/internal/app/chat/taskstream"
 	"fkteams/internal/app/tools/ask"
 	domainmessage "fkteams/internal/domain/message"
-	domainsession "fkteams/internal/domain/session"
 	runtimeport "fkteams/internal/ports/runtime"
 	"fkteams/internal/runtime/events"
 
@@ -424,7 +422,7 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	ctx = rt.withExecutionDependencies(ctx)
 	defer stream.Done()
 
-	interruptHandler := buildStreamInterruptHandler(stream, recorder, sessionID)
+	interruptHandler := buildStreamInterruptHandler(stream)
 	currentRunID := initialRunID
 	if currentRunID == "" {
 		currentRunID = newTurnRunID(sessionID)
@@ -432,26 +430,26 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 	steeringSource := buildSteeringSource(stream, sessionID, func() string { return currentRunID }, rt.Queues)
 
 	currentDisplayText := userDisplayText
-	var reportedErrors events.ErrorTracker
 	request := func(input domainmessage.TurnInput) appchat.TurnRequest {
 		return appchat.TurnRequest{
 			SessionID: sessionID, RunID: currentRunID, Runner: r, Input: input,
 			Summary: recorder, History: recorder,
 			InterruptHandler: interruptHandler, NonInteractive: true,
 			ApprovalRegistry: configuredApprovalRegistry(),
-			AskHandler:       buildMemberAskRuntimeHandler(stream, recorder, sessionID),
+			AskHandler:       buildMemberAskRuntimeHandler(stream),
 			SteeringSource:   steeringSource,
 			EventSink: func(event events.Event) error {
 				if stream.Status() == "cancelled" {
 					return context.Canceled
 				}
-				stream.PublishRuntime(event, standardEventPayload(sessionID, event, rt.ToolDisplays))
-				reportedErrors.Record(event)
+				if err := prepareStreamInteraction(stream, event); err != nil {
+					return err
+				}
 				return nil
 			},
 		}
 	}
-	runErr := appchat.NewService().RunQueued(ctx, appchat.QueueRequest{
+	_ = appchat.NewService().RunQueued(ctx, appchat.QueueRequest{
 		Stream: stream, Queues: rt.Queues, First: request(turnInput),
 		Next: func(queued taskstream.QueuedMessage) (appchat.TurnRequest, error) {
 			currentDisplayText = queued.DisplayText
@@ -466,32 +464,6 @@ func (rt *Runtime) runStreamTask(ctx context.Context, stream *taskstream.Stream,
 			return rt.finishChat(context.WithoutCancel(ctx), sessionID, currentDisplayText, runErr)
 		},
 	})
-	// 任务退出时只发布已经落盘的展示事实，避免客户端维护另一套收尾规则。
-	records, projectionErr := eventlog.LoadSessionTranscriptRecords(rt.sessionDirPath(sessionID), rt.Documents)
-	var projector *presentation.Projector
-	if errors.Is(projectionErr, os.ErrNotExist) {
-		projectionErr = nil
-	}
-	if projectionErr == nil {
-		projector, projectionErr = rt.transcriptPresentation(sessionID, records)
-	}
-	terminal := processingEndEventPayload(sessionID, currentRunID, "处理完成")
-	terminal["status"] = string(appchat.CompletionStatus(runErr))
-	if runErr != nil && appchat.CompletionStatus(runErr) != domainsession.StatusCancelled {
-		if remaining := reportedErrors.Unreported(runErr); remaining != nil {
-			stream.Publish(errorEventPayload(sessionID, remaining.Error()))
-		}
-	}
-
-	if projectionErr != nil {
-		stream.Publish(errorEventPayload(sessionID, "failed to reconstruct committed conversation"))
-		terminal["status"] = "error"
-		stream.SetStatus("error")
-		stream.Publish(terminal)
-		return
-	}
-	stream.PublishPresentation(projector, terminal)
-
 }
 
 // StreamStopHandler 停止正在运行的流式任务
@@ -894,75 +866,21 @@ func (rt *Runtime) StreamEventsHandler() gin.HandlerFunc {
 // ==================== 内部辅助 ====================
 
 // buildStreamInterruptHandler 构建流式任务的 HITL 中断处理器
-func buildStreamInterruptHandler(stream *taskstream.Stream, recorder *eventlog.HistoryRecorder, sessionID string) runtimeport.InterruptHandler {
-	channelHandler := appchat.ChannelInterruptHandler(stream.InterruptCh())
+func buildStreamInterruptHandler(stream *taskstream.Stream) runtimeport.InterruptHandler {
 	return func(ctx context.Context, interrupts []runtimeport.Interrupt) (runtimeport.InterruptDecisions, error) {
-		// 检查是否为 ask_questions 中断
-		if askInterrupt := extractAskInterrupt(interrupts); askInterrupt != nil {
-			stream.BeginInterruptWithID(taskstream.InterruptAsk, askInterrupt.ID)
-			defer stream.CompleteInterrupt(taskstream.InterruptAsk)
-
-			info := askInterrupt.Info
-			askID := askInterrupt.ID
-			memberEvent := askInterrupt.Event
-			memberEvent.RunID, memberEvent.TurnID = stream.CurrentTurn()
-			askEvent := askRequestedEvent(memberEvent, askID, info)
-			if emitErr := recordStreamEvent(stream, recorder, sessionID, askEvent); emitErr != nil {
-				return nil, emitErr
+		for _, interrupt := range interrupts {
+			if !interrupt.IsRootCause {
+				continue
 			}
-
-			result, err := appchat.ChannelTargetInterruptHandler(stream.InterruptCh(), askID)(ctx, interrupts)
-			if err == nil {
-				answerEvent := askAnsweredEvent(memberEvent, askID, askResponseFromResult(askID, result), askResponseText(result))
-				if emitErr := recordStreamEvent(stream, recorder, sessionID, answerEvent); emitErr != nil {
-					return nil, emitErr
+			if _, ok := interrupt.Info.(*ask.AskInfo); ok {
+				resp, err := buildMemberAskRuntimeHandler(stream)(ctx, ask.RuntimeRequest{ID: interrupt.ID})
+				if err != nil {
+					return nil, err
 				}
-
+				return runtimeport.InterruptDecisions{interrupt.ID: resp}, nil
 			}
-			return result, err
 		}
-
-		// 默认审批流程
-		msg := extractInterruptMessage(interrupts)
-
-		stream.BeginInterrupt(taskstream.InterruptApproval)
 		defer stream.CompleteInterrupt(taskstream.InterruptApproval)
-
-		runID, turnID := stream.CurrentTurn()
-		approvalID := uuid.NewString()
-		approvalEvent := events.NormalizeEvent(events.Event{
-			Type:    events.EventApprovalRequested,
-			Detail:  approvalID,
-			RunID:   runID,
-			TurnID:  turnID,
-			Content: msg,
-			Approval: &events.ApprovalPayload{
-				Message: msg,
-			},
-		})
-		if emitErr := recordStreamEvent(stream, recorder, sessionID, approvalEvent); emitErr != nil {
-			return nil, emitErr
-		}
-
-		result, err := channelHandler(ctx, interrupts)
-		if err == nil {
-			if text := approvalDecisionText(result); text != "" {
-				answerEvent := events.NormalizeEvent(events.Event{
-					Type:    events.EventApprovalAnswered,
-					Detail:  approvalID,
-					RunID:   runID,
-					TurnID:  turnID,
-					Content: text,
-					Approval: &events.ApprovalPayload{
-						Decision: text,
-					},
-				})
-				if emitErr := recordStreamEvent(stream, recorder, sessionID, answerEvent); emitErr != nil {
-					return nil, emitErr
-				}
-			}
-		}
-
-		return result, err
+		return appchat.ChannelInterruptHandler(stream.InterruptCh())(ctx, interrupts)
 	}
 }
