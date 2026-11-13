@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { appActions, chatActions, sessionsActions, type AppPanel } from "@/app/store";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { chatPath, panelPath, pushAppPath } from "@/lib/navigation";
 import { deleteSession, favoriteSession, renameSession } from "@/api/sessions";
 import { assistantDisplayName, assistantSessionID } from "@/lib/assistant";
 import { SessionShareDialog } from "./SessionShareDialog";
+import { useSidebarResize } from "./useSidebarResize";
 
 const panels: Array<{ key: AppPanel; label: string; icon: LucideIcon }> = [
   { key: "memory", label: "记忆", icon: Database },
@@ -65,6 +66,7 @@ export function Sidebar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const sidebarOpen = useAppSelector((state) => state.app.sidebarOpen);
+  const { width, minWidth, maxWidth, isResizing, separatorProps } = useSidebarResize(sidebarOpen);
   const activePanel = useAppSelector((state) => state.app.activePanel);
   const sessions = useAppSelector((state) => state.sessions.items);
   const activeSessionID = useAppSelector((state) => state.chat.activeSessionID);
@@ -216,10 +218,13 @@ export function Sidebar() {
         />
       ) : null}
       <aside
+        id="app-sidebar"
+        style={{ "--sidebar-width": `${width}px` } as CSSProperties}
         className={cn(
-          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground transition-[transform,width] md:relative md:z-auto md:h-screen md:translate-x-0",
+          "sketch-rule fixed inset-y-0 left-0 z-40 flex h-[100dvh] shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground md:relative md:z-auto md:h-screen md:translate-x-0",
+          isResizing ? "transition-none" : "transition-[transform,width]",
           sidebarOpen
-            ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-dialog md:w-[292px] md:shadow-none"
+            ? "w-[min(292px,calc(100vw-3rem))] translate-x-0 shadow-dialog md:w-[var(--sidebar-width)] md:shadow-none"
             : "w-[min(292px,calc(100vw-3rem))] -translate-x-full md:w-16 md:translate-x-0",
         )}
       >
@@ -343,6 +348,27 @@ export function Sidebar() {
         </>
       ) : null}
       </div>
+      {sidebarOpen ? (
+        <div
+          {...separatorProps}
+          role="separator"
+          tabIndex={0}
+          aria-label="调整侧栏宽度"
+          aria-orientation="vertical"
+          aria-controls="app-sidebar"
+          aria-valuemin={minWidth}
+          aria-valuemax={maxWidth}
+          aria-valuenow={width}
+          aria-valuetext={`${width} 像素`}
+          title="拖动或使用左右方向键调整侧栏宽度，双击恢复默认宽度"
+          className="group/resize absolute inset-y-0 right-0 z-10 hidden w-2 touch-none cursor-col-resize select-none focus-visible:outline-none md:block"
+        >
+          <span className={cn(
+            "pointer-events-none absolute inset-y-0 right-0 w-0.5 group-hover/resize:bg-primary/50 group-focus-visible/resize:bg-primary",
+            isResizing && "bg-primary/60",
+          )} />
+        </div>
+      ) : null}
       </aside>
       {searchOpen ? (
         <SessionSearchDialog
